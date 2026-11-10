@@ -337,12 +337,35 @@ screenshaver_process_running() {
     return 1
 }
 
+kde_qt_qml_root() {
+    if ! command -v qtpaths6 >/dev/null 2>&1; then
+        warn "qtpaths6 unavailable; cannot locate Qt QML module for removal."
+        return 1
+    fi
+    local root
+    root="$(qtpaths6 --query QT_INSTALL_QML 2>/dev/null)" || return 1
+    [[ "$root" == /* && "$root" == */qml && -d "$root" ]] || return 1
+    printf '%s\n' "$root"
+}
+
 remove_kde_native_integration() {
     local root="${INSTALL_PREFIX}/lib/screenshaver/kde/qml/ScreenshaverNativeGL"
     local name
     for name in qmldir libScreenshaverNativeGLPlugin.so libscreenshaver.so; do
         remove_file_if_present "${root}/${name}"
     done
+    local qt_root qt_module
+    if qt_root="$(kde_qt_qml_root)"; then
+        qt_module="${qt_root}/ScreenshaverNativeGL"
+        if [[ -L "$qt_module" ]]; then
+            warn "Preserving symlinked Qt QML module: $qt_module"
+        else
+            for name in qmldir libScreenshaverNativeGLPlugin.so libscreenshaver.so; do
+                remove_file_if_present "${qt_module}/${name}"
+            done
+            remove_empty_directory "$qt_module"
+        fi
+    fi
     remove_file_if_present "${INSTALL_PREFIX}/bin/screenshaver-plasma-producer"
     remove_file_if_present "${INSTALL_PREFIX}/lib/screenshaver/kde/libscreenshaver.so"
     remove_file_if_present "${INSTALL_PREFIX}/lib/screenshaver/kde/libScreenshaverKScreen.so"
@@ -569,6 +592,15 @@ verify_conventional_removal() {
           -L "${INSTALL_PREFIX}/bin/screenshaver-plasma-producer" ]]; then
         warn "Screenshaver KDE frame producer remains installed."
         remaining=true
+    fi
+    local qt_root qt_module
+    if qt_root="$(kde_qt_qml_root)"; then
+        qt_module="${qt_root}/ScreenshaverNativeGL"
+        if [[ -e "$qt_module/qmldir" || -e "$qt_module/libScreenshaverNativeGLPlugin.so" ||
+              -e "$qt_module/libscreenshaver.so" ]]; then
+            warn "Screenshaver Qt QML module remains installed: $qt_module"
+            remaining=true
+        fi
     fi
     local kde_root="${INSTALL_PREFIX}/lib/screenshaver/kde/qml/ScreenshaverNativeGL"
     if [[ -e "$kde_root/qmldir" || -e "$kde_root/libScreenshaverNativeGLPlugin.so" ||

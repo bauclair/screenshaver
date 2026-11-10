@@ -891,6 +891,15 @@ build_kde_native_integration() {
         die "KDE KScreen discovery library was not produced by the release build."
 }
 
+kde_qt_qml_root() {
+    command -v qtpaths6 >/dev/null 2>&1 || die "qtpaths6 is required for KDE QML installation."
+    local root
+    root="$(qtpaths6 --query QT_INSTALL_QML 2>/dev/null)" || die "Cannot discover Qt 6 QML directory."
+    [[ "$root" == /* && "$root" == */qml && -d "$root" ]] ||
+        die "Unexpected Qt 6 QML installation directory: $root"
+    printf '%s\n' "$root"
+}
+
 install_kde_native_integration() {
     $KDE_INTEGRATION || return 0
     local source="${PROJECT_DIR}/kde-host/build-staging-release/qml/ScreenshaverNativeGL"
@@ -903,6 +912,18 @@ install_kde_native_integration() {
         mode=644
         [[ "$name" == *.so ]] && mode=755
         "${SUDO[@]}" install -Dm"$mode" "${source}/${name}" "${destination}/${name}"
+    done
+    # Plasma's QML engine searches Qt's standard module paths, not the
+    # Screenshaver-private installation directory or a local qmldir plugin
+    # imported as a JavaScript namespace.
+    local qt_module="$(kde_qt_qml_root)/ScreenshaverNativeGL"
+    if [[ -L "$qt_module" ]]; then
+        die "Refusing to replace symlinked Qt module: $qt_module"
+    fi
+    for name in qmldir libScreenshaverNativeGLPlugin.so libscreenshaver.so; do
+        mode=644
+        [[ "$name" == *.so ]] && mode=755
+        "${SUDO[@]}" install -Dm"$mode" "${source}/${name}" "${qt_module}/${name}"
     done
     # The independent frame producer loads this library from the KDE root,
     # not from the QML import directory.
@@ -956,6 +977,18 @@ verify_kde_native_integration() {
     for name in qmldir libScreenshaverNativeGLPlugin.so libscreenshaver.so; do
         [[ -f "${destination}/${name}" ]] || die "Installed KDE runtime asset missing: ${destination}/${name}"
     done
+    local qt_module="$(kde_qt_qml_root)/ScreenshaverNativeGL"
+    for name in qmldir libScreenshaverNativeGLPlugin.so libscreenshaver.so; do
+        [[ -f "${qt_module}/${name}" ]] || die "Qt QML module asset missing: ${qt_module}/${name}"
+        cmp -s -- "${PROJECT_DIR}/kde-host/build-staging-release/qml/ScreenshaverNativeGL/${name}" "${qt_module}/${name}" ||
+            die "Qt QML module asset differs from release build: ${name}"
+    done
+    if command -v ldd >/dev/null 2>&1; then
+        for name in libScreenshaverNativeGLPlugin.so libscreenshaver.so; do
+            missing="$(ldd "${qt_module}/${name}" 2>/dev/null | awk '/not found/ { print $1 }')"
+            [[ -z "$missing" ]] || die "Unresolved Qt QML dependencies for ${name}: ${missing}"
+        done
+    fi
     local producer_source="${PROJECT_DIR}/kde-wallpaper-producer/target/release/screenshaver-plasma-producer"
     local producer_installed="${INSTALL_PREFIX}/bin/screenshaver-plasma-producer"
     [[ -x "$producer_installed" ]] || die "KDE frame producer executable not installed: $producer_installed"
