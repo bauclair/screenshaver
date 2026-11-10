@@ -1196,7 +1196,8 @@ impl WallpaperRuntimeManager {
         let kde_plasma = runtime.display_format
             == crate::manage_configuration::WallpaperDisplayFormat::FullScreen
             && std::env::var("XDG_SESSION_TYPE")
-                .map(|v| v.eq_ignore_ascii_case("wayland")).unwrap_or(false)
+                .map(|v| v.eq_ignore_ascii_case("wayland") || v.eq_ignore_ascii_case("x11"))
+                .unwrap_or(false)
             && std::env::var("XDG_CURRENT_DESKTOP")
                 .map(|v| v.split(':').any(|part| part.eq_ignore_ascii_case("KDE")))
                 .unwrap_or(false);
