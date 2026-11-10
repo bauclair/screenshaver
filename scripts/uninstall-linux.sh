@@ -353,6 +353,13 @@ remove_kde_native_integration() {
            [[ "$(cat "$package/.screenshaver-installed")" == screenshaver-installer-v1 ]]; then
             # Only remove the known installed files. Leave modified/extra package
             # content in place rather than recursively deleting user data.
+            local bundled_module="$package/contents/ui/ScreenshaverNativeGL"
+            if [[ -d "$bundled_module" && ! -L "$bundled_module" ]]; then
+                rm -f -- "$bundled_module/qmldir" \
+                    "$bundled_module/libScreenshaverNativeGLPlugin.so" \
+                    "$bundled_module/libscreenshaver.so"
+                rmdir -- "$bundled_module" 2>/dev/null || true
+            fi
             rm -f -- "$package/metadata.json" "$package/contents/ui/main.qml" "$package/.screenshaver-installed"
             rmdir -- "$package/contents/ui" "$package/contents" "$package" 2>/dev/null || true
         else

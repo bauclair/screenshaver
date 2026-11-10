@@ -929,6 +929,19 @@ install_kde_native_integration() {
     mkdir -p "${package_dest}/contents/ui"
     install -m644 "${package_source}/metadata.json" "${package_dest}/metadata.json"
     install -m644 "${package_source}/contents/ui/main.qml" "${package_dest}/contents/ui/main.qml"
+    # Bundle the QML native plugin beside main.qml. Plasma does not automatically
+    # search the private /usr/local/lib/screenshaver/kde/qml module directory.
+    # The wallpaper's main.qml imports this module by its local relative path.
+    local bundled_module="${package_dest}/contents/ui/ScreenshaverNativeGL"
+    if [[ -L "$bundled_module" ]]; then
+        die "Refusing to install KDE QML module through a symlink: $bundled_module"
+    fi
+    mkdir -p "$bundled_module"
+    for name in qmldir libScreenshaverNativeGLPlugin.so libscreenshaver.so; do
+        mode=644
+        [[ "$name" == *.so ]] && mode=755
+        install -m"$mode" "${source}/${name}" "${bundled_module}/${name}"
+    done
     printf '%s\n' 'screenshaver-installer-v1' > "${package_dest}/.screenshaver-installed"
     # KScreen discovery is a separate native bridge, built at the CMake root.
     "${SUDO[@]}" install -Dm755 \
@@ -959,6 +972,19 @@ verify_kde_native_integration() {
         die "Production KDE wallpaper metadata differs from source."
     cmp -s -- "${PROJECT_DIR}/kde-host/screenshaver-plasma-wallpaper/contents/ui/main.qml" "${package_dest}/contents/ui/main.qml" ||
         die "Production KDE wallpaper QML differs from source."
+    local bundled_module="${package_dest}/contents/ui/ScreenshaverNativeGL"
+    for name in qmldir libScreenshaverNativeGLPlugin.so libscreenshaver.so; do
+        [[ -f "${bundled_module}/${name}" ]] ||
+            die "Bundled KDE wallpaper QML module asset missing: ${bundled_module}/${name}"
+        cmp -s -- "${PROJECT_DIR}/kde-host/build-staging-release/qml/ScreenshaverNativeGL/${name}" "${bundled_module}/${name}" ||
+            die "Bundled KDE wallpaper QML module differs from release build: ${name}"
+    done
+    if command -v ldd >/dev/null 2>&1; then
+        for name in libScreenshaverNativeGLPlugin.so libscreenshaver.so; do
+            missing="$(ldd "${bundled_module}/${name}" 2>/dev/null | awk '/not found/ { print $1 }')"
+            [[ -z "$missing" ]] || die "Unresolved bundled KDE QML libraries for ${name}: ${missing}"
+        done
+    fi
     local kscreen_source="${PROJECT_DIR}/kde-host/build-staging-release/libScreenshaverKScreen.so"
     local kscreen_destination="${INSTALL_PREFIX}/lib/screenshaver/kde/libScreenshaverKScreen.so"
     [[ -f "$kscreen_destination" ]] || die "Installed KScreen discovery library missing: $kscreen_destination"
