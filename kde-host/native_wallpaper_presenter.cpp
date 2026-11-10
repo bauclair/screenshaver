@@ -87,7 +87,11 @@ void NativeWallpaperPresenter::poll() {
     // OpenGL ReadPixels produces bottom-up RGBA rows; mirror to Qt top-down.
     QImage snapshot(reinterpret_cast<const uchar*>(pixels.constData()),
                     int(width), int(height), int(stride), QImage::Format_RGBA8888);
+#if QT_VERSION >= QT_VERSION_CHECK(6, 9, 0)
     m_image = snapshot.flipped(Qt::Vertical).copy();
+#else
+    m_image = snapshot.mirrored(false, true).copy();
+#endif
     m_sequence = sequence;
     // Readiness is evidence of a fully decoded frame, not merely a running producer.
     // Publish at most once per second to avoid a filesystem write per video frame.
