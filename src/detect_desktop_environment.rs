@@ -117,6 +117,12 @@ impl DesktopEnvironment {
 /// independently.
 pub fn detect(
 ) -> DesktopEnvironment {
+    for variable in ["XDG_CURRENT_DESKTOP", "XDG_SESSION_DESKTOP", "DESKTOP_SESSION"] {
+        if environment_variable_contains_desktop(variable, is_cinnamon_identifier) {
+            return DesktopEnvironment::Cinnamon;
+        }
+    }
+
     if environment_variable_contains_desktop(
         "XDG_CURRENT_DESKTOP",
         is_kde_identifier,
@@ -203,12 +209,6 @@ pub fn detect(
     for variable in ["XDG_CURRENT_DESKTOP", "XDG_SESSION_DESKTOP", "DESKTOP_SESSION"] {
         if environment_variable_contains_desktop(variable, is_lxde_identifier) {
             return DesktopEnvironment::Lxde;
-        }
-    }
-
-    for variable in ["XDG_CURRENT_DESKTOP", "XDG_SESSION_DESKTOP", "DESKTOP_SESSION"] {
-        if environment_variable_contains_desktop(variable, is_cinnamon_identifier) {
-            return DesktopEnvironment::Cinnamon;
         }
     }
 
