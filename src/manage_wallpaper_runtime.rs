@@ -1152,8 +1152,9 @@ impl WallpaperRuntimeManager {
         runtime: crate::define_wallpaper::WallpaperRuntime,
         logfile: PathBuf,
         running: Arc<AtomicBool>,
+        tray_status: crate::tray_icon::TrayStatusControl,
     ) -> Self {
-        Self::start_wallpaper(enabled, configured_mode, runtime, logfile, running)
+        Self::start_wallpaper(enabled, configured_mode, runtime, logfile, running, tray_status)
     }
 
     fn start_wallpaper(
@@ -1162,6 +1163,7 @@ impl WallpaperRuntimeManager {
         runtime: crate::define_wallpaper::WallpaperRuntime,
         logfile: PathBuf,
         running: Arc<AtomicBool>,
+        tray_status: crate::tray_icon::TrayStatusControl,
     ) -> Self {
 
         let control =
@@ -1208,12 +1210,14 @@ impl WallpaperRuntimeManager {
             let thread_running = Arc::clone(&running);
             let thread_logfile = logfile.clone();
             let thread_control = control.clone();
+            let thread_tray = tray_status.clone();
             let thread = std::thread::Builder::new()
                 .name("screenshaver-kde-wallpaper".to_owned())
                 .spawn(move || {
                     if let Err(error) = run_kde_plasma_wallpaper(
-                        &thread_running, &thread_control, &thread_logfile,
+                        &thread_running, &thread_control, &thread_logfile, &thread_tray,
                     ) {
+                        thread_tray.set_wallpaper_disabled();
                         crate::logger::error(&thread_logfile,
                             &format!("[KDE WALLPAPER] Independent producer unavailable: {error}"));
                     }
@@ -1709,6 +1713,7 @@ fn run_kde_plasma_wallpaper(
     running: &AtomicBool,
     control: &WallpaperRuntimeControl,
     logfile: &std::path::Path,
+    tray_status: &crate::tray_icon::TrayStatusControl,
 ) -> Result<(), String> {
     use std::time::{Duration, Instant};
     let settings = crate::kde_producer_supervisor::ProducerSettings::from_environment()?;
@@ -1749,6 +1754,15 @@ fn run_kde_plasma_wallpaper(
         "[KDE WALLPAPER] Plasma presenter acknowledged independent producer");
     let mut guard = guard;
     let mut failure = None;
+    let mut last_reported_policy: Option<crate::kde_producer_supervisor::ActiveProducerPolicy> = None;
+    // Initial state is published only after Plasma has acknowledged frames.
+    // Subsequent metadata originates from actual accepted renderer policies.
+    if let Some(policy) = producer.active_policy() {
+        let path = policy.shader_path.clone().unwrap_or_else(||
+            crate::locate_paths::shader_dir().join(&policy.shader_name));
+        tray_status.set_wallpaper_active(policy.policy_id, policy.policy_name.clone(), path);
+        last_reported_policy = Some(policy);
+    }
     // KDE owns its producer directly: never consult the legacy Wayland
     // frame/ownership gate. Observe the same external pause request that
     // the other wallpaper renderer uses, and acknowledge only completed
@@ -1854,12 +1868,25 @@ fn run_kde_plasma_wallpaper(
             // a long-running screensaver. Resume must establish fresh progress.
             last_presenter_progress = Instant::now();
         }
+        // Publish only while a live presenter has been confirmed. Never use
+        // the producer's policy selection to infer Plasma ownership.
+        if !producer_paused && last_presenter_progress.elapsed() <= Duration::from_secs(6) {
+            if let Some(policy) = producer.active_policy() {
+                if last_reported_policy.as_ref() != Some(&policy) {
+                    let path = policy.shader_path.clone().unwrap_or_else(||
+                        crate::locate_paths::shader_dir().join(&policy.shader_name));
+                    tray_status.set_wallpaper_active(policy.policy_id, policy.policy_name.clone(), path);
+                    last_reported_policy = Some(policy);
+                }
+            }
+        }
         std::thread::sleep(Duration::from_millis(10));
     }
     // Critical order: keep last published frame available while Plasma
     // restores its previous wallpaper plugin.
     let restoration = guard.deactivate();
     control.active.store(false, Ordering::SeqCst);
+    tray_status.set_wallpaper_disabled();
     producer.stop();
     restoration?;
     if let Some(error) = failure { return Err(error); }

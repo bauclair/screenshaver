@@ -2702,7 +2702,8 @@ Screensaver and wallpaper functionality will remain available. Screen locking mu
     let mut wallpaper_manager = if wallpaper_enabled_this_launch {
         Some(crate::manage_wallpaper_runtime::WallpaperRuntimeManager::start(
             wallpaper_enabled_this_launch, cfg.wallpaper_mode.clone(),
-            wallpaper_runtime.clone(), logfile.clone(), Arc::clone(&running)))
+            wallpaper_runtime.clone(), logfile.clone(), Arc::clone(&running),
+            tray_status.clone()))
     } else { None };
     let mut windowshader_manager = if windowshader_enabled {
         Some(crate::manage_windowshader_runtime::WindowshaderRuntimeManager::start(

@@ -20,6 +20,7 @@ type Destroy = unsafe extern "C" fn(*mut c_void);
 type LastError = unsafe extern "C" fn() -> *const c_char;
 type Reload = unsafe extern "C" fn(*mut c_void, Option<unsafe extern "C" fn(*const c_char) -> *const c_void>, i32, i32) -> bool;
 type WallpaperStatus = unsafe extern "C" fn(*mut c_void, u32);
+type ActivePolicy = unsafe extern "C" fn(*mut c_void, *mut c_char, usize) -> usize;
 
 unsafe extern "C" fn get_gl_proc(name: *const c_char) -> *const c_void {
     // SDL owns the OpenGL context and its procedure resolver.
@@ -104,6 +105,7 @@ fn run() -> Result<(), Box<dyn Error>> {
     let last_error: Symbol<LastError> = unsafe { library.get(b"screenshaver_kde_gl_last_error\0")? };
     let reload: Symbol<Reload> = unsafe { library.get(b"screenshaver_kde_gl_reload_wallpaper\0")? };
     let status: Symbol<WallpaperStatus> = unsafe { library.get(b"screenshaver_kde_gl_wallpaper_status\0")? };
+    let active_policy: Symbol<ActivePolicy> = unsafe { library.get(b"screenshaver_kde_gl_active_policy\0")? };
     let renderer = unsafe { create(Some(get_gl_proc), width as i32, height as i32, 1) };
     if renderer.is_null() {
         let ptr = unsafe { last_error() };
@@ -136,6 +138,7 @@ fn run() -> Result<(), Box<dyn Error>> {
     let frame_period = Duration::from_secs_f64(1.0 / fps as f64);
     let mut next_frame = Instant::now();
     let mut seq = 0u64;
+    let mut last_policy: Option<String> = None;
     eprintln!("[PLASMA PRODUCER] rendering {width}x{height} at up to {fps} fps into {}", output_path.display());
     while !stop.load(Ordering::Relaxed) {
         // Acknowledgments are emitted only after the render thread has
@@ -228,6 +231,19 @@ fn run() -> Result<(), Box<dyn Error>> {
         unsafe { (*seq_ptr).store(seq, Ordering::Release) };
         FileExt::unlock(&file)?;
         unsafe { status(guard.renderer, 1) }; // Rendering heartbeat after frame publication
+        let mut policy_buffer = [0u8; 16384];
+        let policy_length = unsafe {
+            active_policy(guard.renderer, policy_buffer.as_mut_ptr().cast(), policy_buffer.len())
+        };
+        if policy_length > 0 && policy_length < policy_buffer.len() {
+            if let Ok(policy) = std::str::from_utf8(&policy_buffer[..policy_length]) {
+                if last_policy.as_deref() != Some(policy) {
+                    // A single line, validated by the supervisor as structured JSON.
+                    eprintln!("[PLASMA POLICY] {policy}");
+                    last_policy = Some(policy.to_owned());
+                }
+            }
+        }
         next_frame += frame_period;
         let now = Instant::now();
         if next_frame > now { thread::sleep(next_frame - now); }

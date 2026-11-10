@@ -1,6 +1,6 @@
 //! Process-owned KDE Plasma frame producer supervisor.
 //! This module does not select Plasma wallpapers or start a legacy renderer.
-use std::{env,fs,io::{Read,Write,BufRead,BufReader},os::unix::fs::MetadataExt,path::{Path,PathBuf},process::{Child,ChildStdin,Command,Stdio},thread,sync::mpsc::{self,Receiver},time::{Duration,Instant}};
+use std::{env,fs,io::{Read,Write,BufRead,BufReader},os::unix::fs::MetadataExt,path::{Path,PathBuf},process::{Child,ChildStdin,Command,Stdio},thread,sync::{Arc,RwLock},sync::mpsc::{self,Receiver},time::{Duration,Instant}};
 
 const HEADER_SIZE: usize = 64;
 const MAGIC: &[u8;8] = b"SSPLFR01";
@@ -172,12 +172,21 @@ impl ProducerSettings {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+pub struct ActiveProducerPolicy {
+    pub policy_id: i64,
+    pub policy_name: String,
+    pub shader_name: String,
+    pub shader_path: Option<PathBuf>,
+}
+
 pub struct ProducerSupervisor {
     child: Child,
     frame_file: PathBuf,
     owned_inode: Option<(u64,u64)>,
     control: Option<ChildStdin>,
     acknowledgments: Receiver<String>,
+    active_policy: Arc<RwLock<Option<ActiveProducerPolicy>>>,
 }
 
 impl ProducerSupervisor {
@@ -196,19 +205,30 @@ impl ProducerSupervisor {
         let control = child.stdin.take().ok_or("Producer stdin pipe unavailable")?;
         let stderr = child.stderr.take().ok_or("Producer stderr pipe unavailable")?;
         let (tx, acknowledgments) = mpsc::channel();
+        let active_policy = Arc::new(RwLock::new(None));
+        let policy_for_reader = Arc::clone(&active_policy);
         thread::Builder::new().name("plasma-producer-ack".into()).spawn(move || {
             for line in BufReader::new(stderr).lines() {
                 match line {
                     Ok(line) => {
                         // Keep normal diagnostics visible while forwarding control ACKs.
                         eprintln!("{line}");
+                        if let Some(json) = line.strip_prefix("[PLASMA POLICY] ") {
+                            if let Ok(policy) = serde_json::from_str::<ActiveProducerPolicy>(json) {
+                                if !policy.policy_name.is_empty() && !policy.shader_name.is_empty() {
+                                    if let Ok(mut current) = policy_for_reader.write() {
+                                        *current = Some(policy);
+                                    }
+                                }
+                            }
+                        }
                         if line.starts_with("[PLASMA CONTROL] ") && tx.send(line).is_err() { break; }
                     }
                     Err(_) => break,
                 }
             }
         }).map_err(|e| format!("Cannot monitor producer acknowledgments: {e}"))?;
-        let mut supervisor = Self { child, frame_file: settings.frame_file.clone(), owned_inode: None, control: Some(control), acknowledgments };
+        let mut supervisor = Self { child, frame_file: settings.frame_file.clone(), owned_inode: None, control: Some(control), acknowledgments, active_policy };
         if let Err(error) = supervisor.wait_for_frames(Duration::from_secs(12)) {
             supervisor.stop();
             return Err(error);
@@ -300,6 +320,12 @@ impl ProducerSupervisor {
                 Err(mpsc::RecvTimeoutError::Disconnected) => return Err("Producer acknowledgment stream closed".into()),
             }
         }
+    }
+
+    /// Last policy reported after a successfully published producer frame.
+    /// The caller must independently verify Plasma presenter readiness.
+    pub fn active_policy(&self) -> Option<ActiveProducerPolicy> {
+        self.active_policy.read().ok().and_then(|value| value.clone())
     }
 
     pub fn frame_file(&self) -> &Path { &self.frame_file }

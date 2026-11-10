@@ -395,6 +395,35 @@ pub unsafe extern "C" fn screenshaver_kde_gl_render(
     }
 }
 
+/// Return the renderer's actual accepted policy, not a playlist prediction.
+/// The caller owns the buffer; zero means the buffer is too small or invalid.
+/// Metadata is serialized as JSON to preserve names and paths containing tabs
+/// or newlines. This function is called on the producer's GL/render thread.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn screenshaver_kde_gl_active_policy(
+    renderer: *mut KdeFrameRenderer,
+    buffer: *mut c_char,
+    capacity: usize,
+) -> usize {
+    if renderer.is_null() || buffer.is_null() || capacity == 0 { return 0; }
+    let renderer = unsafe { &*renderer };
+    if !renderer.wallpaper_mode { return 0; }
+    let metadata = renderer.engine.current_metadata();
+    let payload = serde_json::json!({
+        "policy_id": metadata.policy_id,
+        "policy_name": metadata.policy_name,
+        "shader_name": metadata.shader_name,
+        "shader_path": metadata.shader_path,
+    }).to_string();
+    let bytes = payload.as_bytes();
+    if bytes.len() >= capacity { return 0; }
+    unsafe {
+        std::ptr::copy_nonoverlapping(bytes.as_ptr(), buffer.cast::<u8>(), bytes.len());
+        *buffer.add(bytes.len()) = 0;
+    }
+    bytes.len()
+}
+
 /// Producer-confirmed wallpaper lifecycle transition. State codes are private
 /// to the producer/bridge contract: 0=Starting, 1=Rendering, 2=Paused,
 /// 3=Stopping, 4=Clear. Never infer presentation from this alone.
