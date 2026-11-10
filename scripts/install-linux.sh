@@ -860,6 +860,15 @@ build_kde_native_integration() {
     [[ -f "${PROJECT_DIR}/kde-renderer/target/release/libscreenshaver.so" ]] ||
         die "KDE renderer shared library missing after build."
 
+    # Independent production frame producer: separate Cargo crate, not part of
+    # the main binary or the KDE renderer library crate.
+    local producer_manifest="${PROJECT_DIR}/kde-wallpaper-producer/Cargo.toml"
+    local producer_binary="${PROJECT_DIR}/kde-wallpaper-producer/target/release/screenshaver-plasma-producer"
+    [[ -f "$producer_manifest" ]] || die "KDE wallpaper producer manifest missing: $producer_manifest"
+    log "Building the KDE wallpaper frame producer (release)"
+    cargo build --release --locked --manifest-path "$producer_manifest"
+    [[ -x "$producer_binary" ]] || die "KDE wallpaper producer executable missing after build: $producer_binary"
+
     log "Building the KDE Qt6 native host plugin (release)"
     # The KDE host build script also publishes a user-level runtime generation
     # for live development. An installer must NOT modify that selection: it may
@@ -900,6 +909,12 @@ install_kde_native_integration() {
     "${SUDO[@]}" install -Dm755 "${source}/libscreenshaver.so" \
         "${INSTALL_PREFIX}/lib/screenshaver/kde/libscreenshaver.so"
 
+    # Install the independent producer at the exact path resolved by
+    # ProducerSettings::from_environment() for /usr/local/bin/screenshaver.
+    "${SUDO[@]}" install -Dm755 \
+        "${PROJECT_DIR}/kde-wallpaper-producer/target/release/screenshaver-plasma-producer" \
+        "${INSTALL_PREFIX}/bin/screenshaver-plasma-producer"
+
     # The temporary wallpaper selection guard requires a user-level package.
     # Install the production package only; never select it or edit appletsrc.
     local package_source="${PROJECT_DIR}/kde-host/screenshaver-plasma-wallpaper"
@@ -928,6 +943,11 @@ verify_kde_native_integration() {
     for name in qmldir libScreenshaverNativeGLPlugin.so libscreenshaver.so; do
         [[ -f "${destination}/${name}" ]] || die "Installed KDE runtime asset missing: ${destination}/${name}"
     done
+    local producer_source="${PROJECT_DIR}/kde-wallpaper-producer/target/release/screenshaver-plasma-producer"
+    local producer_installed="${INSTALL_PREFIX}/bin/screenshaver-plasma-producer"
+    [[ -x "$producer_installed" ]] || die "KDE frame producer executable not installed: $producer_installed"
+    cmp -s -- "$producer_source" "$producer_installed" ||
+        die "Installed KDE frame producer differs from the release build."
     local root_library="${INSTALL_PREFIX}/lib/screenshaver/kde/libscreenshaver.so"
     [[ -f "$root_library" ]] || die "KDE producer renderer library missing: $root_library"
     cmp -s -- "${PROJECT_DIR}/kde-host/build-staging-release/qml/ScreenshaverNativeGL/libscreenshaver.so" "$root_library" ||

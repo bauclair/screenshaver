@@ -343,6 +343,7 @@ remove_kde_native_integration() {
     for name in qmldir libScreenshaverNativeGLPlugin.so libscreenshaver.so; do
         remove_file_if_present "${root}/${name}"
     done
+    remove_file_if_present "${INSTALL_PREFIX}/bin/screenshaver-plasma-producer"
     remove_file_if_present "${INSTALL_PREFIX}/lib/screenshaver/kde/libscreenshaver.so"
     remove_file_if_present "${INSTALL_PREFIX}/lib/screenshaver/kde/libScreenshaverKScreen.so"
     local data_home="${XDG_DATA_HOME:-$HOME/.local/share}"
@@ -557,6 +558,11 @@ verify_conventional_removal() {
         remaining=true
     fi
 
+    if [[ -e "${INSTALL_PREFIX}/bin/screenshaver-plasma-producer" ||
+          -L "${INSTALL_PREFIX}/bin/screenshaver-plasma-producer" ]]; then
+        warn "Screenshaver KDE frame producer remains installed."
+        remaining=true
+    fi
     local kde_root="${INSTALL_PREFIX}/lib/screenshaver/kde/qml/ScreenshaverNativeGL"
     if [[ -e "$kde_root/qmldir" || -e "$kde_root/libScreenshaverNativeGLPlugin.so" ||
           -e "$kde_root/libscreenshaver.so" ]]; then
