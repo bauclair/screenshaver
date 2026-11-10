@@ -1818,6 +1818,50 @@ They will become visible again when wallpaper rendering stops.";
         }
     }
 
+    // MATE/Marco may place Screenshaver's full-screen wallpaper above Caja's
+    // desktop-icon window. Check the actual Caja desktop window, not just its process.
+    // This warning does not affect MATE screen-lock or windowshader handling.
+    let mate_x11 = desktop_environment.is_mate() && lxde_x11;
+    let mate_caja = if wallpaper_enabled_this_launch
+        && lxde_wallpaper_fullscreen && mate_x11 {
+        crate::detect_desktop_environment::caja_manages_x11_desktop()
+    } else {
+        false
+    };
+    crate::logger::information(&logfile, &format!(
+        "[WALLPAPER] MATE compatibility check: enabled={} fullscreen={} mate_x11={} caja_desktop={}",
+        wallpaper_enabled_this_launch, lxde_wallpaper_fullscreen,
+        mate_x11, mate_caja,
+    ));
+    if wallpaper_enabled_this_launch && lxde_wallpaper_fullscreen
+        && mate_x11 && mate_caja
+    {
+        let title = crate::manage_localization::runtime_text(
+            "warning.desktop_icon_compatibility_title"
+        );
+        let message = "Screenshaver has detected MATE running under X11 with Caja managing desktop icons. \
+The full-screen animated wallpaper may obscure your desktop icons.\n\n\
+Your icons and files will not be deleted or modified. \
+They will become visible again when wallpaper rendering stops.";
+        match crate::display_message::confirm_warning(
+            &title, message, "Continue", "Exit",
+        ) {
+            Ok(true) => {}
+            Ok(false) => {
+                crate::logger::information(&logfile,
+                    "[WALLPAPER] MATE desktop icon warning declined; Screenshaver exiting normally");
+                drop(database_connection);
+                return;
+            }
+            Err(error) => {
+                crate::logger::warning(&logfile, &format!(
+                    "[WALLPAPER] Unable to display MATE compatibility warning; Screenshaver exiting: {}", error));
+                drop(database_connection);
+                return;
+            }
+        }
+    }
+
     // LXDE under X11 has no supported Screenshaver secure-lock presentation.
     // This restriction applies only to this launch; preserve the saved setting.
     let lxde_x11_lock_unsupported = lxde_session && lxde_x11;

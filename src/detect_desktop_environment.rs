@@ -360,6 +360,11 @@ pub fn nemo_manages_x11_desktop() -> bool {
     x11_desktop_window_present("nemo-desktop", "Nemo-desktop")
 }
 
+/// True when Caja owns a desktop-type X11 window, rather than just a file-manager window.
+pub fn caja_manages_x11_desktop() -> bool {
+    x11_desktop_window_present("caja", "Caja")
+}
+
 fn x11_desktop_window_present(expected_name: &str, expected_class: &str) -> bool {
     use std::ffi::{CStr, CString};
     use std::ptr;
