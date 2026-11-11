@@ -1472,13 +1472,11 @@ fn main() {
         cfg.screen_lock_enabled = false;
     }
 
-    let cinnamon_lock_unsupported = desktop_environment.is_cinnamon();
-
     // Cinnamon screen locking is not supported by Screenshaver at this time.
     // Warn only when the saved configuration enables locking, then suppress
     // Screenshaver locking for this process without changing screenshaver.toml.
     // Native Cinnamon screen locking remains independently configurable.
-    if cinnamon_lock_unsupported && cfg.screen_lock_enabled {
+    if desktop_environment.is_cinnamon() && cfg.screen_lock_enabled {
         let message = "Screenshaver screen locking is not supported on the Cinnamon desktop at this time.\n\n\
 To disable Screenshaver screen locking permanently, open:\n\
 ~/.config/screenshaver/screenshaver.toml\n\n\
@@ -1502,6 +1500,42 @@ Screen locking will be disabled for this Screenshaver launch only; your saved co
             eprintln!("[LOCK] {}", message);
         }
         cfg.screen_lock_enabled = false;
+    }
+
+    // Never activate an uninstalled MATE shader theme. A missing theme or
+    // presenter must not turn the native lock into a black screen.
+    // This is a per-launch suppression; the saved TOML remains unchanged.
+    let mut mate_lock_unavailable = false;
+    if desktop_environment.is_mate() && cfg.screen_lock_enabled {
+        let readiness = crate::construct_lock_screen_mate::inspect();
+        let reason = match readiness {
+            Ok(status) if status.ready_for_runtime() => None,
+            Ok(status) => Some(format!(
+                "MATE shader theme is incomplete: screensaver={}, presenter={}, registration={}",
+                status.mate_screensaver_available,
+                status.trusted_presenter_installed,
+                status.saver_desktop_registered,
+            )),
+            Err(error) => Some(format!("Unable to inspect MATE shader theme: {error}")),
+        };
+        if let Some(reason) = reason {
+            mate_lock_unavailable = true;
+            cfg.screen_lock_enabled = false;
+            crate::logger::warning(&logfile, &format!(
+                "[LOCK] MATE locking disabled for this launch: {reason}. Saved configuration unchanged."
+            ));
+            let message = format!(
+                "Screenshaver's MATE shader lock integration is not installed or ready.\n\n{reason}\n\nScreen locking is disabled for this Screenshaver launch only. Your screenshaver.toml file is unchanged. Screensaver, wallpaper, and windowshader operation remain available. Use MATE's native screen locking separately if needed."
+            );
+            if let Err(error) = crate::display_message::show_warning(
+                "MATE Screen Locking Unavailable", &message,
+            ) {
+                crate::logger::warning(&logfile, &format!(
+                    "[LOCK] Unable to display MATE readiness warning: {error}"
+                ));
+                eprintln!("[LOCK] {message}");
+            }
+        }
     }
 
     crate::logger::information(
@@ -2075,6 +2109,8 @@ Screensaver and wallpaper functionality will remain available. Screen locking mu
                         ),
                     );
                     eprintln!("[LOCK] MATE shader presentation unavailable: {error}");
+                    mate_lock_unavailable = true;
+                    cfg.screen_lock_enabled = false;
                     None
                 }
             }
@@ -2601,7 +2637,7 @@ Screensaver and wallpaper functionality will remain available. Screen locking mu
     // 60-second minimum whenever screen locking is enabled.
     //---------------------------------------------------------
 
-    if cfg.screen_lock_enabled && !lxde_x11_lock_unsupported && !cinnamon_lock_unsupported {
+    if cfg.screen_lock_enabled && !lxde_x11_lock_unsupported {
         println!(
             "[LOCK] Screen locking enabled; using screensaver idle timeout ({} seconds)",
             parsed_idle.duration.as_secs(),
@@ -3004,19 +3040,10 @@ Screensaver and wallpaper functionality will remain available. Screen locking mu
                             }
 
                             cfg = config_result.config;
-
-                            if cinnamon_lock_unsupported && cfg.screen_lock_enabled {
-
-                                crate::logger::warning(
-
-                                    &logfile,
-
-                                    "[LOCK] Cinnamon screen locking suppressed after configuration reload; saved configuration unchanged",
-
-                                );
-
+                            // A configuration reload must not bypass the MATE
+                            // presentation-readiness decision for this launch.
+                            if mate_lock_unavailable {
                                 cfg.screen_lock_enabled = false;
-
                             }
 
                             wallpaper_control.request_policy_reload(&cfg);
@@ -3248,7 +3275,7 @@ Screensaver and wallpaper functionality will remain available. Screen locking mu
                             )
                         };
 
-                    if cfg.screen_lock_enabled && !lxde_x11_lock_unsupported && !cinnamon_lock_unsupported {
+                    if cfg.screen_lock_enabled && !lxde_x11_lock_unsupported {
                         crate::logger::information(
                             &logfile,
                             "[LOCK] Screensaver idle threshold reached; engaging negotiated secure-lock backend",
@@ -3664,20 +3691,11 @@ Screensaver and wallpaper functionality will remain available. Screen locking mu
                                     }
 
                                     cfg = config_result.config;
-
-                                    if cinnamon_lock_unsupported && cfg.screen_lock_enabled {
-
-                                        crate::logger::warning(
-
-                                            &logfile,
-
-                                            "[LOCK] Cinnamon screen locking suppressed after configuration reload; saved configuration unchanged",
-
-                                        );
-
-                                        cfg.screen_lock_enabled = false;
-
-                                    }
+                            // A configuration reload must not bypass the MATE
+                            // presentation-readiness decision for this launch.
+                            if mate_lock_unavailable {
+                                cfg.screen_lock_enabled = false;
+                            }
                                 }
 
                                 Err(error) => {

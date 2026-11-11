@@ -135,6 +135,15 @@ impl MateRuntimeSession {
         }
         let snapshot = snapshot_path()?;
         recover_stale(&snapshot)?;
+        let status = crate::construct_lock_screen_mate::inspect()?;
+        if !status.ready_for_runtime() {
+            return Err(format!(
+                "MATE theme activation refused: native_screensaver={}, trusted_presenter={}, registered_theme={}",
+                status.mate_screensaver_available,
+                status.trusted_presenter_installed,
+                status.saver_desktop_registered,
+            ));
+        }
         let previous = current()?;
         if previous.mode.contains(['\n','\r']) || previous.themes.contains(['\n','\r']) {
             return Err("Unexpected multiline MATE settings".into());
