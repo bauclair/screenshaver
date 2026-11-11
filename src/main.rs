@@ -1472,6 +1472,36 @@ fn main() {
         cfg.screen_lock_enabled = false;
     }
 
+    // Cinnamon screen locking is not supported by Screenshaver at this time.
+    // Warn only when the saved configuration enables locking, then suppress
+    // Screenshaver locking for this process without changing screenshaver.toml.
+    // Native Cinnamon screen locking remains independently configurable.
+    if desktop_environment.is_cinnamon() && cfg.screen_lock_enabled {
+        let message = "Screenshaver screen locking is not supported on the Cinnamon desktop at this time.\n\n\
+To disable Screenshaver screen locking permanently, open:\n\
+~/.config/screenshaver/screenshaver.toml\n\n\
+Set the following directive:\n\
+screen_lock_enabled = false\n\n\
+Save the file and restart Screenshaver.\n\n\
+Screen locking will be disabled for this Screenshaver launch only; your saved configuration will not be changed. Screensaver, wallpaper, and windowshader rendering remain available. Use Cinnamon's native screen-locking facility if you require locking.";
+        crate::logger::warning(
+            &logfile,
+            "[LOCK] Cinnamon screen locking unsupported; disabled for this launch only. Saved configuration unchanged.",
+        );
+        if let Err(error) = crate::display_message::show_warning(
+            &crate::manage_localization::runtime_text(
+                "warning.screen_locking_unavailable_title"
+            ),
+            message,
+        ) {
+            crate::logger::warning(&logfile, &format!(
+                "[LOCK] Unable to display Cinnamon screen-lock warning: {}", error
+            ));
+            eprintln!("[LOCK] {}", message);
+        }
+        cfg.screen_lock_enabled = false;
+    }
+
     crate::logger::information(
         &logfile,
         "[MAIN] Screenshaver runtime started",
