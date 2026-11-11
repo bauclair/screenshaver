@@ -892,12 +892,39 @@ build_kde_native_integration() {
 }
 
 kde_qt_qml_root() {
-    command -v qtpaths6 >/dev/null 2>&1 || die "qtpaths6 is required for KDE QML installation."
-    local root
-    root="$(qtpaths6 --query QT_INSTALL_QML 2>/dev/null)" || die "Cannot discover Qt 6 QML directory."
-    [[ "$root" == /* && "$root" == */qml && -d "$root" ]] ||
-        die "Unexpected Qt 6 QML installation directory: $root"
-    printf '%s\n' "$root"
+    # Qt distributions do not agree on the qtpaths executable name.
+    # Prefer Qt's own queried installation path over a hard-coded distro path.
+    local tool root version candidate
+    for tool in qtpaths6 qtpaths qmake6; do
+        command -v "$tool" >/dev/null 2>&1 || continue
+        if [[ "$tool" == qmake6 ]]; then
+            version="$(qmake6 -query QT_VERSION 2>/dev/null || true)"
+            [[ "$version" == 6.* ]] || continue
+            root="$(qmake6 -query QT_INSTALL_QML 2>/dev/null || true)"
+        else
+            # qtpaths on some systems belongs to Qt5. Do not accept it
+            # without a positive Qt6 version check.
+            version="$("$tool" --qt-version 2>/dev/null || true)"
+            [[ "$version" == 6.* ]] || continue
+            root="$("$tool" --query QT_INSTALL_QML 2>/dev/null || true)"
+        fi
+        if [[ "$root" == /* && "$root" == */qml && -d "$root" ]]; then
+            printf '%s\n' "$root"
+            return 0
+        fi
+    done
+
+    # Arch/CachyOS and some other distributions install Qt6 QML modules
+    # here even when Qt's path-query utility is not installed. Only accept
+    # a directory containing existing Qt6 module namespaces.
+    for candidate in /usr/lib/qt6/qml /usr/lib64/qt6/qml; do
+        if [[ -d "$candidate/QtQuick" && -d "$candidate/QtQml" ]]; then
+            printf '%s\n' "$candidate"
+            return 0
+        fi
+    done
+
+    die "Cannot identify a Qt6 QML import directory. Install the Qt6 qtpaths/qmake utility or inspect the system's Qt6 QML module installation."
 }
 
 install_kde_native_integration() {
@@ -917,6 +944,7 @@ install_kde_native_integration() {
     # Screenshaver-private installation directory or a local qmldir plugin
     # imported as a JavaScript namespace.
     local qt_module="$(kde_qt_qml_root)/ScreenshaverNativeGL"
+    log "Installing Plasma QML module at $qt_module"
     if [[ -L "$qt_module" ]]; then
         die "Refusing to replace symlinked Qt module: $qt_module"
     fi
@@ -952,7 +980,8 @@ install_kde_native_integration() {
     install -m644 "${package_source}/contents/ui/main.qml" "${package_dest}/contents/ui/main.qml"
     # Bundle the QML native plugin beside main.qml. Plasma does not automatically
     # search the private /usr/local/lib/screenshaver/kde/qml module directory.
-    # The wallpaper's main.qml imports this module by its local relative path.
+    # The wallpaper's main.qml uses a named import; the Qt QML root copy above
+    # is required for discovery. The bundle is retained for packaging diagnostics.
     local bundled_module="${package_dest}/contents/ui/ScreenshaverNativeGL"
     if [[ -L "$bundled_module" ]]; then
         die "Refusing to install KDE QML module through a symlink: $bundled_module"
@@ -978,6 +1007,9 @@ verify_kde_native_integration() {
         [[ -f "${destination}/${name}" ]] || die "Installed KDE runtime asset missing: ${destination}/${name}"
     done
     local qt_module="$(kde_qt_qml_root)/ScreenshaverNativeGL"
+    log "Verifying Plasma QML module at $qt_module"
+    grep -Fxq "module ScreenshaverNativeGL" "${qt_module}/qmldir" ||
+        die "Qt QML module declaration is invalid: ${qt_module}/qmldir"
     for name in qmldir libScreenshaverNativeGLPlugin.so libscreenshaver.so; do
         [[ -f "${qt_module}/${name}" ]] || die "Qt QML module asset missing: ${qt_module}/${name}"
         cmp -s -- "${PROJECT_DIR}/kde-host/build-staging-release/qml/ScreenshaverNativeGL/${name}" "${qt_module}/${name}" ||
