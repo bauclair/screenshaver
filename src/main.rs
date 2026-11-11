@@ -1472,11 +1472,13 @@ fn main() {
         cfg.screen_lock_enabled = false;
     }
 
+    let cinnamon_lock_unsupported = desktop_environment.is_cinnamon();
+
     // Cinnamon screen locking is not supported by Screenshaver at this time.
     // Warn only when the saved configuration enables locking, then suppress
     // Screenshaver locking for this process without changing screenshaver.toml.
     // Native Cinnamon screen locking remains independently configurable.
-    if desktop_environment.is_cinnamon() && cfg.screen_lock_enabled {
+    if cinnamon_lock_unsupported && cfg.screen_lock_enabled {
         let message = "Screenshaver screen locking is not supported on the Cinnamon desktop at this time.\n\n\
 To disable Screenshaver screen locking permanently, open:\n\
 ~/.config/screenshaver/screenshaver.toml\n\n\
@@ -2599,7 +2601,7 @@ Screensaver and wallpaper functionality will remain available. Screen locking mu
     // 60-second minimum whenever screen locking is enabled.
     //---------------------------------------------------------
 
-    if cfg.screen_lock_enabled && !lxde_x11_lock_unsupported {
+    if cfg.screen_lock_enabled && !lxde_x11_lock_unsupported && !cinnamon_lock_unsupported {
         println!(
             "[LOCK] Screen locking enabled; using screensaver idle timeout ({} seconds)",
             parsed_idle.duration.as_secs(),
@@ -3003,6 +3005,20 @@ Screensaver and wallpaper functionality will remain available. Screen locking mu
 
                             cfg = config_result.config;
 
+                            if cinnamon_lock_unsupported && cfg.screen_lock_enabled {
+
+                                crate::logger::warning(
+
+                                    &logfile,
+
+                                    "[LOCK] Cinnamon screen locking suppressed after configuration reload; saved configuration unchanged",
+
+                                );
+
+                                cfg.screen_lock_enabled = false;
+
+                            }
+
                             wallpaper_control.request_policy_reload(&cfg);
 
                             crate::logger::information(
@@ -3232,7 +3248,7 @@ Screensaver and wallpaper functionality will remain available. Screen locking mu
                             )
                         };
 
-                    if cfg.screen_lock_enabled && !lxde_x11_lock_unsupported {
+                    if cfg.screen_lock_enabled && !lxde_x11_lock_unsupported && !cinnamon_lock_unsupported {
                         crate::logger::information(
                             &logfile,
                             "[LOCK] Screensaver idle threshold reached; engaging negotiated secure-lock backend",
@@ -3648,6 +3664,20 @@ Screensaver and wallpaper functionality will remain available. Screen locking mu
                                     }
 
                                     cfg = config_result.config;
+
+                                    if cinnamon_lock_unsupported && cfg.screen_lock_enabled {
+
+                                        crate::logger::warning(
+
+                                            &logfile,
+
+                                            "[LOCK] Cinnamon screen locking suppressed after configuration reload; saved configuration unchanged",
+
+                                        );
+
+                                        cfg.screen_lock_enabled = false;
+
+                                    }
                                 }
 
                                 Err(error) => {
