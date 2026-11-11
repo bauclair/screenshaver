@@ -45,6 +45,7 @@ DISTRO_NAME=""
 DESKTOP_ENVIRONMENT=""
 XFCE_INTEGRATION=false
 KDE_INTEGRATION=false
+KDE_QML_SESSION_REFRESH_NEEDED=false
 MATE_INTEGRATION=false
 XFCE_SAVER_DIR=""
 
@@ -945,6 +946,17 @@ install_kde_native_integration() {
     # imported as a JavaScript namespace.
     local qt_module="$(kde_qt_qml_root)/ScreenshaverNativeGL"
     log "Installing Plasma QML module at $qt_module"
+    # A running plasmashell may retain a failed QML import lookup. Detect a
+    # changed module before replacing it, so installation cannot silently
+    # imply that an existing Plasma session has refreshed its QML engine.
+    if pgrep -u "$(id -u)" -x plasmashell >/dev/null 2>&1; then
+        for name in qmldir libScreenshaverNativeGLPlugin.so libscreenshaver.so; do
+            if [[ ! -f "${qt_module}/${name}" ]] || ! cmp -s -- "${source}/${name}" "${qt_module}/${name}"; then
+                KDE_QML_SESSION_REFRESH_NEEDED=true
+                break
+            fi
+        done
+    fi
     if [[ -L "$qt_module" ]]; then
         die "Refusing to replace symlinked Qt module: $qt_module"
     fi
@@ -1020,6 +1032,33 @@ verify_kde_native_integration() {
             missing="$(ldd "${qt_module}/${name}" 2>/dev/null | awk '/not found/ { print $1 }')"
             [[ -z "$missing" ]] || die "Unresolved Qt QML dependencies for ${name}: ${missing}"
         done
+    fi
+    # Exercise the installed QML module with an actual Qt engine. This verifies
+    # discovery and plugin loading; it does NOT certify an already-running
+    # plasmashell QML engine or its cached failed imports.
+    if command -v qml6 >/dev/null 2>&1; then
+        local qml_probe_dir qml_probe_output
+        qml_probe_dir="$(mktemp -d)"
+        cat > "${qml_probe_dir}/probe.qml" <<'QML_EOF'
+import QtQuick 2.15
+import ScreenshaverNativeGL 1.0
+Item {
+    Component.onCompleted: {
+        console.log("SCREENSHAVER_QML_IMPORT_PASS")
+        Qt.quit()
+    }
+}
+QML_EOF
+        if ! qml_probe_output="$(QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software timeout 15s qml6 -I "$(kde_qt_qml_root)" "${qml_probe_dir}/probe.qml" 2>&1)"; then
+            rm -rf -- "$qml_probe_dir"
+            die "Qt6 could not import the installed Screenshaver module: $qml_probe_output"
+        fi
+        rm -rf -- "$qml_probe_dir"
+        [[ "$qml_probe_output" == *SCREENSHAVER_QML_IMPORT_PASS* ]] ||
+            die "Qt6 import probe did not complete: $qml_probe_output"
+        log "Qt6 native QML import probe passed (fresh engine only)"
+    else
+        warn "qml6 is unavailable; the installed native QML module could not be import-tested."
     fi
     local producer_source="${PROJECT_DIR}/kde-wallpaper-producer/target/release/screenshaver-plasma-producer"
     local producer_installed="${INSTALL_PREFIX}/bin/screenshaver-plasma-producer"
@@ -1438,6 +1477,12 @@ install_conventional_linux() {
     install_mate_lock_integration
     refresh_desktop_caches
     verify_conventional_installation
+    if $KDE_QML_SESSION_REFRESH_NEEDED; then
+        warn "The KDE QML module changed while plasmashell was running."
+        warn "The existing Plasma session may retain a failed import or old plugin instance."
+        warn "A complete logout/login may be required before KDE wallpaper activation works."
+        warn "Do not interpret the fresh-engine QML probe as live Plasma readiness."
+    fi
     print_conventional_success
     if $MATE_INTEGRATION; then
         cat <<'MATE_NOTICE'
