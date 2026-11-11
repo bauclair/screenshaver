@@ -40,6 +40,7 @@ mod manage_screen_lock_kde;
 mod manage_wallpaper_kde;
 mod manage_windowshader_kde;
 mod detect_desktop_environment;
+mod detect_display_manager;
 mod manage_textures;
 mod manage_policies;
 mod classify_shader;
@@ -1438,6 +1439,38 @@ fn main() {
         ),
     );
 
+
+    // Capture the active display manager at startup. Do not infer the active
+    // manager from Debian's configured default or from the desktop environment.
+    let active_display_manager = crate::detect_display_manager::detect();
+    crate::logger::information(&logfile, &format!(
+        "[SESSION] Active display manager: {}", active_display_manager.name()
+    ));
+    println!("[MAIN] Active display manager = {}", active_display_manager.name());
+
+    // GNOME secure locking is only enabled for GDM in Screenshaver's supported
+    // integration. Preserve persistent settings and all other rendering modes.
+    if desktop_environment.is_gnome() && cfg.screen_lock_enabled
+        && !active_display_manager.is_gdm()
+    {
+        let distro = crate::detect_display_manager::distribution();
+        let message = crate::detect_display_manager::warning_message(
+            &active_display_manager, &distro
+        );
+        crate::logger::warning(&logfile, &format!(
+            "[LOCK] GNOME locking suppressed for this launch: active manager {} is not verified GDM",
+            active_display_manager.name()
+        ));
+        if let Err(error) = crate::display_message::show_warning(
+            "GNOME Screen Locking Compatibility", &message
+        ) {
+            crate::logger::warning(&logfile, &format!(
+                "[LOCK] Unable to display GNOME display-manager warning: {}", error
+            ));
+            eprintln!("[LOCK] {}", message);
+        }
+        cfg.screen_lock_enabled = false;
+    }
 
     crate::logger::information(
         &logfile,
