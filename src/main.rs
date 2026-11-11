@@ -631,14 +631,7 @@ fn main() {
         }
 
         crate::parse_arguments::Command::ConstructLockScreenMate => {
-            let desktop = crate::detect_desktop_environment::detect();
-            if !desktop.is_mate() {
-                eprintln!(
-                    "MATE lock-screen configuration was not modified: detected desktop is {}.",
-                    desktop.name()
-                );
-                std::process::exit(1);
-            }
+            // Registration is allowed from another active desktop.
 
             match crate::construct_lock_screen_mate::configure_user() {
                 Ok(status) => {
@@ -662,25 +655,7 @@ fn main() {
 
         crate::parse_arguments::Command::ConstructLockScreenXfce => {
 
-            let desktop_environment =
-                crate::detect_desktop_environment::detect();
-
-
-            println!(
-                "Detected desktop environment: {}",
-                desktop_environment.name()
-            );
-
-
-            if !desktop_environment.is_xfce() {
-
-                eprintln!(
-                    "Screenshaver Xfce lock-screen integration was not modified because Xfce is not the detected desktop environment."
-                );
-
-                return;
-            }
-
+            // Registration is independent of the active desktop session.
 
             match crate::construct_lock_screen_xfce::configure_user() {
 

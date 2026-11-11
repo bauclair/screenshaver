@@ -210,25 +210,22 @@ This script must remain in the repository's scripts directory."
 # -----------------------------------------------------------------------------
 
 detect_desktop_environment() {
-    local desktop_value
+    # Session detection is informational only. Installation capability is
+    # determined independently so changing desktops does not require reinstall.
+    DESKTOP_ENVIRONMENT="${XDG_CURRENT_DESKTOP:-${XDG_SESSION_DESKTOP:-${DESKTOP_SESSION:-}}}"
+    KDE_INTEGRATION=false
+    XFCE_INTEGRATION=false
+    MATE_INTEGRATION=false
 
-    desktop_value="${XDG_CURRENT_DESKTOP:-${XDG_SESSION_DESKTOP:-${DESKTOP_SESSION:-}}}"
-    DESKTOP_ENVIRONMENT="$desktop_value"
-
-    case "${desktop_value,,}" in
-        *kde*|*plasma*)
-            KDE_INTEGRATION=true
-            ;;
-        *xfce*)
-            XFCE_INTEGRATION=true
-            ;;
-        *mate*)
-            MATE_INTEGRATION=true
-            ;;
-        *)
-            XFCE_INTEGRATION=false
-            ;;
-    esac
+    if command -v plasmashell >/dev/null 2>&1; then
+        KDE_INTEGRATION=true
+    fi
+    if [[ -x /usr/bin/xfce4-screensaver ]]; then
+        XFCE_INTEGRATION=true
+    fi
+    if [[ -x /usr/bin/mate-screensaver ]]; then
+        MATE_INTEGRATION=true
+    fi
 }
 
 is_debian_family() {
@@ -557,7 +554,7 @@ install_void_dependencies() {
 }
 
 install_xfce_runtime_dependency() {
-    $XFCE_INTEGRATION || return 0
+    [[ "${DESKTOP_ENVIRONMENT,,}" == *xfce* ]] || return 0
 
     if ! is_debian_family; then
         warn \
@@ -574,7 +571,7 @@ installation will continue without modifying the native screen locker."
 }
 
 install_mate_indicator_runtime_dependency() {
-    $MATE_INTEGRATION || return 0
+    [[ "${DESKTOP_ENVIRONMENT,,}" == *mate* ]] || return 0
 
     if ! is_debian_family; then
         warn "MATE was detected, but automatic Ayatana provisioning is currently supported only for Debian-family distributions. Screenshaver installation will continue."
@@ -1177,21 +1174,10 @@ install_application() {
 
 resolve_xfce_saver_directory() {
     XFCE_SAVER_DIR=""
-
     $XFCE_INTEGRATION || return 0
-
-    # The trusted-presenter path is an Xfce integration detail, not a distro
-    # family property.  Linux Mint/Ubuntu-family systems and Void Linux both
-    # provide xfce4-screensaver's helper directory at this location.
-    #
-    # Keep this path synchronized with construct_lock_screen_xfce.rs, which
-    # registers the presenter as /usr/libexec/xfce4-screensaver/screenshaver.
-    if [[ -d /usr/libexec/xfce4-screensaver ]]; then
-        XFCE_SAVER_DIR="/usr/libexec/xfce4-screensaver"
-        return 0
-    fi
-
-    return 1
+    # This is Screenshaver's stable launcher location, not a claim about
+    # the distribution's xfce4-screensaver executable directory.
+    XFCE_SAVER_DIR="/usr/libexec/xfce4-screensaver"
 }
 
 
@@ -1206,8 +1192,8 @@ install_mate_lock_integration() {
 
     $MATE_INTEGRATION || return 0
 
-    if [[ ! -x /usr/bin/mate-screensaver || ! -d /usr/libexec/mate-screensaver ]]; then
-        warn "MATE native screensaver or its presenter directory is unavailable; MATE lock integration was not installed."
+    if [[ ! -x /usr/bin/mate-screensaver ]]; then
+        warn "MATE native screensaver is unavailable; MATE lock integration was not installed."
         return 0
     fi
 
@@ -1414,10 +1400,13 @@ verify_conventional_installation() {
     fi
 
     if $XFCE_INTEGRATION; then
-        if resolve_xfce_saver_directory; then
-            [[ -x "${XFCE_SAVER_DIR}/${BINARY_NAME}" ]] ||
-                die "Trusted Xfce presenter is missing after installation."
-        fi
+        resolve_xfce_saver_directory
+        [[ -x "${XFCE_SAVER_DIR}/${BINARY_NAME}" ]] ||
+            die "Trusted Xfce presenter is missing after installation."
+    fi
+    if $MATE_INTEGRATION; then
+        [[ -x /usr/libexec/mate-screensaver/screenshaver ]] ||
+            die "Trusted MATE presenter is missing after installation."
     fi
 }
 
@@ -1462,6 +1451,7 @@ install_conventional_linux() {
     initialize_sudo
     validate_runtime_assets
     install_build_dependencies
+    detect_desktop_environment
     verify_gnome_extension_prerequisite
     if $KDE_INTEGRATION; then
         install_kde_build_dependencies
@@ -1484,6 +1474,8 @@ install_conventional_linux() {
         warn "Do not interpret the fresh-engine QML probe as live Plasma readiness."
     fi
     print_conventional_success
+    printf 'Desktop integration inventory: KDE=%s Xfce=%s MATE=%s\n' \
+        "$KDE_INTEGRATION" "$XFCE_INTEGRATION" "$MATE_INTEGRATION"
     if $MATE_INTEGRATION; then
         cat <<'MATE_NOTICE'
 MATE system tray: If the Screenshaver icon is not visible, add
