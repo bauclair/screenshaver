@@ -90,11 +90,14 @@ impl WallpaperLayerStrategy {
         for variable in [
             "XDG_CURRENT_DESKTOP",
             "DESKTOP_SESSION",
+            "XDG_SESSION_DESKTOP",
+            "HYPRLAND_INSTANCE_SIGNATURE",
         ] {
             if let Ok(value) = std::env::var(variable) {
-                if value
-                    .to_ascii_lowercase()
-                    .contains("sway")
+                let desktop = value.to_ascii_lowercase();
+                if desktop.contains("sway")
+                    || desktop.contains("hyprland")
+                    || (variable == "HYPRLAND_INSTANCE_SIGNATURE" && !value.is_empty())
                 {
                     return Self::BottomCompatibility;
                 }
@@ -116,7 +119,7 @@ impl WallpaperLayerStrategy {
     fn description(self) -> &'static str {
         match self {
             Self::Background => "standard background layer",
-            Self::BottomCompatibility => "Sway bottom-layer compatibility",
+            Self::BottomCompatibility => "Sway/Hyprland bottom-layer compatibility",
         }
     }
 }
