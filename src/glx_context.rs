@@ -46,7 +46,6 @@ impl GlxFramebufferConfig {
             );
         }
 
-        println!("Choosing GLX framebuffer configuration...");
 
         let attributes = [
             glx::GLX_X_RENDERABLE,
@@ -111,7 +110,6 @@ impl GlxFramebufferConfig {
             );
         }
 
-        println!("Selected compatible GLX framebuffer configuration and X11 visual.");
 
         Ok(Self {
             fb_config,
@@ -165,7 +163,6 @@ impl GlxContext {
             );
         }
 
-        println!("Creating GLX context...");
 
         let context = unsafe {
             glx::glXCreateNewContext(
@@ -181,7 +178,6 @@ impl GlxContext {
             return Err("glXCreateNewContext() failed.".to_string());
         }
 
-        println!("Created GLX context.");
 
         Ok(Self { context })
     }
@@ -198,7 +194,6 @@ impl GlxContext {
             );
         }
 
-        println!("Making GLX context current...");
 
         let succeeded = unsafe {
             glx::glXMakeContextCurrent(
@@ -213,7 +208,6 @@ impl GlxContext {
             return Err("glXMakeContextCurrent() failed.".to_string());
         }
 
-        println!("GLX context is current.");
 
         Ok(())
     }
@@ -255,7 +249,6 @@ impl GlxContext {
             return;
         }
 
-        println!("Destroying GLX context...");
 
         unsafe {
             glx::glXDestroyContext(display, self.context);
@@ -263,7 +256,6 @@ impl GlxContext {
 
         self.context = ptr::null_mut();
 
-        println!("Destroyed GLX context.");
     }
 }
 
