@@ -9,6 +9,7 @@ use x11::xlib;
 
 const XSCREENSAVER_WINDOW_ENV: &str = "XSCREENSAVER_WINDOW";
 const XFCE_AUTH_DIALOG_EXECUTABLE: &str = "/usr/libexec/xfce4-screensaver-dialog";
+const MATE_AUTH_DIALOG_EXECUTABLE: &str = "/usr/lib/mate-screensaver/mate-screensaver-dialog";
 const XFCE_AUTH_DIALOG_POLL_INTERVAL: Duration = Duration::from_millis(100);
 
 /// Returns the X11 window supplied by xfce4-screensaver for an external
@@ -563,8 +564,7 @@ fn xfce_authentication_dialog_running() -> Result<bool, String> {
         )
         .map_err(|error| {
             format!(
-                "Unable to read /proc while checking for {}: {}",
-                XFCE_AUTH_DIALOG_EXECUTABLE,
+                "Unable to read /proc while checking for native authentication dialogs: {}",
                 error,
             )
         })?;
@@ -609,8 +609,8 @@ fn xfce_authentication_dialog_running() -> Result<bool, String> {
                 .next()
                 .unwrap_or(&[]);
 
-        if executable
-            == XFCE_AUTH_DIALOG_EXECUTABLE.as_bytes()
+        if executable == XFCE_AUTH_DIALOG_EXECUTABLE.as_bytes()
+            || executable == MATE_AUTH_DIALOG_EXECUTABLE.as_bytes()
         {
             return Ok(
                 true

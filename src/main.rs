@@ -826,9 +826,15 @@ fn main() {
         std::env::var_os(
             "XSCREENSAVER_WINDOW"
         ).is_some();
+    // Tagged MATE children are presenters even when the host has not
+    // provided a presentation window. Keep the resident log intact and
+    // report the missing window through the presenter error path.
+    let mate_presentation_child =
+        std::env::var("SCREENSHAVER_MATE_PRESENTATION").as_deref() == Ok("1")
+        || std::env::var("SCREENSHAVER_MATE_PRESENTATION_TEST").as_deref() == Ok("1");
 
 
-    if xfce_presentation_child {
+    if xfce_presentation_child || mate_presentation_child {
         crate::logger::ensure_log_exists(
             &logfile
         );
@@ -850,7 +856,7 @@ fn main() {
         ));
     }
 
-    if xfce_presentation_child {
+    if xfce_presentation_child || mate_presentation_child {
 
         // MATE's screensaver engine child may not inherit desktop/session
         // identification variables. The explicit test launcher flag selects

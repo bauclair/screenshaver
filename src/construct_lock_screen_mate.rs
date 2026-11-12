@@ -10,7 +10,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
 const MATE_SCREENSAVER: &str = "/usr/bin/mate-screensaver";
-const TRUSTED_PRESENTER: &str = "/usr/libexec/mate-screensaver/screenshaver";
+const TRUSTED_PRESENTER: &str = "/usr/lib/mate-screensaver/mate-screensaver/screenshaver";
 const THEME_FILENAME: &str = "screenshaver-mate.desktop";
 
 #[derive(Debug, Clone)]
