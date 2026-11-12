@@ -85,30 +85,30 @@ pub fn run(
         "[LOCK] Requesting MATE screen lock",
     );
 
-    let _: () =
-        proxy
-            .call(
-                "Lock",
-                &(),
-            )
-            .map_err(
-                |error| {
-                    format!(
-                        "MATE screen-lock request failed: {}",
-                        error,
-                    )
-                }
-            )?;
+    let lock_request: Result<(), _> = proxy.call("Lock", &());
+    if let Err(error) = lock_request {
+        crate::logger::warning(logfile, &format!(
+            "[LOCK] MATE Lock D-Bus call failed: {error}; verifying native state before recovery"
+        ));
+        // A failed reply does not prove that the lock was not engaged.
+        // Continue to verify GetActive rather than releasing presentation.
+    }
 
     let confirmation_deadline =
         Instant::now()
             + LOCK_CONFIRMATION_TIMEOUT;
 
     loop {
-        let active =
-            get_active(
-                &proxy
-            )?;
+        let active = match get_active(&proxy) {
+            Ok(active) => active,
+            Err(error) => {
+                crate::logger::warning(logfile, &format!(
+                    "[LOCK] MATE activation state unavailable: {error}; retrying"
+                ));
+                std::thread::sleep(LOCK_STATE_POLL_INTERVAL);
+                continue;
+            }
+        };
 
         if active {
             break;
@@ -117,12 +117,13 @@ pub fn run(
         if Instant::now()
             >= confirmation_deadline
         {
-            return Err(
-                format!(
-                    "MATE did not confirm an active screen lock within {} seconds",
-                    LOCK_CONFIRMATION_TIMEOUT.as_secs(),
-                )
-            );
+            if running.load(Ordering::SeqCst) {
+                wallpaper_control.resume_and_wait_for_frame(running);
+            }
+            return Err(format!(
+                "MATE did not confirm an active screen lock within {} seconds",
+                LOCK_CONFIRMATION_TIMEOUT.as_secs(),
+            ));
         }
 
         std::thread::sleep(
@@ -157,10 +158,14 @@ pub fn run(
                 true;
         }
 
-        if !get_active(
-            &proxy
-        )? {
-            break;
+        match get_active(&proxy) {
+            Ok(false) => break,
+            Ok(true) => {},
+            Err(error) => {
+                crate::logger::warning(logfile, &format!(
+                    "[LOCK] MATE unlock state unavailable: {error}; keeping desktop presentation paused"
+                ));
+            }
         }
 
         std::thread::sleep(
@@ -176,9 +181,10 @@ pub fn run(
     if running.load(
         Ordering::SeqCst
     ) {
-        wallpaper_control.resume_and_wait_for_frame(
-            running
-        );
+        if !wallpaper_control.resume_and_wait_for_frame(running) {
+            crate::logger::warning(logfile,
+                "[LOCK] MATE unlocked, but one or more desktop renderer frames were not confirmed");
+        }
     } else {
         crate::logger::information(
             logfile,

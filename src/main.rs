@@ -2920,12 +2920,13 @@ Screensaver and wallpaper functionality will remain available. Screen locking mu
 
 
     let mut screensaver_waiting_for_active = false;
+    let mut deferred_tray_command: Option<crate::tray_icon::TrayCommand> = None;
 
     while running.load(Ordering::SeqCst) {
 
         if tray_channel_connected {
 
-            match tray_command_receiver.try_recv() {
+            match deferred_tray_command.take().map(Ok).unwrap_or_else(|| tray_command_receiver.try_recv()) {
 
             Ok(crate::tray_icon::TrayCommand::Stop) => {
 
@@ -3326,11 +3327,75 @@ Screensaver and wallpaper functionality will remain available. Screen locking mu
                                 // Always use MATE's native locker, even when
                                 // shader-theme activation was unavailable.
                                 // Never fall through to the Wayland/PAM path.
-                                crate::manage_screen_lock_mate::run(
-                                    &logfile,
-                                    running.as_ref(),
-                                    &wallpaper_control,
-                                )
+                                // MATE authentication runs on a dedicated worker. The
+                                // resident thread remains responsive to tray commands;
+                                // destructive actions are deferred until native unlock.
+                                let lock_logfile = logfile.clone();
+                                let lock_running = Arc::clone(&running);
+                                let lock_presentation = wallpaper_control.clone();
+                                match std::thread::Builder::new()
+                                    .name("screenshaver-mate-lock".to_string())
+                                    .spawn(move || {
+                                        crate::manage_screen_lock_mate::run(
+                                            &lock_logfile,
+                                            lock_running.as_ref(),
+                                            &lock_presentation,
+                                        )
+                                    })
+                                {
+                                    Ok(worker) => {
+                                        let mut pending_stop = false;
+                                        let mut pending_restart = false;
+                                        let mut pending_edit = None;
+                                        while !worker.is_finished() {
+                                            if tray_channel_connected {
+                                                match tray_command_receiver.try_recv() {
+                                                    Ok(crate::tray_icon::TrayCommand::Stop) => {
+                                                        pending_stop = true;
+                                                        pending_restart = false;
+                                                        crate::logger::information(&logfile,
+                                                            "[MATE LOCK] Tray Stop queued until native unlock");
+                                                    }
+                                                    Ok(crate::tray_icon::TrayCommand::Restart) => {
+                                                        pending_stop = true;
+                                                        pending_restart = true;
+                                                        crate::logger::information(&logfile,
+                                                            "[MATE LOCK] Tray Restart queued until native unlock");
+                                                    }
+                                                    Ok(command @ (crate::tray_icon::TrayCommand::Edit
+                                                        | crate::tray_icon::TrayCommand::EditWallpaper
+                                                        | crate::tray_icon::TrayCommand::EditWindowshader)) => {
+                                                        if !pending_stop {
+                                                            pending_edit = Some(command);
+                                                            crate::logger::information(&logfile,
+                                                                "[MATE LOCK] Tray Edit queued until native unlock");
+                                                        }
+                                                    }
+                                                    Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                                                        tray_channel_connected = false;
+                                                        crate::logger::warning(&logfile,
+                                                            "[MATE LOCK] Tray channel disconnected");
+                                                    }
+                                                    Err(std::sync::mpsc::TryRecvError::Empty) => {}
+                                                }
+                                            }
+                                            std::thread::sleep(Duration::from_millis(50));
+                                        }
+                                        let result = match worker.join() {
+                                            Ok(result) => result,
+                                            Err(_) => Err("MATE lock worker panicked".to_string()),
+                                        };
+                                        if pending_stop {
+                                            restart_requested = pending_restart;
+                                            running.store(false, Ordering::SeqCst);
+                                        } else if result.is_ok() {
+                                            deferred_tray_command = pending_edit;
+                                        }
+                                        result
+                                    }
+                                    Err(error) => Err(format!(
+                                        "Unable to start MATE lock worker: {error}")),
+                                }
 
                             } else if desktop_environment
                                 .is_gnome()
@@ -3530,9 +3595,14 @@ Screensaver and wallpaper functionality will remain available. Screen locking mu
                                     ),
                                 );
 
-                                wallpaper_control.resume_and_wait_for_frame(
-                                    running.as_ref()
-                                );
+                                // MATE lock failures may leave native lock state
+                                // unknown. Never expose desktop renderers over
+                                // a potentially active authentication surface.
+                                if !desktop_environment.is_mate() {
+                                    wallpaper_control.resume_and_wait_for_frame(
+                                        running.as_ref()
+                                    );
+                                }
                             }
                         }
 
