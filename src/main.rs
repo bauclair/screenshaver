@@ -806,10 +806,21 @@ fn main() {
         };
 
 
-    println!(
-        "Screenshaver configuration directory: {}",
-        config_dir.display()
-    );
+    // Native screensaver engines may close stdout or provide a descriptor
+    // that returns EIO. Never let a presentation child panic on a diagnostic.
+    // For ordinary launches, console reporting is best-effort as well.
+    let native_presentation_child =
+        std::env::var_os("XSCREENSAVER_WINDOW").is_some()
+        || std::env::var("SCREENSHAVER_MATE_PRESENTATION").as_deref() == Ok("1")
+        || std::env::var("SCREENSHAVER_MATE_PRESENTATION_TEST").as_deref() == Ok("1");
+    if !native_presentation_child {
+        use std::io::Write as _;
+        let _ = writeln!(
+            std::io::stdout(),
+            "Screenshaver configuration directory: {}",
+            config_dir.display()
+        );
+    }
 
 
     if let Err(error) = crate::manage_backup::ensure_directory() {
