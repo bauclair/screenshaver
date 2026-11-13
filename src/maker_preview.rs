@@ -1,16 +1,16 @@
 //! Isolated OpenGL 3.3 shader preview, rendered behind Maker's egui panels.
 use std::ffi::CString;
 
-const VERT: &str = "#version 330 core\nconst vec2 p[3] = vec2[3](vec2(-1,-1),vec2(3,-1),vec2(-1,3));\nout vec2 uv; void main(){vec2 q=p[gl_VertexID]; uv=q*.5+.5; gl_Position=vec4(q,0,1);}";
+const VERT: &str = "#version 330 core\nconst vec2 p[3] = vec2[3](vec2(-1,-1),vec2(3,-1),vec2(-1,3));\nout vec2 uv; void main(){vec2 q=p[gl_VertexID]; uv=q*0.5+0.5; gl_Position=vec4(q,0,1);}";
 const FRAG: &str = r#"#version 330 core
 in vec2 uv; out vec4 fragColor;
 uniform float u_time; uniform float u_frequency; uniform vec3 u_color; uniform vec2 u_resolution;
 void main() {
-    vec2 p = (gl_FragCoord.xy - .5*u_resolution) / max(u_resolution.y,1.);
-    float v = sin(p.x*16.*u_frequency + u_time) * cos(p.y*12.*u_frequency-u_time*.7);
-    float glow = .5 + .5*v;
-    vec3 col = mix(vec3(.015,.02,.04), u_color, pow(glow, 1.5));
-    fragColor = vec4(col,1.);
+    vec2 p = (gl_FragCoord.xy - 0.5*u_resolution) / max(u_resolution.y,1.0);
+    float v = sin(p.x*16.0*u_frequency + u_time) * cos(p.y*12.0*u_frequency-u_time*0.7);
+    float glow = 0.5 + 0.5*v;
+    vec3 col = mix(vec3(0.015,0.02,0.04), u_color, pow(glow, 1.5));
+    fragColor = vec4(col,1.0);
 }"#;
 
 pub struct Preview { program: u32, vao: u32 }
@@ -30,7 +30,7 @@ impl Preview {
     pub fn render(&mut self,w:i32,h:i32,t:f32,freq:f32,color:[f32;3])->Result<(),String>{
         unsafe {
             gl::Viewport(0,0,w,h);gl::Disable(gl::SCISSOR_TEST);gl::Disable(gl::DEPTH_TEST);
-            gl::ClearColor(.015,.02,.04,1.);gl::Clear(gl::COLOR_BUFFER_BIT);
+            gl::ClearColor(0.015,0.02,0.04,1.0);gl::Clear(gl::COLOR_BUFFER_BIT);
             gl::UseProgram(self.program);
             let loc=|name:&str|gl::GetUniformLocation(self.program,CString::new(name).unwrap().as_ptr());
             gl::Uniform1f(loc("u_time"),t);gl::Uniform1f(loc("u_frequency"),freq);

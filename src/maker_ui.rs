@@ -21,7 +21,7 @@ impl MakerUi {
     pub fn new(video:&sdl2::VideoSubsystem)->Result<Self,String>{
         let gl=unsafe{glow::Context::from_loader_function(|s|video.gl_get_proc_address(s) as *const _)};
         let painter=egui_glow::Painter::new(Arc::new(gl),"",None,false).map_err(|e|e.to_string())?;
-        Ok(Self{context:egui::Context::default(),painter,events:Vec::new(),pointer:egui::Pos2::ZERO,modifiers:egui::Modifiers::default(),start:Instant::now(),frequency:1.,color:[.25,.65,1.],expanded:true,inspector:false,open:true})
+        Ok(Self{context:egui::Context::default(),painter,events:Vec::new(),pointer:egui::Pos2::ZERO,modifiers:egui::Modifiers::default(),start:Instant::now(),frequency:1.0,color:[0.25,0.65,1.0],expanded:true,inspector:false,open:true})
     }
     pub fn frequency(&self)->f32{self.frequency}
     pub fn color(&self)->[f32;3]{self.color}
@@ -40,14 +40,14 @@ impl MakerUi {
                 use sdl2::keyboard::{Keycode,Mod};
                 self.modifiers=egui::Modifiers{alt:keymod.intersects(Mod::LALTMOD|Mod::RALTMOD),ctrl:keymod.intersects(Mod::LCTRLMOD|Mod::RCTRLMOD),shift:keymod.intersects(Mod::LSHIFTMOD|Mod::RSHIFTMOD),mac_cmd:false,command:keymod.intersects(Mod::LCTRLMOD|Mod::RCTRLMOD)};
                 if *repeat{return;}
-                let mapped=match *key{Keycode::Tab=>Some(egui::Key::Tab),Keycode::Enter=>Some(egui::Key::Enter),Keycode::Backspace=>Some(egui::Key::Backspace),Keycode::Delete=>Some(egui::Key::Delete),Keycode::Space=>Some(egui::Key::Space),Keycode::Left=>Some(egui::Key::ArrowLeft),Keycode::Right=>Some(egui::Key::ArrowRight),Keycode::Up=>Some(egui::Key::ArrowUp),Keycode::Down=>Some(egui::Key::ArrowDown),_=>None};
+                let mapped=match *key{Keycode::Tab=>Some(egui::Key::Tab),Keycode::Return|Keycode::KpEnter=>Some(egui::Key::Enter),Keycode::Backspace=>Some(egui::Key::Backspace),Keycode::Delete=>Some(egui::Key::Delete),Keycode::Space=>Some(egui::Key::Space),Keycode::Left=>Some(egui::Key::ArrowLeft),Keycode::Right=>Some(egui::Key::ArrowRight),Keycode::Up=>Some(egui::Key::ArrowUp),Keycode::Down=>Some(egui::Key::ArrowDown),_=>None};
                 if let Some(key)=mapped{self.events.push(egui::Event::Key{key,physical_key:None,pressed:matches!(event,Event::KeyDown{..}),repeat:false,modifiers:self.modifiers});}
             }
             _=>{}
         }
     }
     pub fn frame(&mut self,dw:u32,dh:u32,scale:f32)->bool{
-        let scale=scale.max(.1);
+        let scale=scale.max(0.1);
         let mut input=egui::RawInput::default();
         input.screen_rect=Some(egui::Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(dw as f32/scale,dh as f32/scale)));
         input.viewports.insert(egui::ViewportId::ROOT,egui::ViewportInfo{native_pixels_per_point:Some(scale),..Default::default()});
@@ -57,15 +57,15 @@ impl MakerUi {
         let mut frequency=self.frequency;let mut color=self.color;let mut expanded=self.expanded;let mut inspector=self.inspector;let mut open=self.open;
         let output=self.context.run(input,|ctx|{
             egui::TopBottomPanel::top("maker_header").show(ctx,|ui|{ui.horizontal(|ui|{ui.heading("Screenshaver Maker");ui.label("Experimental node and live GLSL preview");if ui.button("Exit").clicked(){open=false;}});});
-            egui::SidePanel::left("maker_tools").default_width(290.).show(ctx,|ui|{
+            egui::SidePanel::left("maker_tools").default_width(290.0).show(ctx,|ui|{
                 ui.heading("Module graph");ui.label("Prototype: Oscillator → Color → Output");ui.separator();
                 ui.horizontal(|ui|{ui.strong("Oscillator");if ui.button(if expanded{"Collapse"}else{"Expand"}).clicked(){expanded=!expanded;}});
-                if expanded{ui.add(egui::Slider::new(&mut frequency,.1..=5.).text("Frequency"));ui.color_edit_button_rgb(&mut color);}
+                if expanded{ui.add(egui::Slider::new(&mut frequency,0.1..=5.0).text("Frequency"));ui.color_edit_button_rgb(&mut color);}
                 ui.separator();if ui.button("Inspect module").clicked(){inspector=!inspector;}
                 if inspector{ui.label("Oscillator (prototype)");ui.monospace("float wave = sin(x * frequency + time);");ui.label("Future: typed ports, nested graphs and module files.");}
                 ui.separator();ui.small("This is a UI/GL rendering harness, not yet a graph compiler.");
             });
-            egui::Area::new(egui::Id::new("maker_node")).fixed_pos(egui::pos2(390.,140.)).show(ctx,|ui|{
+            egui::Area::new(egui::Id::new("maker_node")).fixed_pos(egui::pos2(390.0,140.0)).show(ctx,|ui|{
                 egui::Frame::window(ui.style()).show(ui,|ui|{ui.strong("Output Color");ui.label("◉ vec3 → Fragment");});
             });
             egui::TopBottomPanel::bottom("maker_footer").show(ctx,|ui|{ui.label("Live preview • Escape to close • No production services started");});
