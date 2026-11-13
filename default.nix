@@ -110,20 +110,52 @@ preBuild = ''
       kde-wallpaper-producer/target/release/screenshaver-plasma-producer \
       $out/bin/screenshaver-plasma-producer
 
+    # Keep the discovery executable beside its shared KScreen bridge.
     install -Dm755 \
       kde-host/build-release/libScreenshaverKScreen.so \
       $out/lib/screenshaver/kde/libScreenshaverKScreen.so
 
     install -Dm755 \
-      kde-host/build-release/qml/ScreenshaverNativeGL/libScreenshaverNativeGLPlugin.so \
-      $out/lib/screenshaver/kde/libScreenshaverNativeGLPlugin.so
+      kde-host/build-release/screenshaver-kscreen-discover \
+      $out/lib/screenshaver/kde/screenshaver-kscreen-discover
 
+    # The producer uses the same immutable package as the main executable.
     install -Dm755 \
       kde-renderer/target/release/libscreenshaver.so \
       $out/lib/screenshaver/kde/libscreenshaver.so
 
+    # Install the complete Plasma wallpaper package, including a locally
+    # importable QML module. The native plugin's $ORIGIN resolves its renderer.
+    wallpaper_root="$out/share/plasma/wallpapers/org.screenshaver.wallpaper"
+    qml_root="$wallpaper_root/contents/ui/ScreenshaverNativeGL"
+
     install -Dm644 \
-      kde-host/qmldir \
+      kde-host/screenshaver-plasma-wallpaper/metadata.json \
+      "$wallpaper_root/metadata.json"
+
+    install -Dm644 \
+      kde-host/screenshaver-plasma-wallpaper/contents/ui/main.qml \
+      "$wallpaper_root/contents/ui/main.qml"
+
+    install -Dm755 \
+      kde-host/build-release/qml/ScreenshaverNativeGL/libScreenshaverNativeGLPlugin.so \
+      "$qml_root/libScreenshaverNativeGLPlugin.so"
+
+    install -Dm755 \
+      kde-renderer/target/release/libscreenshaver.so \
+      "$qml_root/libscreenshaver.so"
+
+    install -Dm644 \
+      kde-host/build-release/qml/ScreenshaverNativeGL/qmldir \
+      "$qml_root/qmldir"
+
+    # Preserve the private library layout used by the existing KDE lock path.
+    install -Dm755 \
+      kde-host/build-release/qml/ScreenshaverNativeGL/libScreenshaverNativeGLPlugin.so \
+      $out/lib/screenshaver/kde/libScreenshaverNativeGLPlugin.so
+
+    install -Dm644 \
+      kde-host/build-release/qml/ScreenshaverNativeGL/qmldir \
       $out/lib/screenshaver/kde/qmldir
 
     install -Dm644 \
