@@ -10,6 +10,8 @@ mod parse_arguments;
 mod maker;
 mod maker_ui;
 mod maker_preview;
+mod maker_graph;
+mod maker_compiler;
 mod renderer_status;
 mod parse_subtitle_placement;
 mod parse_texture_specification;
