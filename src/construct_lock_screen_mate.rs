@@ -11,6 +11,7 @@ use std::path::{Path, PathBuf};
 
 const MATE_SCREENSAVER: &str = "/usr/bin/mate-screensaver";
 const TRUSTED_PRESENTER: &str = "/usr/libexec/mate-screensaver/screenshaver";
+const LEGACY_PRESENTER: &str = "/usr/lib/mate-screensaver/mate-screensaver/screenshaver";
 const THEME_FILENAME: &str = "screenshaver-mate.desktop";
 
 #[derive(Debug, Clone)]
@@ -42,19 +43,23 @@ fn trusted_presenter_ready() -> bool {
         && contents.lines().any(|line| line.trim() == "exec /usr/local/bin/screenshaver")
 }
 
-fn theme_entry() -> String {
+fn theme_entry_for(presenter: &str) -> String {
     format!(
         "[Desktop Entry]\n\
 Name=Screenshaver\n\
 Comment=Screenshaver shader presentation for the native MATE screensaver\n\
-Exec={TRUSTED_PRESENTER}\n\
-TryExec={TRUSTED_PRESENTER}\n\
+Exec={presenter}\n\
+TryExec={presenter}\n\
 StartupNotify=false\n\
 Terminal=false\n\
 Type=Application\n\
 Categories=Screensaver;\n\
 OnlyShowIn=MATE;\n"
     )
+}
+
+fn theme_entry() -> String {
+    theme_entry_for(TRUSTED_PRESENTER)
 }
 
 fn theme_path() -> Result<PathBuf, String> {
@@ -111,6 +116,58 @@ pub fn configure_user() -> Result<MateLockConfigurationStatus, String> {
     let expected = theme_entry();
     match fs::read_to_string(&destination) {
         Ok(existing) if existing == expected => return inspect(),
+        Ok(existing) if existing == theme_entry_for(LEGACY_PRESENTER) => {
+            // Upgrade only the exact previous Screenshaver-generated entry.
+            // Never follow or replace a symlink, or rewrite a customized theme.
+            let metadata = fs::symlink_metadata(&destination)
+                .map_err(|error| format!("Unable to inspect {}: {error}", destination.display()))?;
+            if !metadata.file_type().is_file() {
+                return Err(format!("Refusing to replace non-regular MATE theme: {}", destination.display()));
+            }
+            // Recheck immediately before replacement to avoid overwriting a
+            // file changed since the first read.
+            if fs::read_to_string(&destination).ok().as_deref()
+                != Some(existing.as_str())
+            {
+                return Err(format!("MATE theme changed during migration: {}", destination.display()));
+            }
+            let parent = destination.parent().ok_or("Invalid MATE theme destination")?;
+            let (temp_path, mut temp_file) = (0..100)
+                .find_map(|attempt| {
+                    let path = parent.join(format!(
+                        ".screenshaver-mate.desktop.{}.{}.tmp",
+                        std::process::id(), attempt
+                    ));
+                    match fs::OpenOptions::new().write(true).create_new(true).open(&path) {
+                        Ok(file) => Some(Ok((path, file))),
+                        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => None,
+                        Err(error) => Some(Err(format!("Unable to create migration file: {error}"))),
+                    }
+                })
+                .ok_or("Unable to allocate MATE theme migration file")??;
+            let result = (|| -> Result<(), String> {
+                temp_file.write_all(expected.as_bytes())
+                    .and_then(|_| temp_file.sync_all())
+                    .map_err(|error| format!("Unable to write MATE migration: {error}"))?;
+                // Preserve the original theme file permissions.
+                fs::set_permissions(&temp_path, metadata.permissions())
+                    .map_err(|error| format!("Unable to preserve MATE theme permissions: {error}"))?;
+                if fs::symlink_metadata(&destination).map(|m| !m.file_type().is_file()).unwrap_or(true)
+                    || fs::read_to_string(&destination).ok().as_deref() != Some(existing.as_str())
+                {
+                    return Err("MATE theme changed during migration; refusing replacement".into());
+                }
+                fs::rename(&temp_path, &destination)
+                    .map_err(|error| format!("Unable to install migrated MATE theme: {error}"))
+            })();
+            if result.is_err() { let _ = fs::remove_file(&temp_path); }
+            result?;
+            let status = inspect()?;
+            if !status.ready_for_runtime() {
+                return Err(format!("MATE theme migration verification failed: {status:?}"));
+            }
+            return Ok(status);
+        }
         Ok(_) => return Err(format!(
             "Refusing to overwrite an existing nonmatching MATE theme: {}",
             destination.display()
