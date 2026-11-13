@@ -1,5 +1,6 @@
 #[derive(Debug, Clone, PartialEq)]
 pub enum Command {
+    Maker,
     Run,
 
     RunRendererStatus,
@@ -114,6 +115,11 @@ pub fn parse() -> Result<Command, String> {
 
 
     match args[0].as_str() {
+        "--maker" => {
+            require_no_extra_arguments(&args, "--maker")?;
+            Ok(Command::Maker)
+        }
+
 
         "--show-renderer-status" => {
             require_no_extra_arguments(&args, "--show-renderer-status")?;
@@ -980,6 +986,8 @@ pub fn print_help() {
          \n\
          Available options:\n\
          \n\
+             --maker\n\
+                 Launch the independent Screenshaver Maker experiment.\n\
              --start\n\
                  Start Screenshaver normally. Equivalent to launching without an option.\n\
          \n\

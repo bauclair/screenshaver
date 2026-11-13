@@ -7,6 +7,9 @@ mod parse_mode;
 mod parse_interval;
 mod parse_duration;
 mod parse_arguments;
+mod maker;
+mod maker_ui;
+mod maker_preview;
 mod renderer_status;
 mod parse_subtitle_placement;
 mod parse_texture_specification;
@@ -211,6 +214,14 @@ fn main() {
     // Commands that do not require Screenshaver's user environment or
     // database are handled before any configuration/database initialization.
     match &command {
+
+        crate::parse_arguments::Command::Maker => {
+            if let Err(error) = crate::maker::run() {
+                eprintln!("Screenshaver Maker: {error}");
+                std::process::exit(1);
+            }
+            return;
+        }
 
         crate::parse_arguments::Command::Stop => {
 
@@ -739,7 +750,8 @@ fn main() {
         | crate::parse_arguments::Command::BenchmarkRender { .. }
         | crate::parse_arguments::Command::TestAudioMotion { .. }
         | crate::parse_arguments::Command::TestReverseAnimation { .. }
-        | crate::parse_arguments::Command::ResetIdleTimeout { .. } => {}
+        | crate::parse_arguments::Command::ResetIdleTimeout { .. }
+        | crate::parse_arguments::Command::Maker => {}
     }
 
 
@@ -1763,7 +1775,8 @@ Screen locking will be disabled for this Screenshaver launch only; your saved co
         | crate::parse_arguments::Command::ConstructLockScreenXfce
         | crate::parse_arguments::Command::ConstructLockScreenMate
         | crate::parse_arguments::Command::TestMateLock
-        | crate::parse_arguments::Command::ResetIdleTimeout { .. } => {
+        | crate::parse_arguments::Command::ResetIdleTimeout { .. }
+        | crate::parse_arguments::Command::Maker => {
 
             unreachable!(
                 "Database-independent command reached runtime startup"
