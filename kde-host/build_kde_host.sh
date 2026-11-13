@@ -87,7 +87,8 @@ GENERATION_DIR=""
 
 echo
 echo "Screenshaver KDE host staging build and lock-screen deployment completed:"
-echo "  KScreen discovery: ${BUILD_DIR}/libScreenshaverKScreen.so"
+echo "  KScreen discovery helper: ${BUILD_DIR}/screenshaver-kscreen-discover"
+echo "  Legacy KScreen library: ${BUILD_DIR}/libScreenshaverKScreen.so"
 echo "  ${PLUGIN_DIR}"
 echo
 echo "Contents:"

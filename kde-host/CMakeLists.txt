@@ -18,6 +18,12 @@ add_library(ScreenshaverKScreen SHARED kscreen_discovery.cpp)
 target_link_libraries(ScreenshaverKScreen PRIVATE Qt6::Core Qt6::Gui KF6::Screen)
 set_target_properties(ScreenshaverKScreen PROPERTIES BUILD_WITH_INSTALL_RPATH TRUE BUILD_RPATH "$ORIGIN" INSTALL_RPATH "$ORIGIN" INSTALL_RPATH_USE_LINK_PATH FALSE)
 
+# Isolated one-shot discovery process; the main Rust application never loads Qt.
+add_executable(screenshaver-kscreen-discover kscreen_discovery.cpp)
+target_compile_definitions(screenshaver-kscreen-discover PRIVATE SCREENSHAVER_KSCREEN_STANDALONE=1)
+target_link_libraries(screenshaver-kscreen-discover PRIVATE Qt6::Core Qt6::Gui KF6::Screen)
+
+
 set(
     SCREENSHAVER_RENDERER_LIBRARY
     ""

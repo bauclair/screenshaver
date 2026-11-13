@@ -88,3 +88,18 @@ extern "C" int screenshaver_kscreen_discover(char *destination, size_t capacity)
         return -5;
     }
 }
+
+// Standalone discovery entry point. Keep diagnostic output on stderr and
+// emit exactly one JSON array to stdout for the Rust supervisor.
+#ifdef SCREENSHAVER_KSCREEN_STANDALONE
+int main() {
+    char result[65536] = {};
+    const int status = screenshaver_kscreen_discover(result, sizeof(result));
+    if (status != 0) {
+        std::fprintf(stderr, "[KSCREEN NATIVE] discovery failed with status %d\n", status);
+        return 1;
+    }
+    if (std::puts(result) == EOF) return 1;
+    return 0;
+}
+#endif

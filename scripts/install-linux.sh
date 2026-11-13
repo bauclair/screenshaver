@@ -887,6 +887,8 @@ build_kde_native_integration() {
     done
     [[ -f "${PROJECT_DIR}/kde-host/build-staging-release/libScreenshaverKScreen.so" ]] ||
         die "KDE KScreen discovery library was not produced by the release build."
+    [[ -x "${PROJECT_DIR}/kde-host/build-staging-release/screenshaver-kscreen-discover" ]] ||
+        die "KDE KScreen discovery helper was not produced by the release build."
 }
 
 kde_qt_qml_root() {
@@ -1006,6 +1008,9 @@ install_kde_native_integration() {
     "${SUDO[@]}" install -Dm755 \
         "${PROJECT_DIR}/kde-host/build-staging-release/libScreenshaverKScreen.so" \
         "${INSTALL_PREFIX}/lib/screenshaver/kde/libScreenshaverKScreen.so"
+    "${SUDO[@]}" install -Dm755 \
+        "${PROJECT_DIR}/kde-host/build-staging-release/screenshaver-kscreen-discover" \
+        "${INSTALL_PREFIX}/lib/screenshaver/kde/screenshaver-kscreen-discover"
 }
 
 verify_kde_native_integration() {
@@ -1091,6 +1096,11 @@ QML_EOF
     [[ -f "$kscreen_destination" ]] || die "Installed KScreen discovery library missing: $kscreen_destination"
     cmp -s -- "$kscreen_source" "$kscreen_destination" ||
         die "Installed KScreen discovery library differs from the current release build."
+    local kscreen_helper_source="${PROJECT_DIR}/kde-host/build-staging-release/screenshaver-kscreen-discover"
+    local kscreen_helper_dest="${INSTALL_PREFIX}/lib/screenshaver/kde/screenshaver-kscreen-discover"
+    [[ -x "$kscreen_helper_dest" ]] || die "Installed KScreen discovery helper missing: $kscreen_helper_dest"
+    cmp -s -- "$kscreen_helper_source" "$kscreen_helper_dest" ||
+        die "Installed KScreen discovery helper differs from the current release build."
     # Compare the installed generation to the release build; an old plugin
     # must never silently survive an upgrade.
     local source="${PROJECT_DIR}/kde-host/build-staging-release/qml/ScreenshaverNativeGL"
@@ -1105,6 +1115,8 @@ QML_EOF
         done
         missing="$(ldd "$kscreen_destination" 2>/dev/null | awk '/not found/ { print $1 }')"
         [[ -z "$missing" ]] || die "Unresolved KScreen discovery libraries: ${missing}"
+        missing="$(ldd "$kscreen_helper_dest" 2>/dev/null | awk '/not found/ { print $1 }')"
+        [[ -z "$missing" ]] || die "Unresolved KScreen discovery helper libraries: ${missing}"
     fi
 }
 

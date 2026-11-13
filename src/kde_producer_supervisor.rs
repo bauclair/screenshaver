@@ -31,64 +31,45 @@ struct PlasmaOutput {
     refresh_hz: f64,
 }
 
-// The KDE-specific native library is deployed beside the renderer library.
-// No helper process, shell command, polling loop, or mutex is involved.
+// Run Qt/KScreen discovery outside the long-lived Rust process. This prevents
+// Qt D-Bus background threads and application-lifetime state from surviving
+// a one-shot discovery call inside Screenshaver itself.
 fn discover_geometry(renderer_library: &Path) -> Result<(u32,u32), String> {
-    use std::ffi::{CStr, CString};
-    use std::os::raw::{c_char, c_void};
-    let native_path = renderer_library
+    let helper = renderer_library
         .parent()
         .ok_or("KDE renderer library has no parent directory")?
-        .join("libScreenshaverKScreen.so");
-    if !native_path.is_file() {
-        return Err(format!("KScreen discovery library not installed: {}", native_path.display()));
+        .join("screenshaver-kscreen-discover");
+    if !helper.is_file() {
+        return Err(format!("KScreen discovery helper not installed: {}", helper.display()));
     }
-    let name = CString::new(native_path.as_os_str().as_encoded_bytes())
-        .map_err(|_| "Invalid native library path")?;
-    unsafe {
-        let handle = libc::dlopen(name.as_ptr(), libc::RTLD_NOW | libc::RTLD_LOCAL);
-        if handle.is_null() {
-            let error = libc::dlerror();
-            return Err(format!("Cannot load KScreen discovery library: {}",
-                if error.is_null() { "unknown dynamic linker error".into() }
-                else { CStr::from_ptr(error).to_string_lossy().into_owned() }));
-        }
-        struct Library(*mut c_void);
-        impl Drop for Library {
-            fn drop(&mut self) { unsafe { libc::dlclose(self.0); } }
-        }
-        let _library = Library(handle);
-        let symbol = CString::new("screenshaver_kscreen_discover").unwrap();
-        let function = libc::dlsym(handle, symbol.as_ptr());
-        if function.is_null() {
-            return Err("KScreen discovery entry point missing".into());
-        }
-        type Discover = unsafe extern "C" fn(*mut c_char, usize) -> i32;
-        let discover: Discover = std::mem::transmute(function);
-        let mut buffer = vec![0_u8; 65536];
-        let status = discover(buffer.as_mut_ptr().cast(), buffer.len());
-        if status != 0 {
-            return Err(format!("libkscreen discovery failed (status {status})"));
-        }
-        let json = CStr::from_ptr(buffer.as_ptr().cast()).to_bytes();
-        let outputs: Vec<PlasmaOutput> = serde_json::from_slice(json)
-            .map_err(|e| format!("Invalid structured KScreen output: {e}"))?;
-        let active: Vec<_> = outputs.iter().filter(|o| o.enabled && o.connected).collect();
-        match active.as_slice() {
-            [one] => {
-                if one.physical_width == 0 || one.physical_height == 0 ||
-                   one.logical_width == 0 || one.logical_height == 0 ||
-                   !one.scale.is_finite() || one.scale <= 0.0 {
-                    return Err(format!("KScreen output {} has incomplete display metadata", one.connector));
-                }
-                eprintln!("[KDE GEOMETRY] id={} {} physical={}x{} logical={}x{} at {},{} scale={} refresh={}Hz",
-                    one.id, one.connector, one.physical_width, one.physical_height,
-                    one.logical_width, one.logical_height, one.x, one.y, one.scale, one.refresh_hz);
-                Ok((one.physical_width, one.physical_height))
+    let output = Command::new(&helper)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .map_err(|e| format!("Cannot run KScreen discovery helper {}: {e}", helper.display()))?;
+    if !output.status.success() {
+        let diagnostic = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("KScreen discovery helper failed ({}): {}",
+            output.status, diagnostic.trim()));
+    }
+    let outputs: Vec<PlasmaOutput> = serde_json::from_slice(&output.stdout)
+        .map_err(|e| format!("Invalid structured KScreen output: {e}"))?;
+    let active: Vec<_> = outputs.iter().filter(|o| o.enabled && o.connected).collect();
+    match active.as_slice() {
+        [one] => {
+            if one.physical_width == 0 || one.physical_height == 0 ||
+               one.logical_width == 0 || one.logical_height == 0 ||
+               !one.scale.is_finite() || one.scale <= 0.0 {
+                return Err(format!("KScreen output {} has incomplete display metadata", one.connector));
             }
-            [] => Err("libkscreen reports no enabled, connected KDE display".into()),
-            _ => Err(format!("libkscreen reports {} active displays; per-output rendering is not implemented", active.len())),
+            eprintln!("[KDE GEOMETRY] id={} {} physical={}x{} logical={}x{} at {},{} scale={} refresh={}Hz",
+                one.id, one.connector, one.physical_width, one.physical_height,
+                one.logical_width, one.logical_height, one.x, one.y, one.scale, one.refresh_hz);
+            Ok((one.physical_width, one.physical_height))
         }
+        [] => Err("libkscreen reports no enabled, connected KDE display".into()),
+        _ => Err(format!("libkscreen reports {} active displays; per-output rendering is not implemented", active.len())),
     }
 }
 
