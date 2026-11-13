@@ -31,7 +31,7 @@ pub fn run() -> Result<(), String> {
         let (dw, dh) = window.drawable_size();
         let (ww, wh) = window.size();
         let scale = if ww > 0 { dw as f32 / ww as f32 } else { 1.0 };
-        preview.render(dw as i32, dh as i32, start.elapsed().as_secs_f32(), ui.frequency(), ui.color())?;
+        preview.render(dw as i32, dh as i32, start.elapsed().as_secs_f32(), ui.frequency(), ui.color(), ui.connected())?;
         if !ui.frame(dw, dh, scale) { break; }
         window.gl_swap_window();
         std::thread::sleep(Duration::from_millis(8));

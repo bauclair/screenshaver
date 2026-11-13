@@ -4,13 +4,13 @@ use std::ffi::CString;
 const VERT: &str = "#version 330 core\nconst vec2 p[3] = vec2[3](vec2(-1,-1),vec2(3,-1),vec2(-1,3));\nout vec2 uv; void main(){vec2 q=p[gl_VertexID]; uv=q*0.5+0.5; gl_Position=vec4(q,0,1);}";
 const FRAG: &str = r#"#version 330 core
 in vec2 uv; out vec4 fragColor;
-uniform float u_time; uniform float u_frequency; uniform vec3 u_color; uniform vec2 u_resolution;
+uniform float u_time; uniform float u_connected; uniform float u_frequency; uniform vec3 u_color; uniform vec2 u_resolution;
 void main() {
     vec2 p = (gl_FragCoord.xy - 0.5*u_resolution) / max(u_resolution.y,1.0);
     float v = sin(p.x*16.0*u_frequency + u_time) * cos(p.y*12.0*u_frequency-u_time*0.7);
     float glow = 0.5 + 0.5*v;
     vec3 col = mix(vec3(0.015,0.02,0.04), u_color, pow(glow, 1.5));
-    fragColor = vec4(col,1.0);
+    fragColor = vec4(mix(vec3(0.015,0.02,0.04), col, u_connected),1.0);
 }"#;
 
 pub struct Preview { program: u32, vao: u32 }
@@ -27,13 +27,13 @@ impl Preview {
             Ok(Self{program,vao})
         }
     }
-    pub fn render(&mut self,w:i32,h:i32,t:f32,freq:f32,color:[f32;3])->Result<(),String>{
+    pub fn render(&mut self,w:i32,h:i32,t:f32,freq:f32,color:[f32;3],connected:bool)->Result<(),String>{
         unsafe {
             gl::Viewport(0,0,w,h);gl::Disable(gl::SCISSOR_TEST);gl::Disable(gl::DEPTH_TEST);
             gl::ClearColor(0.015,0.02,0.04,1.0);gl::Clear(gl::COLOR_BUFFER_BIT);
             gl::UseProgram(self.program);
             let loc=|name:&str|gl::GetUniformLocation(self.program,CString::new(name).unwrap().as_ptr());
-            gl::Uniform1f(loc("u_time"),t);gl::Uniform1f(loc("u_frequency"),freq);
+            gl::Uniform1f(loc("u_time"),t);gl::Uniform1f(loc("u_connected"),if connected {1.0} else {0.0});gl::Uniform1f(loc("u_frequency"),freq);
             gl::Uniform3f(loc("u_color"),color[0],color[1],color[2]);gl::Uniform2f(loc("u_resolution"),w as f32,h as f32);
             gl::BindVertexArray(self.vao);gl::DrawArrays(gl::TRIANGLES,0,3);gl::BindVertexArray(0);gl::UseProgram(0);
         }
