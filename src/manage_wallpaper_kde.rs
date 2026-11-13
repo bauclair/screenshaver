@@ -20,6 +20,45 @@ fn journal() -> Result<PathBuf,String> {
         .ok_or("Cannot resolve state directory")?;
     Ok(base.join("screenshaver/kde-wallpaper-restore-v1"))
 }
+/// Locate the installed wallpaper package using the XDG data search path.
+/// KDE accepts both user-local and system-wide wallpaper packages.
+fn locate_wallpaper_package() -> Result<PathBuf, String> {
+    let mut data_dirs = Vec::<PathBuf>::new();
+    if let Some(home) = env::var_os("XDG_DATA_HOME").filter(|value| !value.is_empty()) {
+        data_dirs.push(PathBuf::from(home));
+    } else if let Some(home) = env::var_os("HOME").filter(|value| !value.is_empty()) {
+        data_dirs.push(PathBuf::from(home).join(".local/share"));
+    }
+
+    // An unset or empty XDG_DATA_DIRS uses the freedesktop defaults.
+    let system_dirs = env::var_os("XDG_DATA_DIRS").filter(|value| !value.is_empty());
+    if let Some(value) = system_dirs {
+        data_dirs.extend(env::split_paths(&value).filter(|path| !path.as_os_str().is_empty()));
+    } else {
+        data_dirs.push(PathBuf::from("/usr/local/share"));
+        data_dirs.push(PathBuf::from("/usr/share"));
+    }
+
+    // Preserve support for NixOS profiles and conventional system locations
+    // even when a session provides an incomplete XDG_DATA_DIRS value.
+    for fallback in ["/run/current-system/sw/share", "/usr/local/share", "/usr/share"] {
+        let path = PathBuf::from(fallback);
+        if !data_dirs.contains(&path) {
+            data_dirs.push(path);
+        }
+    }
+
+    let mut searched = Vec::new();
+    for dir in data_dirs {
+        let candidate = dir.join("plasma/wallpapers").join(TARGET).join("metadata.json");
+        if candidate.is_file() {
+            return Ok(candidate);
+        }
+        searched.push(candidate.display().to_string());
+    }
+    Err(format!("KDE wallpaper package not installed; checked: {}", searched.join(", ")))
+}
+
 fn inventory() -> Result<Vec<Assignment>,String> {
     let data = fs::read_to_string(appletsrc()?).map_err(|e| format!("Cannot inspect Plasma desktop configuration: {e}"))?;
     let mut id = None;
@@ -326,11 +365,7 @@ impl KdeWallpaperIntegrationGuard {
         if original.iter().any(|a| a.plugin == TARGET) {
             return Err("Screenshaver is already selected as a wallpaper; original selection is unknown".into());
         }
-        let package = env::var("XDG_DATA_HOME").ok().filter(|s| !s.is_empty())
-            .map(PathBuf::from).or_else(|| env::var("HOME").ok().map(|s| PathBuf::from(s).join(".local/share")))
-            .ok_or("Cannot resolve KDE package directory")?
-            .join("plasma/wallpapers").join(TARGET).join("metadata.json");
-        if !package.is_file() { return Err(format!("KDE wallpaper package not installed: {}",package.display())); }
+        let package = locate_wallpaper_package()?;
         // Record the live selection durably before requesting any change.
         // Plasma retains wallpaper-plugin-specific configuration when its
         // wallpaperPlugin selection changes; we do not rewrite those groups.
