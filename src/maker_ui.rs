@@ -253,8 +253,8 @@ impl MakerUi {
                 if fit_requested && !graph.nodes.is_empty() {
                     let left=graph.nodes.iter().map(|n|n.pos[0]).fold(f32::INFINITY,f32::min);
                     let top=graph.nodes.iter().map(|n|n.pos[1]).fold(f32::INFINITY,f32::min);
-                    let right=graph.nodes.iter().map(|n|n.pos[0]+240.0).fold(f32::NEG_INFINITY,f32::max);
-                    let bottom=graph.nodes.iter().map(|n|n.pos[1]+160.0).fold(f32::NEG_INFINITY,f32::max);
+                    let right=graph.nodes.iter().map(|n|n.pos[0]+190.0).fold(f32::NEG_INFINITY,f32::max);
+                    let bottom=graph.nodes.iter().map(|n|n.pos[1]+130.0).fold(f32::NEG_INFINITY,f32::max);
                     *canvas_pan=egui::vec2((canvas.width()-(right-left))*0.5-left,(canvas.height()-(bottom-top))*0.5-top);
                 }
                 let origin=canvas.min+*canvas_pan;
@@ -278,14 +278,12 @@ impl MakerUi {
                             ui.set_clip_rect(ui.clip_rect().intersect(canvas));
                             egui::Frame::window(ui.style()).show(ui,|ui|{
                                 // Fixed standard width and height; only port count may grow height.
-                                let node_width = 220.0;
+                                let node_width = 170.0;
                                 let rows = module.inputs.len().max(module.outputs.len());
                                 let port_height = rows as f32 * 25.0;
                                 let header_height = 27.0;
-                                let controls_height = (140.0_f32 - header_height - port_height - 16.0).max(0.0);
                                 ui.set_min_width(node_width);
                                 ui.set_max_width(node_width);
-                                ui.spacing_mut().slider_width = 100.0;
                                 let header_color = node_header_color(module);
                                 let title = format!("{} #{}", module.name.as_str(), id);
                                 let (header_rect, header_response) = ui.allocate_exact_size(
@@ -304,34 +302,28 @@ impl MakerUi {
                                     let delta=ui.ctx().input(|i|i.pointer.delta());
                                     if let Some(n)=graph.node_mut(id){n.pos[0]+=delta.x;n.pos[1]+=delta.y;}
                                 }
-                                // Inline controls are strictly bounded by remaining standard height.
-                                // Every adjustable module also has the full floating editor.
-                                if !module.parameters.is_empty(){
-                                    ui.horizontal(|ui|{
-                                        let response=ui.small_button("⚙ Parameters ↗").on_hover_text("Open full parameter editor");
-                                        if response.clicked(){
-                                            *parameter_popup=if *parameter_popup==Some(id){None}else{Some(id)};
-                                            *selected=Some(id);
-                                        }
-                                        
-                                    });
+                                // All editable values live exclusively in the attached editor.
+                                // The compact node exposes only a Parameters link.
+                                if !module.parameters.is_empty() {
+                                    let response = ui.small_button("⚙ Parameters ↗")
+                                        .on_hover_text("Open parameter editor");
+                                    if response.clicked() {
+                                        *parameter_popup = if *parameter_popup == Some(id) { None } else { Some(id) };
+                                        *selected = Some(id);
+                                    }
                                 }
-                                if module.parameters.len()<=2 && controls_height>=35.0*module.parameters.len() as f32 + 22.0 {
-                                    if let Some(n)=graph.node_mut(id){edit_parameters(ui,n);}
-                                }
-                                // Fill unused body space without expanding to accommodate controls.
-                                let used=ui.min_rect().height();
-                                let target=(140.0-port_height-16.0).max(0.0);
-                                if used<target{ui.add_space(target-used);}
+                                // Keep a compact, consistent minimum body height;
+                                // extra connector rows may expand it as required.
+                                let used = ui.min_rect().height();
+                                let target = (110.0_f32 - port_height - 16.0).max(0.0);
+                                if used < target { ui.add_space(target - used); }
                                 // Ports occupy the vertical left/right edges of the node.
                                 // They remain visible when the node is collapsed.
                                 let inputs = &module.inputs;
                                 let outputs = &module.outputs;
                                 let rows = inputs.len().max(outputs.len());
                                 let port_color = port_color;
-                                // Parameter controls can make the actual node body wider
-                                // than its title bar. Anchor port rows to the resulting
-                                // content width, not the title/header width.
+                                // Port rows share the compact module body width.
                                 let body_width = node_width;
                                 for row in 0..rows {
                                     let (row_rect, _) = ui.allocate_exact_size(
