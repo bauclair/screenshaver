@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "created_by": "Screenshaver",
+  "uses": "Organic textures, masks, and procedural variation.",
+  "notes": "Unconnected UV defaults to centered screen coordinates.",
+  "inputs": [
+    {
+      "id": "uv",
+      "name": "UV",
+      "type": "vec2",
+      "default": "maker_uv"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "value",
+      "name": "Value",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "scale",
+      "name": "Scale",
+      "type": "float",
+      "default": 4.0,
+      "min": 0.1,
+      "max": 20.0
+    }
+  ],
+  "helpers": "float maker_hash(vec2 p) { return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453123); }\nfloat maker_noise(vec2 p) { vec2 i=floor(p),f=fract(p);f=f*f*(3.0-2.0*f); return mix(mix(maker_hash(i),maker_hash(i+vec2(1,0)),f.x),mix(maker_hash(i+vec2(0,1)),maker_hash(i+vec2(1,1)),f.x),f.y); }",
+  "terminal": false,
+  "id": "screenshaver.noise.value2d",
+  "name": "Value Noise 2D",
+  "category": "Noise",
+  "header_color": "#8660B0",
+  "description": "Smooth animated 2D value noise.",
+  "glsl": "maker_noise({uv}*{scale}+vec2(u_time*0.17,-u_time*0.11))"
+}

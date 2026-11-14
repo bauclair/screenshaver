@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.color.field_accumulation",
+  "name": "Color Accumulation",
+  "category": "Color",
+  "created_by": "Screenshaver",
+  "header_color": "#A27660",
+  "description": "Adjusts brightness and contrast of accumulated procedural light.",
+  "uses": "Convert traversal illumination into vivid, controllable colors.",
+  "notes": "Creative illumination shaping, not antialiasing, bloom, or general Visual Quality post-processing.",
+  "inputs": [
+    {
+      "id": "light",
+      "name": "Light",
+      "type": "vec3",
+      "default": "vec3(0.0)"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "color",
+      "name": "Color",
+      "type": "vec3"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "gain",
+      "name": "Gain",
+      "type": "float",
+      "default": 3.0,
+      "min": 0.0,
+      "max": 12.0
+    },
+    {
+      "id": "contrast",
+      "name": "Contrast",
+      "type": "float",
+      "default": 1.3,
+      "min": 0.25,
+      "max": 3.0
+    }
+  ],
+  "helpers": "",
+  "glsl": "pow(max({light}*{gain},vec3(0.0)),vec3({contrast}))",
+  "terminal": false
+}

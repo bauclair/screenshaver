@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "created_by": "Screenshaver",
+  "uses": "Colorize noise and generate animated gradients.",
+  "notes": "Unconnected Value defaults to 0.5.",
+  "inputs": [
+    {
+      "id": "value",
+      "name": "Value",
+      "type": "float",
+      "default": "0.5"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "color",
+      "name": "Color",
+      "type": "vec3"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "frequency",
+      "name": "Frequency",
+      "type": "float",
+      "default": 1.0,
+      "min": 0.1,
+      "max": 5
+    },
+    {
+      "id": "color",
+      "name": "Color",
+      "type": "color3",
+      "default": [
+        0.25,
+        0.65,
+        1.0
+      ]
+    }
+  ],
+  "helpers": "",
+  "terminal": false,
+  "id": "screenshaver.color.cosine_palette",
+  "name": "Cosine Palette",
+  "category": "Color",
+  "header_color": "#B46A35",
+  "description": "Animated cosine-wave RGB palette with configurable tint.",
+  "glsl": "((0.5+0.5*cos(6.2831853*({value}*{frequency}+vec3(0.0,0.33,0.67))+u_time*0.3))*{color})"
+}

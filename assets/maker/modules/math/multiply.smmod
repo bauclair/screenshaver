@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "created_by": "Screenshaver",
+  "uses": "Scale noise strength and scalar signals.",
+  "notes": "Unconnected Value defaults to 0.5.",
+  "inputs": [
+    {
+      "id": "value",
+      "name": "Value",
+      "type": "float",
+      "default": "0.5"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "value",
+      "name": "Value",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "factor",
+      "name": "Factor",
+      "type": "float",
+      "default": 1.0,
+      "min": 0,
+      "max": 4
+    }
+  ],
+  "helpers": "",
+  "terminal": false,
+  "id": "screenshaver.math.multiply",
+  "name": "Multiply",
+  "category": "Math",
+  "header_color": "#5D6FAF",
+  "description": "Multiplies a scalar input by a configurable factor.",
+  "glsl": "({value}*{factor})"
+}

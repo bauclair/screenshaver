@@ -1,6 +1,6 @@
 //! OpenGL 3.3 live preview with last-good-program retention.
 use std::ffi::CString;
-use crate::maker_graph::{Graph,Kind};
+use crate::maker_graph::Graph;
 const VERT:&str="#version 330 core\nconst vec2 p[3]=vec2[3](vec2(-1,-1),vec2(3,-1),vec2(-1,3));\nvoid main(){gl_Position=vec4(p[gl_VertexID],0,1);}";
 pub struct Preview { program:u32, vao:u32, revision:Option<u64>, pub error:Option<String> }
 impl Preview {
@@ -29,12 +29,24 @@ impl Preview {
             gl::Viewport(x,y,pw,ph);
             gl::UseProgram(self.program);
             uniform_1f(self.program,"u_time",t);uniform_2f(self.program,"u_resolution",pw as f32,ph as f32);
-            for n in &graph.nodes{match n.kind{
-                Kind::Noise=>uniform_1f(self.program,&format!("u_n{}_scale",n.id),n.scale),
-                Kind::Multiply=>uniform_1f(self.program,&format!("u_n{}_factor",n.id),n.factor),
-                Kind::Palette=>{uniform_1f(self.program,&format!("u_n{}_frequency",n.id),n.frequency);uniform_3f(self.program,&format!("u_n{}_color",n.id),n.color)},
-                _=>{}
-            }}
+            for n in &graph.nodes{
+                for p in &n.definition().parameters {
+                    if let Some(value)=n.parameters.get(&p.id){
+                        let name=format!("u_n{}_{}",n.id,p.id);
+                        match p.ty.as_str(){
+                            "float"=>if let Some(v)=value.as_f64(){uniform_1f(self.program,&name,v as f32)},
+                            "color3"=>if let Some(a)=value.as_array(){
+                                if a.len()==3{uniform_3f(self.program,&name,[
+                                    a[0].as_f64().unwrap_or(0.0) as f32,
+                                    a[1].as_f64().unwrap_or(0.0) as f32,
+                                    a[2].as_f64().unwrap_or(0.0) as f32,
+                                ])}
+                            },
+                            _=>{},
+                        }
+                    }
+                }
+            }
             gl::BindVertexArray(self.vao);gl::DrawArrays(gl::TRIANGLES,0,3);gl::BindVertexArray(0);gl::UseProgram(0);gl::Disable(gl::SCISSOR_TEST);gl::Viewport(0,0,w,h);
         }
     }

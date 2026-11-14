@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "created_by": "Screenshaver",
+  "uses": "Coordinate source for procedural textures and spatial patterns.",
+  "notes": "Coordinates are centered, not limited to 0\u20131.",
+  "inputs": [],
+  "outputs": [
+    {
+      "id": "uv",
+      "name": "UV",
+      "type": "vec2"
+    }
+  ],
+  "parameters": [],
+  "helpers": "",
+  "terminal": false,
+  "id": "screenshaver.coordinates.uv",
+  "name": "UV Coordinates",
+  "category": "Coordinates",
+  "header_color": "#287C9B",
+  "description": "Supplies centered, aspect-corrected fragment coordinates.",
+  "glsl": "maker_uv"
+}

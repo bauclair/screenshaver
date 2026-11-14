@@ -8,6 +8,8 @@ pub fn run()->Result<(),String>{
     let _gl_context=window.gl_create_context()?;
     let _=video.gl_set_swap_interval(sdl2::video::SwapInterval::VSync);
     gl::load_with(|s|video.gl_get_proc_address(s) as *const _);
+    crate::maker_library::initialize()?;
+    for error in &crate::maker_library::get().errors { eprintln!("[MAKER MODULE] {error}"); }
     let mut ui=crate::maker_ui::MakerUi::new(&video)?;
     let mut preview=crate::maker_preview::Preview::new()?;
     let mut events=sdl.event_pump()?;let start=Instant::now();

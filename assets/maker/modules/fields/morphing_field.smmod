@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.morphing",
+  "name": "Morphing Field",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "header_color": "#5A78A8",
+  "description": "An animated 3D procedural field combining coordinate rotation, waves, and smooth noise.",
+  "uses": "Organic animated patterns and field-guided effects.",
+  "notes": "This is an independently implemented general-purpose field, not a reproduction of the attributed Morphing Abstract shader. Position defaults to centered screen coordinates at depth zero. Traversal and glow are separate operations.",
+  "inputs": [{"id":"position","name":"Position","type":"vec3","default":"vec3(maker_uv,0.0)"}],
+  "outputs": [{"id":"field","name":"Field","type":"float"}],
+  "parameters": [
+    {"id":"scale","name":"Scale","type":"float","default":2.0,"min":0.1,"max":12.0},
+    {"id":"strength","name":"Strength","type":"float","default":0.7,"min":0.0,"max":2.0},
+    {"id":"speed","name":"Speed","type":"float","default":0.5,"min":0.0,"max":3.0}
+  ],
+  "helpers": "float maker_morph_hash(vec3 p){return fract(sin(dot(p,vec3(127.1,311.7,74.7)))*43758.5453);}\nfloat maker_morph_noise(vec3 p){vec3 i=floor(p),f=fract(p);f=f*f*(3.0-2.0*f);float a=mix(maker_morph_hash(i),maker_morph_hash(i+vec3(1,0,0)),f.x);float b=mix(maker_morph_hash(i+vec3(0,1,0)),maker_morph_hash(i+vec3(1,1,0)),f.x);float c=mix(maker_morph_hash(i+vec3(0,0,1)),maker_morph_hash(i+vec3(1,0,1)),f.x);float d=mix(maker_morph_hash(i+vec3(0,1,1)),maker_morph_hash(i+vec3(1,1,1)),f.x);return mix(mix(a,b,f.y),mix(c,d,f.y),f.z);}\nfloat maker_morph_field(vec3 p,float scale,float strength,float speed){float t=u_time*speed;float angle=t+0.6*p.z;mat2 rot=mat2(cos(angle),-sin(angle),sin(angle),cos(angle));p.xy=rot*p.xy;float n=maker_morph_noise(p*scale+vec3(0.0,0.0,t*0.3));float wave=sin(p.x*scale*0.8+t)*cos(p.y*scale*0.7-t*0.6);return (n-0.5)*strength+0.25*wave*strength;} ",
+  "glsl": "maker_morph_field({position},{scale},{strength},{speed})",
+  "terminal": false
+}

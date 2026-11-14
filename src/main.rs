@@ -12,6 +12,8 @@ mod maker_ui;
 mod maker_preview;
 mod maker_graph;
 mod maker_compiler;
+mod maker_module;
+mod maker_library;
 mod renderer_status;
 mod parse_subtitle_placement;
 mod parse_texture_specification;

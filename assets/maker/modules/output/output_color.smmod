@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "created_by": "Screenshaver",
+  "uses": "Connect a Color3 output to display the resulting shader.",
+  "notes": "Only one terminal node is allowed; disconnected output shows a dark fallback.",
+  "inputs": [
+    {
+      "id": "color",
+      "name": "Color",
+      "type": "vec3",
+      "default": "vec3(0.015,0.02,0.04)"
+    }
+  ],
+  "outputs": [],
+  "parameters": [],
+  "helpers": "",
+  "terminal": true,
+  "id": "screenshaver.output.color",
+  "name": "Output Color",
+  "category": "Output",
+  "header_color": "#388765",
+  "description": "Final RGB fragment output for live shader preview.",
+  "glsl": "vec4(clamp({color},0.0,1.0),1.0)"
+}
