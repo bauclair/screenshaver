@@ -22,6 +22,7 @@ pub struct MakerUi {
     status: String,
     open: bool,
     preview_rect: egui::Rect,
+    preview_height: Option<f32>,
 }
 impl MakerUi {
     pub fn new(video:&sdl2::VideoSubsystem)->Result<Self,String>{
@@ -31,7 +32,8 @@ impl MakerUi {
         Ok(Self{context:egui::Context::default(),painter,events:Vec::new(),pointer:egui::Pos2::ZERO,
             modifiers:egui::Modifiers::default(),start:Instant::now(),graph,selected,parameter_popup:None,pending_source:None,dragging_wire:None,
             status:"Click an output port, then a compatible input port".into(),open:true,
-            preview_rect:egui::Rect::from_min_size(egui::pos2(210.0,600.0),egui::vec2(950.0,210.0))})
+            preview_rect:egui::Rect::from_min_size(egui::pos2(210.0,600.0),egui::vec2(950.0,210.0)),
+            preview_height:None})
     }
     pub fn graph(&self)->&Graph{&self.graph}
     pub fn preview_rect(&self)->egui::Rect{self.preview_rect}
@@ -92,7 +94,8 @@ impl MakerUi {
         let status=&mut self.status;
         let open=&mut self.open;
         let preview_rect=&mut self.preview_rect;
-        let mut popup_anchor: Option<(NodeId, egui::Response)> = None;
+        let preview_height=&mut self.preview_height;
+        let mut editor_anchor: Option<(NodeId, egui::Pos2)> = None;
         let output=self.context.run(input,|ctx|{
             egui::TopBottomPanel::top("maker_header").show(ctx,|ui|{
                 ui.horizontal(|ui|{
@@ -148,7 +151,7 @@ impl MakerUi {
                         if !n.definition().parameters.is_empty() {
                             let response=ui.button("Open parameter editor");
                             if response.clicked(){*parameter_popup=if *parameter_popup==Some(id){None}else{Some(id)};}
-                            if *parameter_popup==Some(id){popup_anchor=Some((id,response));}
+                            
                         }
                     }
                     if ui.button("Delete selected node").clicked(){match graph.remove(id){Ok(())=>{*selected=None;*pending=None;*status=format!("Deleted node #{id}")},Err(e)=>*status=e}}
@@ -156,9 +159,42 @@ impl MakerUi {
                 ui.separator();ui.label("Graph status");
                 match graph.validate(){Ok(())=>{ui.small("Typed connections valid; no cycles");},Err(e)=>{ui.colored_label(egui::Color32::LIGHT_RED,e);}}
             });
-            egui::TopBottomPanel::bottom("maker_live_preview").resizable(true).default_height((ctx.available_rect().height() * 0.5).max(120.0)).min_height(120.0)
+            // Explicitly own the preview height. A default_height() hint alone is
+            // not sufficient: egui may restore a previously cached panel size.
+            // The saved value changes only when the divider is dragged.
+            let available_height = ctx.available_rect().height();
+            let minimum_graph_height = 150.0_f32;
+            let minimum_preview_height = 120.0_f32;
+            let maximum_preview_height = (available_height - minimum_graph_height)
+                .max(minimum_preview_height);
+            let desired_height = preview_height.get_or_insert_with(|| available_height * 0.5);
+            let shown_height = desired_height.clamp(
+                minimum_preview_height.min(maximum_preview_height),
+                maximum_preview_height,
+            );
+            egui::TopBottomPanel::bottom("maker_live_preview")
+                .resizable(false)
+                .exact_height(shown_height)
                 .frame(egui::Frame::default().fill(egui::Color32::from_rgba_unmultiplied(10,14,20,42)))
                 .show(ctx,|ui|{
+                    // A dedicated draggable divider, instead of relying on
+                    // TopBottomPanel's internally remembered resize state.
+                    let (divider_rect, divider_response) = ui.allocate_exact_size(
+                        egui::vec2(ui.available_width(), 9.0), egui::Sense::drag());
+                    ui.painter().line_segment(
+                        [egui::pos2(divider_rect.left(),divider_rect.center().y),
+                         egui::pos2(divider_rect.right(),divider_rect.center().y)],
+                        egui::Stroke::new(2.0,egui::Color32::from_gray(105)));
+                    if divider_response.hovered() || divider_response.dragged() {
+                        ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeVertical);
+                    }
+                    if divider_response.dragged() {
+                        let dy=ui.input(|i|i.pointer.delta().y);
+                        *desired_height = (*desired_height - dy).clamp(
+                            minimum_preview_height.min(maximum_preview_height),
+                            maximum_preview_height,
+                        );
+                    }
                     ui.strong("Live Shader Preview");
                     ui.small("Graph-generated GLSL 330 core · preview retains last valid program on errors");
                     *preview_rect = ui.available_rect_before_wrap();
@@ -179,7 +215,7 @@ impl MakerUi {
                     let pos = node.pos;
                     let expanded = node.expanded;
                     let area=egui::Area::new(egui::Id::new(("maker_node",id)))
-                        .order(egui::Order::Foreground).movable(false)
+                        .order(egui::Order::Middle).movable(false)
                         .current_pos(origin+egui::vec2(pos[0],pos[1]))
                         .show(ctx,|ui|{
                             egui::Frame::window(ui.style()).show(ui,|ui|{
@@ -201,7 +237,11 @@ impl MakerUi {
                                 ui.painter().text(header_rect.left_center()+egui::vec2(7.0,0.0),
                                     egui::Align2::LEFT_CENTER,title,egui::TextStyle::Button.resolve(ui.style()),egui::Color32::WHITE);
                                 let header_response=header_response.on_hover_text("Drag title bar to move the module");
-                                if header_response.clicked()||header_response.dragged(){*selected=Some(id);}
+                                if header_response.clicked() {
+                                    *selected=Some(id);
+                                    if *parameter_popup==Some(id) { *parameter_popup=None; }
+                                }
+                                if header_response.dragged(){*selected=Some(id);}
                                 if header_response.dragged(){
                                     let delta=ui.ctx().input(|i|i.pointer.delta());
                                     if let Some(n)=graph.node_mut(id){n.pos[0]+=delta.x;n.pos[1]+=delta.y;}
@@ -215,7 +255,7 @@ impl MakerUi {
                                             *parameter_popup=if *parameter_popup==Some(id){None}else{Some(id)};
                                             *selected=Some(id);
                                         }
-                                        if *parameter_popup==Some(id){popup_anchor=Some((id,response));}
+                                        
                                     });
                                 }
                                 if module.parameters.len()<=2 && controls_height>=35.0*module.parameters.len() as f32 + 22.0 {
@@ -290,7 +330,16 @@ impl MakerUi {
                                 }
                             });
                         });
-                    let _ = area; // Only the header is draggable; ports never move nodes.
+                    // Anchor the editor to the *bottom of the whole module*, not
+                    // to the Parameters button or title bar.
+                    if *parameter_popup == Some(id) {
+                        editor_anchor = Some((id, area.response.rect.left_bottom()));
+                    }
+                    // A click on the module background also dismisses its editor;
+                    // child controls and wiring ports retain their own interactions.
+                    if area.response.clicked() && *parameter_popup == Some(id) {
+                        *parameter_popup = None;
+                    }
                 }
                 // Resolve a wire drop after collecting all port rectangles. This also
                 // supports dropping on a port in a node drawn earlier in the frame.
@@ -317,7 +366,7 @@ impl MakerUi {
                         *dragging_wire = None;
                     }
                 }
-                let painter=ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground,egui::Id::new("maker_wire_layer")));
+                let painter=ctx.layer_painter(egui::LayerId::new(egui::Order::Background,egui::Id::new("maker_wire_layer")));
                 let wire_paths: Vec<(Vec<egui::Pos2>,egui::Color32)> = graph.connections.iter().filter_map(|c| {
                     let a=*output_ports.get(&(c.from,c.from_port))?;
                     let b=*input_ports.get(&(c.to,c.to_port))?;
@@ -329,14 +378,8 @@ impl MakerUi {
                     let bridged = bridge_crossings(index, path, &wire_paths);
                     painter.add(egui::Shape::line(bridged,egui::Stroke::new(2.5,*color)));
                 }
-                // Show destination compatibility while dragging or after selecting a source.
-                if let Some((from, from_port)) = (*dragging_wire).or(*pending) {
-                    for (&(to, to_port), &center) in &input_ports {
-                        let compatible = graph.check_connection(from, from_port, to, to_port).is_ok();
-                        let color = if compatible { egui::Color32::GREEN } else { egui::Color32::RED };
-                        painter.circle_stroke(center, 10.0, egui::Stroke::new(1.5, color));
-                    }
-                }
+                // Compatibility rings are drawn in a separate foreground pass below.
+                // Drawing them on the Middle wire layer hides them behind node bodies.
                 // Live wire follows the pointer while the source port is dragged.
                 if let Some((id, port)) = *dragging_wire {
                     if let (Some(&start), Some(end)) = (output_ports.get(&(id, port)), pointer_pos) {
@@ -346,29 +389,107 @@ impl MakerUi {
                         ));
                     }
                 }
+                // Draw connector indicators after all node windows and connection lines.
+                // This foreground Area is paint-only (no allocated interactive widgets),
+                // so the original port hit rectangles remain responsible for wiring.
+                // The parameter editor is created after this pass and remains above it.
+                egui::Area::new(egui::Id::new("maker_connector_overlay"))
+                    .order(egui::Order::Foreground)
+                    .fixed_pos(canvas.min)
+                    .interactable(false)
+                    .show(ctx, |overlay_ui| {
+                        let overlay = overlay_ui.painter();
+                        // Repaint the actual connector disks in the foreground so
+                        // their protruding halves are never covered by node frames.
+                        for (&(id, row), &center) in &input_ports {
+                            if let Some(node) = graph.node(id) {
+                                if let Some(port) = node.definition().inputs.get(row) {
+                                    overlay.circle_filled(center, 5.0, port_color(&port.ty));
+                                }
+                            }
+                        }
+                        for (&(id, row), &center) in &output_ports {
+                            if let Some(node) = graph.node(id) {
+                                if let Some(port) = node.definition().outputs.get(row) {
+                                    overlay.circle_filled(center, 5.0, port_color(&port.ty));
+                                }
+                            }
+                        }
+                        // Green/red availability rings share the same foreground pass.
+                        if let Some((from, from_port)) = (*dragging_wire).or(*pending) {
+                            for (&(to, to_port), &center) in &input_ports {
+                                let compatible = graph.check_connection(from, from_port, to, to_port).is_ok();
+                                let color = if compatible { egui::Color32::GREEN } else { egui::Color32::RED };
+                                overlay.circle_stroke(center, 10.0, egui::Stroke::new(1.5, color));
+                            }
+                        }
+                    });
                 ui.allocate_rect(canvas,egui::Sense::hover());
             });
-            // Popup is drawn after the graph areas, using egui's popup layer.
-            // Its anchor is the actual parameter button, so canvas position and
-            // node dragging are accounted for automatically.
-            if let Some(id)=*parameter_popup {
-                if graph.node(id).is_none(){*parameter_popup=None;}
-                else if let Some((anchor_id,anchor))=popup_anchor.as_ref() {
-                    if *anchor_id==id {
-                        let mut visible=true;
-                        egui::Popup::from_response(&anchor)
-                            .open_bool(&mut visible)
-                            .show(|ui|{
-                                ui.set_min_width(290.0);
-                                ui.horizontal(|ui|{
-                                    ui.strong(format!("{} #{} — Parameters",graph.node(id).unwrap().definition().name,id));
+            // Module-attached editor is a foreground Area, not a Popup. Its
+            // lifetime is independent of nested color-picker popups.
+            // The contents are only interactive while the editor is open.
+            let editor_id = egui::Id::new("maker_attached_parameter_editor");
+            let is_open = parameter_popup.is_some();
+            let progress = ctx.animate_bool_with_time(editor_id, is_open, 0.18);
+            if let Some(id) = *parameter_popup {
+                if graph.node(id).is_none() { *parameter_popup = None; }
+            }
+            if let Some(id) = *parameter_popup {
+                if let Some((anchor_id, anchor_pos)) = editor_anchor {
+                    if anchor_id == id {
+                        let bounds = ctx.content_rect();
+                        let width = 360.0_f32.min((bounds.width() - 16.0).max(200.0));
+                        let max_height = (bounds.height() - 16.0).max(120.0);
+                        let target_height = 410.0_f32.min(max_height);
+                        // The panel unfolds directly below the module. Keep its
+                        // horizontal origin aligned with the module's left edge.
+                        let x = anchor_pos.x.clamp(bounds.left() + 8.0,
+                            (bounds.right() - width - 8.0).max(bounds.left() + 8.0));
+                        // Preserve the bottom-edge attachment. If the module is
+                        // near the bottom, reduce the panel's visible height and
+                        // scroll its controls rather than overlay the module.
+                        let y = anchor_pos.y;
+                        let room_below = (bounds.bottom() - y - 8.0).max(0.0);
+                        let visible_height = target_height.min(room_below);
+                        egui::Area::new(egui::Id::new(("maker_parameter_area", id)))
+                            .order(egui::Order::Foreground)
+                            .movable(false)
+                            .fixed_pos(egui::pos2(x, y))
+                            .show(ctx, |ui| {
+                                ui.set_width(width);
+                                ui.set_max_height(visible_height);
+                                // Clip only the opening animation. Once expanded,
+                                // nested widgets use their normal independent layers.
+                                if progress < 1.0 || visible_height < target_height {
+                                    let clip = egui::Rect::from_min_size(
+                                        ui.min_rect().min, egui::vec2(width, visible_height * progress));
+                                    ui.set_clip_rect(ui.clip_rect().intersect(clip));
+                                }
+                                egui::Frame::window(ui.style()).show(ui, |ui| {
+                                    ui.set_width(width - 24.0);
+                                    ui.horizontal(|ui| {
+                                        ui.strong(format!("{} #{} — Parameters",
+                                            graph.node(id).unwrap().definition().name, id));
+                                        if ui.button("✕").on_hover_text("Close parameter editor").clicked() {
+                                            *parameter_popup = None;
+                                        }
+                                    });
+                                    ui.separator();
+                                    egui::ScrollArea::vertical()
+                                        .max_height((visible_height - 64.0).max(24.0))
+                                        .show(ui, |ui| {
+                                            if *parameter_popup == Some(id) {
+                                                if let Some(node) = graph.node_mut(id) { edit_parameters(ui, node); }
+                                            }
+                                        });
                                 });
-                                ui.separator();
-                                if let Some(node)=graph.node_mut(id){edit_parameters(ui,node);}
                             });
-                        if !visible{*parameter_popup=None;}
                     }
                 }
+            }
+            if parameter_popup.is_some() && ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+                *parameter_popup = None;
             }
 
         });
