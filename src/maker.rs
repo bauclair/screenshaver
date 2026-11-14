@@ -23,7 +23,7 @@ pub fn run()->Result<(),String>{
         let scale_y = if wh > 0 { dh as f32 / wh as f32 } else { 1.0 };
         let scale = scale_x.min(scale_y);
         preview.update(ui.graph());
-        preview.render(dw as i32,dh as i32,start.elapsed().as_secs_f32(),ui.graph());
+        preview.render(dw as i32,dh as i32,scale,ui.preview_rect(),start.elapsed().as_secs_f32(),ui.graph());
         if !ui.frame(dw,dh,scale,preview.error.as_deref()){break}
         window.gl_swap_window();std::thread::sleep(Duration::from_millis(8));
     }

@@ -18,6 +18,7 @@ pub struct MakerUi {
 
     status: String,
     open: bool,
+    preview_rect: egui::Rect,
 }
 impl MakerUi {
     pub fn new(video:&sdl2::VideoSubsystem)->Result<Self,String>{
@@ -26,9 +27,11 @@ impl MakerUi {
         let graph=Graph::demo();let selected=graph.nodes.iter().find(|n|n.kind==Kind::Palette).map(|n|n.id);
         Ok(Self{context:egui::Context::default(),painter,events:Vec::new(),pointer:egui::Pos2::ZERO,
             modifiers:egui::Modifiers::default(),start:Instant::now(),graph,selected,pending_source:None,dragging_wire:None,
-            status:"Click an output port, then a compatible input port".into(),open:true})
+            status:"Click an output port, then a compatible input port".into(),open:true,
+            preview_rect:egui::Rect::from_min_size(egui::pos2(210.0,600.0),egui::vec2(950.0,210.0))})
     }
     pub fn graph(&self)->&Graph{&self.graph}
+    pub fn preview_rect(&self)->egui::Rect{self.preview_rect}
     pub fn handle_event(&mut self, event: &Event) {
         match event {
             Event::MouseMotion { x, y, .. } => {
@@ -83,6 +86,7 @@ impl MakerUi {
         let dragging_wire=&mut self.dragging_wire;
         let status=&mut self.status;
         let open=&mut self.open;
+        let preview_rect=&mut self.preview_rect;
         let output=self.context.run(input,|ctx|{
             egui::TopBottomPanel::top("maker_header").show(ctx,|ui|{
                 ui.horizontal(|ui|{
@@ -106,7 +110,19 @@ impl MakerUi {
                 ui.small("Add nodes to the graph:");
                 for kind in Kind::LIBRARY{
                     if kind==Kind::Output && graph.nodes.iter().any(|n|n.kind==Kind::Output){continue}
-                    if ui.button(format!("+ {}",kind.title())).clicked(){
+                    // Reuse the node-header palette so the library and graph stay in sync.
+                    let add_response = ui.add(
+                        egui::Button::new(
+                            egui::RichText::new(format!("+ {}", kind.title()))
+                                .color(egui::Color32::WHITE),
+                        )
+                        .fill(node_header_color(kind)),
+                    )
+                        .on_hover_ui(|ui| {
+                            ui.set_max_width(350.0);
+                            module_library_tooltip(ui, kind);
+                        });
+                    if add_response.clicked(){
                         let count=graph.nodes.len();
                         let id=graph.add(kind,[80.0+(count%3) as f32*45.0,180.0+(count%4) as f32*42.0]);
                         *selected=Some(id);*status=format!("Added {} #{}",kind.title(),id);
@@ -130,77 +146,138 @@ impl MakerUi {
             });
             egui::TopBottomPanel::bottom("maker_live_preview").resizable(true).default_height(215.0).min_height(120.0)
                 .frame(egui::Frame::default().fill(egui::Color32::from_rgba_unmultiplied(10,14,20,42)))
-                .show(ctx,|ui|{ui.strong("Live Shader Preview");ui.small("Graph-generated GLSL 330 core · preview retains last valid program on errors");});
+                .show(ctx,|ui|{
+                    ui.strong("Live Shader Preview");
+                    ui.small("Graph-generated GLSL 330 core · preview retains last valid program on errors");
+                    *preview_rect = ui.available_rect_before_wrap();
+                });
             egui::CentralPanel::default().frame(egui::Frame::default().fill(egui::Color32::from_rgba_unmultiplied(12,16,25,228))).show(ctx,|ui|{
                 ui.heading("Node Graph");ui.small("Drag from output to input to wire · click-to-connect also works · drag node headers to move");ui.separator();
                 let canvas=ui.available_rect_before_wrap();let origin=canvas.min;
                 let mut input_ports=std::collections::HashMap::new();
+                let mut input_hit_rects=std::collections::HashMap::new();
                 let mut output_ports=std::collections::HashMap::new();
                 let ids:Vec<NodeId>=graph.nodes.iter().map(|n|n.id).collect();
                 for id in ids{
-                    let Some(node)=graph.node(id) else{continue};
-                    let kind=node.kind;let pos=node.pos;
+                    // Copy the immutable node fields before entering the UI closure.
+                    // The closure also needs mutable access to the graph.
+                    let Some(node) = graph.node(id) else { continue };
+                    let kind = node.kind;
+                    let pos = node.pos;
+                    let expanded = node.expanded;
                     let area=egui::Area::new(egui::Id::new(("maker_node",id)))
                         .order(egui::Order::Foreground).movable(false)
                         .current_pos(origin+egui::vec2(pos[0],pos[1]))
                         .show(ctx,|ui|{
                             egui::Frame::window(ui.style()).show(ui,|ui|{
-                                ui.set_min_width(170.0);
-                                ui.horizontal(|ui|{
-                                    let header = ui.add(egui::Label::new(format!("{} #{}",kind.title(),id))
-                                        .sense(egui::Sense::click_and_drag()))
-                                        .on_hover_text("Drag this header to move the node");
-                                    if header.clicked() { *selected = Some(id); }
-                                    if header.dragged() {
-                                        if let Some(n) = graph.node_mut(id) {
-                                            let delta = ui.ctx().input(|i| i.pointer.delta());
-                                            n.pos = [pos[0] + delta.x, pos[1] + delta.y];
-                                        }
-                                        *selected = Some(id);
+                                // Compute the smallest practical width from the actual visible
+                                // labels and controls. No inherited fixed node width.
+                                let node_width = compact_node_width(ui, kind, expanded, id);
+                                ui.set_min_width(node_width);
+                                ui.set_max_width(node_width);
+                                ui.spacing_mut().slider_width = 92.0;
+                                // The full-width, compact title bar is the only node drag handle.
+                                // Connection ports remain outside this interactive rectangle.
+                                let header_color = node_header_color(kind);
+                                let title = format!("{} #{}", kind.title(), id);
+                                let header_height = ui.text_style_height(&egui::TextStyle::Button) + 8.0;
+                                let (header_rect, header_response) = ui.allocate_exact_size(
+                                    egui::vec2(node_width, header_height),
+                                    egui::Sense::click_and_drag(),
+                                );
+                                ui.painter().rect_filled(header_rect, 3.0, header_color);
+                                ui.painter().text(
+                                    header_rect.left_center() + egui::vec2(7.0, 0.0),
+                                    egui::Align2::LEFT_CENTER,
+                                    title,
+                                    egui::TextStyle::Button.resolve(ui.style()),
+                                    egui::Color32::WHITE,
+                                );
+                                let header_response = header_response.on_hover_text("Drag anywhere on this title bar to move the node");
+                                if header_response.clicked() || header_response.dragged() {
+                                    *selected = Some(id);
+                                }
+                                if header_response.dragged() {
+                                    let delta = ui.ctx().input(|i| i.pointer.delta());
+                                    if let Some(n) = graph.node_mut(id) {
+                                        n.pos[0] += delta.x;
+                                        n.pos[1] += delta.y;
                                     }
-                                    if let Some(n)=graph.node_mut(id){if ui.small_button(if n.expanded{"−"}else{"+"}).clicked(){n.expanded=!n.expanded;}}
+                                }
+                                ui.horizontal(|ui| {
+                                    if let Some(n) = graph.node_mut(id) {
+                                        if ui.small_button(if n.expanded { "−" } else { "+" }).clicked() {
+                                            n.expanded = !n.expanded;
+                                        }
+                                    }
                                 });
                                 if graph.node(id).is_some_and(|n|n.expanded){if let Some(n)=graph.node_mut(id){edit_parameters(ui,n);}}
-                                for (port,(name,typ)) in kind.inputs().iter().enumerate(){
-                                    ui.horizontal(|ui|{
-                                        let connected=graph.input_connection(id,port).is_some();
-                                        let response = ui.add(egui::Button::new(if connected { "● in" } else { "○ in" })
-                                            .sense(egui::Sense::click_and_drag()));
-                                        input_ports.insert((id,port),response.rect.center());
-                                        let hint = port_hint(graph, id, port, *pending, *dragging_wire);
-                                        let response = response.on_hover_text(hint);
+                                // Ports occupy the vertical left/right edges of the node.
+                                // They remain visible when the node is collapsed.
+                                let inputs = kind.inputs();
+                                let outputs = kind.outputs();
+                                let rows = inputs.len().max(outputs.len());
+                                let port_color = |ty: crate::maker_graph::PortType| -> egui::Color32 {
+                                    match ty {
+                                        crate::maker_graph::PortType::Float => egui::Color32::from_rgb(104,195,237),
+                                        crate::maker_graph::PortType::Uv2 => egui::Color32::from_rgb(123,207,152),
+                                        crate::maker_graph::PortType::Color3 => egui::Color32::from_rgb(229,173,96),
+                                    }
+                                };
+                                // Parameter controls can make the actual node body wider
+                                // than its title bar. Anchor port rows to the resulting
+                                // content width, not the title/header width.
+                                let body_width = ui.min_rect().width().max(node_width);
+                                for row in 0..rows {
+                                    let (row_rect, _) = ui.allocate_exact_size(
+                                        egui::vec2(body_width, 25.0), egui::Sense::hover());
+                                    if let Some(&(name, ty)) = inputs.get(row) {
+                                        let center = egui::pos2(row_rect.left(), row_rect.center().y);
+                                        let hit = egui::Rect::from_center_size(center, egui::vec2(22.0, 22.0));
+                                        let response = ui.interact(hit, ui.id().with((id, "input", row)), egui::Sense::click_and_drag());
+                                        input_ports.insert((id,row), center);
+                                        input_hit_rects.insert((id,row), hit);
+                                        let color = port_color(ty);
+                                        ui.painter().circle_filled(center, 5.0, color);
+                                        ui.painter().text(center + egui::vec2(11.0, 0.0), egui::Align2::LEFT_CENTER,
+                                            name, egui::TextStyle::Small.resolve(ui.style()), ui.visuals().text_color());
+                                        let response = response.on_hover_text(port_hint(graph,id,row,*pending,*dragging_wire));
                                         if response.clicked() && dragging_wire.is_none() {
-                                            if let Some((from,from_port))=pending.take(){
-                                                match graph.connect(from,from_port,id,port){
-                                                    Ok(())=>*status=format!("Connected #{from}:{from_port} to #{id}:{port}"),
-                                                    Err(e)=>*status=format!("Connection rejected: {e}")
+                                            if let Some((from, from_port)) = pending.take() {
+                                                match graph.connect(from,from_port,id,row) {
+                                                    Ok(()) => *status = format!("Connected #{from}:{from_port} to #{id}:{row}"),
+                                                    Err(e) => *status = format!("Connection rejected: {e}"),
                                                 }
-                                            }else{graph.disconnect_input(id,port);*status=format!("Disconnected input #{id}:{port}");}
-                                            *selected=Some(id);
+                                            } else {
+                                                graph.disconnect_input(id,row);
+                                                *status = format!("Disconnected input #{id}:{row}");
+                                            }
+                                            *selected = Some(id);
                                         }
-                                        ui.small(format!("{}: {}",name,typ.name()));
-                                    });
-                                }
-                                for (port,(name,typ)) in kind.outputs().iter().enumerate(){
-                                    ui.horizontal(|ui|{
-                                        ui.small(format!("{}: {}",name,typ.name()));
-                                        let active=*pending==Some((id,port));
-                                        let response = ui.add(egui::Button::new(if active { "◉ out" } else { "○ out" })
-                                            .sense(egui::Sense::click_and_drag()));
-                                        output_ports.insert((id,port),response.rect.center());
+                                    }
+                                    if let Some(&(name, ty)) = outputs.get(row) {
+                                        let center = egui::pos2(row_rect.right(), row_rect.center().y);
+                                        let hit = egui::Rect::from_center_size(center, egui::vec2(22.0, 22.0));
+                                        let response = ui.interact(hit, ui.id().with((id, "output", row)), egui::Sense::click_and_drag());
+                                        output_ports.insert((id,row),center);
+                                        ui.painter().circle_filled(center, 5.0, port_color(ty));
+                                        ui.painter().text(center - egui::vec2(11.0,0.0), egui::Align2::RIGHT_CENTER,
+                                            name, egui::TextStyle::Small.resolve(ui.style()),ui.visuals().text_color());
                                         let response = response.on_hover_text(format!(
-                                            "{} output ({})\nConnect to any number of compatible inputs.\nClick to select, or drag to an input.", name, typ.name()));
+                                            "{} output ({})\nMultiple destinations allowed. Click or drag to an input.",name,ty.name()));
                                         if response.drag_started() {
-                                            *dragging_wire = Some((id, port));
+                                            *dragging_wire = Some((id,row));
                                             *pending = None;
                                             *selected = Some(id);
-                                            *status = format!("Drag {} output to a matching input", typ.name());
+                                            *status = format!("Drag {} output to a compatible input",ty.name());
                                         }
-                                        if response.on_hover_text("Click to select source, or drag to an input").clicked(){
-                                            *pending=if active{None}else{Some((id,port))};*selected=Some(id);
-                                            *status=if active{"Connection cancelled".into()}else{format!("Select a {} input",typ.name())};
+                                        if response.clicked() {
+                                            let active = *pending == Some((id,row));
+                                            *pending = if active {None} else {Some((id,row))};
+                                            *selected = Some(id);
+                                            *status = if active {"Connection cancelled".into()} else {format!("Select a {} input",ty.name())};
                                         }
-                                    });
+                                    }
                                 }
                             });
                         });
@@ -215,8 +292,8 @@ impl MakerUi {
                         let target = pointer_pos.and_then(|p| {
                             input_ports.iter().find_map(|(&(id, port), &center)| {
                                 // The visible port is a small button, not just its center.
-                                let hit = egui::Rect::from_center_size(center, egui::vec2(58.0, 28.0));
-                                hit.contains(p).then_some((id, port))
+                                input_hit_rects.get(&(id,port)).is_some_and(|hit|hit.contains(p))
+                                    .then_some((id,port))
                             })
                         });
                         if let Some((to, to_port)) = target {
@@ -232,11 +309,20 @@ impl MakerUi {
                     }
                 }
                 let painter=ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground,egui::Id::new("maker_wire_layer")));
-                for c in &graph.connections{
-                    if let (Some(&a),Some(&b))=(output_ports.get(&(c.from,c.from_port)),input_ports.get(&(c.to,c.to_port))){
-                        let points = wire_points(a, b);
-                        painter.add(egui::Shape::line(points,egui::Stroke::new(2.5,egui::Color32::from_rgb(80,205,230))));
-                    }
+                let wire_paths: Vec<(Vec<egui::Pos2>,egui::Color32)> = graph.connections.iter().filter_map(|c| {
+                    let a=*output_ports.get(&(c.from,c.from_port))?;
+                    let b=*input_ports.get(&(c.to,c.to_port))?;
+                    let ty=graph.node(c.from)?.kind.outputs().get(c.from_port)?.1;
+                    let color=match ty {
+                        crate::maker_graph::PortType::Float => egui::Color32::from_rgb(104,195,237),
+                        crate::maker_graph::PortType::Uv2 => egui::Color32::from_rgb(123,207,152),
+                        crate::maker_graph::PortType::Color3 => egui::Color32::from_rgb(229,173,96),
+                    };
+                    Some((orthogonal_wire(a,b),color))
+                }).collect();
+                for (index,(path,color)) in wire_paths.iter().enumerate() {
+                    let bridged = bridge_crossings(index, path, &wire_paths);
+                    painter.add(egui::Shape::line(bridged,egui::Stroke::new(2.5,*color)));
                 }
                 // Show destination compatibility while dragging or after selecting a source.
                 if let Some((from, from_port)) = (*dragging_wire).or(*pending) {
@@ -250,7 +336,7 @@ impl MakerUi {
                 if let Some((id, port)) = *dragging_wire {
                     if let (Some(&start), Some(end)) = (output_ports.get(&(id, port)), pointer_pos) {
                         painter.add(egui::Shape::line(
-                            wire_points(start, end),
+                            orthogonal_wire(start, end),
                             egui::Stroke::new(2.5, egui::Color32::from_rgb(255, 196, 92)),
                         ));
                     }
@@ -274,18 +360,47 @@ fn edit_parameters(ui:&mut egui::Ui,node:&mut crate::maker_graph::Node){
     }
 }
 
-/// Cubic Bezier wire with stable curvature for both left-to-right and reversed nodes.
-fn wire_points(a: egui::Pos2, b: egui::Pos2) -> Vec<egui::Pos2> {
-    let dx = ((b.x - a.x).abs() * 0.5).max(35.0);
-    (0..=24).map(|i| {
-        let t = i as f32 / 24.0;
-        let u = 1.0 - t;
-        let p = a.to_vec2() * (u * u * u)
-            + (a + egui::vec2(dx, 0.0)).to_vec2() * (3.0 * u * u * t)
-            + (b - egui::vec2(dx, 0.0)).to_vec2() * (3.0 * u * t * t)
-            + b.to_vec2() * (t * t * t);
-        egui::pos2(p.x, p.y)
-    }).collect()
+/// Right-angle routing with two horizontal runs and a vertical middle segment.
+fn orthogonal_wire(a: egui::Pos2,b: egui::Pos2)->Vec<egui::Pos2>{
+    let mid = if b.x >= a.x + 32.0 { (a.x+b.x)*0.5 } else { a.x+24.0 };
+    vec![a,egui::pos2(mid,a.y),egui::pos2(mid,b.y),b]
+}
+
+/// Add a semicircular jump on the vertical segment where another wire's
+/// horizontal segment crosses it. This is presentation-only, never connectivity.
+fn bridge_crossings(index:usize,path:&[egui::Pos2],all:&[(Vec<egui::Pos2>,egui::Color32)])->Vec<egui::Pos2>{
+    if path.len()!=4{return path.to_vec()}
+    let x=path[1].x;
+    let y0=path[1].y;
+    let y1=path[2].y;
+    let direction=if y1>=y0{1.0}else{-1.0};
+    let mut crossings=Vec::new();
+    for (other_index,(other,_)) in all.iter().enumerate(){
+        if index==other_index || other.len()!=4 {continue}
+        for pair in [(other[0],other[1]),(other[2],other[3])]{
+            let (a,b)=pair;
+            if x>a.x.min(b.x)+6.0 && x<a.x.max(b.x)-6.0
+                && a.y>y0.min(y1)+7.0 && a.y<y0.max(y1)-7.0 {
+                crossings.push(a.y);
+            }
+        }
+    }
+    crossings.sort_by(|a,b| if direction>0.0{a.total_cmp(b)}else{b.total_cmp(a)});
+    crossings.dedup_by(|a,b|(*a-*b).abs()<12.0);
+    let mut result=vec![path[0],path[1]];
+    let mut last=y0;
+    for y in crossings{
+        if (y-last)*direction<12.0 || (y1-y)*direction<9.0{continue}
+        let radius=6.0;
+        result.push(egui::pos2(x,y-radius*direction));
+        // A half-circle protruding to the right of the vertical wire.
+        for step in 1..=12{
+            let theta=std::f32::consts::PI*(step as f32/12.0);
+            result.push(egui::pos2(x+radius*theta.sin(),y-radius*direction*theta.cos()));
+        }
+        last=y+radius*direction;
+    }
+    result.push(path[2]);result.push(path[3]);result
 }
 
 /// Explain the port contract and the exact validation outcome for the selected source.
@@ -305,4 +420,114 @@ fn port_hint(graph: &Graph, to: NodeId, to_port: usize,
         hint.push_str("\nClick a source output first; click this input without a source to disconnect.");
     }
     hint
+}
+
+/// Stable module-type colors, independent of selection and connection validity.
+fn node_header_color(kind: Kind) -> egui::Color32 {
+    match kind {
+        Kind::Uv => egui::Color32::from_rgb(40, 124, 155),
+        Kind::Noise => egui::Color32::from_rgb(134, 96, 176),
+        Kind::Multiply => egui::Color32::from_rgb(93, 111, 175),
+        Kind::Palette => egui::Color32::from_rgb(180, 106, 53),
+        Kind::Output => egui::Color32::from_rgb(56, 135, 101),
+    }
+}
+
+/// Determine a node's width from its visible title, port labels and controls.
+/// This deliberately avoids the parent canvas's available width and keeps
+/// collapsed nodes smaller than expanded nodes when appropriate.
+fn compact_node_width(ui: &egui::Ui, kind: Kind, expanded: bool, id: NodeId) -> f32 {
+    let font = egui::TextStyle::Button.resolve(ui.style());
+    let measure = |text: &str| -> f32 {
+        ui.painter()
+            .layout_no_wrap(text.to_owned(), font.clone(), egui::Color32::WHITE)
+            .size().x
+    };
+    let title_width = measure(&format!("{} #{}", kind.title(), id)) + 16.0;
+    let mut content_width = 0.0_f32;
+    for (name, ty) in kind.inputs() {
+        content_width = content_width.max(measure(&format!("{}: {}", name, ty.name())) + 66.0);
+    }
+    for (name, ty) in kind.outputs() {
+        content_width = content_width.max(measure(&format!("{}: {}", name, ty.name())) + 66.0);
+    }
+    // Opposite-edge labels share a row; reserve room for both simultaneously.
+    let input_label = kind.inputs().iter().map(|(name,_)|measure(name)).fold(0.0_f32,f32::max);
+    let output_label = kind.outputs().iter().map(|(name,_)|measure(name)).fold(0.0_f32,f32::max);
+    content_width = content_width.max(input_label + output_label + 38.0);
+    if expanded {
+        let controls_width: f32 = match kind {
+            Kind::Uv | Kind::Output => 155.0,
+            Kind::Noise | Kind::Multiply | Kind::Palette => 172.0,
+        };
+        content_width = content_width.max(controls_width);
+    }
+    title_width.max(content_width).max(66.0).ceil()
+}
+
+/// Module documentation is kept separate from the Module Library's layout.
+/// Descriptions reflect the current graph compiler, including disconnected
+/// input defaults and the animated behavior of generated GLSL.
+fn module_library_tooltip(ui: &mut egui::Ui, kind: Kind) {
+    ui.heading(kind.title());
+    ui.separator();
+
+    let (purpose, parameters, uses, notes) = match kind {
+        Kind::Uv => (
+            "Supplies centered, aspect-corrected fragment coordinates. The origin is at the image center; coordinates are scaled by the preview height.",
+            "None.",
+            "Coordinate source for procedural textures, spatial patterns, and noise sampling.",
+            "Coordinates are not confined to 0–1. The output changes with fragment position and preview dimensions.",
+        ),
+        Kind::Noise => (
+            "Samples smooth 2D value noise using the input coordinates. The generated pattern also drifts slowly over time.",
+            "Scale (0.1–20): controls spatial frequency. Larger values produce finer patterns.",
+            "Organic textures, masks, cloud-like variation, and inputs to color palettes.",
+            "When UV is unconnected, the shader uses its built-in centered coordinates. Output values are approximately 0–1.",
+        ),
+        Kind::Multiply => (
+            "Multiplies an incoming scalar by an adjustable constant.",
+            "Factor (0–4): sets the scalar multiplier. Zero produces zero.",
+            "Adjust noise strength, scale scalar signals, and change the range supplied to downstream modules.",
+            "When Value is unconnected, its default is 0.5. This module currently has one input, not two arbitrary signal inputs.",
+        ),
+        Kind::Palette => (
+            "Converts a scalar into an animated RGB color using phase-shifted cosine waves. Applies a configurable RGB tint.",
+            "Frequency (0.1–5): controls color cycling over the input value. Color: multiplies the resulting RGB channels.",
+            "Colorizing noise, creating procedural gradients, and producing animated shader colors.",
+            "When Value is unconnected, its default is 0.5. The generated palette also animates with time.",
+        ),
+        Kind::Output => (
+            "Terminal node defining the final RGB fragment color shown in the Live Shader Preview.",
+            "None.",
+            "Connect a Color3 output here to display the resulting shader.",
+            "Only one Output Color node is permitted. If unconnected, the compiler generates a dark fallback color.",
+        ),
+    };
+
+    ui.label(purpose);
+    ui.add_space(5.0);
+    ui.strong("Inputs");
+    if kind.inputs().is_empty() {
+        ui.label("None");
+    } else {
+        for (name, ty) in kind.inputs() {
+            ui.label(format!("{name} ({})", ty.name()));
+        }
+    }
+    ui.strong("Outputs");
+    if kind.outputs().is_empty() {
+        ui.label("None (terminal node)");
+    } else {
+        for (name, ty) in kind.outputs() {
+            ui.label(format!("{name} ({})", ty.name()));
+        }
+    }
+    ui.add_space(5.0);
+    ui.strong("Parameters");
+    ui.label(parameters);
+    ui.strong("Typical uses");
+    ui.label(uses);
+    ui.strong("Behavioral notes");
+    ui.label(notes);
 }

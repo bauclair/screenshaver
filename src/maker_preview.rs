@@ -11,20 +11,31 @@ impl Preview {
         let result=crate::maker_compiler::fragment_source(graph).and_then(|frag|link(VERT,&frag));
         match result{Ok(p)=>unsafe{if self.program!=0{gl::DeleteProgram(self.program)}self.program=p;self.error=None},Err(e)=>self.error=Some(e)}
     }
-    pub fn render(&mut self,w:i32,h:i32,t:f32,graph:&Graph){
+    pub fn render(&mut self,w:i32,h:i32,scale:f32,rect:egui::Rect,t:f32,graph:&Graph){
         unsafe{
             gl::Viewport(0,0,w,h);gl::Disable(gl::SCISSOR_TEST);gl::Disable(gl::DEPTH_TEST);
             gl::ClearColor(0.015,0.02,0.04,1.0);gl::Clear(gl::COLOR_BUFFER_BIT);
-            if self.program==0{return}
+            // The GLSL shader is confined to the egui preview content rectangle.
+            // egui coordinates are top-left origin; OpenGL is bottom-left origin.
+            let x=(rect.min.x*scale).round() as i32;
+            let y=h-(rect.max.y*scale).round() as i32;
+            let pw=((rect.width()*scale).round() as i32).max(0);
+            let ph=((rect.height()*scale).round() as i32).max(0);
+            let x=x.clamp(0,w);let y=y.clamp(0,h);
+            let pw=pw.min(w-x);let ph=ph.min(h-y);
+            if pw<=0 || ph<=0 || self.program==0{return}
+            gl::Enable(gl::SCISSOR_TEST);
+            gl::Scissor(x,y,pw,ph);
+            gl::Viewport(x,y,pw,ph);
             gl::UseProgram(self.program);
-            uniform_1f(self.program,"u_time",t);uniform_2f(self.program,"u_resolution",w as f32,h as f32);
+            uniform_1f(self.program,"u_time",t);uniform_2f(self.program,"u_resolution",pw as f32,ph as f32);
             for n in &graph.nodes{match n.kind{
                 Kind::Noise=>uniform_1f(self.program,&format!("u_n{}_scale",n.id),n.scale),
                 Kind::Multiply=>uniform_1f(self.program,&format!("u_n{}_factor",n.id),n.factor),
                 Kind::Palette=>{uniform_1f(self.program,&format!("u_n{}_frequency",n.id),n.frequency);uniform_3f(self.program,&format!("u_n{}_color",n.id),n.color)},
                 _=>{}
             }}
-            gl::BindVertexArray(self.vao);gl::DrawArrays(gl::TRIANGLES,0,3);gl::BindVertexArray(0);gl::UseProgram(0);
+            gl::BindVertexArray(self.vao);gl::DrawArrays(gl::TRIANGLES,0,3);gl::BindVertexArray(0);gl::UseProgram(0);gl::Disable(gl::SCISSOR_TEST);gl::Viewport(0,0,w,h);
         }
     }
     pub fn destroy(&mut self){unsafe{gl::DeleteVertexArrays(1,&self.vao);if self.program!=0{gl::DeleteProgram(self.program)}}}
