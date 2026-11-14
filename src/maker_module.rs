@@ -6,7 +6,7 @@ pub enum Trust { Official, Community }
 #[derive(Clone,Debug)]
 pub struct Port { pub id:String, pub name:String, pub ty:String, pub default:String }
 #[derive(Clone,Debug)]
-pub struct Parameter { pub id:String, pub name:String, pub ty:String, pub default:Value, pub min:f32, pub max:f32 }
+pub struct Parameter { pub id:String, pub name:String, pub ty:String, pub default:Value, pub min:f32, pub max:f32, pub options:Vec<String> }
 #[derive(Clone,Debug)]
 pub struct Module {
     pub id:String, pub name:String, pub category:String, pub created_by:String,
@@ -39,16 +39,23 @@ impl Module {
     let mut parameters=Vec::new();
     for p in v.get("parameters").and_then(Value::as_array).ok_or("Missing parameters array")?{
         let ty=required(p,"type")?.to_string();
-        if !matches!(ty.as_str(),"float"|"color3"){return Err(format!("Unsupported parameter type: {ty}"))}
+        if !matches!(ty.as_str(),"float"|"color3"|"choice"){return Err(format!("Unsupported parameter type: {ty}"))}
         let default=p.get("default").ok_or("Missing parameter default")?.clone();
-        if ty=="float" && default.as_f64().is_none(){return Err("Float default must be numeric".into())}
+        if (ty=="float"||ty=="choice") && default.as_f64().is_none(){return Err("Float default must be numeric".into())}
         if ty=="color3" && !default.as_array().is_some_and(|a|a.len()==3&&a.iter().all(|x|x.as_f64().is_some())){return Err("color3 default must be RGB array".into())}
         let min=p.get("min").and_then(Value::as_f64).unwrap_or(0.0) as f32;
         let max=p.get("max").and_then(Value::as_f64).unwrap_or(1.0) as f32;
         if min>max{return Err("Parameter min exceeds max".into())}
+        let options=if ty=="choice" {
+            let a=p.get("options").and_then(Value::as_array).ok_or("Choice parameter requires options")?;
+            if a.len()<2 || a.len()>16 || a.iter().any(|v|v.as_str().is_none_or(|s|s.trim().is_empty())) {return Err("Choice parameter needs 2-16 nonempty labels".into())}
+            let index=default.as_f64().unwrap_or(-1.0);
+            if index.fract()!=0.0 || index<0.0 || index>=a.len() as f64 {return Err("Choice default index out of range".into())}
+            a.iter().map(|v|v.as_str().unwrap().to_owned()).collect()
+        } else {Vec::new()};
         let param_id=required(p,"id")?;
         if !valid_ident(param_id){return Err("Invalid parameter identifier".into())}
-        parameters.push(Parameter{id:param_id.into(),name:required(p,"name")?.into(),ty,default,min,max});
+        parameters.push(Parameter{id:param_id.into(),name:required(p,"name")?.into(),ty,default,min,max,options});
     }
     let unique=|items:Vec<&str>|{let mut s=std::collections::HashSet::new();items.into_iter().all(|x|s.insert(x.to_owned()))};
     if !unique(inputs.iter().map(|p|p.id.as_str()).collect())||!unique(outputs.iter().map(|p|p.id.as_str()).collect())||!unique(parameters.iter().map(|p|p.id.as_str()).collect()){return Err("Duplicate port/parameter identifier".into())}

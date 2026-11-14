@@ -34,7 +34,7 @@ impl Preview {
                     if let Some(value)=n.parameters.get(&p.id){
                         let name=format!("u_n{}_{}",n.id,p.id);
                         match p.ty.as_str(){
-                            "float"=>if let Some(v)=value.as_f64(){uniform_1f(self.program,&name,v as f32)},
+                            "float"|"choice"=>if let Some(v)=value.as_f64(){uniform_1f(self.program,&name,v as f32)},
                             "color3"=>if let Some(a)=value.as_array(){
                                 if a.len()==3{uniform_3f(self.program,&name,[
                                     a[0].as_f64().unwrap_or(0.0) as f32,

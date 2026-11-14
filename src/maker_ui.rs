@@ -31,6 +31,7 @@ pub struct MakerUi {
     canvas_pan: egui::Vec2,
     canvas_rect: egui::Rect,
     panning: bool,
+    pan_button: Option<MouseButton>,
     space_held: bool,
     pixels_per_point: f32,
     routing_undo: Vec<(Graph,Routes)>,
@@ -45,7 +46,7 @@ impl MakerUi {
             modifiers:egui::Modifiers::default(),start:Instant::now(),graph,selected,parameter_popup:None,pending_source:None,dragging_wire:None,
             status:"Click an output port, then a compatible input port".into(),open:true,
             preview_rect:egui::Rect::from_min_size(egui::pos2(210.0,600.0),egui::vec2(950.0,210.0)),
-            preview_height:None,routes:Routes::new(),canvas_pan:egui::Vec2::ZERO,canvas_rect:egui::Rect::NOTHING,panning:false,space_held:false,pixels_per_point:1.0,routing_undo:Vec::new(),routing_redo:Vec::new()})
+            preview_height:None,routes:Routes::new(),canvas_pan:egui::Vec2::ZERO,canvas_rect:egui::Rect::NOTHING,panning:false,pan_button:None,space_held:false,pixels_per_point:1.0,routing_undo:Vec::new(),routing_redo:Vec::new()})
     }
     pub fn graph(&self)->&Graph{&self.graph}
     pub fn preview_rect(&self)->egui::Rect{self.preview_rect}
@@ -63,18 +64,29 @@ impl MakerUi {
                     MouseButton::Right => egui::PointerButton::Secondary,
                     MouseButton::Middle => egui::PointerButton::Middle, _ => return };
                 self.pointer = egui::pos2(*x as f32/self.pixels_per_point, *y as f32/self.pixels_per_point);
-                if *mouse_btn==MouseButton::Middle || (*mouse_btn==MouseButton::Left && self.space_held) {
-                    if pressed && self.canvas_rect.contains(self.pointer) {self.panning=true;}
-                    if !pressed {self.panning=false;}
-                    // Keep egui pointer state in sync; otherwise its internal
-                    // drag ownership can become stuck after a pan.
-                    self.events.push(egui::Event::PointerButton { pos: self.pointer, button, pressed, modifiers: self.modifiers });
-                    return;
+                // Track the button that actually started a pan. Releasing Space
+                // during a drag must not strand the canvas in panning mode.
+                if pressed && self.canvas_rect.contains(self.pointer)
+                    && (*mouse_btn == MouseButton::Middle
+                        || (*mouse_btn == MouseButton::Left && self.space_held)) {
+                    self.panning = true;
+                    self.pan_button = Some(*mouse_btn);
                 }
+                if !pressed && self.pan_button == Some(*mouse_btn) {
+                    self.panning = false;
+                    self.pan_button = None;
+                }
+                // Forward all button transitions so egui never retains a stale
+                // pointer-down state after a canvas pan.
                 self.events.push(egui::Event::PointerButton { pos: self.pointer, button, pressed, modifiers: self.modifiers });
             }
             Event::MouseWheel { x, y, .. } => self.events.push(egui::Event::MouseWheel {
                 unit: egui::MouseWheelUnit::Line, delta: egui::vec2(*x as f32, *y as f32), modifiers: self.modifiers }),
+            Event::Window { win_event: sdl2::event::WindowEvent::FocusLost, .. } => {
+                self.panning = false;
+                self.pan_button = None;
+                self.space_held = false;
+            }
             Event::TextInput { text, .. } => self.events.push(egui::Event::Text(text.clone())),
             Event::KeyDown { keycode: Some(key), keymod, repeat, .. } |
             Event::KeyUp { keycode: Some(key), keymod, repeat, .. } => {
@@ -251,11 +263,33 @@ impl MakerUi {
                 let canvas=ui.available_rect_before_wrap();
                 *canvas_rect=canvas;
                 if fit_requested && !graph.nodes.is_empty() {
-                    let left=graph.nodes.iter().map(|n|n.pos[0]).fold(f32::INFINITY,f32::min);
-                    let top=graph.nodes.iter().map(|n|n.pos[1]).fold(f32::INFINITY,f32::min);
-                    let right=graph.nodes.iter().map(|n|n.pos[0]+190.0).fold(f32::NEG_INFINITY,f32::max);
-                    let bottom=graph.nodes.iter().map(|n|n.pos[1]+130.0).fold(f32::NEG_INFINITY,f32::max);
-                    *canvas_pan=egui::vec2((canvas.width()-(right-left))*0.5-left,(canvas.height()-(bottom-top))*0.5-top);
+                    // Center the *complete* existing layout, including routed
+                    // wires. This is a translation only: graph coordinates and
+                    // the user's routing Undo history remain untouched.
+                    let mut left=f32::INFINITY;
+                    let mut top=f32::INFINITY;
+                    let mut right=f32::NEG_INFINITY;
+                    let mut bottom=f32::NEG_INFINITY;
+                    for n in &graph.nodes {
+                        let rows=n.definition().inputs.len().max(n.definition().outputs.len());
+                        // Compact module's measured frame includes egui margins.
+                        let width=186.0_f32;
+                        let height=(110.0_f32).max(55.0+25.0*rows as f32);
+                        left=left.min(n.pos[0]);top=top.min(n.pos[1]);
+                        right=right.max(n.pos[0]+width);
+                        bottom=bottom.max(n.pos[1]+height);
+                    }
+                    for path in routes.values() {
+                        for p in path {
+                            left=left.min(p[0]);top=top.min(p[1]);
+                            right=right.max(p[0]);bottom=bottom.max(p[1]);
+                        }
+                    }
+                    if left.is_finite() && right.is_finite() {
+                        *canvas_pan=egui::vec2(
+                            (canvas.width()-(right-left))*0.5-left,
+                            (canvas.height()-(bottom-top))*0.5-top);
+                    }
                 }
                 let origin=canvas.min+*canvas_pan;
 
@@ -704,11 +738,69 @@ fn edit_parameters(ui:&mut egui::Ui,node:&mut crate::maker_graph::Node){
     for p in &module.parameters {
         let Some(value)=node.parameters.get_mut(&p.id) else {continue};
         match p.ty.as_str(){
+            "choice"=>{
+                let mut selected=value.as_f64().unwrap_or(0.0) as usize;
+                selected=selected.min(p.options.len().saturating_sub(1));
+                ui.label(&p.name);
+                egui::ComboBox::from_id_salt((node.id,&p.id,"choice"))
+                    .selected_text(p.options.get(selected).map(String::as_str).unwrap_or("Select"))
+                    .show_ui(ui,|ui|{
+                        for (index,label) in p.options.iter().enumerate(){
+                            ui.selectable_value(&mut selected,index,label);
+                        }
+                    });
+                if value.as_f64()!=Some(selected as f64){*value=serde_json::json!(selected as f64);}
+            }
             "float"=>{
-                let mut v=value.as_f64().unwrap_or(0.0) as f32;
-                if ui.add(egui::Slider::new(&mut v,p.min..=p.max).text(&p.name)).changed(){
-                    *value=serde_json::json!(v);
+                // Match Control Center's draw_fine_slider: one authoritative
+                // pointer-driven value calculation, with Shift = 10x finer.
+                let previous=value.as_f64().unwrap_or(0.0) as f32;
+                ui.label(&p.name);
+                let desired_size=egui::vec2(ui.available_width().max(80.0),ui.spacing().interact_size.y);
+                let (rect,response)=ui.allocate_exact_size(desired_size,egui::Sense::click_and_drag());
+                let state_id=response.id.with("maker_fine_slider_anchor");
+                let shift=ui.input(|i|i.modifiers.shift);
+                let pointer=response.interact_pointer_pos();
+                if response.drag_started() {
+                    if let Some(pos)=pointer {
+                        ui.ctx().data_mut(|d|d.insert_temp(state_id,(previous,pos.x,shift)));
+                    }
                 }
+                let mut next=previous;
+                if response.dragged() {
+                    if let Some(pos)=pointer {
+                        let mut state=ui.ctx().data_mut(|d|d.get_temp::<(f32,f32,bool)>(state_id));
+                        if state.is_none(){state=Some((previous,pos.x,shift));}
+                        if let Some((mut anchor,mut anchor_x,mut was_shift))=state {
+                            if was_shift!=shift {
+                                anchor=previous;
+                                anchor_x=pos.x;
+                                was_shift=shift;
+                            }
+                            let sensitivity=if shift {0.1} else {1.0};
+                            next=(anchor+(pos.x-anchor_x)/rect.width().max(1.0)
+                                *(p.max-p.min)*sensitivity).clamp(p.min,p.max);
+                            ui.ctx().data_mut(|d|d.insert_temp(state_id,(anchor,anchor_x,was_shift)));
+                        }
+                    }
+                } else if response.clicked() {
+                    if let Some(pos)=pointer {
+                        let fraction=((pos.x-rect.left())/rect.width().max(1.0)).clamp(0.0,1.0);
+                        next=p.min+fraction*(p.max-p.min);
+                    }
+                } else {
+                    ui.ctx().data_mut(|d|d.remove::<(f32,f32,bool)>(state_id));
+                }
+                if (next-previous).abs()>f32::EPSILON {*value=serde_json::json!(next);}
+                let fraction=((next-p.min)/(p.max-p.min).max(f32::EPSILON)).clamp(0.0,1.0);
+                let visuals=if response.dragged(){&ui.visuals().widgets.active}
+                    else if response.hovered(){&ui.visuals().widgets.hovered}
+                    else {&ui.visuals().widgets.inactive};
+                let track=egui::Rect::from_center_size(rect.center(),egui::vec2(rect.width(),4.0));
+                ui.painter().rect_filled(track,2.0,visuals.bg_fill);
+                let knob=egui::pos2(rect.left()+fraction*rect.width(),rect.center().y);
+                ui.painter().circle_filled(knob,7.0,visuals.fg_stroke.color);
+                ui.label(format!("{next:.2}"));
             }
             "color3"=>{
                 if let Some(a)=value.as_array(){
