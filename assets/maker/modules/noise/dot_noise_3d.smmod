@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.noise.dot3d",
+  "name": "3D Dot Noise",
+  "category": "Noise",
+  "created_by": "Screenshaver",
+  "header_color": "#6D729A",
+  "description": "Golden-ratio dot noise sampled at a 3D position.",
+  "uses": "Reusable scalar field detail and procedural modulation.",
+  "notes": "Mathematical form adapted from Xor\u2019s Dot Noise, credited in Morphing Abstract; CC BY-NC-SA 4.0 attribution applies.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "default": "vec3(maker_uv,0.0)"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "value",
+      "name": "Value",
+      "type": "float"
+    }
+  ],
+  "parameters": [],
+  "helpers": "float maker_dot_noise_3d(vec3 p){const float PHI=1.618033988;const mat3 GOLD=mat3(-0.571464913,0.814921382,0.096597072,-0.278044873,-0.303026659,0.911518454,0.772087367,0.494042493,0.399753815);return dot(cos(GOLD*p),sin(PHI*p*GOLD));}",
+  "glsl": "maker_dot_noise_3d({position})",
+  "terminal": false
+}

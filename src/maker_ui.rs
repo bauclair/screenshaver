@@ -3,6 +3,10 @@ use std::{sync::Arc, time::Instant};
 use sdl2::{event::Event, mouse::MouseButton};
 
 use crate::maker_graph::{Graph, NodeId};
+#[path = "maker_routing.rs"]
+mod maker_routing;
+use maker_routing::{Box2, PortPair, Routes};
+use std::collections::BTreeMap;
 use crate::maker_module::{Module, Trust};
 use crate::maker_library;
 
@@ -23,6 +27,14 @@ pub struct MakerUi {
     open: bool,
     preview_rect: egui::Rect,
     preview_height: Option<f32>,
+    routes: Routes,
+    canvas_pan: egui::Vec2,
+    canvas_rect: egui::Rect,
+    panning: bool,
+    space_held: bool,
+    pixels_per_point: f32,
+    routing_undo: Vec<(Graph,Routes)>,
+    routing_redo: Vec<(Graph,Routes)>,
 }
 impl MakerUi {
     pub fn new(video:&sdl2::VideoSubsystem)->Result<Self,String>{
@@ -33,14 +45,16 @@ impl MakerUi {
             modifiers:egui::Modifiers::default(),start:Instant::now(),graph,selected,parameter_popup:None,pending_source:None,dragging_wire:None,
             status:"Click an output port, then a compatible input port".into(),open:true,
             preview_rect:egui::Rect::from_min_size(egui::pos2(210.0,600.0),egui::vec2(950.0,210.0)),
-            preview_height:None})
+            preview_height:None,routes:Routes::new(),canvas_pan:egui::Vec2::ZERO,canvas_rect:egui::Rect::NOTHING,panning:false,space_held:false,pixels_per_point:1.0,routing_undo:Vec::new(),routing_redo:Vec::new()})
     }
     pub fn graph(&self)->&Graph{&self.graph}
     pub fn preview_rect(&self)->egui::Rect{self.preview_rect}
     pub fn handle_event(&mut self, event: &Event) {
         match event {
             Event::MouseMotion { x, y, .. } => {
-                self.pointer = egui::pos2(*x as f32, *y as f32);
+                let next=egui::pos2(*x as f32/self.pixels_per_point,*y as f32/self.pixels_per_point);
+                if self.panning { self.canvas_pan += next-self.pointer; }
+                self.pointer = next;
                 self.events.push(egui::Event::PointerMoved(self.pointer));
             }
             Event::MouseButtonDown { mouse_btn, x, y, .. } | Event::MouseButtonUp { mouse_btn, x, y, .. } => {
@@ -48,7 +62,15 @@ impl MakerUi {
                 let button = match mouse_btn { MouseButton::Left => egui::PointerButton::Primary,
                     MouseButton::Right => egui::PointerButton::Secondary,
                     MouseButton::Middle => egui::PointerButton::Middle, _ => return };
-                self.pointer = egui::pos2(*x as f32, *y as f32);
+                self.pointer = egui::pos2(*x as f32/self.pixels_per_point, *y as f32/self.pixels_per_point);
+                if *mouse_btn==MouseButton::Middle || (*mouse_btn==MouseButton::Left && self.space_held) {
+                    if pressed && self.canvas_rect.contains(self.pointer) {self.panning=true;}
+                    if !pressed {self.panning=false;}
+                    // Keep egui pointer state in sync; otherwise its internal
+                    // drag ownership can become stuck after a pan.
+                    self.events.push(egui::Event::PointerButton { pos: self.pointer, button, pressed, modifiers: self.modifiers });
+                    return;
+                }
                 self.events.push(egui::Event::PointerButton { pos: self.pointer, button, pressed, modifiers: self.modifiers });
             }
             Event::MouseWheel { x, y, .. } => self.events.push(egui::Event::MouseWheel {
@@ -63,6 +85,7 @@ impl MakerUi {
                     shift: keymod.intersects(Mod::LSHIFTMOD | Mod::RSHIFTMOD),
                     mac_cmd: false, command: keymod.intersects(Mod::LCTRLMOD | Mod::RCTRLMOD),
                 };
+                if *key==Keycode::Space { self.space_held=matches!(event,Event::KeyDown{..}); }
                 if *repeat { return; }
                 let mapped = match *key {
                     Keycode::Tab => Some(egui::Key::Tab), Keycode::Return | Keycode::KpEnter => Some(egui::Key::Enter),
@@ -80,6 +103,7 @@ impl MakerUi {
     }
     pub fn frame(&mut self,dw:u32,dh:u32,scale:f32,compile_error:Option<&str>)->bool{
         let scale=scale.max(0.1);
+        self.pixels_per_point=scale;
         let mut input=egui::RawInput::default();
         input.screen_rect=Some(egui::Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(dw as f32/scale,dh as f32/scale)));
         input.viewports.insert(egui::ViewportId::ROOT,egui::ViewportInfo{native_pixels_per_point:Some(scale),..Default::default()});
@@ -95,13 +119,36 @@ impl MakerUi {
         let open=&mut self.open;
         let preview_rect=&mut self.preview_rect;
         let preview_height=&mut self.preview_height;
+        let routes=&mut self.routes;
+        let canvas_pan=&mut self.canvas_pan;
+        let canvas_rect=&mut self.canvas_rect;
+        let routing_undo=&mut self.routing_undo;
+        let routing_redo=&mut self.routing_redo;
+        let mut optimize_requested=false;
+        let mut fit_requested=false;
         let mut editor_anchor: Option<(NodeId, egui::Pos2)> = None;
         let output=self.context.run(input,|ctx|{
             egui::TopBottomPanel::top("maker_header").show(ctx,|ui|{
                 ui.horizontal(|ui|{
                     ui.heading("Screenshaver Maker");ui.separator();ui.label("Untitled graph");
                     if ui.button("Reset demo").clicked(){let revision=graph.revision;*graph=Graph::demo();graph.revision=revision+1;
-                        *selected=graph.nodes.iter().find(|n|n.module_id=="screenshaver.color.cosine_palette").map(|n|n.id);*parameter_popup=None;*pending=None;*dragging_wire=None;*status="Demo graph reset".into();
+                        *selected=graph.nodes.iter().find(|n|n.module_id=="screenshaver.color.cosine_palette").map(|n|n.id);*parameter_popup=None;*pending=None;*dragging_wire=None;routes.clear();routing_undo.clear();routing_redo.clear();*status="Demo graph reset".into();
+                    }
+                    if ui.button("Optimize Routing").clicked(){optimize_requested=true;}
+                    if ui.button("Center Graph").clicked(){fit_requested=true;}
+                    if ui.add_enabled(!routing_undo.is_empty(),egui::Button::new("Undo Routing")).clicked(){
+                        if let Some((previous,old_routes))=routing_undo.pop(){
+                            routing_redo.push((graph.clone(),routes.clone()));
+                            *graph=previous;*routes=old_routes;graph.revision+=1;
+                            *status="Restored previous routing layout".into();
+                        }
+                    }
+                    if ui.add_enabled(!routing_redo.is_empty(),egui::Button::new("Redo Routing")).clicked(){
+                        if let Some((next,next_routes))=routing_redo.pop(){
+                            routing_undo.push((graph.clone(),routes.clone()));
+                            *graph=next;*routes=next_routes;graph.revision+=1;
+                            *status="Reapplied routing layout".into();
+                        }
                     }
                     if ui.button("Exit").clicked(){*open=false;}
                 });
@@ -201,11 +248,21 @@ impl MakerUi {
                 });
             egui::CentralPanel::default().frame(egui::Frame::default().fill(egui::Color32::from_rgba_unmultiplied(12,16,25,228))).show(ctx,|ui|{
                 ui.heading("Node Graph");ui.small("Drag from output to input to wire · click-to-connect also works · drag node headers to move");ui.separator();
-                let canvas=ui.available_rect_before_wrap();let origin=canvas.min;
+                let canvas=ui.available_rect_before_wrap();
+                *canvas_rect=canvas;
+                if fit_requested && !graph.nodes.is_empty() {
+                    let left=graph.nodes.iter().map(|n|n.pos[0]).fold(f32::INFINITY,f32::min);
+                    let top=graph.nodes.iter().map(|n|n.pos[1]).fold(f32::INFINITY,f32::min);
+                    let right=graph.nodes.iter().map(|n|n.pos[0]+240.0).fold(f32::NEG_INFINITY,f32::max);
+                    let bottom=graph.nodes.iter().map(|n|n.pos[1]+160.0).fold(f32::NEG_INFINITY,f32::max);
+                    *canvas_pan=egui::vec2((canvas.width()-(right-left))*0.5-left,(canvas.height()-(bottom-top))*0.5-top);
+                }
+                let origin=canvas.min+*canvas_pan;
 
                 let mut input_ports=std::collections::HashMap::new();
                 let mut input_hit_rects=std::collections::HashMap::new();
                 let mut output_ports=std::collections::HashMap::new();
+                let mut module_boxes:BTreeMap<NodeId,Box2>=BTreeMap::new();
                 let ids:Vec<NodeId>=graph.nodes.iter().map(|n|n.id).collect();
                 for id in ids{
                     // Copy the immutable node fields before entering the UI closure.
@@ -218,6 +275,7 @@ impl MakerUi {
                         .order(egui::Order::Middle).movable(false)
                         .current_pos(origin+egui::vec2(pos[0],pos[1]))
                         .show(ctx,|ui|{
+                            ui.set_clip_rect(ui.clip_rect().intersect(canvas));
                             egui::Frame::window(ui.style()).show(ui,|ui|{
                                 // Fixed standard width and height; only port count may grow height.
                                 let node_width = 220.0;
@@ -286,7 +344,7 @@ impl MakerUi {
                                         input_ports.insert((id,row), center);
                                         input_hit_rects.insert((id,row), hit);
                                         let color = port_color(ty);
-                                        ui.painter().circle_filled(center, 5.0, color);
+                                        // Connector disk is drawn once in the foreground at the measured outer sidewall.
                                         ui.painter().text(center + egui::vec2(11.0, 0.0), egui::Align2::LEFT_CENTER,
                                             name, egui::TextStyle::Small.resolve(ui.style()), ui.visuals().text_color());
                                         let response = response.on_hover_text(port_hint(graph,id,row,*pending,*dragging_wire));
@@ -309,7 +367,7 @@ impl MakerUi {
                                         let hit = egui::Rect::from_center_size(center, egui::vec2(22.0, 22.0));
                                         let response = ui.interact(hit, ui.id().with((id, "output", row)), egui::Sense::click_and_drag());
                                         output_ports.insert((id,row),center);
-                                        ui.painter().circle_filled(center, 5.0, port_color(ty));
+                                        // Connector disk is drawn once in the foreground at the measured outer sidewall.
                                         ui.painter().text(center - egui::vec2(11.0,0.0), egui::Align2::RIGHT_CENTER,
                                             name, egui::TextStyle::Small.resolve(ui.style()),ui.visuals().text_color());
                                         let response = response.on_hover_text(format!(
@@ -330,6 +388,27 @@ impl MakerUi {
                                 }
                             });
                         });
+                    module_boxes.insert(id,Box2{min:[area.response.rect.min.x-origin.x,area.response.rect.min.y-origin.y],
+                        max:[area.response.rect.max.x-origin.x,area.response.rect.max.y-origin.y]});
+                    // Use the measured outer module rectangle as the single
+                    // authoritative left/right sidewall for connector centers.
+                    // Port-row rects are inset by egui Frame margins; using their
+                    // x coordinates for routing caused all wires to fail validation.
+                    let wall = area.response.rect;
+                    for (&(port_node, _), center) in input_ports.iter_mut() {
+                        if port_node == id { center.x = wall.left(); }
+                    }
+                    for (&(port_node, _), center) in output_ports.iter_mut() {
+                        if port_node == id { center.x = wall.right(); }
+                    }
+                    // Keep drop targeting centered on the same visible connector.
+                    for (&(port_node, port_row), hit) in input_hit_rects.iter_mut() {
+                        if port_node == id {
+                            if let Some(center) = input_ports.get(&(port_node, port_row)) {
+                                *hit = egui::Rect::from_center_size(*center, egui::vec2(22.0, 22.0));
+                            }
+                        }
+                    }
                     // Anchor the editor to the *bottom of the whole module*, not
                     // to the Parameters button or title bar.
                     if *parameter_popup == Some(id) {
@@ -366,13 +445,138 @@ impl MakerUi {
                         *dragging_wire = None;
                     }
                 }
-                let painter=ctx.layer_painter(egui::LayerId::new(egui::Order::Background,egui::Id::new("maker_wire_layer")));
+                // Measure actual port locations after drawing modules; never guess
+                // their offsets from the JSON module definitions.
+                let measured_ports: BTreeMap<maker_routing::ConnectionKey,PortPair> = {
+                    graph.connections.iter().filter_map(|c|{
+                        let a=output_ports.get(&(c.from,c.from_port))?;
+                        let b=input_ports.get(&(c.to,c.to_port))?;
+                        Some((maker_routing::key(c),PortPair{from:[a.x-origin.x,a.y-origin.y],to:[b.x-origin.x,b.y-origin.y]}))
+                    }).collect()
+                };
+                let boxes_now:Vec<_>=module_boxes.iter().map(|(&id,&rect)|(id,rect)).collect();
+                if optimize_requested {
+                    let original=graph.clone();
+                    let sizes:BTreeMap<_,_>=module_boxes.iter().map(|(&id,b)|(id,[b.max[0]-b.min[0],b.max[1]-b.min[1]])).collect();
+                    // Evaluate several deterministic row widths using the real router.
+                    // The footprint includes every routed wire, not just module boxes.
+                    let baseline=maker_routing::compact_positions(graph,&sizes);
+                    let mut ordered:Vec<_>=baseline.iter().map(|(&id,&p)|(id,p)).collect();
+                    ordered.sort_by(|a,b|a.1[0].total_cmp(&b.1[0]).then_with(||a.1[1].total_cmp(&b.1[1])).then_with(||a.0.cmp(&b.0)));
+                    let ids:Vec<NodeId>=ordered.into_iter().map(|(id,_)|id).collect();
+                    let margin=24.0_f32;
+                    let mut best:Option<(f64,Graph,Routes)>=None;
+                    let mut rejected=0usize;
+                    for columns in 1..=ids.len().min(12) {
+                        for &gap_x in &[60.0_f32,90.0,130.0] {
+                            for &gap_y in &[70.0_f32,110.0,160.0] {
+                                let mut candidate=BTreeMap::new();
+                                let mut y=margin;
+                                for row_ids in ids.chunks(columns) {
+                                    let mut x=margin;
+                                    let mut row_height=0.0_f32;
+                                    for &id in row_ids {
+                                        let size=sizes[&id];
+                                        candidate.insert(id,[x,y]);
+                                        x+=size[0]+gap_x;
+                                        row_height=row_height.max(size[1]);
+                                    }
+                                    y+=row_height+gap_y;
+                                }
+                                let candidate_boxes:Vec<_>=boxes_now.iter().map(|&(id,b)|{
+                                    let old=graph.node(id).map(|n|n.pos).unwrap_or([0.0,0.0]);
+                                    let new=candidate.get(&id).copied().unwrap_or(old);
+                                    let dx=new[0]-old[0];let dy=new[1]-old[1];
+                                    (id,Box2{min:[b.min[0]+dx,b.min[1]+dy],max:[b.max[0]+dx,b.max[1]+dy]})
+                                }).collect();
+                                let shifted:BTreeMap<_,_>=measured_ports.iter().map(|(&k,p)|{
+                                    let shift=|id:NodeId,pt:[f32;2]|{
+                                        let old=graph.node(id).map(|n|n.pos).unwrap_or([0.0,0.0]);
+                                        let new=candidate.get(&id).copied().unwrap_or(old);
+                                        [pt[0]+new[0]-old[0],pt[1]+new[1]-old[1]]
+                                    };
+                                    (k,PortPair{from:shift(k.0,p.from),to:shift(k.2,p.to)})
+                                }).collect();
+                                let mut proposed=graph.clone();
+                                for n in &mut proposed.nodes {if let Some(&pos)=candidate.get(&n.id){n.pos=pos;}}
+                                let Ok(mut new_routes)=maker_routing::route_all(&proposed,&shifted,&candidate_boxes) else {rejected+=1;continue};
+                                let mut min=[f32::INFINITY;2];let mut max=[f32::NEG_INFINITY;2];
+                                for &(_,b) in &candidate_boxes {
+                                    for axis in 0..2 {min[axis]=min[axis].min(b.min[axis]);max[axis]=max[axis].max(b.max[axis]);}
+                                }
+                                let mut wire_length=0.0_f64;
+                                let mut bends=0usize;
+                                for path in new_routes.values(){
+                                    for &pt in path {for axis in 0..2 {min[axis]=min[axis].min(pt[axis]);max[axis]=max[axis].max(pt[axis]);}}
+                                    for seg in path.windows(2) {wire_length+=((seg[1][0]-seg[0][0]).abs()+(seg[1][1]-seg[0][1]).abs()) as f64;}
+                                    bends+=path.len().saturating_sub(2);
+                                }
+                                let w=(max[0]-min[0]).max(1.0);let h=(max[1]-min[1]).max(1.0);
+                                let fits=w+2.0*margin<=canvas.width() && h+2.0*margin<=canvas.height();
+                                let ratio=(w.max(h)/w.min(h)) as f64;
+                                let area=(w as f64)*(h as f64);
+                                // Fit first, then favor a square compact footprint;
+                                // routing length and bends break near ties.
+                                let score=(if fits {0.0} else {1.0e12})
+                                    +area*(1.0+0.6*(ratio-1.0))
+                                    +wire_length*8.0+(bends as f64)*300.0;
+                                // Translate both modules and routes so the entire
+                                // geometry (including returning wires) has a margin.
+                                let dx=margin-min[0];let dy=margin-min[1];
+                                for n in &mut proposed.nodes {n.pos[0]+=dx;n.pos[1]+=dy;}
+                                for path in new_routes.values_mut(){for pt in path {pt[0]+=dx;pt[1]+=dy;}}
+                                if best.as_ref().is_none_or(|(value,_,_)|score<*value) {
+                                    best=Some((score,proposed,new_routes));
+                                }
+                            }
+                        }
+                    }
+                    if let Some((_,proposed,new_routes))=best {
+                        routing_undo.push((original,routes.clone()));
+                        if routing_undo.len()>32{routing_undo.remove(0);}
+                        routing_redo.clear();
+                        *graph=proposed;*routes=new_routes;graph.revision+=1;
+                        *status="Optimized modules and routed wires for a compact, near-square footprint (Undo available)".into();
+                    } else {
+                        *status=format!("Routing unchanged: no valid candidate ({rejected} tested)");
+                    }
+                } else {
+                    // Repair only geometry when modules are moved or wired. Never
+                    // rearrange modules except via the explicit toolbar action.
+                    // A blocked connection must never erase routes for other wires.
+                    // Recompute from the measured port geometry on every frame,
+                    // including the first one, without requiring module movement.
+                    let mut updated=Routes::new();
+                    let mut failed=0usize;
+                    let mut first_error=None;
+                    for c in &graph.connections {
+                        let k=maker_routing::key(c);
+                        if let Some(pair)=measured_ports.get(&k) {
+                            match maker_routing::route(pair.from,pair.to,&boxes_now,c.from,c.to) {
+                                Ok(path)=>{updated.insert(k,path);},
+                                Err(e)=>{failed+=1;if first_error.is_none(){first_error=Some(e);}}
+                            }
+                        } else {
+                            failed+=1;
+                            if first_error.is_none(){first_error=Some("Port geometry not available".into());}
+                        }
+                    }
+                    *routes=updated;
+                    if failed>0 {
+                        *status=format!("Connection routing unavailable for {failed} wire(s): {}",first_error.unwrap_or_default());
+                    }
+                }
+                let painter=ctx.layer_painter(egui::LayerId::new(egui::Order::Background,egui::Id::new("maker_wire_layer"))).with_clip_rect(canvas);
                 let wire_paths: Vec<(Vec<egui::Pos2>,egui::Color32)> = graph.connections.iter().filter_map(|c| {
                     let a=*output_ports.get(&(c.from,c.from_port))?;
                     let b=*input_ports.get(&(c.to,c.to_port))?;
                     let ty=graph.node(c.from)?.definition().outputs.get(c.from_port)?.ty.as_str();
                     let color=port_color(ty);
-                    Some((orthogonal_wire(a,b),color))
+                    // Never draw a fallback path that could cross a module or
+                    // appear to connect anywhere other than its actual port.
+                    let path:Vec<egui::Pos2>=routes.get(&maker_routing::key(c))?
+                        .iter().map(|v|egui::pos2(v[0]+origin.x,v[1]+origin.y)).collect();
+                    Some((path,color))
                 }).collect();
                 for (index,(path,color)) in wire_paths.iter().enumerate() {
                     let bridged = bridge_crossings(index, path, &wire_paths);
@@ -398,6 +602,7 @@ impl MakerUi {
                     .fixed_pos(canvas.min)
                     .interactable(false)
                     .show(ctx, |overlay_ui| {
+                        overlay_ui.set_clip_rect(overlay_ui.clip_rect().intersect(canvas));
                         let overlay = overlay_ui.painter();
                         // Repaint the actual connector disks in the foreground so
                         // their protruding halves are never covered by node frames.
@@ -438,7 +643,7 @@ impl MakerUi {
             if let Some(id) = *parameter_popup {
                 if let Some((anchor_id, anchor_pos)) = editor_anchor {
                     if anchor_id == id {
-                        let bounds = ctx.content_rect();
+                        let bounds = *canvas_rect;
                         let width = 360.0_f32.min((bounds.width() - 16.0).max(200.0));
                         let max_height = (bounds.height() - 16.0).max(120.0);
                         let target_height = 410.0_f32.min(max_height);
@@ -457,6 +662,7 @@ impl MakerUi {
                             .movable(false)
                             .fixed_pos(egui::pos2(x, y))
                             .show(ctx, |ui| {
+                                ui.set_clip_rect(ui.clip_rect().intersect(bounds));
                                 ui.set_width(width);
                                 ui.set_max_height(visible_height);
                                 // Clip only the opening animation. Once expanded,
@@ -544,38 +750,38 @@ fn orthogonal_wire(a: egui::Pos2,b: egui::Pos2)->Vec<egui::Pos2>{
 /// Add a semicircular jump on the vertical segment where another wire's
 /// horizontal segment crosses it. This is presentation-only, never connectivity.
 fn bridge_crossings(index:usize,path:&[egui::Pos2],all:&[(Vec<egui::Pos2>,egui::Color32)])->Vec<egui::Pos2>{
-    if path.len()!=4{return path.to_vec()}
-    let x=path[1].x;
-    let y0=path[1].y;
-    let y1=path[2].y;
-    let direction=if y1>=y0{1.0}else{-1.0};
-    let mut crossings=Vec::new();
-    for (other_index,(other,_)) in all.iter().enumerate(){
-        if index==other_index || other.len()!=4 {continue}
-        for pair in [(other[0],other[1]),(other[2],other[3])]{
-            let (a,b)=pair;
-            if x>a.x.min(b.x)+6.0 && x<a.x.max(b.x)-6.0
-                && a.y>y0.min(y1)+7.0 && a.y<y0.max(y1)-7.0 {
-                crossings.push(a.y);
+    if path.len()<2{return path.to_vec()}
+    let mut result=vec![path[0]];
+    for segment in path.windows(2){
+        let a=segment[0];let b=segment[1];
+        if (a.x-b.x).abs()>0.1 || (a.y-b.y).abs()<18.0 {result.push(b);continue}
+        let direction=if b.y>=a.y{1.0}else{-1.0};
+        let mut crossings=Vec::new();
+        for (other_index,(other,_)) in all.iter().enumerate(){
+            if index==other_index {continue}
+            for horizontal in other.windows(2){
+                let c=horizontal[0];let d=horizontal[1];
+                if (c.y-d.y).abs()>0.1{continue}
+                if a.x>c.x.min(d.x)+7.0 && a.x<c.x.max(d.x)-7.0 &&
+                    c.y>a.y.min(b.y)+9.0 && c.y<a.y.max(b.y)-9.0 {crossings.push(c.y);}
             }
         }
-    }
-    crossings.sort_by(|a,b| if direction>0.0{a.total_cmp(b)}else{b.total_cmp(a)});
-    crossings.dedup_by(|a,b|(*a-*b).abs()<12.0);
-    let mut result=vec![path[0],path[1]];
-    let mut last=y0;
-    for y in crossings{
-        if (y-last)*direction<12.0 || (y1-y)*direction<9.0{continue}
-        let radius=6.0;
-        result.push(egui::pos2(x,y-radius*direction));
-        // A half-circle protruding to the right of the vertical wire.
-        for step in 1..=12{
-            let theta=std::f32::consts::PI*(step as f32/12.0);
-            result.push(egui::pos2(x+radius*theta.sin(),y-radius*direction*theta.cos()));
+        crossings.sort_by(|x,y|if direction>0.0{x.total_cmp(y)}else{y.total_cmp(x)});
+        crossings.dedup_by(|x,y|(*x-*y).abs()<13.0);
+        let mut last=a.y;
+        for y in crossings {
+            if (y-last)*direction<12.0 || (b.y-y)*direction<9.0{continue}
+            let radius=6.0;
+            result.push(egui::pos2(a.x,y-radius*direction));
+            for step in 1..=12{
+                let theta=std::f32::consts::PI*(step as f32/12.0);
+                result.push(egui::pos2(a.x+radius*theta.sin(),y-radius*direction*theta.cos()));
+            }
+            last=y+radius*direction;
         }
-        last=y+radius*direction;
+        result.push(b);
     }
-    result.push(path[2]);result.push(path[3]);result
+    result
 }
 
 /// Explain the port contract and the exact validation outcome for the selected source.

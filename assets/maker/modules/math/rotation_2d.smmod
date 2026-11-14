@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.math.rotation2d",
+  "name": "2D Rotation",
+  "category": "Math",
+  "created_by": "Screenshaver",
+  "header_color": "#688B82",
+  "description": "Rotates a 2D vector by an angle in radians.",
+  "uses": "Spatial transformation and animated patterns.",
+  "notes": "Adapted from Morphing Abstract by Frostbyte, CC BY-NC-SA 4.0.",
+  "inputs": [
+    {
+      "id": "vector",
+      "name": "Vector",
+      "type": "vec2",
+      "default": "maker_uv"
+    },
+    {
+      "id": "angle",
+      "name": "Angle",
+      "type": "float",
+      "default": "u_time"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "rotated",
+      "name": "Rotated",
+      "type": "vec2"
+    }
+  ],
+  "parameters": [],
+  "helpers": "vec2 maker_rotate_2d(vec2 v,float angle){float s=sin(angle),c=cos(angle);return mat2(c,-s,s,c)*v;}",
+  "glsl": "maker_rotate_2d({vector},{angle})",
+  "terminal": false
+}

@@ -17,6 +17,9 @@ impl Library {
       ("fields/morphing_field.smmod",include_str!("../assets/maker/modules/fields/morphing_field.smmod")),
       ("fields/field_traversal.smmod",include_str!("../assets/maker/modules/fields/field_traversal.smmod")),
       ("color/color_accumulation.smmod",include_str!("../assets/maker/modules/color/color_accumulation.smmod")),
+      ("noise/dot_noise_3d.smmod",include_str!("../assets/maker/modules/noise/dot_noise_3d.smmod")),
+      ("math/rotation_2d.smmod",include_str!("../assets/maker/modules/math/rotation_2d.smmod")),
+      ("color/aces_tonemap.smmod",include_str!("../assets/maker/modules/color/aces_tonemap.smmod")),
     ];
     for (path,src) in official {result.register(path,src,Trust::Official)}
     if let Some(home)=std::env::var_os("HOME"){

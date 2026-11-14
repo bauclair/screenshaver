@@ -6,12 +6,23 @@ pub fn fragment_source(graph:&Graph)->Result<String,String>{
  let out=graph.nodes.iter().find(|n|n.definition().terminal).ok_or("Missing output")?;
  let mut src=String::from("#version 330 core\nout vec4 fragColor;\nuniform vec2 u_resolution;\nuniform float u_time;\n");
  let mut emitted=HashSet::new();let mut helpers=HashSet::new();
- // Helper functions are emitted before main and deduplicated by exact source.
- for n in &graph.nodes{let m=n.definition();if !m.helpers.is_empty()&&helpers.insert(m.helpers.as_str()){src.push_str(&m.helpers);src.push('\n')}}
- for n in &graph.nodes{for p in &n.definition().parameters{
-  let ty=if p.ty=="color3"{"vec3"}else{"float"};
-  src.push_str(&format!("uniform {ty} u_n{}_{};\n",n.id,p.id));
- }}
+  // Uniforms precede helpers because callable traversal functions read node parameters.
+  for n in &graph.nodes{for p in &n.definition().parameters{
+   let ty=if p.ty=="color3"{"vec3"}else{"float"};
+   src.push_str(&format!("uniform {ty} u_n{}_{};\n",n.id,p.id));
+  }}
+  // Helper functions are emitted once per distinct source.
+  for n in &graph.nodes{let m=n.definition();if !m.helpers.is_empty()&&helpers.insert(m.helpers.as_str()){src.push_str(&m.helpers);src.push('\n')}}
+  // A connected scalar field becomes a position-dependent callable evaluation.
+  // Unlike a precomputed scalar seed, this expression is evaluated inside each ray step.
+  for n in &graph.nodes{
+   if n.module_id=="screenshaver.fields.traversal" {
+    if let Some(c)=graph.input_connection(n.id,0){
+     let field=callable_field(graph,c.from,c.from_port,"sample_position")?;
+     src.push_str(&format!("vec3 maker_traverse_connected_{}(vec3 origin,float depth,float density,float speed){{vec3 ray=normalize(vec3(origin.xy,1.25));vec3 sum=vec3(0.0);float t=u_time*speed;for(int k=0;k<10;k++){{float z=(float(k)+0.5)*depth/10.0;vec3 sample_position=vec3(origin.xy,-1.0)+ray*z;float field=({field});float weight=density*exp(-abs(field)*4.0)/(1.0+0.25*z*z);vec3 phase=vec3(0.0,2.1,4.2);sum+=weight*(0.5+0.5*sin(t*0.4+z*2.0+phase));}}return sum/10.0;}}\n",n.id));
+    }
+   }
+  }
  src.push_str("void main(){\n  vec2 maker_uv=(gl_FragCoord.xy-0.5*u_resolution)/max(u_resolution.y,1.0);\n");
  if graph.input_connection(out.id,0).is_some(){
   let c=graph.input_connection(out.id,0).unwrap();emit(graph,c.from,&mut emitted,&mut src)?;
@@ -45,8 +56,22 @@ fn emit(graph:&Graph,id:NodeId,emitted:&mut HashSet<NodeId>,src:&mut String)->Re
  }
  for p in &m.parameters{vars.insert(p.id.clone(),format!("u_n{}_{}",id,p.id));}
  for (port,output) in m.outputs.iter().enumerate(){
-  let expression=substitute(&m.glsl_outputs[port],&vars)?;
+  let expression=if m.id=="screenshaver.fields.traversal" && graph.input_connection(id,0).is_some(){format!("maker_traverse_connected_{}({},{},{},{})",id,vars["position"],vars["depth"],vars["density"],vars["speed"])}else{substitute(&m.glsl_outputs[port],&vars)?};
   src.push_str(&format!("  {} v{}_p{}={};\n",output.ty,id,port,expression));
  }
  emitted.insert(id);Ok(())
+}
+
+// Build a field expression that can be evaluated at an arbitrary 3D sample position.
+// The first implementation deliberately supports only position-driven scalar field modules.
+// Unsupported graphs produce a clear error instead of silently using a frozen seed.
+fn callable_field(graph:&Graph,id:NodeId,port:usize,position:&str)->Result<String,String>{
+ let n=graph.node(id).ok_or("Callable field source missing")?;
+ if port!=0{return Err("Callable field requires the first scalar output".into())}
+ if graph.input_connection(id,0).is_some(){return Err("Callable field position must be controlled by traversal; disconnect the field's Position input".into())}
+ match n.module_id.as_str(){
+  "screenshaver.fields.morphing"=>Ok(format!("maker_morph_field({position},u_n{}_scale,u_n{}_strength,u_n{}_speed)",id,id,id)),
+  "screenshaver.noise.dot3d"=>Ok(format!("maker_dot_noise_3d({position})")),
+  _=>Err(format!("Module '{}' does not support callable field evaluation yet",n.module_id)),
+ }
 }
