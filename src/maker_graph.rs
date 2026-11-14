@@ -43,16 +43,34 @@ impl Graph {
     }
     pub fn input_connection(&self,id:NodeId,port:usize)->Option<Connection>{self.connections.iter().copied().find(|c|c.to==id&&c.to_port==port)}
     pub fn disconnect_input(&mut self,id:NodeId,port:usize){let n=self.connections.len();self.connections.retain(|c|!(c.to==id&&c.to_port==port));if n!=self.connections.len(){self.revision+=1}}
-    pub fn connect(&mut self,from:NodeId,from_port:usize,to:NodeId,to_port:usize)->Result<(),String>{
-        if from==to{return Err("Self-connections are not allowed".into())}
-        let a=self.node(from).ok_or("Source node not found")?;let b=self.node(to).ok_or("Destination node not found")?;
-        let src=a.kind.outputs().get(from_port).ok_or("Source port not found")?.1;
-        let dst=b.kind.inputs().get(to_port).ok_or("Destination port not found")?.1;
-        if src!=dst {return Err(format!("Port mismatch: {} cannot connect to {}",src.name(),dst.name()))}
-        // A new edge from -> to is cyclic iff to already reaches from.
-        let mut visited=HashSet::new();if self.reaches(to,from,&mut visited){return Err("Connection would create a cycle".into())}
-        self.disconnect_input(to,to_port);
-        self.connections.push(Connection{from,from_port,to,to_port});self.revision+=1;Ok(())
+    /// Non-mutating validation shared by the UI and the actual connection operation.
+    pub fn check_connection(&self, from: NodeId, from_port: usize, to: NodeId, to_port: usize) -> Result<(), String> {
+        if from == to { return Err("A node cannot connect to itself".into()); }
+        let source = self.node(from).ok_or("Source node no longer exists")?;
+        let target = self.node(to).ok_or("Destination node no longer exists")?;
+        let &(source_name, source_type) = source.kind.outputs().get(from_port)
+            .ok_or("Source output port does not exist")?;
+        let &(target_name, target_type) = target.kind.inputs().get(to_port)
+            .ok_or("Destination input port does not exist")?;
+        if source_type != target_type {
+            return Err(format!("{} output '{}' ({}) cannot connect to {} input '{}' ({}): incompatible types",
+                source.kind.title(), source_name, source_type.name(), target.kind.title(), target_name, target_type.name()));
+        }
+        let mut visited = HashSet::new();
+        if self.reaches(to, from, &mut visited) {
+            return Err("Connection would create a circular dependency".into());
+        }
+        Ok(())
+    }
+    pub fn connect(&mut self, from: NodeId, from_port: usize, to: NodeId, to_port: usize) -> Result<(), String> {
+        self.check_connection(from, from_port, to, to_port)?;
+        let new_connection = Connection { from, from_port, to, to_port };
+        if self.input_connection(to, to_port) == Some(new_connection) { return Ok(()); }
+        // Only the destination input is exclusive; existing output fan-out survives.
+        self.disconnect_input(to, to_port);
+        self.connections.push(new_connection);
+        self.revision += 1;
+        Ok(())
     }
     fn reaches(&self,at:NodeId,target:NodeId,visited:&mut HashSet<NodeId>)->bool{
         if at==target{return true}if !visited.insert(at){return false}
@@ -75,4 +93,41 @@ impl Graph {
  #[test]fn valid_demo(){let g=Graph::demo();assert!(g.validate().is_ok());}
  #[test]fn rejects_type_mismatch(){let mut g=Graph::demo();let uv=g.nodes[0].id;let out=g.nodes[3].id;assert!(g.connect(uv,0,out,0).is_err());}
  #[test]fn rejects_cycle(){let mut g=Graph::demo();let a=g.add(Kind::Multiply,[0.0,0.0]);let b=g.add(Kind::Multiply,[0.0,0.0]);g.connect(a,0,b,0).unwrap();assert!(g.connect(b,0,a,0).is_err());}
+}
+
+#[cfg(test)]
+mod wiring_tests {
+    use super::*;
+    #[test]
+    fn output_fanout_keeps_both_connections() {
+        let mut g = Graph::demo();
+        let noise = g.nodes.iter().find(|n| n.kind == Kind::Noise).unwrap().id;
+        let multiply = g.add(Kind::Multiply, [0.0, 0.0]);
+        let before = g.connections.len();
+        g.connect(noise, 0, multiply, 0).unwrap();
+        assert_eq!(g.connections.len(), before + 1);
+        assert_eq!(g.connections.iter().filter(|c| c.from == noise).count(), 2);
+        assert!(g.validate().is_ok());
+    }
+    #[test]
+    fn replacing_input_does_not_erase_other_targets() {
+        let mut g = Graph::demo();
+        let noise = g.nodes.iter().find(|n| n.kind == Kind::Noise).unwrap().id;
+        let palette = g.nodes.iter().find(|n| n.kind == Kind::Palette).unwrap().id;
+        let multiply = g.add(Kind::Multiply, [0.0, 0.0]);
+        g.connect(noise, 0, multiply, 0).unwrap();
+        g.connect(multiply, 0, palette, 0).unwrap();
+        assert!(g.connections.iter().any(|c| c.from == noise && c.to == multiply));
+        assert!(g.connections.iter().any(|c| c.from == multiply && c.to == palette));
+        assert!(!g.connections.iter().any(|c| c.from == noise && c.to == palette));
+    }
+    #[test]
+    fn rejected_connection_preserves_existing_graph() {
+        let mut g = Graph::demo();
+        let before = g.connections.clone();
+        let uv = g.nodes.iter().find(|n| n.kind == Kind::Uv).unwrap().id;
+        let output = g.nodes.iter().find(|n| n.kind == Kind::Output).unwrap().id;
+        assert!(g.connect(uv, 0, output, 0).unwrap_err().contains("incompatible types"));
+        assert_eq!(g.connections, before);
+    }
 }
