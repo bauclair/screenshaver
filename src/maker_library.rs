@@ -2,12 +2,12 @@
 use crate::maker_module::{Module,Trust};
 use std::{collections::BTreeMap,fs,path::Path,sync::OnceLock};
 static LIBRARY:OnceLock<Library>=OnceLock::new();
-pub struct Library { pub modules:BTreeMap<String,Module>, pub errors:Vec<String> }
+pub struct Library { pub modules:BTreeMap<String,Module>, pub categories:BTreeMap<String,String>, pub errors:Vec<String> }
 pub fn get()->&'static Library{LIBRARY.get().expect("Maker library must initialize before graph creation")}
 pub fn initialize()->Result<(),String>{LIBRARY.set(Library::load()).map_err(|_|"Maker library already initialized".into())}
 impl Library {
  fn load()->Self{
-    let mut result=Self{modules:BTreeMap::new(),errors:Vec::new()};
+    let mut result=Self{modules:BTreeMap::new(),categories:BTreeMap::new(),errors:Vec::new()};
     let official=[
       ("coordinates/uv_coordinates.smmod",include_str!("../assets/maker/modules/coordinates/uv_coordinates.smmod")),
       ("noise/value_noise_2d.smmod",include_str!("../assets/maker/modules/noise/value_noise_2d.smmod")),
@@ -20,6 +20,22 @@ impl Library {
       ("noise/dot_noise_3d.smmod",include_str!("../assets/maker/modules/noise/dot_noise_3d.smmod")),
       ("math/rotation_2d.smmod",include_str!("../assets/maker/modules/math/rotation_2d.smmod")),
       ("color/aces_tonemap.smmod",include_str!("../assets/maker/modules/color/aces_tonemap.smmod")),
+      ("camera/sinusoidal_path.smmod",include_str!("../assets/maker/modules/camera/sinusoidal_path.smmod")),
+      ("geometry/tunnel_field.smmod",include_str!("../assets/maker/modules/geometry/tunnel_field.smmod")),
+      ("noise/triangle_noise_3d.smmod",include_str!("../assets/maker/modules/noise/triangle_noise_3d.smmod")),
+      ("fields/sdf_raymarch.smmod",include_str!("../assets/maker/modules/fields/sdf_raymarch.smmod")),
+      ("lighting/directional_light.smmod",include_str!("../assets/maker/modules/lighting/directional_light.smmod")),
+      ("lighting/fresnel_rim.smmod",include_str!("../assets/maker/modules/lighting/fresnel_rim.smmod")),
+      ("color/contour_shading.smmod",include_str!("../assets/maker/modules/color/contour_shading.smmod")),
+      ("lighting/ambient_occlusion_shading.smmod",include_str!("../assets/maker/modules/lighting/ambient_occlusion_shading.smmod")),
+      ("lighting/curvature_shading.smmod",include_str!("../assets/maker/modules/lighting/curvature_shading.smmod")),
+      ("geometry/sdf_sphere.smmod",include_str!("../assets/maker/modules/geometry/sdf_sphere.smmod")),
+      ("geometry/sdf_box.smmod",include_str!("../assets/maker/modules/geometry/sdf_box.smmod")),
+      ("geometry/sdf_octahedron.smmod",include_str!("../assets/maker/modules/geometry/sdf_octahedron.smmod")),
+      ("geometry/sdf_combine.smmod",include_str!("../assets/maker/modules/geometry/sdf_combine.smmod")),
+      ("geometry/sdf_morph.smmod",include_str!("../assets/maker/modules/geometry/sdf_morph.smmod")),
+      ("geometry/domain_repeat_3d.smmod",include_str!("../assets/maker/modules/geometry/domain_repeat_3d.smmod")),
+      ("geometry/domain_fold_3d.smmod",include_str!("../assets/maker/modules/geometry/domain_fold_3d.smmod")),
     ];
     for (path,src) in official {result.register(path,src,Trust::Official)}
     if let Some(home)=std::env::var_os("HOME"){
@@ -31,7 +47,13 @@ impl Library {
  fn register(&mut self,path:&str,src:&str,trust:Trust){
     match Module::parse(src,trust){Ok(module)=>{
         if self.modules.contains_key(&module.id){self.errors.push(format!("{path}: duplicate module ID '{}'",module.id));}
-        else{self.modules.insert(module.id.clone(),module);}
+        else{
+            let category=path.replace('\\',"/");
+            let category=category.split('/').rev().nth(1).unwrap_or("Other");
+            let category=if category=="modules" {"Other"} else {category};
+            self.categories.insert(module.id.clone(),category.to_owned());
+            self.modules.insert(module.id.clone(),module);
+        }
     },Err(e)=>self.errors.push(format!("{path}: {e}"))}
  }
  fn scan(&mut self,dir:&Path,depth:usize){

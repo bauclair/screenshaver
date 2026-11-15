@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "created_by": "Screenshaver",
+  "terminal": false,
+  "id": "screenshaver.geometry.sdf_combine",
+  "name": "SDF Combine",
+  "category": "Geometry",
+  "header_color": "#557C9C",
+  "description": "Union (0), intersection (1), subtraction A minus B (2).",
+  "uses": "Reusable signed-distance geometry and procedural field composition.",
+  "notes": "Position is evaluated at the active ray-march sample. No texture dependency.",
+  "inputs": [
+    {
+      "id": "a",
+      "name": "A",
+      "type": "float",
+      "default": "1.0"
+    },
+    {
+      "id": "b",
+      "name": "B",
+      "type": "float",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "distance",
+      "name": "Distance",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "mode",
+      "name": "Mode",
+      "type": "float",
+      "default": 0.0,
+      "min": 0.0,
+      "max": 2.0
+    },
+    {
+      "id": "blend",
+      "name": "Blend",
+      "type": "float",
+      "default": 0.5,
+      "min": 0.0,
+      "max": 1.0
+    }
+  ],
+  "helpers": "",
+  "glsl": "mix(mix(min({a},{b}),max({a},{b}),step(0.5,{mode})),max({a},-({b})),step(1.5,{mode}))"
+}

@@ -1,0 +1,98 @@
+{
+  "schema_version": 1,
+  "created_by": "Screenshaver",
+  "terminal": false,
+  "id": "screenshaver.fields.sdf_raymarch",
+  "name": "SDF Ray March",
+  "category": "Fields",
+  "header_color": "#477D9A",
+  "description": "Ray marches a callable signed-distance field with a moving perspective camera and basic normal shading.",
+  "uses": "Corridors, caves and other procedural signed-distance geometry.",
+  "notes": "Color, hit normal, ambient occlusion and signed curvature are calculated from the same ray-march hit. AO=1 is unoccluded; curvature is scaled and clamped to [-1,1]. No texture dependencies.",
+  "inputs": [
+    {
+      "id": "distance",
+      "name": "Distance",
+      "type": "float",
+      "default": "0.0"
+    },
+    {
+      "id": "camera_offset",
+      "name": "Camera Offset",
+      "type": "vec2",
+      "default": "vec2(0.0)"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "color",
+      "name": "Color",
+      "type": "vec3"
+    },
+    {
+      "id": "normal",
+      "name": "Surface Normal",
+      "type": "vec3"
+    },
+    {
+      "id": "ao",
+      "name": "Ambient Occlusion",
+      "type": "float"
+    },
+    {
+      "id": "curvature",
+      "name": "Curvature",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "speed",
+      "name": "Camera Speed",
+      "type": "float",
+      "default": 3.0,
+      "min": 0.0,
+      "max": 12.0
+    },
+    {
+      "id": "max_distance",
+      "name": "Maximum Distance",
+      "type": "float",
+      "default": 55.0,
+      "min": 5.0,
+      "max": 150.0
+    },
+    {
+      "id": "epsilon",
+      "name": "Hit Threshold",
+      "type": "float",
+      "default": 0.005,
+      "min": 0.001,
+      "max": 0.05
+    },
+    {
+      "id": "step_scale",
+      "name": "Step Multiplier",
+      "type": "float",
+      "default": 0.75,
+      "min": 0.2,
+      "max": 1.0
+    },
+    {
+      "id": "fov",
+      "name": "Field of View",
+      "type": "float",
+      "default": 1.2,
+      "min": 0.4,
+      "max": 2.0
+    }
+  ],
+  "helpers": "",
+  "glsl": "vec3(0.0)",
+  "glsl_outputs": {
+    "color": "vec3(0.0)",
+    "normal": "vec3(0.0)",
+    "ao": "0.0",
+    "curvature": "0.0"
+  }
+}

@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "created_by": "Screenshaver",
+  "terminal": false,
+  "id": "screenshaver.lighting.ambient_occlusion_shading",
+  "name": "Ambient Occlusion Shading",
+  "category": "Lighting",
+  "header_color": "#627B95",
+  "description": "Darken a color according to a sampled ambient-occlusion factor.",
+  "uses": "Combine with SDF Ray March outputs or other scalar/vector sources.",
+  "notes": "Works with ordinary typed ports; no texture dependencies.",
+  "inputs": [
+    {
+      "id": "color",
+      "name": "Color",
+      "type": "vec3",
+      "default": "vec3(0.65,0.75,0.9)"
+    },
+    {
+      "id": "occlusion",
+      "name": "Ambient Occlusion",
+      "type": "float",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "color",
+      "name": "Color",
+      "type": "vec3"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "strength",
+      "name": "Strength",
+      "type": "float",
+      "default": 0.8,
+      "min": 0,
+      "max": 1
+    }
+  ],
+  "helpers": "",
+  "glsl": "({color} * mix(1.0,clamp({occlusion},0.0,1.0),{strength}))"
+}

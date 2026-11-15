@@ -1,0 +1,96 @@
+{
+  "schema_version": 1,
+  "created_by": "Screenshaver",
+  "terminal": false,
+  "id": "screenshaver.fields.tunnel",
+  "name": "Tunnel Field",
+  "category": "Fields",
+  "header_color": "#477D9A",
+  "description": "Signed-distance-like interior corridor field with square, round, and rounded-square cross-sections and an optional floor.",
+  "uses": "Procedural tunnels and caves, especially with triangle-noise displacement.",
+  "notes": "Port inputs provide a one-position field evaluation. The floor is min(wallDistance, y + floorHeight); floorHeight >= 2 disables the visible floor for the original proportions. Mode: square/round/rounded-square. For faithful ray marching, evaluate this field recursively at each sample position.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "default": "vec3(maker_uv,0.0)"
+    },
+    {
+      "id": "path",
+      "name": "Path Offset",
+      "type": "vec2",
+      "default": "vec2(0.0)"
+    },
+    {
+      "id": "noise",
+      "name": "Perturbation",
+      "type": "float",
+      "default": "0.5"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "distance",
+      "name": "Distance",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "cross_section",
+      "name": "Cross Section",
+      "type": "choice",
+      "default": 0,
+      "min": 0,
+      "max": 2,
+      "options": [
+        "Square",
+        "Round",
+        "Rounded square"
+      ]
+    },
+    {
+      "id": "width_scale",
+      "name": "Width Scale",
+      "type": "float",
+      "default": 0.5,
+      "min": 0.05,
+      "max": 2
+    },
+    {
+      "id": "height_scale",
+      "name": "Height Scale",
+      "type": "float",
+      "default": 0.7071,
+      "min": 0.05,
+      "max": 2
+    },
+    {
+      "id": "radius",
+      "name": "Radius",
+      "type": "float",
+      "default": 1,
+      "min": 0.1,
+      "max": 5
+    },
+    {
+      "id": "floor_height",
+      "name": "Floor Height",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 3
+    },
+    {
+      "id": "roughness",
+      "name": "Roughness",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 3
+    }
+  ],
+  "helpers": "float maker_corridor_tunnel(vec3 p,vec2 path,float noise,float crossSection,float sx,float sy,float radius,float floorHeight,float roughness){vec2 q=abs(p.xy-path)*vec2(sx,sy);float square=max(q.x,q.y);float roundShape=length(q);float rounded=pow(pow(q.x,4.0)+pow(q.y,4.0),0.25);float section=mix(mix(square,roundShape,step(0.5,crossSection)),rounded,step(1.5,crossSection));float wall=radius-section+(0.5-noise)*roughness;return min(wall,p.y+floorHeight);}",
+  "glsl": "maker_corridor_tunnel({position},{path},{noise},{cross_section},{width_scale},{height_scale},{radius},{floor_height},{roughness})"
+}

@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "created_by": "Screenshaver",
+  "terminal": false,
+  "id": "screenshaver.geometry.domain_fold_3d",
+  "name": "3D Domain Fold",
+  "category": "Geometry",
+  "header_color": "#557C9C",
+  "description": "Repeated absolute fold and XZ/YZ rotations before evaluating upstream field.",
+  "uses": "Reusable signed-distance geometry and procedural field composition.",
+  "notes": "Position is evaluated at the active ray-march sample. No texture dependency.",
+  "inputs": [
+    {
+      "id": "field",
+      "name": "Field",
+      "type": "float",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "distance",
+      "name": "Distance",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "iterations",
+      "name": "Iterations",
+      "type": "float",
+      "default": 3.0,
+      "min": 0.0,
+      "max": 8.0
+    },
+    {
+      "id": "offset",
+      "name": "Offset",
+      "type": "float",
+      "default": 4.5,
+      "min": 0.0,
+      "max": 10.0
+    },
+    {
+      "id": "angle_xz",
+      "name": "Angle Xz",
+      "type": "float",
+      "default": 1.0,
+      "min": -3.14,
+      "max": 3.14
+    },
+    {
+      "id": "angle_yz",
+      "name": "Angle Yz",
+      "type": "float",
+      "default": 1.0,
+      "min": -3.14,
+      "max": 3.14
+    }
+  ],
+  "helpers": "",
+  "glsl": "{field}"
+}

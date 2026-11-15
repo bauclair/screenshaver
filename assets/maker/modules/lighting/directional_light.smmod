@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.lighting.directional_light",
+  "name": "Directional Lighting",
+  "category": "Lighting",
+  "created_by": "Screenshaver",
+  "header_color": "#477D9A",
+  "description": "Diffuse and ambient lighting from a surface normal and light direction.",
+  "uses": "Procedural 3D surfaces and abstract vector lighting.",
+  "notes": "Normal and Light Direction are vectors; a true SDF surface normal is not yet exposed by SDF Ray March. This module can already process other vec3 signals.",
+  "inputs": [
+    {
+      "id": "albedo",
+      "name": "Surface Color",
+      "type": "vec3",
+      "default": "vec3(0.65,0.75,0.9)"
+    },
+    {
+      "id": "normal",
+      "name": "Normal",
+      "type": "vec3",
+      "default": "vec3(0.0,0.0,1.0)"
+    },
+    {
+      "id": "light_direction",
+      "name": "Light Direction",
+      "type": "vec3",
+      "default": "vec3(0.5,0.8,0.6)"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "color",
+      "name": "Color",
+      "type": "vec3"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "ambient",
+      "name": "Ambient",
+      "type": "float",
+      "default": 0.25,
+      "min": 0,
+      "max": 2
+    },
+    {
+      "id": "diffuse",
+      "name": "Diffuse",
+      "type": "float",
+      "default": 0.85,
+      "min": 0,
+      "max": 3
+    }
+  ],
+  "helpers": "",
+  "glsl": "({albedo} * ({ambient} + {diffuse} * max(dot(normalize({normal} + vec3(1e-6)),normalize({light_direction} + vec3(1e-6))),0.0)))",
+  "terminal": false
+}

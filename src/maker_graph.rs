@@ -17,6 +17,12 @@ pub struct Connection {pub from:NodeId,pub from_port:usize,pub to:NodeId,pub to_
 #[derive(Clone,Debug)]
 pub struct Graph {pub nodes:Vec<Node>,pub connections:Vec<Connection>,next_id:NodeId,pub revision:u64}
 impl Graph {
+ /// Blank workspace with the one required terminal. No demo/test nodes.
+ pub fn blank()->Self{
+  let mut graph=Self{nodes:vec![],connections:vec![],next_id:1,revision:0};
+  graph.add("screenshaver.output.color",[640.0,170.0]).expect("Output Color must be registered");
+  graph
+ }
  pub fn demo()->Self{
   let mut g=Self{nodes:vec![],connections:vec![],next_id:1,revision:0};
   let uv=g.add("screenshaver.coordinates.uv",[20.,70.]).unwrap();

@@ -100,7 +100,7 @@ fn connection_candidate_graphs(graph:&Graph)->Vec<(String,Graph)> {
     let mut results=Vec::new();
     let mut examined=0;
     while let Some(current)=queue.pop_front() {
-        if examined>=EXPANSIONS || results.len()>=LIMIT {break}
+        if examined>=EXPANSIONS {break}
         examined+=1;
         let mut key:Vec<_>=current.connections.iter().map(|c|(c.from,c.from_port,c.to,c.to_port)).collect();
         key.sort_unstable();
@@ -139,6 +139,8 @@ fn connection_candidate_graphs(graph:&Graph)->Vec<(String,Graph)> {
             }
         }
     }
+    results.sort_by(|a,b|b.1.connections.len().cmp(&a.1.connections.len()).then_with(||a.0.cmp(&b.0)));
+    results.truncate(LIMIT);
     results
 }
 
@@ -216,7 +218,7 @@ impl MakerUi {
     pub fn new(video:&sdl2::VideoSubsystem)->Result<Self,String>{
         let gl=unsafe{glow::Context::from_loader_function(|s|video.gl_get_proc_address(s) as *const _)};
         let painter=egui_glow::Painter::new(Arc::new(gl),"",None,false).map_err(|e|e.to_string())?;
-        let graph=Graph::demo();let selected=graph.nodes.iter().find(|n|n.module_id=="screenshaver.color.cosine_palette").map(|n|n.id);
+        let graph=Graph::blank();let selected=None;
         Ok(Self{context:egui::Context::default(),painter,events:Vec::new(),pointer:egui::Pos2::ZERO,
             modifiers:egui::Modifiers::default(),start:Instant::now(),graph,selected,parameter_popup:None,pending_source:None,dragging_wire:None,
             status:"Click an output port, then a compatible input port".into(),open:true,
@@ -339,10 +341,10 @@ impl MakerUi {
             egui::TopBottomPanel::top("maker_header").show(ctx,|ui|{
                 ui.horizontal(|ui|{
                     ui.heading("Screenshaver Maker");ui.separator();ui.label("Untitled graph");
-                    if ui.button("Reset demo").clicked(){let revision=graph.revision;*graph=Graph::demo();graph.revision=revision+1;
-                        *selected=graph.nodes.iter().find(|n|n.module_id=="screenshaver.color.cosine_palette").map(|n|n.id);*parameter_popup=None;*pending=None;*dragging_wire=None;routes.clear();routing_undo.clear();routing_redo.clear();orphan_undo.clear();
+                    if ui.button("Clear Graph").clicked(){let revision=graph.revision;*graph=Graph::blank();graph.revision=revision.wrapping_add(1);
+                        *selected=None;*parameter_popup=None;*pending=None;*dragging_wire=None;routes.clear();routing_undo.clear();routing_redo.clear();orphan_undo.clear();
                         candidates.clear();candidate_jobs.clear();*candidate_base=None;candidate_undo.clear();*candidate_selected=None;
-                        *status="Demo graph reset".into();
+                        *status="Graph cleared; Output Color retained".into();
                     }
                     let orphan_count=graph.orphan_ids().len();
                     if ui.add_enabled(orphan_count>0,egui::Button::new("Remove orphan modules"))
@@ -404,9 +406,36 @@ impl MakerUi {
             });
             egui::SidePanel::left("maker_library").resizable(true).default_width(190.0).min_width(155.0).show(ctx,|ui|{
                 ui.heading("Module Library");ui.separator();
+                if ui.button("+ Add All").on_hover_text("Add one instance of every nonterminal module without connecting wires").clicked(){
+                    let modules:Vec<String>=maker_library::get().modules.values()
+                        .filter(|m|!m.terminal).map(|m|m.id.clone()).collect();
+                    let mut added=0usize;
+                    for module_id in modules {
+                        let index=graph.nodes.len().saturating_sub(1);
+                        let col=index%4;
+                        let row=index/4;
+                        if graph.add(&module_id,[40.0+col as f32*265.0,40.0+row as f32*200.0]).is_ok(){added+=1;}
+                    }
+                    *selected=None;*parameter_popup=None;*pending=None;*dragging_wire=None;
+                    routes.clear();routing_undo.clear();routing_redo.clear();orphan_undo.clear();
+                    candidates.clear();candidate_jobs.clear();*candidate_base=None;
+                    candidate_undo.clear();*candidate_selected=None;candidate_notice.clear();
+                    *status=format!("Added {added} modules without connections");
+                }
                 ui.small("Add nodes to the graph:");
-                for module in maker_library::get().modules.values(){
+                // Group by the actual directory of each .smmod definition.
+                // Sort categories and visible module names independently.
+                let library=maker_library::get();
+                let mut grouped:BTreeMap<String,Vec<&Module>>=BTreeMap::new();
+                for module in library.modules.values(){
                     if module.terminal && graph.nodes.iter().any(|n|n.definition().terminal){continue}
+                    let category=library.categories.get(&module.id).map(String::as_str).unwrap_or("Other");
+                    grouped.entry(category.to_owned()).or_default().push(module);
+                }
+                for (category,modules) in &mut grouped {
+                    modules.sort_by(|a,b|a.name.to_lowercase().cmp(&b.name.to_lowercase()).then_with(||a.id.cmp(&b.id)));
+                    ui.collapsing(category.as_str(),|ui|{
+                        for module in modules.iter().copied(){
                     // Reuse the node-header palette so the library and graph stay in sync.
                     let add_response = ui.add(
                         egui::Button::new(
@@ -426,6 +455,8 @@ impl MakerUi {
                             Err(e)=>*status=e,
                         }
                     }
+                        }
+                    });
                 }
                 ui.separator();ui.small("Drag from an output port to a compatible input, or click output then input. Outputs support fan-out; each input has one source.");
                 if let Some((id,port))=*pending{ui.label(format!("Source: node #{id}, port {port}"));if ui.button("Cancel connection").clicked(){*pending=None;*dragging_wire=None;}}
@@ -457,7 +488,12 @@ impl MakerUi {
                     ui.label(format!("{} visible · {} pending",candidates.iter().filter(|c|!c.dismissed && c.connection_candidate==(*candidate_mode==2)).count(),candidate_jobs.len()));
                     if ui.button("Restore dismissed").clicked(){for c in candidates.iter_mut(){c.dismissed=false;}}
                     egui::ScrollArea::vertical().show(ui,|ui|{
-                        for (index,candidate) in candidates.iter_mut().enumerate(){
+                        let mut display_order:Vec<usize>=(0..candidates.len()).collect();
+                        if *candidate_mode==2 {
+                            display_order.sort_by(|&a,&b|candidates[b].connections.len().cmp(&candidates[a].connections.len()).then_with(||a.cmp(&b)));
+                        }
+                        for index in display_order {
+                            let candidate=&mut candidates[index];
                             if candidate.dismissed || candidate.connection_candidate!=(*candidate_mode==2){continue}
                             ui.group(|ui|{
                                 let image=egui::Image::new(&candidate.texture).fit_to_exact_size(egui::vec2(ui.available_width().min(240.0),135.0));

@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.lighting.fresnel_rim",
+  "name": "Fresnel Rim",
+  "category": "Lighting",
+  "created_by": "Screenshaver",
+  "header_color": "#477D9A",
+  "description": "Adds angle-dependent rim illumination based on a normal and viewing direction.",
+  "uses": "Glowing edges, abstract surfaces and stylized silhouettes.",
+  "notes": "Uses absolute normal/view dot product for a two-sided stylized rim; intended for artistic effects, not physical Fresnel reflectance.",
+  "inputs": [
+    {
+      "id": "base",
+      "name": "Base Color",
+      "type": "vec3",
+      "default": "vec3(0.2,0.35,0.5)"
+    },
+    {
+      "id": "normal",
+      "name": "Normal",
+      "type": "vec3",
+      "default": "vec3(0.0,0.0,1.0)"
+    },
+    {
+      "id": "view_direction",
+      "name": "View Direction",
+      "type": "vec3",
+      "default": "vec3(0.0,0.0,1.0)"
+    },
+    {
+      "id": "rim_color",
+      "name": "Rim Color",
+      "type": "vec3",
+      "default": "vec3(0.35,0.65,1.0)"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "color",
+      "name": "Color",
+      "type": "vec3"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "power",
+      "name": "Rim Power",
+      "type": "float",
+      "default": 3,
+      "min": 0.25,
+      "max": 12
+    },
+    {
+      "id": "strength",
+      "name": "Rim Strength",
+      "type": "float",
+      "default": 0.6,
+      "min": 0,
+      "max": 4
+    }
+  ],
+  "helpers": "",
+  "glsl": "({base} + {rim_color} * {strength} * pow(1.0-clamp(abs(dot(normalize({normal}+vec3(1e-6)),normalize({view_direction}+vec3(1e-6)))),0.0,1.0),{power}))",
+  "terminal": false
+}

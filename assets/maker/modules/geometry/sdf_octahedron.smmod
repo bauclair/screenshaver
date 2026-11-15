@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "created_by": "Screenshaver",
+  "terminal": false,
+  "id": "screenshaver.geometry.sdf_octahedron",
+  "name": "SDF Octahedron",
+  "category": "Geometry",
+  "header_color": "#557C9C",
+  "description": "Exact octahedron distance from Blue.",
+  "uses": "Reusable signed-distance geometry and procedural field composition.",
+  "notes": "Position is evaluated at the active ray-march sample. No texture dependency.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "default": "vec3(0.0)"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "distance",
+      "name": "Distance",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "size",
+      "name": "Size",
+      "type": "float",
+      "default": 1.8,
+      "min": 0.05,
+      "max": 8.0
+    }
+  ],
+  "helpers": "float maker_blue_octahedron(vec3 p,float s){p=abs(p);float m=p.x+p.y+p.z-s;vec3 q;if(3.0*p.x<m)q=p.xyz;else if(3.0*p.y<m)q=p.yzx;else if(3.0*p.z<m)q=p.zxy;else return m*0.57735027;float k=clamp(0.5*(q.z-q.y+s),0.0,s);return length(vec3(q.x,q.y-s+k,q.z-k));}",
+  "glsl": "maker_blue_octahedron({position},{size})"
+}

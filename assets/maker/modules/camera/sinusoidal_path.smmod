@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "created_by": "Screenshaver",
+  "terminal": false,
+  "id": "screenshaver.camera.sinusoidal_path",
+  "name": "Sinusoidal Path",
+  "category": "Camera",
+  "header_color": "#4A829B",
+  "description": "XY offset along a longitudinal Z coordinate; based on the Abstract Corridor path function.",
+  "uses": "Curving tunnel centerlines and camera positions.",
+  "notes": "Output is a vec2 offset. Feed the same path function into tunnel and camera logic. The source expression is sin(z/24)*cos(z/12)*12.",
+  "inputs": [
+    {
+      "id": "z",
+      "name": "Z",
+      "type": "float",
+      "default": "u_time*5.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "offset",
+      "name": "Offset",
+      "type": "vec2"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "amplitude",
+      "name": "Amplitude",
+      "type": "float",
+      "default": 12,
+      "min": 0,
+      "max": 32
+    },
+    {
+      "id": "frequency_a",
+      "name": "Period A",
+      "type": "float",
+      "default": 24,
+      "min": 1,
+      "max": 80
+    },
+    {
+      "id": "frequency_b",
+      "name": "Period B",
+      "type": "float",
+      "default": 12,
+      "min": 1,
+      "max": 80
+    }
+  ],
+  "helpers": "",
+  "glsl": "vec2(sin({z}/max({frequency_a},0.001))*cos({z}/max({frequency_b},0.001))*{amplitude},0.0)"
+}
