@@ -30,6 +30,32 @@ impl Graph {
   if def.terminal && self.nodes.iter().any(|n|n.definition().terminal){return Err("Only one output terminal is allowed".into())}
   let id=self.next_id;let node=Node::new(id,module_id,pos)?;self.next_id+=1;self.nodes.push(node);self.revision+=1;Ok(id)
  }
+  /// IDs of nonterminal modules that cannot contribute to Output Color.
+  /// Walk incoming connections backward from the terminal, so disconnected
+  /// islands (even internally wired ones) are treated as orphaned.
+  pub fn orphan_ids(&self)->Vec<NodeId>{
+   let mut reachable=HashSet::new();
+   let mut pending:Vec<NodeId>=self.nodes.iter()
+    .filter(|n|n.definition().terminal).map(|n|n.id).collect();
+   while let Some(id)=pending.pop(){
+    if !reachable.insert(id){continue}
+    for c in self.connections.iter().filter(|c|c.to==id){pending.push(c.from);}
+   }
+   self.nodes.iter().filter(|n|!n.definition().terminal && !reachable.contains(&n.id))
+    .map(|n|n.id).collect()
+  }
+  /// Remove all modules without a directed path to Output Color.
+  /// Keep the terminal and every contributing connection intact.
+  pub fn remove_orphans(&mut self)->Vec<NodeId>{
+   let removed=self.orphan_ids();
+   if !removed.is_empty(){
+    let ids:HashSet<NodeId>=removed.iter().copied().collect();
+    self.nodes.retain(|n|!ids.contains(&n.id));
+    self.connections.retain(|c|!ids.contains(&c.from)&&!ids.contains(&c.to));
+    self.revision=self.revision.wrapping_add(1);
+   }
+   removed
+  }
  pub fn node(&self,id:NodeId)->Option<&Node>{self.nodes.iter().find(|n|n.id==id)}
  pub fn node_mut(&mut self,id:NodeId)->Option<&mut Node>{self.nodes.iter_mut().find(|n|n.id==id)}
  pub fn remove(&mut self,id:NodeId)->Result<(),String>{

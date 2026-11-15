@@ -50,6 +50,73 @@ impl Preview {
             gl::BindVertexArray(self.vao);gl::DrawArrays(gl::TRIANGLES,0,3);gl::BindVertexArray(0);gl::UseProgram(0);gl::Disable(gl::SCISSOR_TEST);gl::Viewport(0,0,w,h);
         }
     }
+    /// Render a candidate without changing the live preview program or framebuffer.
+    /// Returns None for invalid/blank/saturated results.
+    pub fn candidate_thumbnail(&mut self,graph:&Graph)->Result<Option<Vec<u8>>,String>{
+        const W:i32=192;const H:i32=108;
+        let frag=crate::maker_compiler::fragment_source(graph)?;
+        let program=link(VERT,&frag)?;
+        unsafe {
+            let mut fbo=0;let mut tex=0;
+            gl::GenFramebuffers(1,&mut fbo);gl::GenTextures(1,&mut tex);
+            let mut previous_fbo=0;let mut previous_program=0;let mut previous_vao=0;
+            let mut previous_viewport=[0i32;4];
+            gl::GetIntegerv(gl::FRAMEBUFFER_BINDING,&mut previous_fbo);
+            gl::GetIntegerv(gl::CURRENT_PROGRAM,&mut previous_program);
+            gl::GetIntegerv(gl::VERTEX_ARRAY_BINDING,&mut previous_vao);
+            gl::GetIntegerv(gl::VIEWPORT,previous_viewport.as_mut_ptr());
+            let previous_scissor=gl::IsEnabled(gl::SCISSOR_TEST)==gl::TRUE;
+            let previous_depth=gl::IsEnabled(gl::DEPTH_TEST)==gl::TRUE;
+            let mut previous_texture=0;gl::GetIntegerv(gl::TEXTURE_BINDING_2D,&mut previous_texture);
+            gl::BindTexture(gl::TEXTURE_2D,tex);
+            gl::TexParameteri(gl::TEXTURE_2D,gl::TEXTURE_MIN_FILTER,gl::LINEAR as i32);
+            gl::TexParameteri(gl::TEXTURE_2D,gl::TEXTURE_MAG_FILTER,gl::LINEAR as i32);
+            gl::TexImage2D(gl::TEXTURE_2D,0,gl::RGBA8 as i32,W,H,0,gl::RGBA,gl::UNSIGNED_BYTE,std::ptr::null());
+            gl::BindFramebuffer(gl::FRAMEBUFFER,fbo);
+            gl::FramebufferTexture2D(gl::FRAMEBUFFER,gl::COLOR_ATTACHMENT0,gl::TEXTURE_2D,tex,0);
+            let complete=gl::CheckFramebufferStatus(gl::FRAMEBUFFER)==gl::FRAMEBUFFER_COMPLETE;
+            let mut pixels=vec![0u8;(W*H*4) as usize];
+            if complete {
+                gl::Viewport(0,0,W,H);gl::Disable(gl::SCISSOR_TEST);gl::Disable(gl::DEPTH_TEST);
+                gl::ClearColor(0.0,0.0,0.0,1.0);gl::Clear(gl::COLOR_BUFFER_BIT);
+                gl::UseProgram(program);
+                uniform_1f(program,"u_time",0.0);uniform_2f(program,"u_resolution",W as f32,H as f32);
+                for n in &graph.nodes {for p in &n.definition().parameters {
+                    if let Some(value)=n.parameters.get(&p.id){let name=format!("u_n{}_{}",n.id,p.id);
+                        match p.ty.as_str(){
+                            "float"|"choice"=>if let Some(v)=value.as_f64(){uniform_1f(program,&name,v as f32)},
+                            "color3"=>if let Some(a)=value.as_array(){if a.len()==3{uniform_3f(program,&name,[a[0].as_f64().unwrap_or(0.0) as f32,a[1].as_f64().unwrap_or(0.0) as f32,a[2].as_f64().unwrap_or(0.0) as f32])}},
+                            _=>{},
+                        }
+                    }
+                }}
+                gl::BindVertexArray(self.vao);gl::DrawArrays(gl::TRIANGLES,0,3);
+                gl::ReadPixels(0,0,W,H,gl::RGBA,gl::UNSIGNED_BYTE,pixels.as_mut_ptr() as *mut _);
+            }
+            gl::BindFramebuffer(gl::FRAMEBUFFER,previous_fbo as u32);
+            gl::UseProgram(previous_program as u32);gl::BindVertexArray(previous_vao as u32);
+            gl::BindTexture(gl::TEXTURE_2D,previous_texture as u32);
+            gl::Viewport(previous_viewport[0],previous_viewport[1],previous_viewport[2],previous_viewport[3]);
+            if previous_scissor{gl::Enable(gl::SCISSOR_TEST)}else{gl::Disable(gl::SCISSOR_TEST)}
+            if previous_depth{gl::Enable(gl::DEPTH_TEST)}else{gl::Disable(gl::DEPTH_TEST)}
+            gl::DeleteFramebuffers(1,&fbo);gl::DeleteTextures(1,&tex);gl::DeleteProgram(program);
+            if !complete{return Err("Candidate framebuffer incomplete".into())}
+            // Reject only essentially uniform output. Preserve dark starfields and
+            // predominantly bright compositions with sparse visible structure.
+            let first=[pixels[0],pixels[1],pixels[2]];
+            let meaningful=pixels.chunks_exact(4).filter(|p|{
+                (0..3).any(|i|(p[i] as i16-first[i] as i16).abs()>7)
+            }).count();
+            if meaningful<((W*H) as usize/1000).max(4){return Ok(None)}
+            // OpenGL readback is bottom-up; egui thumbnails are top-down.
+            for y in 0..H as usize/2 {
+                for x in 0..W as usize*4 {
+                    pixels.swap(y*W as usize*4+x,(H as usize-1-y)*W as usize*4+x);
+                }
+            }
+            Ok(Some(pixels))
+        }
+    }
     pub fn destroy(&mut self){unsafe{gl::DeleteVertexArrays(1,&self.vao);if self.program!=0{gl::DeleteProgram(self.program)}}}
 }
 unsafe fn location(p:u32,n:&str)->i32{unsafe{gl::GetUniformLocation(p,CString::new(n).unwrap().as_ptr())}}

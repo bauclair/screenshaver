@@ -66,12 +66,38 @@ fn emit(graph:&Graph,id:NodeId,emitted:&mut HashSet<NodeId>,src:&mut String)->Re
 // The first implementation deliberately supports only position-driven scalar field modules.
 // Unsupported graphs produce a clear error instead of silently using a frozen seed.
 fn callable_field(graph:&Graph,id:NodeId,port:usize,position:&str)->Result<String,String>{
- let n=graph.node(id).ok_or("Callable field source missing")?;
- if port!=0{return Err("Callable field requires the first scalar output".into())}
- if graph.input_connection(id,0).is_some(){return Err("Callable field position must be controlled by traversal; disconnect the field's Position input".into())}
- match n.module_id.as_str(){
-  "screenshaver.fields.morphing"=>Ok(format!("mix(maker_morph_field({position},u_n{}_scale,u_n{}_strength,u_n{}_speed),maker_original_distance({position},u_n{}_scale,u_n{}_strength,u_n{}_speed),step(0.5,u_n{}_mode))",id,id,id,id,id,id,id)),
-  "screenshaver.noise.dot3d"=>Ok(format!("maker_dot_noise_3d({position})")),
-  _=>Err(format!("Module '{}' does not support callable field evaluation yet",n.module_id)),
- }
+    fn expression(graph:&Graph,id:NodeId,port:usize,position:&str,active:&mut HashSet<NodeId>)->Result<String,String>{
+        if !active.insert(id){return Err("Callable field cycle".into())}
+        let result=(||{
+            let n=graph.node(id).ok_or("Callable field source missing")?;
+            let m=n.definition();
+            if m.terminal{return Err("Output terminal is not a callable source".into())}
+            let output=m.outputs.get(port).ok_or("Callable field output missing")?;
+            if output.ty!="float" {return Err(format!("Callable field needs float, got {}",output.ty))}
+            let mut vars=std::collections::HashMap::new();
+            for (index,input) in m.inputs.iter().enumerate(){
+                let value=if input.id=="position" && input.ty=="vec3" {
+                    if graph.input_connection(id,index).is_some(){
+                        return Err("Callable field Position must be controlled by traversal".into())
+                    }
+                    position.to_owned()
+                }else if let Some(c)=graph.input_connection(id,index){
+                    expression(graph,c.from,c.from_port,position,active)?
+                }else{input.default.clone()};
+                if value.is_empty(){return Err(format!("Missing callable input {}:{}",m.id,input.id))}
+                vars.insert(input.id.clone(),value);
+            }
+            for parameter in &m.parameters {
+                vars.insert(parameter.id.clone(),format!("u_n{}_{}",id,parameter.id));
+            }
+            // Preserve the established morphing-field evaluation semantics.
+            if m.id=="screenshaver.fields.morphing" {
+                return Ok(format!("mix(maker_morph_field({position},u_n{id}_scale,u_n{id}_strength,u_n{id}_speed),maker_original_distance({position},u_n{id}_scale,u_n{id}_strength,u_n{id}_speed),step(0.5,u_n{id}_mode))"))
+            }
+            substitute(&m.glsl_outputs[port],&vars)
+        })();
+        active.remove(&id);
+        result
+    }
+    expression(graph,id,port,position,&mut HashSet::new())
 }

@@ -6,10 +6,176 @@ use crate::maker_graph::{Graph, NodeId};
 #[path = "maker_routing.rs"]
 mod maker_routing;
 use maker_routing::{Box2, PortPair, Routes};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap,HashMap};
+use serde_json::Value;
 use crate::maker_module::{Module, Trust};
 use crate::maker_library;
 
+#[derive(Clone)]
+struct Candidate {
+    name: String,
+    parameters: HashMap<NodeId, HashMap<String,Value>>,
+    modules: HashMap<NodeId,String>,
+    connections: Vec<crate::maker_graph::Connection>,
+    texture: egui::TextureHandle,
+    dismissed: bool,
+    favorite: bool,
+    connection_candidate: bool,
+}
+#[derive(Clone)]
+pub struct CandidateJob {
+    pub graph: Graph,
+    pub name: String,
+    pub source_revision: u64,
+    pub connection_candidate: bool,
+}
+fn is_speed_parameter(id:&str)->bool {
+    // Animation speed is user-controlled and never part of candidate discovery.
+    id.eq_ignore_ascii_case("speed") || id.eq_ignore_ascii_case("animation_speed")
+}
+fn candidate_graphs(graph:&Graph)->Vec<(String,Graph)> {
+    const MAX_CANDIDATES:usize=96;
+    // Fix all numeric sliders at their range midpoint for every candidate.
+    // Animation speed is deliberately excluded from discovery and left unchanged.
+    let mut base=graph.clone();
+    let mut choices:Vec<(NodeId,String,String,usize)>=Vec::new();
+    for node in &mut base.nodes {
+        let definition=node.definition();
+        for param in &definition.parameters {
+            if is_speed_parameter(&param.id) { continue; }
+            match param.ty.as_str() {
+                "float" => {
+                    let midpoint=(param.min as f64+param.max as f64)*0.5;
+                    if midpoint.is_finite() {
+                        node.parameters.insert(param.id.clone(),serde_json::json!(midpoint));
+                    }
+                }
+                "choice" if !param.options.is_empty() => {
+                    choices.push((node.id,param.id.clone(),param.name.clone(),param.options.len()));
+                }
+                _ => {} // Keep checkboxes, colors, and other settings fixed.
+            }
+        }
+    }
+    // Cartesian product of dropdown choices across ALL modules. The first
+    // dropdown changes fastest, so its entire range is tested even when the
+    // product exceeds the 96-candidate evaluation budget.
+    let mut result=Vec::new();
+    let mut digits=vec![0usize;choices.len()];
+    loop {
+        let mut proposed=base.clone();
+        let mut labels=Vec::new();
+        for ((id,param_id,param_name,_),value) in choices.iter().zip(digits.iter()) {
+            if let Some(node)=proposed.node_mut(*id) {
+                node.parameters.insert(param_id.clone(),serde_json::json!(*value as f64));
+            }
+            labels.push(format!("{} #{}={}",param_name,id,value));
+        }
+        proposed.revision=graph.revision+1;
+        result.push((if labels.is_empty() {"Slider midpoints".to_owned()} else {format!("Modes: {}",labels.join(", "))},proposed));
+        if result.len()>=MAX_CANDIDATES || choices.is_empty() { break; }
+        let mut carry=true;
+        for (digit,(_,_,_,count)) in digits.iter_mut().zip(choices.iter()) {
+            *digit+=1;
+            if *digit<*count {carry=false;break;}
+            *digit=0;
+        }
+        if carry {break;}
+    }
+    result
+}
+/// Bounded, deterministic reverse construction from the output terminal.
+/// Every proposed wire is accepted by the same validator as manual wiring.
+/// Existing connections are intentionally replaced in candidates, never in the live graph.
+fn connection_candidate_graphs(graph:&Graph)->Vec<(String,Graph)> {
+    use std::collections::{HashSet,VecDeque};
+    const LIMIT:usize=96;
+    const EXPANSIONS:usize=6000;
+    let Some(output)=graph.nodes.iter().find(|n|n.definition().terminal) else {return Vec::new()};
+    let mut base=graph.clone();
+    base.connections.clear();
+    base.revision=graph.revision.wrapping_add(1);
+    let mut queue=VecDeque::from([base]);
+    let mut seen=HashSet::new();
+    let mut results=Vec::new();
+    let mut examined=0;
+    while let Some(current)=queue.pop_front() {
+        if examined>=EXPANSIONS || results.len()>=LIMIT {break}
+        examined+=1;
+        let mut key:Vec<_>=current.connections.iter().map(|c|(c.from,c.from_port,c.to,c.to_port)).collect();
+        key.sort_unstable();
+        if !seen.insert(key) {continue}
+        if current.input_connection(output.id,0).is_some() && current.validate().is_ok() {
+            results.push((format!("Connections: {} wires",current.connections.len()),current.clone()));
+        }
+        // Only expand inputs belonging to the live output dependency tree.
+        let mut reachable=HashSet::from([output.id]);
+        let mut frontier=vec![output.id];
+        while let Some(id)=frontier.pop(){
+            for c in current.connections.iter().filter(|c|c.to==id){
+                if reachable.insert(c.from){frontier.push(c.from)}
+            }
+        }
+        let mut targets=Vec::new();
+        for node in &current.nodes {
+            if !reachable.contains(&node.id){continue}
+            for port in 0..node.definition().inputs.len() {
+                if current.input_connection(node.id,port).is_none(){targets.push((node.id,port));}
+            }
+        }
+        // Expand one open input per step. Optional inputs may stay at defaults.
+        // The terminal is prioritized, then the newest reachable processing node.
+        targets.sort_by_key(|&(id,port)| (if id==output.id {0} else {1},std::cmp::Reverse(id),port));
+        for (to,to_port) in targets.into_iter().take(3) {
+            for source in &current.nodes {
+                if source.definition().terminal {continue}
+                for from_port in 0..source.definition().outputs.len() {
+                    if current.check_connection(source.id,from_port,to,to_port).is_err(){continue}
+                    let mut proposed=current.clone();
+                    if proposed.connect(source.id,from_port,to,to_port).is_ok(){
+                        queue.push_back(proposed);
+                    }
+                }
+            }
+        }
+    }
+    results
+}
+
+fn apply_connection_candidate(graph:&mut Graph,candidate:&Candidate,base:&Graph)->Result<(),String>{
+    if graph.nodes.len()!=base.nodes.len() {return Err("Modules changed; rediscover connections".into())}
+    for node in &graph.nodes {
+        if base.node(node.id).is_none_or(|original|original.module_id!=node.module_id){
+            return Err("Modules changed; rediscover connections".into())
+        }
+    }
+    let mut proposed=graph.clone();
+    proposed.connections.clear();
+    for c in &candidate.connections {proposed.connect(c.from,c.from_port,c.to,c.to_port)?;}
+    proposed.validate()?;
+    proposed.revision=graph.revision.wrapping_add(1);
+    *graph=proposed;
+    Ok(())
+}
+
+fn apply_candidate(graph:&mut Graph,candidate:&Candidate)->Result<(),String>{
+    if graph.nodes.len()!=candidate.parameters.len(){return Err("Candidate graph no longer matches project".into())}
+    if graph.connections!=candidate.connections{return Err("Project connections changed; regenerate candidates".into())}
+    for node in &graph.nodes {
+        if !candidate.parameters.contains_key(&node.id) || candidate.modules.get(&node.id)!=Some(&node.module_id){return Err("Project modules changed; regenerate candidates".into())}
+    }
+    for node in &mut graph.nodes {
+        let mut next=candidate.parameters[&node.id].clone();
+        // Candidate snapshots must not change animation speed, even if the
+        // user adjusted it after candidate discovery.
+        for (key,value) in &node.parameters {
+            if is_speed_parameter(key) {next.insert(key.clone(),value.clone());}
+        }
+        node.parameters=next;
+    }
+    graph.revision+=1;
+    Ok(())
+}
 pub struct MakerUi {
     context: egui::Context,
     painter: egui_glow::Painter,
@@ -36,6 +202,15 @@ pub struct MakerUi {
     pixels_per_point: f32,
     routing_undo: Vec<(Graph,Routes)>,
     routing_redo: Vec<(Graph,Routes)>,
+    candidate_mode: u8,
+    candidates: Vec<Candidate>,
+    candidate_jobs: Vec<CandidateJob>,
+    candidate_base: Option<Graph>,
+    candidate_selected: Option<usize>,
+    candidate_undo: Vec<Graph>,
+    orphan_undo: Vec<Graph>,
+    candidate_notice: String,
+
 }
 impl MakerUi {
     pub fn new(video:&sdl2::VideoSubsystem)->Result<Self,String>{
@@ -46,9 +221,22 @@ impl MakerUi {
             modifiers:egui::Modifiers::default(),start:Instant::now(),graph,selected,parameter_popup:None,pending_source:None,dragging_wire:None,
             status:"Click an output port, then a compatible input port".into(),open:true,
             preview_rect:egui::Rect::from_min_size(egui::pos2(210.0,600.0),egui::vec2(950.0,210.0)),
-            preview_height:None,routes:Routes::new(),canvas_pan:egui::Vec2::ZERO,canvas_rect:egui::Rect::NOTHING,panning:false,pan_button:None,space_held:false,pixels_per_point:1.0,routing_undo:Vec::new(),routing_redo:Vec::new()})
+            preview_height:None,routes:Routes::new(),canvas_pan:egui::Vec2::ZERO,canvas_rect:egui::Rect::NOTHING,panning:false,pan_button:None,space_held:false,pixels_per_point:1.0,routing_undo:Vec::new(),routing_redo:Vec::new(),candidate_mode:0,
+            candidates:Vec::new(),candidate_jobs:Vec::new(),candidate_base:None,
+            candidate_selected:None,candidate_undo:Vec::new(),orphan_undo:Vec::new(),candidate_notice:String::new()})
     }
     pub fn graph(&self)->&Graph{&self.graph}
+    pub fn next_candidate_job(&mut self)->Option<CandidateJob>{self.candidate_jobs.pop()}
+    pub fn receive_candidate(&mut self,job:CandidateJob,rgba:Vec<u8>,width:usize,height:usize){
+        if self.candidate_base.as_ref().is_none_or(|g|g.revision!=job.source_revision){return}
+        let image=egui::ColorImage::from_rgba_unmultiplied([width,height],&rgba);
+        let texture=self.context.load_texture(format!("maker_candidate_{}",self.candidates.len()),image,egui::TextureOptions::LINEAR);
+        let parameters=job.graph.nodes.iter().map(|n|(n.id,n.parameters.clone())).collect();
+        let modules=job.graph.nodes.iter().map(|n|(n.id,n.module_id.clone())).collect();
+        self.candidates.push(Candidate{name:job.name,parameters,modules,connections:job.graph.connections.clone(),texture,dismissed:false,favorite:false,connection_candidate:job.connection_candidate});
+    }
+    pub fn candidate_rejected(&mut self){ /* No thumbnail for blank or invalid renderings. */ }
+
     pub fn preview_rect(&self)->egui::Rect{self.preview_rect}
     pub fn handle_event(&mut self, event: &Event) {
         match event {
@@ -136,6 +324,14 @@ impl MakerUi {
         let canvas_rect=&mut self.canvas_rect;
         let routing_undo=&mut self.routing_undo;
         let routing_redo=&mut self.routing_redo;
+        let candidate_mode=&mut self.candidate_mode;
+        let candidates=&mut self.candidates;
+        let candidate_jobs=&mut self.candidate_jobs;
+        let candidate_base=&mut self.candidate_base;
+        let candidate_selected=&mut self.candidate_selected;
+        let candidate_undo=&mut self.candidate_undo;
+        let orphan_undo=&mut self.orphan_undo;
+        let candidate_notice=&mut self.candidate_notice;
         let mut optimize_requested=false;
         let mut fit_requested=false;
         let mut editor_anchor: Option<(NodeId, egui::Pos2)> = None;
@@ -144,7 +340,40 @@ impl MakerUi {
                 ui.horizontal(|ui|{
                     ui.heading("Screenshaver Maker");ui.separator();ui.label("Untitled graph");
                     if ui.button("Reset demo").clicked(){let revision=graph.revision;*graph=Graph::demo();graph.revision=revision+1;
-                        *selected=graph.nodes.iter().find(|n|n.module_id=="screenshaver.color.cosine_palette").map(|n|n.id);*parameter_popup=None;*pending=None;*dragging_wire=None;routes.clear();routing_undo.clear();routing_redo.clear();*status="Demo graph reset".into();
+                        *selected=graph.nodes.iter().find(|n|n.module_id=="screenshaver.color.cosine_palette").map(|n|n.id);*parameter_popup=None;*pending=None;*dragging_wire=None;routes.clear();routing_undo.clear();routing_redo.clear();orphan_undo.clear();
+                        candidates.clear();candidate_jobs.clear();*candidate_base=None;candidate_undo.clear();*candidate_selected=None;
+                        *status="Demo graph reset".into();
+                    }
+                    let orphan_count=graph.orphan_ids().len();
+                    if ui.add_enabled(orphan_count>0,egui::Button::new("Remove orphan modules"))
+                        .on_hover_text("Remove all modules without a directed path to Output Color, including disconnected groups")
+                        .clicked(){
+                        let previous=graph.clone();
+                        let removed=graph.remove_orphans();
+                        if !removed.is_empty(){
+                            orphan_undo.push(previous);
+                            if orphan_undo.len()>32{orphan_undo.remove(0);}
+                            if selected.is_some_and(|id|removed.contains(&id)){*selected=None;}
+                            if parameter_popup.is_some_and(|id|removed.contains(&id)){*parameter_popup=None;}
+                            *pending=None;*dragging_wire=None;
+                            routes.clear();routing_undo.clear();routing_redo.clear();
+                            candidates.clear();candidate_jobs.clear();*candidate_base=None;
+                            candidate_undo.clear();*candidate_selected=None;candidate_notice.clear();
+                            *status=format!("Removed {} orphan module{}",removed.len(),if removed.len()==1{""}else{"s"});
+                        }
+                    }
+                    if ui.add_enabled(!orphan_undo.is_empty(),egui::Button::new("Undo Remove"))
+                        .on_hover_text("Restore the most recently removed modules and their connections")
+                        .clicked(){
+                        if let Some(mut previous)=orphan_undo.pop(){
+                            previous.revision=graph.revision.wrapping_add(1);
+                            *graph=previous;
+                            routes.clear();routing_undo.clear();routing_redo.clear();
+                            candidates.clear();candidate_jobs.clear();*candidate_base=None;
+                            candidate_undo.clear();*candidate_selected=None;candidate_notice.clear();
+                            *pending=None;*dragging_wire=None;
+                            *status="Restored removed orphan modules".into();
+                        }
                     }
                     if ui.button("Optimize Routing").clicked(){optimize_requested=true;}
                     if ui.button("Center Graph").clicked(){fit_requested=true;}
@@ -203,7 +432,57 @@ impl MakerUi {
             });
             egui::SidePanel::right("maker_inspector").resizable(true).default_width(260.0).min_width(200.0).show(ctx,|ui|{
                 ui.heading("Inspector");ui.separator();
-                if let Some(id)=*selected{
+                ui.horizontal(|ui|{
+                    ui.selectable_value(candidate_mode,0,"Properties");
+                    ui.selectable_value(candidate_mode,1,"Parameters");
+                    ui.selectable_value(candidate_mode,2,"Connections");
+                });
+                ui.separator();
+                if *candidate_mode != 0 {
+                    if ui.button(if *candidate_mode==2 {"Discover connections"} else {"Discover parameters"}).clicked(){
+                        candidates.clear();candidate_jobs.clear();candidate_undo.clear();*candidate_selected=None;
+                        *candidate_base=Some(graph.clone());
+                        let generated=if *candidate_mode==2 {connection_candidate_graphs(graph)} else {candidate_graphs(graph)};
+                        let count=generated.len();
+                        *candidate_jobs=generated.into_iter().rev().map(|(name,graph)|CandidateJob{
+                            graph,name,source_revision:candidate_base.as_ref().unwrap().revision,
+                            connection_candidate:*candidate_mode==2,
+                        }).collect();
+                        *candidate_notice=format!("Evaluating {count} {} combinations...",if *candidate_mode==2 {"connection"} else {"parameter"});
+                    }
+                    if ui.add_enabled(!candidate_undo.is_empty(),egui::Button::new("Undo candidate selection")).clicked(){
+                        if let Some(mut previous)=candidate_undo.pop(){previous.revision=graph.revision+1;*graph=previous;*candidate_selected=None;}
+                    }
+                    if !candidate_notice.is_empty(){ui.small(candidate_notice.as_str());}
+                    ui.label(format!("{} visible · {} pending",candidates.iter().filter(|c|!c.dismissed && c.connection_candidate==(*candidate_mode==2)).count(),candidate_jobs.len()));
+                    if ui.button("Restore dismissed").clicked(){for c in candidates.iter_mut(){c.dismissed=false;}}
+                    egui::ScrollArea::vertical().show(ui,|ui|{
+                        for (index,candidate) in candidates.iter_mut().enumerate(){
+                            if candidate.dismissed || candidate.connection_candidate!=(*candidate_mode==2){continue}
+                            ui.group(|ui|{
+                                let image=egui::Image::new(&candidate.texture).fit_to_exact_size(egui::vec2(ui.available_width().min(240.0),135.0));
+                                if ui.add(egui::ImageButton::new(image).selected(*candidate_selected==Some(index))).clicked(){
+                                    let previous=graph.clone();
+                                    let applied=if candidate.connection_candidate {
+                                        match candidate_base.as_ref() {
+                                            Some(base)=>apply_connection_candidate(graph,candidate,base),
+                                            None=>Err("Discovery snapshot missing".into()),
+                                        }
+                                    } else {apply_candidate(graph,candidate)};
+                                    match applied {
+                                        Ok(())=>{candidate_undo.push(previous);*candidate_selected=Some(index);*status=format!("Applied {}",candidate.name);},
+                                        Err(e)=>*status=e,
+                                    }
+                                }
+                                ui.small(&candidate.name);
+                                ui.horizontal(|ui|{
+                                    if ui.small_button(if candidate.favorite{"★ Saved"}else{"☆ Favorite"}).clicked(){candidate.favorite=!candidate.favorite;}
+                                    if ui.small_button("Dismiss").clicked(){candidate.dismissed=true;}
+                                });
+                            });
+                        }
+                    });
+                } else if let Some(id)=*selected{
                     if let Some(n)=graph.node_mut(id){
                         ui.strong(format!("{} #{}",n.definition().name,id));ui.separator();
                         ui.label(n.definition().description.as_str());

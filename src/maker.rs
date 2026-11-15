@@ -24,6 +24,14 @@ pub fn run()->Result<(),String>{
         let scale_x = if ww > 0 { dw as f32 / ww as f32 } else { 1.0 };
         let scale_y = if wh > 0 { dh as f32 / wh as f32 } else { 1.0 };
         let scale = scale_x.min(scale_y);
+        // One offscreen candidate per frame to keep the Inspector responsive.
+        if let Some(job)=ui.next_candidate_job(){
+            match preview.candidate_thumbnail(&job.graph){
+                Ok(Some(pixels))=>ui.receive_candidate(job,pixels,192,108),
+                Ok(None)=>ui.candidate_rejected(),
+                Err(e)=>{eprintln!("[MAKER CANDIDATE] {}: {}",job.name,e);ui.candidate_rejected();},
+            }
+        }
         preview.update(ui.graph());
         preview.render(dw as i32,dh as i32,scale,ui.preview_rect(),start.elapsed().as_secs_f32(),ui.graph());
         if !ui.frame(dw,dh,scale,preview.error.as_deref()){break}
