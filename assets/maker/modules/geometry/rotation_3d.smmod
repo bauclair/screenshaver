@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "created_by": "Screenshaver",
+  "terminal": false,
+  "id": "screenshaver.geometry.rotation_3d",
+  "name": "3-Axis Rotation",
+  "category": "Geometry",
+  "header_color": "#557C9C",
+  "description": "Rotate connected distance-field coordinates in three planes, optionally animated.",
+  "uses": "Composable signed-distance geometry and spatial animation.",
+  "notes": "Position is evaluated for each ray-march sample when used as a callable field.",
+  "inputs": [
+    {
+      "id": "field",
+      "name": "Field",
+      "type": "float",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "distance",
+      "name": "Distance",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "xy",
+      "name": "Xy",
+      "type": "float",
+      "default": 0.0,
+      "min": -3.14159,
+      "max": 3.14159
+    },
+    {
+      "id": "yz",
+      "name": "Yz",
+      "type": "float",
+      "default": 0.0,
+      "min": -3.14159,
+      "max": 3.14159
+    },
+    {
+      "id": "xz",
+      "name": "Xz",
+      "type": "float",
+      "default": 0.0,
+      "min": -3.14159,
+      "max": 3.14159
+    },
+    {
+      "id": "speed",
+      "name": "Speed",
+      "type": "float",
+      "default": 0.0,
+      "min": -5,
+      "max": 5
+    }
+  ],
+  "helpers": "",
+  "glsl": "{field}"
+}

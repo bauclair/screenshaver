@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "created_by": "Screenshaver",
+  "terminal": false,
+  "id": "screenshaver.geometry.sdf_torus",
+  "name": "SDF Torus",
+  "category": "Geometry",
+  "header_color": "#557C9C",
+  "description": "Signed distance to a torus with independent major and tube radii.",
+  "uses": "Composable signed-distance geometry and spatial animation.",
+  "notes": "Position is evaluated for each ray-march sample when used as a callable field.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "default": "vec3(0.0)"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "distance",
+      "name": "Distance",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "major_radius",
+      "name": "Major Radius",
+      "type": "float",
+      "default": 1.2,
+      "min": 0.1,
+      "max": 8
+    },
+    {
+      "id": "tube_radius",
+      "name": "Tube Radius",
+      "type": "float",
+      "default": 0.3,
+      "min": 0.02,
+      "max": 4
+    }
+  ],
+  "helpers": "",
+  "glsl": "length(vec2(length(({position}).xz)-{major_radius},({position}).y))-{tube_radius}"
+}

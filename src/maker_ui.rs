@@ -11,6 +11,41 @@ use serde_json::Value;
 use crate::maker_module::{Module, Trust};
 use crate::maker_library;
 
+/// Count perceptually distinct, meaningfully represented color families in an RGBA thumbnail.
+/// Hue is circular; low-saturation pixels are grouped by brightness rather than hue.
+/// Requiring several pixels per bucket prevents isolated rendering noise from winning.
+fn perceived_color_count(rgba:&[u8])->usize {
+    let mut bins=[0usize; 8+12*4*5];
+    let mut pixels=0usize;
+    for pixel in rgba.chunks_exact(4) {
+        if pixel[3]<128 {continue}
+        pixels+=1;
+        let r=pixel[0] as f32/255.0;
+        let g=pixel[1] as f32/255.0;
+        let b=pixel[2] as f32/255.0;
+        let high=r.max(g).max(b);
+        let low=r.min(g).min(b);
+        let delta=high-low;
+        let saturation=if high>0.0 {delta/high} else {0.0};
+        let index=if saturation<0.12 || delta<0.045 {
+            // Neutral colors: 8 brightness buckets, without arbitrary hue.
+            ((high*8.0) as usize).min(7)
+        } else {
+            let hue=if high==r {(g-b)/delta}
+                else if high==g {(b-r)/delta+2.0}
+                else {(r-g)/delta+4.0};
+            let hue=(hue/6.0).rem_euclid(1.0);
+            let h=((hue*12.0) as usize).min(11);
+            let sat=(((saturation-0.12)/0.88*4.0) as usize).min(3);
+            let value=((high*5.0) as usize).min(4);
+            8+(h*4+sat)*5+value
+        };
+        bins[index]+=1;
+    }
+    let minimum=(pixels/1000).max(6);
+    bins.iter().filter(|&&count|count>=minimum).count()
+}
+
 #[derive(Clone)]
 struct Candidate {
     name: String,
@@ -18,6 +53,7 @@ struct Candidate {
     modules: HashMap<NodeId,String>,
     connections: Vec<crate::maker_graph::Connection>,
     texture: egui::TextureHandle,
+    perceived_colors: usize,
     dismissed: bool,
     favorite: bool,
     connection_candidate: bool,
@@ -33,115 +69,217 @@ fn is_speed_parameter(id:&str)->bool {
     // Animation speed is user-controlled and never part of candidate discovery.
     id.eq_ignore_ascii_case("speed") || id.eq_ignore_ascii_case("animation_speed")
 }
-fn candidate_graphs(graph:&Graph)->Vec<(String,Graph)> {
-    const MAX_CANDIDATES:usize=96;
-    // Fix all numeric sliders at their range midpoint for every candidate.
-    // Animation speed is deliberately excluded from discovery and left unchanged.
-    let mut base=graph.clone();
-    let mut choices:Vec<(NodeId,String,String,usize)>=Vec::new();
-    for node in &mut base.nodes {
-        let definition=node.definition();
-        for param in &definition.parameters {
-            if is_speed_parameter(&param.id) { continue; }
-            match param.ty.as_str() {
-                "float" => {
-                    let midpoint=(param.min as f64+param.max as f64)*0.5;
-                    if midpoint.is_finite() {
-                        node.parameters.insert(param.id.clone(),serde_json::json!(midpoint));
-                    }
-                }
-                "choice" if !param.options.is_empty() => {
-                    choices.push((node.id,param.id.clone(),param.name.clone(),param.options.len()));
-                }
-                _ => {} // Keep checkboxes, colors, and other settings fixed.
-            }
-        }
+// Decimal multiplication avoids overflow without introducing a bigint dependency.
+fn multiply_decimal(value:&mut Vec<u8>, factor:usize) {
+    let mut carry=0u128;
+    for digit in value.iter_mut() {
+        let next=(*digit as u128)*(factor as u128)+carry;
+        *digit=(next%10) as u8;
+        carry=next/10;
     }
-    // Cartesian product of dropdown choices across ALL modules. The first
-    // dropdown changes fastest, so its entire range is tested even when the
-    // product exceeds the 96-candidate evaluation budget.
-    let mut result=Vec::new();
-    let mut digits=vec![0usize;choices.len()];
-    loop {
-        let mut proposed=base.clone();
-        let mut labels=Vec::new();
-        for ((id,param_id,param_name,_),value) in choices.iter().zip(digits.iter()) {
-            if let Some(node)=proposed.node_mut(*id) {
-                node.parameters.insert(param_id.clone(),serde_json::json!(*value as f64));
-            }
-            labels.push(format!("{} #{}={}",param_name,id,value));
-        }
-        proposed.revision=graph.revision+1;
-        result.push((if labels.is_empty() {"Slider midpoints".to_owned()} else {format!("Modes: {}",labels.join(", "))},proposed));
-        if result.len()>=MAX_CANDIDATES || choices.is_empty() { break; }
-        let mut carry=true;
-        for (digit,(_,_,_,count)) in digits.iter_mut().zip(choices.iter()) {
-            *digit+=1;
-            if *digit<*count {carry=false;break;}
-            *digit=0;
-        }
-        if carry {break;}
+    while carry>0 {value.push((carry%10) as u8);carry/=10;}
+}
+fn decimal_string(value:&[u8])->String {
+    let digits:String=value.iter().rev().map(|d|char::from(b'0'+*d)).collect();
+    let mut result=String::new();
+    for (i,c) in digits.chars().enumerate() {
+        if i>0 && (digits.len()-i)%3==0 {result.push(',');}
+        result.push(c);
     }
     result
 }
-/// Bounded, deterministic reverse construction from the output terminal.
-/// Every proposed wire is accepted by the same validator as manual wiring.
-/// Existing connections are intentionally replaced in candidates, never in the live graph.
-fn connection_candidate_graphs(graph:&Graph)->Vec<(String,Graph)> {
-    use std::collections::{HashSet,VecDeque};
-    const LIMIT:usize=96;
-    const EXPANSIONS:usize=6000;
-    let Some(output)=graph.nodes.iter().find(|n|n.definition().terminal) else {return Vec::new()};
-    let mut base=graph.clone();
-    base.connections.clear();
-    base.revision=graph.revision.wrapping_add(1);
-    let mut queue=VecDeque::from([base]);
-    let mut seen=HashSet::new();
-    let mut results=Vec::new();
-    let mut examined=0;
-    while let Some(current)=queue.pop_front() {
-        if examined>=EXPANSIONS {break}
-        examined+=1;
-        let mut key:Vec<_>=current.connections.iter().map(|c|(c.from,c.from_port,c.to,c.to_port)).collect();
-        key.sort_unstable();
-        if !seen.insert(key) {continue}
-        if current.input_connection(output.id,0).is_some() && current.validate().is_ok() {
-            results.push((format!("Connections: {} wires",current.connections.len()),current.clone()));
+fn parameter_permutation_count(graph:&Graph)->String {
+    let mut total=vec![1u8];
+    for node in &graph.nodes {
+        for param in &node.definition().parameters {
+            if is_speed_parameter(&param.id) {continue;}
+            let choices=match param.ty.as_str() {
+                "float" => {
+                    let lo=param.min as f64;let hi=param.max as f64;
+                    if !lo.is_finite() || !hi.is_finite() {1}
+                    else if lo==hi {1} else {3}
+                }
+                "choice" => param.options.len().max(1),
+                _ => 1,
+            };
+            multiply_decimal(&mut total,choices);
         }
-        // Only expand inputs belonging to the live output dependency tree.
-        let mut reachable=HashSet::from([output.id]);
-        let mut frontier=vec![output.id];
-        while let Some(id)=frontier.pop(){
-            for c in current.connections.iter().filter(|c|c.to==id){
-                if reachable.insert(c.from){frontier.push(c.from)}
-            }
-        }
-        let mut targets=Vec::new();
-        for node in &current.nodes {
-            if !reachable.contains(&node.id){continue}
-            for port in 0..node.definition().inputs.len() {
-                if current.input_connection(node.id,port).is_none(){targets.push((node.id,port));}
-            }
-        }
-        // Expand one open input per step. Optional inputs may stay at defaults.
-        // The terminal is prioritized, then the newest reachable processing node.
-        targets.sort_by_key(|&(id,port)| (if id==output.id {0} else {1},std::cmp::Reverse(id),port));
-        for (to,to_port) in targets.into_iter().take(3) {
-            for source in &current.nodes {
-                if source.definition().terminal {continue}
+    }
+    decimal_string(&total)
+}
+// Independent-input product: a theoretical upper bound, not a count of
+// cycle-free, reachable, compilable connection graphs.
+fn connection_permutation_upper_bound(graph:&Graph)->String {
+    let mut empty=graph.clone();
+    empty.connections.clear();
+    let mut total=vec![1u8];
+    for target in &empty.nodes {
+        for to_port in 0..target.definition().inputs.len() {
+            let mut choices=1usize; // Disconnected input.
+            for source in &empty.nodes {
+                if source.definition().terminal {continue;}
                 for from_port in 0..source.definition().outputs.len() {
-                    if current.check_connection(source.id,from_port,to,to_port).is_err(){continue}
-                    let mut proposed=current.clone();
-                    if proposed.connect(source.id,from_port,to,to_port).is_ok(){
-                        queue.push_back(proposed);
+                    if empty.check_connection(source.id,from_port,target.id,to_port).is_ok() {
+                        choices+=1;
+                    }
+                }
+            }
+            multiply_decimal(&mut total,choices);
+        }
+    }
+    decimal_string(&total)
+}
+fn candidate_graphs(graph:&Graph)->Vec<(String,Graph)> {
+    const MAX_CANDIDATES:usize=1_000;
+    // Deterministic mixed-radix enumeration. Each numeric slider has exactly
+    // three sample positions: minimum, arithmetic midpoint, maximum.
+    // Equal values (degenerate ranges) are deduplicated.
+    // Speed is intentionally excluded from candidate discovery.
+    let base=graph.clone();
+    let mut dimensions:Vec<(NodeId,String,String,Vec<Value>)>=Vec::new();
+    for node in &base.nodes {
+        for param in &node.definition().parameters {
+            if is_speed_parameter(&param.id) {continue;}
+            let values:Vec<Value>=match param.ty.as_str() {
+                "float" => {
+                    let lo=param.min as f64;
+                    let hi=param.max as f64;
+                    let mid=lo+(hi-lo)*0.5;
+                    let mut samples=Vec::new();
+                    for v in [lo,mid,hi] {
+                        if v.is_finite() && !samples.iter().any(|x:&Value|x.as_f64()==Some(v)) {
+                            samples.push(serde_json::json!(v));
+                        }
+                    }
+                    samples
+                }
+                "choice" => (0..param.options.len()).map(|i|serde_json::json!(i as f64)).collect(),
+                _ => Vec::new(),
+            };
+            if values.len()>1 {
+                dimensions.push((node.id,param.id.clone(),param.name.clone(),values));
+            }
+        }
+    }
+    let mut result=Vec::new();
+    let mut digits=vec![0usize;dimensions.len()];
+    loop {
+        let mut proposed=base.clone();
+        let mut labels=Vec::new();
+        for ((id,param_id,param_name,values),digit) in dimensions.iter().zip(&digits) {
+            let value=&values[*digit];
+            if let Some(node)=proposed.node_mut(*id) {
+                node.parameters.insert(param_id.clone(),value.clone());
+            }
+            let shown=if value.is_number(){format!("{:.3}",value.as_f64().unwrap_or(0.0))}else{value.to_string()};
+            labels.push(format!("{} #{}={}",param_name,id,shown));
+        }
+        proposed.revision=graph.revision.wrapping_add(1);
+        result.push((if labels.is_empty(){"Current parameters".to_owned()}else{labels.join(", ")},proposed));
+        if result.len()>=MAX_CANDIDATES || dimensions.is_empty(){break;}
+        let mut carry=true;
+        for (digit,(_,_,_,values)) in digits.iter_mut().zip(&dimensions) {
+            *digit+=1;
+            if *digit<values.len(){carry=false;break;}
+            *digit=0;
+        }
+        if carry{break;}
+    }
+    result
+}
+/// Incremental, deterministic breadth-first connection discovery.
+/// The work queue is advanced in small batches so egui can repaint and Cancel works.
+const CONNECTION_EXPLORATIONS: usize = 100_000;
+const CANDIDATES_EVALUATED: usize = 5_000;
+const CANDIDATES_RETAINED: usize = 500;
+struct ConnectionSearch {
+    queue: std::collections::VecDeque<Graph>,
+    seen: std::collections::HashSet<Vec<(NodeId,usize,NodeId,usize)>>,
+    output: NodeId,
+    examined: usize,
+    generated: usize,
+    incomplete: usize,
+}
+impl ConnectionSearch {
+    fn new(graph:&Graph)->Option<Self>{
+        let output=graph.nodes.iter().find(|n|n.definition().terminal)?.id;
+        let mut base=graph.clone();base.connections.clear();
+        base.revision=graph.revision.wrapping_add(1);
+        Some(Self{queue:std::collections::VecDeque::from([base]),seen:Default::default(),output,examined:0,generated:0,incomplete:0})
+    }
+    fn finished(&self)->bool{self.examined>=CONNECTION_EXPLORATIONS || self.queue.is_empty() || self.generated>=CANDIDATES_EVALUATED}
+    fn advance(&mut self,source_revision:u64,jobs:&mut Vec<CandidateJob>){
+        let deadline=std::time::Instant::now()+std::time::Duration::from_millis(8);
+        let mut batch=0;
+        while !self.finished() && batch<128 && std::time::Instant::now()<deadline {
+            batch+=1;
+            let Some(current)=self.queue.pop_front() else {break};
+            self.examined+=1;
+            let mut key:Vec<_>=current.connections.iter().map(|c|(c.from,c.from_port,c.to,c.to_port)).collect();
+            key.sort_unstable();
+            if !self.seen.insert(key){continue}
+            if current.input_connection(self.output,0).is_some() && current.validate().is_ok(){
+                // Only queue complete, GLSL-generatable graphs for expensive GL rendering.
+                // Incomplete graphs remain in the BFS queue and can gain dependencies.
+                if crate::maker_compiler::fragment_source(&current).is_ok(){
+                    self.generated+=1;
+                    jobs.insert(0,CandidateJob{graph:current.clone(),name:format!("Connections: {} wires",current.connections.len()),source_revision,connection_candidate:true});
+                }else{
+                    self.incomplete+=1;
+                }
+            }
+            let mut reachable=std::collections::HashSet::from([self.output]);
+            let mut frontier=vec![self.output];
+            while let Some(id)=frontier.pop(){
+                for c in current.connections.iter().filter(|c|c.to==id){
+                    if reachable.insert(c.from){frontier.push(c.from)}
+                }
+            }
+            let mut targets=Vec::new();
+            for node in &current.nodes {
+                if !reachable.contains(&node.id){continue}
+                for port in 0..node.definition().inputs.len(){
+                    if current.input_connection(node.id,port).is_none(){targets.push((node.id,port))}
+                }
+            }
+            // Resolve required dependencies before exploring optional variations.
+            // A missing default is mandatory; specialized callable modules also
+            // require their distance/field inputs regardless of their JSON default.
+            let required=|id:NodeId,port:usize| -> bool {
+                let Some(node)=current.node(id) else {return false};
+                let def=node.definition();
+                let Some(input)=def.inputs.get(port) else {return false};
+                input.default.is_empty() ||
+                    ((node.module_id=="screenshaver.fields.sdf_raymarch" ||
+                      node.module_id=="screenshaver.geometry.rotation_3d" ||
+                      node.module_id=="screenshaver.geometry.domain_fold_3d" ||
+                      node.module_id=="screenshaver.geometry.domain_repeat_3d") && port==0) ||
+                    (node.module_id=="screenshaver.lighting.refractive_surface" && port<=1)
+            };
+            targets.sort_by_key(|&(id,port)|(
+                if id==self.output {0} else if required(id,port){1}else{2},
+                std::cmp::Reverse(id),port));
+            // One required input at a time prevents optional-input combinations
+            // from consuming the exploration budget before graphs become complete.
+            let has_required=targets.iter().any(|&(id,port)|required(id,port));
+            if has_required && current.input_connection(self.output,0).is_some(){
+                targets.retain(|&(id,port)|required(id,port));
+            }
+            for (to,to_port) in targets.into_iter().take(if has_required {1}else{3}){
+                for source in &current.nodes {
+                    if source.definition().terminal{continue}
+                    for from_port in 0..source.definition().outputs.len(){
+                        if current.check_connection(source.id,from_port,to,to_port).is_err(){continue}
+                        let mut proposed=current.clone();
+                        if proposed.connect(source.id,from_port,to,to_port).is_ok(){
+                            // Keep memory bounded even for unusually connected graphs.
+                            if self.queue.len()<200_000{self.queue.push_back(proposed)}
+                        }
                     }
                 }
             }
         }
     }
-    results.sort_by(|a,b|b.1.connections.len().cmp(&a.1.connections.len()).then_with(||a.0.cmp(&b.0)));
-    results.truncate(LIMIT);
-    results
 }
 
 fn apply_connection_candidate(graph:&mut Graph,candidate:&Candidate,base:&Graph)->Result<(),String>{
@@ -212,6 +350,13 @@ pub struct MakerUi {
     candidate_undo: Vec<Graph>,
     orphan_undo: Vec<Graph>,
     candidate_notice: String,
+    library_expanded: HashMap<String,bool>,
+    connection_search: Option<ConnectionSearch>,
+    candidate_evaluated: usize,
+    candidate_rejections: usize,
+    candidate_uniform: usize,
+    candidate_glsl_errors: usize,
+    candidate_render_errors: usize,
 
 }
 impl MakerUi {
@@ -225,19 +370,28 @@ impl MakerUi {
             preview_rect:egui::Rect::from_min_size(egui::pos2(210.0,600.0),egui::vec2(950.0,210.0)),
             preview_height:None,routes:Routes::new(),canvas_pan:egui::Vec2::ZERO,canvas_rect:egui::Rect::NOTHING,panning:false,pan_button:None,space_held:false,pixels_per_point:1.0,routing_undo:Vec::new(),routing_redo:Vec::new(),candidate_mode:0,
             candidates:Vec::new(),candidate_jobs:Vec::new(),candidate_base:None,
-            candidate_selected:None,candidate_undo:Vec::new(),orphan_undo:Vec::new(),candidate_notice:String::new()})
+            candidate_selected:None,candidate_undo:Vec::new(),orphan_undo:Vec::new(),candidate_notice:String::new(),library_expanded:HashMap::new(),connection_search:None,candidate_evaluated:0,candidate_rejections:0,candidate_uniform:0,candidate_glsl_errors:0,candidate_render_errors:0})
     }
     pub fn graph(&self)->&Graph{&self.graph}
-    pub fn next_candidate_job(&mut self)->Option<CandidateJob>{self.candidate_jobs.pop()}
+    pub fn next_candidate_job(&mut self)->Option<CandidateJob>{
+        if self.candidate_base.is_none(){return None}
+        if self.candidates.len()>=CANDIDATES_RETAINED {self.connection_search=None;self.candidate_jobs.clear();return None}
+        let job=self.candidate_jobs.pop();
+        if job.is_some(){self.candidate_evaluated+=1;}
+        job
+    }
     pub fn receive_candidate(&mut self,job:CandidateJob,rgba:Vec<u8>,width:usize,height:usize){
         if self.candidate_base.as_ref().is_none_or(|g|g.revision!=job.source_revision){return}
+        let perceived_colors=perceived_color_count(&rgba);
         let image=egui::ColorImage::from_rgba_unmultiplied([width,height],&rgba);
         let texture=self.context.load_texture(format!("maker_candidate_{}",self.candidates.len()),image,egui::TextureOptions::LINEAR);
         let parameters=job.graph.nodes.iter().map(|n|(n.id,n.parameters.clone())).collect();
         let modules=job.graph.nodes.iter().map(|n|(n.id,n.module_id.clone())).collect();
-        self.candidates.push(Candidate{name:job.name,parameters,modules,connections:job.graph.connections.clone(),texture,dismissed:false,favorite:false,connection_candidate:job.connection_candidate});
+        self.candidates.push(Candidate{name:job.name,parameters,modules,connections:job.graph.connections.clone(),texture,perceived_colors,dismissed:false,favorite:false,connection_candidate:job.connection_candidate});
     }
-    pub fn candidate_rejected(&mut self){ /* No thumbnail for blank or invalid renderings. */ }
+    pub fn candidate_rejected_uniform(&mut self){self.candidate_rejections+=1;self.candidate_uniform+=1;}
+    pub fn candidate_rejected_glsl(&mut self){self.candidate_rejections+=1;self.candidate_glsl_errors+=1;}
+    pub fn candidate_rejected_render(&mut self){self.candidate_rejections+=1;self.candidate_render_errors+=1;}
 
     pub fn preview_rect(&self)->egui::Rect{self.preview_rect}
     pub fn handle_event(&mut self, event: &Event) {
@@ -304,6 +458,13 @@ impl MakerUi {
         }
     }
     pub fn frame(&mut self,dw:u32,dh:u32,scale:f32,compile_error:Option<&str>)->bool{
+        // CPU-only exploration is incremental. OpenGL thumbnails remain on the caller's GL thread.
+        if let Some(search)=self.connection_search.as_mut(){
+            if let Some(base)=self.candidate_base.as_ref(){
+                search.advance(base.revision,&mut self.candidate_jobs);
+            }else{self.connection_search=None;}
+        }
+        if self.connection_search.as_ref().is_some_and(ConnectionSearch::finished){self.connection_search=None;}
         let scale=scale.max(0.1);
         self.pixels_per_point=scale;
         let mut input=egui::RawInput::default();
@@ -334,6 +495,13 @@ impl MakerUi {
         let candidate_undo=&mut self.candidate_undo;
         let orphan_undo=&mut self.orphan_undo;
         let candidate_notice=&mut self.candidate_notice;
+        let candidate_uniform=&mut self.candidate_uniform;
+        let candidate_glsl_errors=&mut self.candidate_glsl_errors;
+        let candidate_render_errors=&mut self.candidate_render_errors;
+        let connection_search=&mut self.connection_search;
+        let candidate_evaluated=&mut self.candidate_evaluated;
+        let candidate_rejections=&mut self.candidate_rejections;
+        let library_expanded=&mut self.library_expanded;
         let mut optimize_requested=false;
         let mut fit_requested=false;
         let mut editor_anchor: Option<(NodeId, egui::Pos2)> = None;
@@ -343,7 +511,7 @@ impl MakerUi {
                     ui.heading("Screenshaver Maker");ui.separator();ui.label("Untitled graph");
                     if ui.button("Clear Graph").clicked(){let revision=graph.revision;*graph=Graph::blank();graph.revision=revision.wrapping_add(1);
                         *selected=None;*parameter_popup=None;*pending=None;*dragging_wire=None;routes.clear();routing_undo.clear();routing_redo.clear();orphan_undo.clear();
-                        candidates.clear();candidate_jobs.clear();*candidate_base=None;candidate_undo.clear();*candidate_selected=None;
+                        candidates.clear();candidate_jobs.clear();*connection_search=None;*candidate_base=None;candidate_undo.clear();*candidate_selected=None;
                         *status="Graph cleared; Output Color retained".into();
                     }
                     let orphan_count=graph.orphan_ids().len();
@@ -359,7 +527,7 @@ impl MakerUi {
                             if parameter_popup.is_some_and(|id|removed.contains(&id)){*parameter_popup=None;}
                             *pending=None;*dragging_wire=None;
                             routes.clear();routing_undo.clear();routing_redo.clear();
-                            candidates.clear();candidate_jobs.clear();*candidate_base=None;
+                            candidates.clear();candidate_jobs.clear();*connection_search=None;*candidate_base=None;
                             candidate_undo.clear();*candidate_selected=None;candidate_notice.clear();
                             *status=format!("Removed {} orphan module{}",removed.len(),if removed.len()==1{""}else{"s"});
                         }
@@ -371,7 +539,7 @@ impl MakerUi {
                             previous.revision=graph.revision.wrapping_add(1);
                             *graph=previous;
                             routes.clear();routing_undo.clear();routing_redo.clear();
-                            candidates.clear();candidate_jobs.clear();*candidate_base=None;
+                            candidates.clear();candidate_jobs.clear();*connection_search=None;*candidate_base=None;
                             candidate_undo.clear();*candidate_selected=None;candidate_notice.clear();
                             *pending=None;*dragging_wire=None;
                             *status="Restored removed orphan modules".into();
@@ -418,10 +586,22 @@ impl MakerUi {
                     }
                     *selected=None;*parameter_popup=None;*pending=None;*dragging_wire=None;
                     routes.clear();routing_undo.clear();routing_redo.clear();orphan_undo.clear();
-                    candidates.clear();candidate_jobs.clear();*candidate_base=None;
+                    candidates.clear();candidate_jobs.clear();*connection_search=None;*candidate_base=None;
                     candidate_undo.clear();*candidate_selected=None;candidate_notice.clear();
                     *status=format!("Added {added} modules without connections");
                 }
+                ui.horizontal(|ui|{
+                    if ui.small_button("Expand All").clicked(){
+                        for category in maker_library::get().categories.values(){
+                            library_expanded.insert(category.clone(),true);
+                        }
+                    }
+                    if ui.small_button("Contract All").clicked(){
+                        for category in maker_library::get().categories.values(){
+                            library_expanded.insert(category.clone(),false);
+                        }
+                    }
+                });
                 ui.small("Add nodes to the graph:");
                 // Group by the actual directory of each .smmod definition.
                 // Sort categories and visible module names independently.
@@ -434,7 +614,18 @@ impl MakerUi {
                 }
                 for (category,modules) in &mut grouped {
                     modules.sort_by(|a,b|a.name.to_lowercase().cmp(&b.name.to_lowercase()).then_with(||a.id.cmp(&b.id)));
-                    ui.collapsing(category.as_str(),|ui|{
+                    // Display capitalization does not change category paths or IDs.
+                    let display=category.split(|c:char|c=='_' || c=='-' || c==' ')
+                        .filter(|part|!part.is_empty())
+                        .map(|part|{
+                            let mut chars=part.chars();
+                            match chars.next(){Some(first)=>format!("{}{}",first.to_uppercase(),chars.as_str()),None=>String::new()}
+                        }).collect::<Vec<_>>().join(" ");
+                    let expanded=library_expanded.entry(category.clone()).or_insert(false);
+                    if ui.selectable_label(*expanded,format!("{} {}",if *expanded{"▼"}else{"▶"},display)).clicked(){
+                        *expanded=!*expanded;
+                    }
+                    if *expanded {ui.indent(("maker_library_category",category.as_str()),|ui|{
                         for module in modules.iter().copied(){
                     // Reuse the node-header palette so the library and graph stay in sync.
                     let add_response = ui.add(
@@ -456,7 +647,7 @@ impl MakerUi {
                         }
                     }
                         }
-                    });
+                    });}
                 }
                 ui.separator();ui.small("Drag from an output port to a compatible input, or click output then input. Outputs support fan-out; each input has one source.");
                 if let Some((id,port))=*pending{ui.label(format!("Source: node #{id}, port {port}"));if ui.button("Cancel connection").clicked(){*pending=None;*dragging_wire=None;}}
@@ -470,16 +661,47 @@ impl MakerUi {
                 });
                 ui.separator();
                 if *candidate_mode != 0 {
+                    if *candidate_mode==2 {
+                        ui.label(format!("Potential configurations (upper bound): {}",connection_permutation_upper_bound(graph)))
+                            .on_hover_text("Independent compatible input choices, including disconnected inputs. Cycles, output reachability, and shader validity reduce the actual total.");
+                    } else {
+                        ui.label(format!("Potential parameter combinations: {}",parameter_permutation_count(graph)))
+                            .on_hover_text("Exact number of sampled parameter combinations before the discovery cap; animation speed is excluded.");
+                    }
                     if ui.button(if *candidate_mode==2 {"Discover connections"} else {"Discover parameters"}).clicked(){
                         candidates.clear();candidate_jobs.clear();candidate_undo.clear();*candidate_selected=None;
                         *candidate_base=Some(graph.clone());
-                        let generated=if *candidate_mode==2 {connection_candidate_graphs(graph)} else {candidate_graphs(graph)};
-                        let count=generated.len();
-                        *candidate_jobs=generated.into_iter().rev().map(|(name,graph)|CandidateJob{
-                            graph,name,source_revision:candidate_base.as_ref().unwrap().revision,
-                            connection_candidate:*candidate_mode==2,
-                        }).collect();
-                        *candidate_notice=format!("Evaluating {count} {} combinations...",if *candidate_mode==2 {"connection"} else {"parameter"});
+                        *connection_search=None;*candidate_evaluated=0;*candidate_rejections=0;*candidate_uniform=0;*candidate_glsl_errors=0;*candidate_render_errors=0;
+                        if *candidate_mode==2 {
+                            *connection_search=ConnectionSearch::new(graph);
+                            *candidate_notice="Exploring connection graphs...".into();
+                        }else{
+                            let generated=candidate_graphs(graph);
+                            let count=generated.len();
+                            *candidate_jobs=generated.into_iter().rev().map(|(name,graph)|CandidateJob{
+                                graph,name,source_revision:candidate_base.as_ref().unwrap().revision,
+                                connection_candidate:false,
+                            }).collect();
+                            *candidate_notice=format!("Evaluating {count} parameter combinations...");
+                        }
+                    }
+                    if connection_search.is_some() || !candidate_jobs.is_empty(){
+                        if ui.button("Cancel discovery").clicked(){
+                            *connection_search=None;candidate_jobs.clear();
+                            *candidate_notice="Discovery cancelled; completed thumbnails preserved".into();
+                        }
+                    }
+                    if let Some(search)=connection_search.as_ref(){
+                        let fraction=search.examined as f32/CONNECTION_EXPLORATIONS as f32;
+                        ui.add(egui::ProgressBar::new(fraction.clamp(0.0,1.0)).show_percentage()
+                            .text(format!("Exploration: {} / {} states",search.examined,CONNECTION_EXPLORATIONS)));
+                        ui.small(format!("{} GLSL-ready graphs queued · {} incomplete graphs skipped (up to {} evaluations)",search.generated,search.incomplete,CANDIDATES_EVALUATED));
+                    }
+                    if *candidate_evaluated>0 || !candidate_jobs.is_empty(){
+                        let total=(*candidate_evaluated+candidate_jobs.len()).max(1);
+                        ui.add(egui::ProgressBar::new(*candidate_evaluated as f32/total as f32)
+                            .text(format!("Evaluated: {} · rejected: {} · retained: {}",*candidate_evaluated,*candidate_rejections,candidates.len())));
+                        ui.small(format!("Rejected: {} uniform · {} GLSL generation · {} compilation/rendering",*candidate_uniform,*candidate_glsl_errors,*candidate_render_errors));
                     }
                     if ui.add_enabled(!candidate_undo.is_empty(),egui::Button::new("Undo candidate selection")).clicked(){
                         if let Some(mut previous)=candidate_undo.pop(){previous.revision=graph.revision+1;*graph=previous;*candidate_selected=None;}
@@ -489,9 +711,10 @@ impl MakerUi {
                     if ui.button("Restore dismissed").clicked(){for c in candidates.iter_mut(){c.dismissed=false;}}
                     egui::ScrollArea::vertical().show(ui,|ui|{
                         let mut display_order:Vec<usize>=(0..candidates.len()).collect();
-                        if *candidate_mode==2 {
-                            display_order.sort_by(|&a,&b|candidates[b].connections.len().cmp(&candidates[a].connections.len()).then_with(||a.cmp(&b)));
-                        }
+                        // Both discovery modes rank by thumbnail color diversity.
+                        // Preserve discovery order for equal scores.
+                        display_order.sort_by(|&a,&b|candidates[b].perceived_colors
+                            .cmp(&candidates[a].perceived_colors).then_with(||a.cmp(&b)));
                         for index in display_order {
                             let candidate=&mut candidates[index];
                             if candidate.dismissed || candidate.connection_candidate!=(*candidate_mode==2){continue}
@@ -511,6 +734,7 @@ impl MakerUi {
                                     }
                                 }
                                 ui.small(&candidate.name);
+                                ui.small(format!("{} perceived color groups",candidate.perceived_colors));
                                 ui.horizontal(|ui|{
                                     if ui.small_button(if candidate.favorite{"★ Saved"}else{"☆ Favorite"}).clicked(){candidate.favorite=!candidate.favorite;}
                                     if ui.small_button("Dismiss").clicked(){candidate.dismissed=true;}

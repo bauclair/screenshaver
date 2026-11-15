@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "created_by": "Screenshaver",
+  "terminal": false,
+  "id": "screenshaver.geometry.sdf_twisted_ring",
+  "name": "SDF Twisted Ring",
+  "category": "Geometry",
+  "header_color": "#557C9C",
+  "description": "Ring with angle-dependent rotated rectangular cross-section and folding.",
+  "uses": "Composable signed-distance geometry and spatial animation.",
+  "notes": "Position is evaluated for each ray-march sample when used as a callable field.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "default": "vec3(0.0)"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "distance",
+      "name": "Distance",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "major_radius",
+      "name": "Major Radius",
+      "type": "float",
+      "default": 1.5,
+      "min": 0.1,
+      "max": 8
+    },
+    {
+      "id": "half_width",
+      "name": "Half Width",
+      "type": "float",
+      "default": 0.2,
+      "min": 0.02,
+      "max": 3
+    },
+    {
+      "id": "half_height",
+      "name": "Half Height",
+      "type": "float",
+      "default": 0.3,
+      "min": 0.02,
+      "max": 3
+    },
+    {
+      "id": "twists",
+      "name": "Twists",
+      "type": "float",
+      "default": 8.0,
+      "min": -24,
+      "max": 24
+    },
+    {
+      "id": "fold",
+      "name": "Fold",
+      "type": "float",
+      "default": 0.3,
+      "min": 0,
+      "max": 2
+    }
+  ],
+  "helpers": "",
+  "glsl": "maker_twisted_ring({position},{major_radius},{half_width},{half_height},{twists},{fold})"
+}

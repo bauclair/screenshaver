@@ -1,0 +1,87 @@
+{
+  "schema_version": 1,
+  "created_by": "Screenshaver",
+  "terminal": false,
+  "id": "screenshaver.color.angular_wave_background",
+  "name": "Angular Wave Background",
+  "category": "Color",
+  "header_color": "#6689A6",
+  "description": "Animated four-band angular sine-wave background.",
+  "uses": "Procedural shader composition.",
+  "notes": "Reusable creative effect.",
+  "inputs": [
+    {
+      "id": "direction",
+      "name": "Direction",
+      "type": "vec3",
+      "default": "vec3(0.0,0.0,1.0)"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "color",
+      "name": "Color",
+      "type": "vec3"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "speed",
+      "name": "Speed",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 5
+    },
+    {
+      "id": "scale",
+      "name": "Frequency",
+      "type": "float",
+      "default": 1,
+      "min": 0.1,
+      "max": 5
+    },
+    {
+      "id": "color_a",
+      "name": "Color A",
+      "type": "color3",
+      "default": [
+        0.313,
+        0.816,
+        0.816
+      ]
+    },
+    {
+      "id": "color_b",
+      "name": "Color B",
+      "type": "color3",
+      "default": [
+        0.745,
+        0.118,
+        0.243
+      ]
+    },
+    {
+      "id": "color_c",
+      "name": "Color C",
+      "type": "color3",
+      "default": [
+        0.475,
+        0.404,
+        0.765
+      ]
+    },
+    {
+      "id": "color_d",
+      "name": "Color D",
+      "type": "color3",
+      "default": [
+        1,
+        0.776,
+        0.224
+      ]
+    }
+  ],
+  "helpers": "vec3 maker_angular_waves(vec3 direction,float time,float frequency,vec3 a,vec3 b,vec3 c,vec3 d){\n vec3 ray=normalize(direction);\n float angle=atan(ray.x,ray.z)*frequency;\n float k=clamp(ray.y*0.5+0.5,0.0,1.0);\n float mask=1.0-smoothstep(0.5,0.8,k);\n float w1=sin(angle*2.0+time)*sin(angle*10.0+time)*sin(angle*4.0);\n float w2=sin(angle*10.0+time+10.0)*sin(angle*2.0+time+10.0)*sin(angle*6.0+10.0);\n float w3=sin(angle*5.0+time+20.0)*sin(angle*3.0+time+30.0)*sin(angle*8.0+20.0);\n float w4=sin(angle*3.0+time+30.0)*sin(angle*5.0+time+20.0)*sin(angle*10.0+30.0);\n return max(vec3(0.0),vec3(1.0-k)+mask*(w1*a+w2*b+w3*c+w4*d));\n}",
+  "glsl": "maker_angular_waves({direction},u_time*{speed},{scale},{color_a},{color_b},{color_c},{color_d})"
+}

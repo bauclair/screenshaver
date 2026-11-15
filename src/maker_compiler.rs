@@ -4,17 +4,44 @@ use std::collections::HashSet;
 pub fn fragment_source(graph:&Graph)->Result<String,String>{
  graph.validate()?;
  let out=graph.nodes.iter().find(|n|n.definition().terminal).ok_or("Missing output")?;
+  // Only nodes contributing to Output Color may impose callable/helper requirements.
+  // Disconnected modules are valid library material, not shader dependencies.
+  let mut reachable=HashSet::new();
+  let mut pending=vec![out.id];
+  while let Some(id)=pending.pop(){
+   if reachable.insert(id){
+    for connection in graph.connections.iter().filter(|c|c.to==id){pending.push(connection.from);}
+   }
+  }
+
  let mut src=String::from("#version 330 core\nout vec4 fragColor;\nuniform vec2 u_resolution;\nuniform float u_time;\n");
  let mut emitted=HashSet::new();let mut helpers=HashSet::new();
   // Uniforms precede helpers because callable traversal functions read node parameters.
-  for n in &graph.nodes{for p in &n.definition().parameters{
+  for n in graph.nodes.iter().filter(|n|reachable.contains(&n.id)){for p in &n.definition().parameters{
    let ty=if p.ty=="color3"{"vec3"}else{"float"};
    src.push_str(&format!("uniform {ty} u_n{}_{};\n",n.id,p.id));
   }}
+  src.push_str(r#"
+float maker_twisted_ring(vec3 p,float radius,float w,float h,float twists,float fold){
+ vec2 q=vec2(length(p.xz)-radius,p.y);float a=atan(p.x,p.z)*twists;
+ mat2 r=mat2(cos(a),sin(a),-sin(a),cos(a));q=r*q;q.y=abs(q.y)-fold;
+ vec2 d=abs(q)-vec2(w,h);return length(max(d,0.0))+min(max(d.x,d.y),0.0);
+}
+float maker_sequential_morph(float a,float b,float c,float d,float time,float hold){
+ float t=mod(time,4.0);float f=clamp((fract(t)-hold)/max(1.0-hold,0.001),0.0,1.0);f=f*f*(3.0-2.0*f);
+ return t<1.0?mix(a,b,f):t<2.0?mix(b,c,f):t<3.0?mix(c,d,f):mix(d,a,f);
+}
+vec3 maker_rotate_3d(vec3 p,float xy,float yz,float xz){
+ mat2 a=mat2(cos(xy),sin(xy),-sin(xy),cos(xy));
+ mat2 b=mat2(cos(yz),sin(yz),-sin(yz),cos(yz));
+ mat2 c=mat2(cos(xz),sin(xz),-sin(xz),cos(xz));
+ p.xy=a*p.xy;p.yz=b*p.yz;p.xz=c*p.xz;return p;
+}
+"#);
   // Helper functions are emitted once per distinct source.
-  for n in &graph.nodes{let m=n.definition();if !m.helpers.is_empty()&&helpers.insert(m.helpers.as_str()){src.push_str(&m.helpers);src.push('\n')}}
+  for n in graph.nodes.iter().filter(|n|reachable.contains(&n.id)){let m=n.definition();if !m.helpers.is_empty()&&helpers.insert(m.helpers.as_str()){src.push_str(&m.helpers);src.push('\n')}}
   // Node-specific domain-fold functions: GLSL requires a compile-time bounded loop.
-  for n in &graph.nodes {
+  for n in graph.nodes.iter().filter(|n|reachable.contains(&n.id)) {
    if n.module_id=="screenshaver.geometry.domain_fold_3d" {
     let id=n.id;
     src.push_str(&format!(r#"vec3 maker_blue_fold_{id}(vec3 p){{
@@ -30,7 +57,7 @@ pub fn fragment_source(graph:&Graph)->Result<String,String>{
   }
   // A connected scalar field becomes a position-dependent callable evaluation.
   // Unlike a precomputed scalar seed, this expression is evaluated inside each ray step.
-  for n in &graph.nodes{
+  for n in graph.nodes.iter().filter(|n|reachable.contains(&n.id)){
    if n.module_id=="screenshaver.fields.traversal" {
     if let Some(c)=graph.input_connection(n.id,0){
      let field=callable_field(graph,c.from,c.from_port,"sample_position")?;
@@ -39,7 +66,7 @@ pub fn fragment_source(graph:&Graph)->Result<String,String>{
    }
   }
  // Generate an independent signed-distance ray marcher for each SDF node.
- for n in &graph.nodes {
+ for n in graph.nodes.iter().filter(|n|reachable.contains(&n.id)) {
   if n.module_id=="screenshaver.fields.sdf_raymarch" {
    let c=graph.input_connection(n.id,0).ok_or("SDF Ray March requires a connected distance field")?;
    let field=callable_expression(graph,c.from,c.from_port,"sample_position","float")?;
@@ -51,8 +78,8 @@ vec3 maker_sdf_normal_{id}(vec3 p,float e){{
  vec2 h=vec2(e,0.0);
  return normalize(vec3(maker_sdf_{id}(p+h.xyy)-maker_sdf_{id}(p-h.xyy),maker_sdf_{id}(p+h.yxy)-maker_sdf_{id}(p-h.yxy),maker_sdf_{id}(p+h.yyx)-maker_sdf_{id}(p-h.yyx)));
 }}
-vec3 maker_sdf_render_{id}(vec2 uv,float speed,float maxDistance,float epsilon,float stepScale,float fov,out vec3 surfaceNormal,out float surfaceAO,out float surfaceCurvature){{
- surfaceNormal=vec3(0.0,0.0,1.0); surfaceAO=1.0; surfaceCurvature=0.0;
+vec3 maker_sdf_render_{id}(vec2 uv,float speed,float maxDistance,float epsilon,float stepScale,float fov,float glowFalloff,float glowGain,out vec3 surfaceNormal,out float surfaceAO,out float surfaceCurvature,out float rayGlow){{
+ surfaceNormal=vec3(0.0,0.0,1.0); surfaceAO=1.0; surfaceCurvature=0.0; rayGlow=0.0;
  float camera_z=u_time*speed;
  vec2 camera_xy={camera};
  vec3 ro=vec3(camera_xy,camera_z);
@@ -61,6 +88,7 @@ vec3 maker_sdf_render_{id}(vec2 uv,float speed,float maxDistance,float epsilon,f
  for(int i=0;i<128;i++){{
   vec3 p=ro+rd*t;
   float d=maker_sdf_{id}(p);
+  rayGlow+=exp(-abs(d)*max(glowFalloff,0.001))*glowGain;
   if(abs(d)<epsilon){{
    float e=max(epsilon*3.0,0.003);
    vec3 nor=maker_sdf_normal_{id}(p,e);
@@ -87,6 +115,44 @@ vec3 maker_sdf_render_{id}(vec2 uv,float speed,float maxDistance,float epsilon,f
   t+=max(abs(d)*stepScale,epsilon*0.7);
  }}
  return vec3(0.012,0.018,0.035);
+}}
+"#));
+  }
+ }
+ // Optical sampling: evaluate the connected background at the actual ray direction.
+ for n in graph.nodes.iter().filter(|n|reachable.contains(&n.id)) {
+  if n.module_id=="screenshaver.lighting.refractive_surface" {
+   let field_conn=graph.input_connection(n.id,0).ok_or("Refractive Surface Sampling requires a connected Distance Field")?;
+   let bg_conn=graph.input_connection(n.id,1).ok_or("Refractive Surface Sampling requires a connected Background")?;
+   let field=callable_expression(graph,field_conn.from,field_conn.from_port,"sample_position","float")?;
+   let background=callable_expression(graph,bg_conn.from,bg_conn.from_port,"sample_direction","vec3")?;
+   let id=n.id;
+   src.push_str(&format!(r#"
+float maker_optical_sdf_{id}(vec3 sample_position){{return {field};}}
+vec3 maker_optical_background_{id}(vec3 sample_direction){{return {background};}}
+vec3 maker_optical_render_{id}(vec2 uv){{
+ vec3 ro=vec3(0.0,0.0,u_n{id}_camera_z);
+ vec3 rd=normalize(vec3(uv,1.0));
+ float t=0.0;
+ for(int k=0;k<96;k++){{
+  if(t>u_n{id}_max_distance)break;
+  vec3 p=ro+rd*t;
+  float d=maker_optical_sdf_{id}(p);
+  if(abs(d)<u_n{id}_epsilon){{
+   float e=max(u_n{id}_epsilon*2.0,0.002);
+   vec3 dx=vec3(e,0.0,0.0),dy=vec3(0.0,e,0.0),dz=vec3(0.0,0.0,e);
+   vec3 nor=normalize(vec3(
+    maker_optical_sdf_{id}(p+dx)-maker_optical_sdf_{id}(p-dx),
+    maker_optical_sdf_{id}(p+dy)-maker_optical_sdf_{id}(p-dy),
+    maker_optical_sdf_{id}(p+dz)-maker_optical_sdf_{id}(p-dz)));
+   vec3 refracted=refract(rd,nor,u_n{id}_refraction_ratio);
+   if(dot(refracted,refracted)<0.00001)refracted=reflect(rd,nor);
+   float fade=smoothstep(0.0,max(u_n{id}_fade_distance,0.001),t);
+   return maker_optical_background_{id}(normalize(refracted))*fade;
+  }}
+  t+=max(abs(d)*u_n{id}_step_scale,u_n{id}_epsilon*0.7);
+ }}
+ return maker_optical_background_{id}(rd);
 }}
 "#));
   }
@@ -123,9 +189,14 @@ fn emit(graph:&Graph,id:NodeId,emitted:&mut HashSet<NodeId>,src:&mut String)->Re
   vars.insert(p.id.clone(),expression);
  }
  for p in &m.parameters{vars.insert(p.id.clone(),format!("u_n{}_{}",id,p.id));}
+ if m.id=="screenshaver.color.angular_wave_background" && graph.input_connection(id,0).is_none(){vars.insert("direction".into(),"normalize(vec3(maker_uv,1.0))".into());}
+ if m.id=="screenshaver.lighting.refractive_surface" {
+  src.push_str(&format!("  vec3 v{}_p0=maker_optical_render_{}(maker_uv);\n",id,id));
+  emitted.insert(id);return Ok(());
+ }
  if m.id=="screenshaver.fields.sdf_raymarch" {
-  src.push_str(&format!("  vec3 v{}_p0; vec3 v{}_p1; float v{}_p2; float v{}_p3;\n",id,id,id,id));
-  src.push_str(&format!("  v{}_p0=maker_sdf_render_{}(maker_uv,u_n{}_speed,u_n{}_max_distance,u_n{}_epsilon,u_n{}_step_scale,u_n{}_fov,v{}_p1,v{}_p2,v{}_p3);\n",id,id,id,id,id,id,id,id,id,id));
+  src.push_str(&format!("  vec3 v{}_p0; vec3 v{}_p1; float v{}_p2; float v{}_p3; float v{}_p4;\n",id,id,id,id,id));
+  src.push_str(&format!("  v{}_p0=maker_sdf_render_{}(maker_uv,u_n{}_speed,u_n{}_max_distance,u_n{}_epsilon,u_n{}_step_scale,u_n{}_fov,u_n{}_glow_falloff,u_n{}_glow_gain,v{}_p1,v{}_p2,v{}_p3,v{}_p4);\n",id,id,id,id,id,id,id,id,id,id,id,id,id));
   emitted.insert(id);return Ok(());
  }
  for (port,output) in m.outputs.iter().enumerate(){
@@ -155,12 +226,15 @@ fn callable_expression(graph:&Graph,id:NodeId,port:usize,position:&str,expected:
     format!("(mod(({position})+0.5*vec3(u_n{id}_span_x,u_n{id}_span_y,u_n{id}_span_z),vec3(u_n{id}_span_x,u_n{id}_span_y,u_n{id}_span_z))-0.5*vec3(u_n{id}_span_x,u_n{id}_span_y,u_n{id}_span_z))")
    } else if m.id=="screenshaver.geometry.domain_fold_3d" {
     format!("maker_blue_fold_{id}({position})")
+   } else if m.id=="screenshaver.geometry.rotation_3d" {
+    format!("maker_rotate_3d({position},u_n{id}_xy+u_time*u_n{id}_speed,u_n{id}_yz+u_time*u_n{id}_speed,u_n{id}_xz+u_time*u_n{id}_speed)")
    } else {position.to_owned()};
    for (index,input) in m.inputs.iter().enumerate(){
-    let value=if (m.id=="screenshaver.geometry.domain_repeat_3d" || m.id=="screenshaver.geometry.domain_fold_3d") && input.id=="field" {
+    let value=if (m.id=="screenshaver.geometry.domain_repeat_3d" || m.id=="screenshaver.geometry.domain_fold_3d" || m.id=="screenshaver.geometry.rotation_3d") && input.id=="field" {
      let c=graph.input_connection(id,index).ok_or_else(||format!("{} requires a connected field",m.name))?;
      expand(graph,c.from,c.from_port,&domain_position,active)?
     }else if input.id=="position" && input.ty=="vec3" && graph.input_connection(id,index).is_none(){position.to_owned()}
+    else if m.id=="screenshaver.color.angular_wave_background" && input.id=="direction" && graph.input_connection(id,index).is_none(){position.to_owned()}
     else if m.id=="screenshaver.camera.sinusoidal_path" && input.id=="z" && graph.input_connection(id,index).is_none(){format!("({position}).z")}
     else if let Some(c)=graph.input_connection(id,index){
      let from=graph.node(c.from).ok_or("Callable input source missing")?;

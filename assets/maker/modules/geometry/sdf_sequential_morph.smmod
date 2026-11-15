@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "created_by": "Screenshaver",
+  "terminal": false,
+  "id": "screenshaver.geometry.sdf_sequential_morph",
+  "name": "Sequential SDF Morph",
+  "category": "Geometry",
+  "header_color": "#557C9C",
+  "description": "Cycles smoothly among four connected distance fields.",
+  "uses": "Composable signed-distance geometry and spatial animation.",
+  "notes": "Position is evaluated for each ray-march sample when used as a callable field.",
+  "inputs": [
+    {
+      "id": "a",
+      "name": "A",
+      "type": "float",
+      "default": "1.0"
+    },
+    {
+      "id": "b",
+      "name": "B",
+      "type": "float",
+      "default": "1.0"
+    },
+    {
+      "id": "c",
+      "name": "C",
+      "type": "float",
+      "default": "1.0"
+    },
+    {
+      "id": "d",
+      "name": "D",
+      "type": "float",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "distance",
+      "name": "Distance",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "speed",
+      "name": "Speed",
+      "type": "float",
+      "default": 1.0,
+      "min": 0,
+      "max": 5
+    },
+    {
+      "id": "hold",
+      "name": "Hold",
+      "type": "float",
+      "default": 0.0,
+      "min": 0,
+      "max": 0.8
+    }
+  ],
+  "helpers": "",
+  "glsl": "maker_sequential_morph({a},{b},{c},{d},u_time*{speed},{hold})"
+}

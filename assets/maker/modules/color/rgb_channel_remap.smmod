@@ -1,0 +1,69 @@
+{
+  "schema_version": 1,
+  "created_by": "Screenshaver",
+  "terminal": false,
+  "id": "screenshaver.color.rgb_channel_remap",
+  "name": "RGB Channel Remap",
+  "category": "Color",
+  "header_color": "#6689A6",
+  "description": "Map the three source channels to arbitrary RGB basis colors.",
+  "uses": "Procedural shader composition.",
+  "notes": "Reusable creative effect.",
+  "inputs": [
+    {
+      "id": "color",
+      "name": "Color",
+      "type": "vec3",
+      "default": "vec3(0.0)"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "color",
+      "name": "Color",
+      "type": "vec3"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "red",
+      "name": "Red Basis",
+      "type": "color3",
+      "default": [
+        1,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "green",
+      "name": "Green Basis",
+      "type": "color3",
+      "default": [
+        0,
+        1,
+        0
+      ]
+    },
+    {
+      "id": "blue",
+      "name": "Blue Basis",
+      "type": "color3",
+      "default": [
+        0,
+        0,
+        1
+      ]
+    },
+    {
+      "id": "intensity",
+      "name": "Intensity",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 5
+    }
+  ],
+  "helpers": "",
+  "glsl": "({intensity}*(({color}).r*{red}+({color}).g*{green}+({color}).b*{blue}))"
+}

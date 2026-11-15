@@ -1,0 +1,85 @@
+{
+  "schema_version": 1,
+  "created_by": "Screenshaver",
+  "terminal": false,
+  "id": "screenshaver.lighting.refractive_surface",
+  "name": "Refractive Surface Sampling",
+  "category": "Lighting",
+  "header_color": "#6689A6",
+  "description": "Ray march a connected distance field and sample a connected directional background through a refracted hit ray.",
+  "uses": "Procedural shader composition.",
+  "notes": "Requires both connected Distance Field and Background. Evaluates background at a refracted ray direction on hits and the original direction on misses. Independent of SDF Ray March.",
+  "inputs": [
+    {
+      "id": "field",
+      "name": "Distance Field",
+      "type": "float",
+      "default": ""
+    },
+    {
+      "id": "background",
+      "name": "Background",
+      "type": "vec3",
+      "default": ""
+    }
+  ],
+  "outputs": [
+    {
+      "id": "color",
+      "name": "Color",
+      "type": "vec3"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "refraction_ratio",
+      "name": "Refraction Ratio",
+      "type": "float",
+      "default": 0.1,
+      "min": 0.01,
+      "max": 2
+    },
+    {
+      "id": "max_distance",
+      "name": "Max Distance",
+      "type": "float",
+      "default": 30,
+      "min": 2,
+      "max": 100
+    },
+    {
+      "id": "epsilon",
+      "name": "Hit Threshold",
+      "type": "float",
+      "default": 0.002,
+      "min": 0.0005,
+      "max": 0.03
+    },
+    {
+      "id": "step_scale",
+      "name": "Step Multiplier",
+      "type": "float",
+      "default": 0.7,
+      "min": 0.1,
+      "max": 1
+    },
+    {
+      "id": "camera_z",
+      "name": "Camera Z",
+      "type": "float",
+      "default": -4,
+      "min": -20,
+      "max": -1
+    },
+    {
+      "id": "fade_distance",
+      "name": "Fade Distance",
+      "type": "float",
+      "default": 4,
+      "min": 0.1,
+      "max": 30
+    }
+  ],
+  "helpers": "",
+  "glsl": "vec3(0.0)"
+}

@@ -6,9 +6,9 @@
   "name": "SDF Ray March",
   "category": "Fields",
   "header_color": "#477D9A",
-  "description": "Ray marches a callable signed-distance field with a moving perspective camera and basic normal shading.",
+  "description": "Ray marches a callable signed-distance field with a moving perspective camera and basic normal shading. Also exposes accumulated distance-field proximity glow.",
   "uses": "Corridors, caves and other procedural signed-distance geometry.",
-  "notes": "Color, hit normal, ambient occlusion and signed curvature are calculated from the same ray-march hit. AO=1 is unoccluded; curvature is scaled and clamped to [-1,1]. No texture dependencies.",
+  "notes": "Color, hit normal, ambient occlusion and signed curvature are calculated from the same ray-march hit. AO=1 is unoccluded; curvature is scaled and clamped to [-1,1]. No texture dependencies. Glow is accumulated during the same march; falloff is applied per sample.",
   "inputs": [
     {
       "id": "distance",
@@ -42,6 +42,11 @@
     {
       "id": "curvature",
       "name": "Curvature",
+      "type": "float"
+    },
+    {
+      "id": "glow",
+      "name": "Ray Glow",
       "type": "float"
     }
   ],
@@ -85,6 +90,22 @@
       "default": 1.2,
       "min": 0.4,
       "max": 2.0
+    },
+    {
+      "id": "glow_falloff",
+      "name": "Glow Falloff",
+      "type": "float",
+      "default": 7.0,
+      "min": 0.2,
+      "max": 25.0
+    },
+    {
+      "id": "glow_gain",
+      "name": "Glow Gain",
+      "type": "float",
+      "default": 0.06,
+      "min": 0.0,
+      "max": 1.0
     }
   ],
   "helpers": "",
@@ -93,6 +114,7 @@
     "color": "vec3(0.0)",
     "normal": "vec3(0.0)",
     "ao": "0.0",
-    "curvature": "0.0"
+    "curvature": "0.0",
+    "glow": "0.0"
   }
 }

@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "created_by": "Screenshaver",
+  "terminal": false,
+  "id": "screenshaver.geometry.sdf_triangular_prism",
+  "name": "SDF Triangular Prism",
+  "category": "Geometry",
+  "header_color": "#557C9C",
+  "description": "Triangular prism distance field, with adjustable cross-section and extrusion.",
+  "uses": "Composable signed-distance geometry and spatial animation.",
+  "notes": "Position is evaluated for each ray-march sample when used as a callable field.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "default": "vec3(0.0)"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "distance",
+      "name": "Distance",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "radius",
+      "name": "Radius",
+      "type": "float",
+      "default": 1.0,
+      "min": 0.05,
+      "max": 8
+    },
+    {
+      "id": "half_length",
+      "name": "Half Length",
+      "type": "float",
+      "default": 1.0,
+      "min": 0.05,
+      "max": 8
+    }
+  ],
+  "helpers": "",
+  "glsl": "max((max(abs(({position}).x)*0.8660254+({position}).y*0.5,-({position}).y)-0.5*{radius})*0.8660254,abs(({position}).z)-{half_length})"
+}

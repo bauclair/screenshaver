@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "created_by": "Screenshaver",
+  "terminal": false,
+  "id": "screenshaver.lighting.ray_glow",
+  "name": "Ray Glow",
+  "category": "Lighting",
+  "header_color": "#B58A49",
+  "description": "Tint the proximity glow accumulated by SDF Ray March with any RGB color.",
+  "uses": "Neon structures, glowing tunnels, colored procedural geometry.",
+  "notes": "Connect SDF Ray March Ray Glow to Accumulation. Color is independent of geometry. Use Color Accumulation or other math to combine with surface color. This is not post-processing bloom.",
+  "inputs": [
+    {
+      "id": "accumulation",
+      "name": "Accumulation",
+      "type": "float",
+      "default": "0.0"
+    },
+    {
+      "id": "color",
+      "name": "Color",
+      "type": "vec3",
+      "default": "vec3(1.0,0.4,0.15)"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "color",
+      "name": "Glow Color",
+      "type": "vec3"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "intensity",
+      "name": "Intensity",
+      "type": "float",
+      "default": 1.0,
+      "min": 0.0,
+      "max": 5.0
+    }
+  ],
+  "helpers": "",
+  "glsl": "max({accumulation},0.0)*{color}*{intensity}",
+  "glsl_outputs": {
+    "color": "max({accumulation},0.0)*{color}*{intensity}"
+  }
+}

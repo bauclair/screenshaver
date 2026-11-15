@@ -26,10 +26,15 @@ pub fn run()->Result<(),String>{
         let scale = scale_x.min(scale_y);
         // One offscreen candidate per frame to keep the Inspector responsive.
         if let Some(job)=ui.next_candidate_job(){
-            match preview.candidate_thumbnail(&job.graph){
-                Ok(Some(pixels))=>ui.receive_candidate(job,pixels,192,108),
-                Ok(None)=>ui.candidate_rejected(),
-                Err(e)=>{eprintln!("[MAKER CANDIDATE] {}: {}",job.name,e);ui.candidate_rejected();},
+            // Separate graph-to-GLSL failures from OpenGL compilation/rendering
+            // failures and uniform-image rejection.
+            match crate::maker_compiler::fragment_source(&job.graph) {
+                Err(e)=>{eprintln!("[MAKER CANDIDATE GLSL] {}: {}",job.name,e);ui.candidate_rejected_glsl();},
+                Ok(_)=>match preview.candidate_thumbnail(&job.graph){
+                    Ok(Some(pixels))=>ui.receive_candidate(job,pixels,192,108),
+                    Ok(None)=>ui.candidate_rejected_uniform(),
+                    Err(e)=>{eprintln!("[MAKER CANDIDATE RENDER] {}: {}",job.name,e);ui.candidate_rejected_render();},
+                },
             }
         }
         preview.update(ui.graph());
