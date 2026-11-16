@@ -199,6 +199,16 @@ fn format_compile_shader_text(
 
 
 fn main() {
+    // Private child process entry point. No normal argument parsing, singleton,
+    // configuration, database, or resident renderer initialization.
+    if std::env::args_os().nth(1).as_deref()==Some(std::ffi::OsStr::new("--maker-candidate-worker")) {
+        if let Err(error)=crate::maker::run_candidate_worker(){
+            eprintln!("[MAKER WORKER] {error}");
+            std::process::exit(1);
+        }
+        return;
+    }
+
 
     let command =
         match crate::parse_arguments::parse() {

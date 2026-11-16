@@ -4,20 +4,10 @@ use std::collections::HashSet;
 pub fn fragment_source(graph:&Graph)->Result<String,String>{
  graph.validate()?;
  let out=graph.nodes.iter().find(|n|n.definition().terminal).ok_or("Missing output")?;
-  // Only nodes contributing to Output Color may impose callable/helper requirements.
-  // Disconnected modules are valid library material, not shader dependencies.
-  let mut reachable=HashSet::new();
-  let mut pending=vec![out.id];
-  while let Some(id)=pending.pop(){
-   if reachable.insert(id){
-    for connection in graph.connections.iter().filter(|c|c.to==id){pending.push(connection.from);}
-   }
-  }
-
  let mut src=String::from("#version 330 core\nout vec4 fragColor;\nuniform vec2 u_resolution;\nuniform float u_time;\n");
  let mut emitted=HashSet::new();let mut helpers=HashSet::new();
   // Uniforms precede helpers because callable traversal functions read node parameters.
-  for n in graph.nodes.iter().filter(|n|reachable.contains(&n.id)){for p in &n.definition().parameters{
+  for n in &graph.nodes{for p in &n.definition().parameters{
    let ty=if p.ty=="color3"{"vec3"}else{"float"};
    src.push_str(&format!("uniform {ty} u_n{}_{};\n",n.id,p.id));
   }}
@@ -39,9 +29,9 @@ vec3 maker_rotate_3d(vec3 p,float xy,float yz,float xz){
 }
 "#);
   // Helper functions are emitted once per distinct source.
-  for n in graph.nodes.iter().filter(|n|reachable.contains(&n.id)){let m=n.definition();if !m.helpers.is_empty()&&helpers.insert(m.helpers.as_str()){src.push_str(&m.helpers);src.push('\n')}}
+  for n in &graph.nodes{let m=n.definition();if !m.helpers.is_empty()&&helpers.insert(m.helpers.as_str()){src.push_str(&m.helpers);src.push('\n')}}
   // Node-specific domain-fold functions: GLSL requires a compile-time bounded loop.
-  for n in graph.nodes.iter().filter(|n|reachable.contains(&n.id)) {
+  for n in &graph.nodes {
    if n.module_id=="screenshaver.geometry.domain_fold_3d" {
     let id=n.id;
     src.push_str(&format!(r#"vec3 maker_blue_fold_{id}(vec3 p){{
@@ -57,7 +47,7 @@ vec3 maker_rotate_3d(vec3 p,float xy,float yz,float xz){
   }
   // A connected scalar field becomes a position-dependent callable evaluation.
   // Unlike a precomputed scalar seed, this expression is evaluated inside each ray step.
-  for n in graph.nodes.iter().filter(|n|reachable.contains(&n.id)){
+  for n in &graph.nodes{
    if n.module_id=="screenshaver.fields.traversal" {
     if let Some(c)=graph.input_connection(n.id,0){
      let field=callable_field(graph,c.from,c.from_port,"sample_position")?;
@@ -66,7 +56,7 @@ vec3 maker_rotate_3d(vec3 p,float xy,float yz,float xz){
    }
   }
  // Generate an independent signed-distance ray marcher for each SDF node.
- for n in graph.nodes.iter().filter(|n|reachable.contains(&n.id)) {
+ for n in &graph.nodes {
   if n.module_id=="screenshaver.fields.sdf_raymarch" {
    let c=graph.input_connection(n.id,0).ok_or("SDF Ray March requires a connected distance field")?;
    let field=callable_expression(graph,c.from,c.from_port,"sample_position","float")?;
@@ -80,7 +70,10 @@ vec3 maker_sdf_normal_{id}(vec3 p,float e){{
 }}
 vec3 maker_sdf_render_{id}(vec2 uv,float speed,float maxDistance,float epsilon,float stepScale,float fov,float glowFalloff,float glowGain,out vec3 surfaceNormal,out float surfaceAO,out float surfaceCurvature,out float rayGlow){{
  surfaceNormal=vec3(0.0,0.0,1.0); surfaceAO=1.0; surfaceCurvature=0.0; rayGlow=0.0;
- float camera_z=u_time*speed;
+ // Bounded, periodic camera travel: preserve the original view at t=0,
+ // but never advance beyond origin-centered SDF geometry while looking +Z.
+ // Negative Z keeps the camera on the approach side of the scene.
+ float camera_z=-1.5*abs(sin(u_time*speed));
  vec2 camera_xy={camera};
  vec3 ro=vec3(camera_xy,camera_z);
  vec3 rd=normalize(vec3(uv*fov,1.0));
@@ -120,7 +113,7 @@ vec3 maker_sdf_render_{id}(vec2 uv,float speed,float maxDistance,float epsilon,f
   }
  }
  // Optical sampling: evaluate the connected background at the actual ray direction.
- for n in graph.nodes.iter().filter(|n|reachable.contains(&n.id)) {
+ for n in &graph.nodes {
   if n.module_id=="screenshaver.lighting.refractive_surface" {
    let field_conn=graph.input_connection(n.id,0).ok_or("Refractive Surface Sampling requires a connected Distance Field")?;
    let bg_conn=graph.input_connection(n.id,1).ok_or("Refractive Surface Sampling requires a connected Background")?;

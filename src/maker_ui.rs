@@ -11,39 +11,66 @@ use serde_json::Value;
 use crate::maker_module::{Module, Trust};
 use crate::maker_library;
 
-/// Count perceptually distinct, meaningfully represented color families in an RGBA thumbnail.
-/// Hue is circular; low-saturation pixels are grouped by brightness rather than hue.
-/// Requiring several pixels per bucket prevents isolated rendering noise from winning.
-fn perceived_color_count(rgba:&[u8])->usize {
-    let mut bins=[0usize; 8+12*4*5];
-    let mut pixels=0usize;
-    for pixel in rgba.chunks_exact(4) {
-        if pixel[3]<128 {continue}
-        pixels+=1;
-        let r=pixel[0] as f32/255.0;
-        let g=pixel[1] as f32/255.0;
-        let b=pixel[2] as f32/255.0;
-        let high=r.max(g).max(b);
-        let low=r.min(g).min(b);
-        let delta=high-low;
-        let saturation=if high>0.0 {delta/high} else {0.0};
-        let index=if saturation<0.12 || delta<0.045 {
-            // Neutral colors: 8 brightness buckets, without arbitrary hue.
-            ((high*8.0) as usize).min(7)
-        } else {
-            let hue=if high==r {(g-b)/delta}
-                else if high==g {(b-r)/delta+2.0}
-                else {(r-g)/delta+4.0};
-            let hue=(hue/6.0).rem_euclid(1.0);
-            let h=((hue*12.0) as usize).min(11);
-            let sat=(((saturation-0.12)/0.88*4.0) as usize).min(3);
-            let value=((high*5.0) as usize).min(4);
-            8+(h*4+sat)*5+value
-        };
-        bins[index]+=1;
+/// Thumbnail-only visual descriptors; computed once after rendering.
+#[derive(Clone, Copy, Default)]
+struct VisualMetrics { interest:f32, complexity:f32, contrast:f32, entropy:f32, vibrancy:f32 }
+
+fn visual_metrics(rgba:&[u8], width:usize, height:usize)->VisualMetrics {
+    if width<3 || height<3 || rgba.len()<width.saturating_mul(height).saturating_mul(4) {return VisualMetrics::default();}
+    let n=width*height;
+    let mut lum=vec![0.0f32;n];
+    let mut sat_sum=0.0f32;
+    let mut histogram=[0usize;32];
+    let mut sum=0.0f32;
+    for (i,px) in rgba.chunks_exact(4).take(n).enumerate() {
+        let r=px[0] as f32/255.0;let g=px[1] as f32/255.0;let b=px[2] as f32/255.0;
+        let y=0.2126*r+0.7152*g+0.0722*b;
+        lum[i]=y;sum+=y;
+        histogram[((y*32.0) as usize).min(31)]+=1;
+        let hi=r.max(g).max(b);let lo=r.min(g).min(b);
+        sat_sum+=if hi>0.001 {(hi-lo)/hi} else {0.0};
     }
-    let minimum=(pixels/1000).max(6);
-    bins.iter().filter(|&&count|count>=minimum).count()
+    let mean=sum/n as f32;
+    let variance=lum.iter().map(|v|(v-mean)*(v-mean)).sum::<f32>()/n as f32;
+    let contrast=(variance.sqrt()*2.0).clamp(0.0,1.0);
+    let mut edge_sum=0.0f32;let mut edge_bins=[0usize;16];let mut edges=0usize;
+    for y in 1..height-1 {for x in 1..width-1 {
+        let i=y*width+x;
+        let dx=(lum[i+1]-lum[i-1]).abs()*0.5;
+        let dy=(lum[i+width]-lum[i-width]).abs()*0.5;
+        let e=(dx*dx+dy*dy).sqrt();
+        edge_sum+=e;edge_bins[((e*16.0) as usize).min(15)]+=1;edges+=1;
+    }}
+    // Soft edge strength avoids rewarding single-pixel aliasing as much as raw edge counts.
+    let complexity=(edge_sum/edges.max(1) as f32*6.0).clamp(0.0,1.0);
+    let entropy_of=|bins:&[usize],total:usize|->f32 {
+        if total==0{return 0.0;}
+        let mut e=0.0f32;
+        for &count in bins {if count>0 {let p=count as f32/total as f32;e-=p*p.log2();}}
+        (e/(bins.len() as f32).log2()).clamp(0.0,1.0)
+    };
+    let entropy=(entropy_of(&histogram,n)*0.6+entropy_of(&edge_bins,edges)*0.4).clamp(0.0,1.0);
+    let vibrancy=(sat_sum/n as f32*contrast.sqrt()).clamp(0.0,1.0);
+    let interest=0.35*complexity+0.30*contrast+0.20*entropy+0.15*vibrancy;
+    VisualMetrics{interest,complexity,contrast,entropy,vibrancy}
+}
+
+fn candidate_score(candidate:&Candidate, sort:u8)->f32 {
+    match sort {
+        1=>candidate.visual.complexity,
+        2=>candidate.visual.contrast,
+        3=>candidate.visual.entropy,
+        4=>candidate.visual.vibrancy,
+        5=>0.0,
+        6=>candidate.motion.unwrap_or(-1.0),
+        _=>candidate.visual.interest,
+    }
+}
+
+#[derive(Clone)]
+pub struct CandidateAnalysis {
+    pub name: String,
+    pub lines: Vec<String>,
 }
 
 #[derive(Clone)]
@@ -53,7 +80,9 @@ struct Candidate {
     modules: HashMap<NodeId,String>,
     connections: Vec<crate::maker_graph::Connection>,
     texture: egui::TextureHandle,
-    perceived_colors: usize,
+    visual: VisualMetrics,
+    motion: Option<f32>,
+    motion_failed: bool,
     dismissed: bool,
     favorite: bool,
     connection_candidate: bool,
@@ -107,27 +136,84 @@ fn parameter_permutation_count(graph:&Graph)->String {
     }
     decimal_string(&total)
 }
-// Independent-input product: a theoretical upper bound, not a count of
-// cycle-free, reachable, compilable connection graphs.
-fn connection_permutation_upper_bound(graph:&Graph)->String {
-    let mut empty=graph.clone();
-    empty.connections.clear();
-    let mut total=vec![1u8];
-    for target in &empty.nodes {
-        for to_port in 0..target.definition().inputs.len() {
-            let mut choices=1usize; // Disconnected input.
-            for source in &empty.nodes {
-                if source.definition().terminal {continue;}
-                for from_port in 0..source.definition().outputs.len() {
-                    if empty.check_connection(source.id,from_port,target.id,to_port).is_ok() {
-                        choices+=1;
+// A bounded, incremental enumeration of distinct Output Color-reachable graphs.
+// Unlike the former independent-input product, it never counts orphan wiring.
+// If the budget is exhausted the observed count is a LOWER bound, not an estimate.
+const REACHABLE_COUNT_LIMIT: usize = 100_000;
+// Bound graph snapshots independently in both searches.
+const MAX_GRAPH_FRONTIER: usize = 4_096;
+const MAX_PENDING_RENDER_JOBS: usize = 96;
+struct ReachableCount {
+    signature: Vec<(NodeId,String)>,
+    queue: std::collections::VecDeque<Graph>,
+    seen: std::collections::HashSet<Vec<(NodeId,usize,NodeId,usize)>>,
+    output: NodeId,
+    examined: usize,
+    valid: usize,
+    complete: bool,
+}
+impl ReachableCount {
+    fn signature(graph:&Graph)->Vec<(NodeId,String)> {
+        let mut result:Vec<_>=graph.nodes.iter().map(|n|(n.id,n.module_id.clone())).collect();
+        result.sort();result
+    }
+    fn new(graph:&Graph)->Option<Self> {
+        let output=graph.nodes.iter().find(|n|n.definition().terminal)?.id;
+        let mut base=graph.clone();base.connections.clear();
+        Some(Self{signature:Self::signature(graph),queue:std::collections::VecDeque::from([base]),
+            seen:Default::default(),output,examined:0,valid:0,complete:false})
+    }
+    fn advance(&mut self) {
+        if self.complete{return}
+        let deadline=std::time::Instant::now()+std::time::Duration::from_millis(5);
+        let mut batch=0;
+        while self.examined<REACHABLE_COUNT_LIMIT && batch<64 && std::time::Instant::now()<deadline {
+            let Some(current)=self.queue.pop_front() else {self.complete=true;break};
+            self.examined+=1;batch+=1;
+            let mut key:Vec<_>=current.connections.iter().map(|c|(c.from,c.from_port,c.to,c.to_port)).collect();
+            key.sort_unstable();
+            if !self.seen.insert(key){continue}
+            if current.input_connection(self.output,0).is_some()
+                && current.validate().is_ok() {
+                self.valid+=1;
+            }
+            let mut reachable=std::collections::HashSet::from([self.output]);
+            let mut frontier=vec![self.output];
+            while let Some(id)=frontier.pop(){
+                for c in current.connections.iter().filter(|c|c.to==id){
+                    if reachable.insert(c.from){frontier.push(c.from)}
+                }
+            }
+            let mut targets=Vec::new();
+            for node in &current.nodes {
+                if !reachable.contains(&node.id){continue}
+                for port in 0..node.definition().inputs.len(){
+                    if current.input_connection(node.id,port).is_none(){targets.push((node.id,port))}
+                }
+            }
+            targets.sort_by_key(|&(id,port)|(if id==self.output{0}else{1},std::cmp::Reverse(id),port));
+            for (to,to_port) in targets.into_iter().take(3){
+                for source in &current.nodes {
+                    if source.definition().terminal{continue}
+                    for from_port in 0..source.definition().outputs.len(){
+                        if current.check_connection(source.id,from_port,to,to_port).is_err(){continue}
+                        if self.queue.len()>=MAX_GRAPH_FRONTIER {break;}
+                        let mut proposed=current.clone();
+                        if proposed.connect(source.id,from_port,to,to_port).is_ok() {
+                            self.queue.push_back(proposed);
+                        }
                     }
                 }
             }
-            multiply_decimal(&mut total,choices);
         }
+        if self.queue.is_empty(){self.complete=true;}
     }
-    decimal_string(&total)
+    fn label(&self)->String {
+        if self.complete {format!("Output-reachable, structurally valid configurations: {} (exact)",self.valid)}
+        else if self.examined>=REACHABLE_COUNT_LIMIT {
+            format!("Output-reachable, structurally valid configurations: at least {} ({}-state limit)",self.valid,REACHABLE_COUNT_LIMIT)
+        } else {format!("Output-reachable, structurally valid configurations found: {} (counting… {} states)",self.valid,self.examined)}
+    }
 }
 fn candidate_graphs(graph:&Graph)->Vec<(String,Graph)> {
     const MAX_CANDIDATES:usize=1_000;
@@ -192,41 +278,53 @@ fn candidate_graphs(graph:&Graph)->Vec<(String,Graph)> {
 const CONNECTION_EXPLORATIONS: usize = 100_000;
 const CANDIDATES_EVALUATED: usize = 5_000;
 const CANDIDATES_RETAINED: usize = 500;
+// Three deterministic depth bands prevent shallow graphs monopolizing discovery.
 struct ConnectionSearch {
-    queue: std::collections::VecDeque<Graph>,
+    queues: [std::collections::VecDeque<Graph>;3],
     seen: std::collections::HashSet<Vec<(NodeId,usize,NodeId,usize)>>,
     output: NodeId,
     examined: usize,
     generated: usize,
     incomplete: usize,
+    turn: usize,
 }
 impl ConnectionSearch {
     fn new(graph:&Graph)->Option<Self>{
         let output=graph.nodes.iter().find(|n|n.definition().terminal)?.id;
         let mut base=graph.clone();base.connections.clear();
         base.revision=graph.revision.wrapping_add(1);
-        Some(Self{queue:std::collections::VecDeque::from([base]),seen:Default::default(),output,examined:0,generated:0,incomplete:0})
+        let mut queues=std::array::from_fn(|_|std::collections::VecDeque::new());
+        queues[0].push_back(base);
+        Some(Self{queues,seen:Default::default(),output,examined:0,generated:0,incomplete:0,turn:0})
     }
-    fn finished(&self)->bool{self.examined>=CONNECTION_EXPLORATIONS || self.queue.is_empty() || self.generated>=CANDIDATES_EVALUATED}
+    fn queued(&self)->usize{self.queues.iter().map(|q|q.len()).sum()}
+    fn finished(&self)->bool{self.examined>=CONNECTION_EXPLORATIONS || self.queued()==0 || self.generated>=CANDIDATES_EVALUATED}
     fn advance(&mut self,source_revision:u64,jobs:&mut Vec<CandidateJob>){
+        let discovery_started=Instant::now();
+        // Let the GL consumer drain its queue before producing more snapshots.
+        if jobs.len()>=MAX_PENDING_RENDER_JOBS {return;}
         let deadline=std::time::Instant::now()+std::time::Duration::from_millis(8);
         let mut batch=0;
-        while !self.finished() && batch<128 && std::time::Instant::now()<deadline {
+        // Weighted rotation: 20% shallow, 35% intermediate, 45% deep.
+        const SCHEDULE:[usize;20]=[0,1,2,2,1,2,0,1,2,2,1,2,0,1,2,2,1,2,0,1];
+        while !self.finished() && jobs.len()<MAX_PENDING_RENDER_JOBS && batch<128 && std::time::Instant::now()<deadline {
             batch+=1;
-            let Some(current)=self.queue.pop_front() else {break};
+            let mut current=None;
+            for _ in 0..SCHEDULE.len(){
+                let bucket=SCHEDULE[self.turn%SCHEDULE.len()];self.turn+=1;
+                if let Some(graph)=self.queues[bucket].pop_front(){current=Some(graph);break}
+            }
+            let Some(current)=current else {break};
             self.examined+=1;
             let mut key:Vec<_>=current.connections.iter().map(|c|(c.from,c.from_port,c.to,c.to_port)).collect();
             key.sort_unstable();
             if !self.seen.insert(key){continue}
             if current.input_connection(self.output,0).is_some() && current.validate().is_ok(){
-                // Only queue complete, GLSL-generatable graphs for expensive GL rendering.
-                // Incomplete graphs remain in the BFS queue and can gain dependencies.
-                if crate::maker_compiler::fragment_source(&current).is_ok(){
-                    self.generated+=1;
-                    jobs.insert(0,CandidateJob{graph:current.clone(),name:format!("Connections: {} wires",current.connections.len()),source_revision,connection_candidate:true});
-                }else{
-                    self.incomplete+=1;
-                }
+                // GLSL generation is deferred until a graph is actually evaluated.
+                // A structurally valid graph can still fail GLSL generation; that
+                // failure is counted by the candidate renderer, not hidden here.
+                self.generated+=1;
+                jobs.insert(0,CandidateJob{graph:current.clone(),name:format!("Connections: {} wires",current.connections.len()),source_revision,connection_candidate:true});
             }
             let mut reachable=std::collections::HashSet::from([self.output]);
             let mut frontier=vec![self.output];
@@ -242,9 +340,6 @@ impl ConnectionSearch {
                     if current.input_connection(node.id,port).is_none(){targets.push((node.id,port))}
                 }
             }
-            // Resolve required dependencies before exploring optional variations.
-            // A missing default is mandatory; specialized callable modules also
-            // require their distance/field inputs regardless of their JSON default.
             let required=|id:NodeId,port:usize| -> bool {
                 let Some(node)=current.node(id) else {return false};
                 let def=node.definition();
@@ -259,25 +354,32 @@ impl ConnectionSearch {
             targets.sort_by_key(|&(id,port)|(
                 if id==self.output {0} else if required(id,port){1}else{2},
                 std::cmp::Reverse(id),port));
-            // One required input at a time prevents optional-input combinations
-            // from consuming the exploration budget before graphs become complete.
             let has_required=targets.iter().any(|&(id,port)|required(id,port));
             if has_required && current.input_connection(self.output,0).is_some(){
                 targets.retain(|&(id,port)|required(id,port));
+            } else if targets.len()>3 {
+                // Rotate optional input windows instead of always taking the first three.
+                let offset=self.examined%targets.len();targets.rotate_left(offset);
             }
             for (to,to_port) in targets.into_iter().take(if has_required {1}else{3}){
                 for source in &current.nodes {
                     if source.definition().terminal{continue}
                     for from_port in 0..source.definition().outputs.len(){
                         if current.check_connection(source.id,from_port,to,to_port).is_err(){continue}
+                        if self.queued()>=MAX_GRAPH_FRONTIER {break;}
                         let mut proposed=current.clone();
-                        if proposed.connect(source.id,from_port,to,to_port).is_ok(){
-                            // Keep memory bounded even for unusually connected graphs.
-                            if self.queue.len()<200_000{self.queue.push_back(proposed)}
+                        if proposed.connect(source.id,from_port,to,to_port).is_ok() {
+                            let depth=proposed.connections.len();
+                            let bucket=if depth<=3 {0}else if depth<=7 {1}else{2};
+                            self.queues[bucket].push_back(proposed);
                         }
                     }
                 }
             }
+        }
+        if discovery_started.elapsed().as_millis()>=100 {
+            eprintln!("[MAKER TIMING] discovery elapsed_ms={:.1} explored={} queued={} jobs={} generated={}",
+                discovery_started.elapsed().as_secs_f64()*1000.0,self.examined,self.queued(),jobs.len(),self.generated);
         }
     }
 }
@@ -343,8 +445,10 @@ pub struct MakerUi {
     routing_undo: Vec<(Graph,Routes)>,
     routing_redo: Vec<(Graph,Routes)>,
     candidate_mode: u8,
+    candidate_sort: u8,
     candidates: Vec<Candidate>,
     candidate_jobs: Vec<CandidateJob>,
+    candidate_epoch: u64,
     candidate_base: Option<Graph>,
     candidate_selected: Option<usize>,
     candidate_undo: Vec<Graph>,
@@ -352,11 +456,16 @@ pub struct MakerUi {
     candidate_notice: String,
     library_expanded: HashMap<String,bool>,
     connection_search: Option<ConnectionSearch>,
+    reachable_count: Option<ReachableCount>,
     candidate_evaluated: usize,
     candidate_rejections: usize,
     candidate_uniform: usize,
     candidate_glsl_errors: usize,
     candidate_render_errors: usize,
+    analysis_request: Option<usize>,
+    analysis: Option<CandidateAnalysis>,
+    pending_clipboard: Option<String>,
+    pending_glsl_export: Option<(usize,bool)>,
 
 }
 impl MakerUi {
@@ -368,27 +477,145 @@ impl MakerUi {
             modifiers:egui::Modifiers::default(),start:Instant::now(),graph,selected,parameter_popup:None,pending_source:None,dragging_wire:None,
             status:"Click an output port, then a compatible input port".into(),open:true,
             preview_rect:egui::Rect::from_min_size(egui::pos2(210.0,600.0),egui::vec2(950.0,210.0)),
-            preview_height:None,routes:Routes::new(),canvas_pan:egui::Vec2::ZERO,canvas_rect:egui::Rect::NOTHING,panning:false,pan_button:None,space_held:false,pixels_per_point:1.0,routing_undo:Vec::new(),routing_redo:Vec::new(),candidate_mode:0,
-            candidates:Vec::new(),candidate_jobs:Vec::new(),candidate_base:None,
-            candidate_selected:None,candidate_undo:Vec::new(),orphan_undo:Vec::new(),candidate_notice:String::new(),library_expanded:HashMap::new(),connection_search:None,candidate_evaluated:0,candidate_rejections:0,candidate_uniform:0,candidate_glsl_errors:0,candidate_render_errors:0})
+            preview_height:None,routes:Routes::new(),canvas_pan:egui::Vec2::ZERO,canvas_rect:egui::Rect::NOTHING,panning:false,pan_button:None,space_held:false,pixels_per_point:1.0,routing_undo:Vec::new(),routing_redo:Vec::new(),candidate_mode:0,candidate_sort:0,
+            candidates:Vec::new(),candidate_jobs:Vec::new(),candidate_epoch:0,candidate_base:None,
+            candidate_selected:None,candidate_undo:Vec::new(),orphan_undo:Vec::new(),candidate_notice:String::new(),library_expanded:HashMap::new(),connection_search:None,reachable_count:None,candidate_evaluated:0,candidate_rejections:0,candidate_uniform:0,candidate_glsl_errors:0,candidate_render_errors:0,analysis_request:None,analysis:None,pending_clipboard:None,pending_glsl_export:None})
+    }
+    /// Returns the exact candidate reconstruction, independent of the currently applied graph.
+    /// The boolean requests saving to disk rather than copying to the clipboard.
+    pub fn take_glsl_export(&mut self)->Option<(String,bool)> {
+        let (index,save)=self.pending_glsl_export.take()?;
+        let graph=match self.reconstructed_candidate(index) {
+            Ok(graph)=>graph,
+            Err(error)=>{self.candidate_notice=format!("Candidate reconstruction failed: {error}");return None;}
+        };
+        match crate::maker_compiler::fragment_source(&graph) {
+            Ok(source)=>Some((source,save)),
+            Err(error)=>{self.candidate_notice=format!("GLSL generation failed: {error}");None}
+        }
+    }
+    pub fn glsl_export_result(&mut self,message:String){self.candidate_notice=message;}
+    pub fn take_clipboard_request(&mut self)->Option<String>{self.pending_clipboard.take()}
+    pub fn clipboard_result(&mut self,result:Result<(),String>){
+        self.candidate_notice=match result {Ok(())=>"Analysis report copied to system clipboard".into(),Err(e)=>format!("Clipboard copy failed: {e}")};
     }
     pub fn graph(&self)->&Graph{&self.graph}
+    pub fn candidate_epoch(&self)->u64 {self.candidate_epoch}
     pub fn next_candidate_job(&mut self)->Option<CandidateJob>{
         if self.candidate_base.is_none(){return None}
-        if self.candidates.len()>=CANDIDATES_RETAINED {self.connection_search=None;self.candidate_jobs.clear();return None}
+        if self.candidates.len()>=CANDIDATES_RETAINED && self.connection_search.is_none() && self.candidate_jobs.first().is_some_and(|job|!job.connection_candidate) {self.candidate_jobs.clear();return None}
         let job=self.candidate_jobs.pop();
         if job.is_some(){self.candidate_evaluated+=1;}
         job
     }
     pub fn receive_candidate(&mut self,job:CandidateJob,rgba:Vec<u8>,width:usize,height:usize){
         if self.candidate_base.as_ref().is_none_or(|g|g.revision!=job.source_revision){return}
-        let perceived_colors=perceived_color_count(&rgba);
-        let image=egui::ColorImage::from_rgba_unmultiplied([width,height],&rgba);
-        let texture=self.context.load_texture(format!("maker_candidate_{}",self.candidates.len()),image,egui::TextureOptions::LINEAR);
+        let visual=visual_metrics(&rgba,width,height);
         let parameters=job.graph.nodes.iter().map(|n|(n.id,n.parameters.clone())).collect();
         let modules=job.graph.nodes.iter().map(|n|(n.id,n.module_id.clone())).collect();
-        self.candidates.push(Candidate{name:job.name,parameters,modules,connections:job.graph.connections.clone(),texture,perceived_colors,dismissed:false,favorite:false,connection_candidate:job.connection_candidate});
+        // Parameter discovery retains its existing first-500 behavior.
+        // Connection discovery keeps evaluating, replacing weak/near-duplicate entries.
+        let candidate=Candidate{name:job.name,parameters,modules,connections:job.graph.connections.clone(),
+            texture:self.context.load_texture(format!("maker_candidate_{}",self.candidate_evaluated),
+                egui::ColorImage::from_rgba_unmultiplied([width,height],&rgba),egui::TextureOptions::LINEAR),
+            visual,motion:None,motion_failed:false,dismissed:false,favorite:false,connection_candidate:job.connection_candidate};
+        if self.candidates.len()<CANDIDATES_RETAINED {self.candidates.push(candidate);return}
+        if !job.connection_candidate {return}
+        // A compact, normalized descriptor gives diversity a role without adding
+        // an image-processing dependency or retaining every thumbnail in memory.
+        let mut closest=None;
+        let mut lowest=None;
+        for (index,existing) in self.candidates.iter().enumerate(){
+            if !existing.connection_candidate || existing.favorite || self.candidate_selected==Some(index){continue}
+            let value=existing.visual.interest;
+            if lowest.is_none_or(|(_,score)|value<score){lowest=Some((index,value));}
+            // Compare inexpensive perceptual metrics for already retained entries.
+            let distance=(visual.complexity-existing.visual.complexity).abs()
+                +(visual.contrast-existing.visual.contrast).abs()
+                +(visual.entropy-existing.visual.entropy).abs()
+                +(visual.vibrancy-existing.visual.vibrancy).abs();
+            if closest.is_none_or(|(_,d)|distance<d){closest=Some((index,distance));}
+        }
+        let victim=match (closest,lowest){
+            (Some((index,d)),_) if d<0.12 => Some(index),
+            (_,Some((index,_)))=>Some(index),
+            _=>None,
+        };
+        if let Some(index)=victim {
+            let old=&self.candidates[index];
+            let similarity=(visual.complexity-old.visual.complexity).abs()
+                +(visual.contrast-old.visual.contrast).abs()
+                +(visual.entropy-old.visual.entropy).abs()
+                +(visual.vibrancy-old.visual.vibrancy).abs();
+            // Novelty can compensate for a modest interest deficit; near duplicates
+            // must strictly improve on their predecessor.
+            let improvement=if similarity<0.12 {0.005}else{-0.04};
+            if visual.interest>old.visual.interest+improvement {self.candidates[index]=candidate;}
+        }
     }
+    fn reconstructed_candidate(&self,index:usize)->Result<Graph,String>{
+        let base=self.candidate_base.as_ref().ok_or("Discovery snapshot missing")?;
+        let candidate=self.candidates.get(index).ok_or("Candidate no longer retained")?;
+        let mut graph=base.clone();
+        if candidate.connection_candidate {
+            graph.connections.clear();
+            for c in &candidate.connections {
+                graph.connect(c.from,c.from_port,c.to,c.to_port)?;
+            }
+        } else {
+            for node in &mut graph.nodes {
+                if let Some(parameters)=candidate.parameters.get(&node.id){node.parameters=parameters.clone();}
+            }
+        }
+        Ok(graph)
+    }
+    pub fn next_analysis_job(&mut self)->Option<(usize,Graph,String)>{
+        let index=self.analysis_request.take()?;
+        let name=self.candidates.get(index)?.name.clone();
+        match self.reconstructed_candidate(index){
+            Ok(graph)=>Some((index,graph,name)),
+            Err(error)=>{self.analysis=Some(CandidateAnalysis{name,lines:vec![format!("Graph reconstruction failed: {error}")]});None}
+        }
+    }
+    pub fn receive_analysis(&mut self,index:usize,analysis:CandidateAnalysis){
+        if index<self.candidates.len() {self.analysis=Some(analysis);}
+    }
+
+    /// Lazily reconstruct one retained candidate per frame for GPU motion analysis.
+    /// None means there is no pending work, including when another sort is selected.
+    pub fn next_motion_job(&self)->Option<(usize,Graph)> {
+        if self.candidate_sort!=6 {return None}
+        let base=self.candidate_base.as_ref()?;
+        for (index,candidate) in self.candidates.iter().enumerate() {
+            if candidate.motion.is_some() || candidate.motion_failed {continue}
+            let mut graph=base.clone();
+            if candidate.connection_candidate {
+                graph.connections.clear();
+                let mut valid=true;
+                for c in &candidate.connections {
+                    if graph.connect(c.from,c.from_port,c.to,c.to_port).is_err(){valid=false;break}
+                }
+                if !valid {continue}
+            } else {
+                for node in &mut graph.nodes {
+                    if let Some(parameters)=candidate.parameters.get(&node.id) {
+                        node.parameters=parameters.clone();
+                    }
+                }
+            }
+            return Some((index,graph));
+        }
+        None
+    }
+    pub fn receive_motion_score(&mut self,index:usize,result:Result<f32,String>){
+        if let Some(candidate)=self.candidates.get_mut(index){
+            match result {
+                Ok(score)=>candidate.motion=Some(score.clamp(0.0,1.0)),
+                Err(error)=>{candidate.motion_failed=true;eprintln!("[MAKER MOTION] {}: {}",candidate.name,error);}
+            }
+        }
+    }
+
     pub fn candidate_rejected_uniform(&mut self){self.candidate_rejections+=1;self.candidate_uniform+=1;}
     pub fn candidate_rejected_glsl(&mut self){self.candidate_rejections+=1;self.candidate_glsl_errors+=1;}
     pub fn candidate_rejected_render(&mut self){self.candidate_rejections+=1;self.candidate_render_errors+=1;}
@@ -458,6 +685,18 @@ impl MakerUi {
         }
     }
     pub fn frame(&mut self,dw:u32,dh:u32,scale:f32,compile_error:Option<&str>)->bool{
+        // Recount only when the module inventory changes; moving nodes or
+        // rewiring the live graph does not change the discovery search space.
+        let signature=ReachableCount::signature(&self.graph);
+        if self.reachable_count.as_ref().is_none_or(|c|c.signature!=signature){
+            self.reachable_count=ReachableCount::new(&self.graph);
+        }
+        // Counting is informational. Do not compete with active discovery for
+        // memory, CPU, or UI responsiveness.
+        if self.connection_search.is_none() {
+            if let Some(counter)=self.reachable_count.as_mut(){counter.advance();}
+        }
+
         // CPU-only exploration is incremental. OpenGL thumbnails remain on the caller's GL thread.
         if let Some(search)=self.connection_search.as_mut(){
             if let Some(base)=self.candidate_base.as_ref(){
@@ -488,17 +727,24 @@ impl MakerUi {
         let routing_undo=&mut self.routing_undo;
         let routing_redo=&mut self.routing_redo;
         let candidate_mode=&mut self.candidate_mode;
+        let candidate_sort=&mut self.candidate_sort;
         let candidates=&mut self.candidates;
         let candidate_jobs=&mut self.candidate_jobs;
+        let candidate_epoch=&mut self.candidate_epoch;
         let candidate_base=&mut self.candidate_base;
         let candidate_selected=&mut self.candidate_selected;
         let candidate_undo=&mut self.candidate_undo;
         let orphan_undo=&mut self.orphan_undo;
         let candidate_notice=&mut self.candidate_notice;
+        let analysis_request=&mut self.analysis_request;
+        let analysis=&mut self.analysis;
+        let pending_clipboard=&mut self.pending_clipboard;
+        let pending_glsl_export=&mut self.pending_glsl_export;
         let candidate_uniform=&mut self.candidate_uniform;
         let candidate_glsl_errors=&mut self.candidate_glsl_errors;
         let candidate_render_errors=&mut self.candidate_render_errors;
         let connection_search=&mut self.connection_search;
+        let reachable_count=&self.reachable_count;
         let candidate_evaluated=&mut self.candidate_evaluated;
         let candidate_rejections=&mut self.candidate_rejections;
         let library_expanded=&mut self.library_expanded;
@@ -511,7 +757,7 @@ impl MakerUi {
                     ui.heading("Screenshaver Maker");ui.separator();ui.label("Untitled graph");
                     if ui.button("Clear Graph").clicked(){let revision=graph.revision;*graph=Graph::blank();graph.revision=revision.wrapping_add(1);
                         *selected=None;*parameter_popup=None;*pending=None;*dragging_wire=None;routes.clear();routing_undo.clear();routing_redo.clear();orphan_undo.clear();
-                        candidates.clear();candidate_jobs.clear();*connection_search=None;*candidate_base=None;candidate_undo.clear();*candidate_selected=None;
+                        candidates.clear();*candidate_epoch=candidate_epoch.wrapping_add(1);candidate_jobs.clear();*connection_search=None;*candidate_base=None;candidate_undo.clear();*candidate_selected=None;
                         *status="Graph cleared; Output Color retained".into();
                     }
                     let orphan_count=graph.orphan_ids().len();
@@ -527,7 +773,7 @@ impl MakerUi {
                             if parameter_popup.is_some_and(|id|removed.contains(&id)){*parameter_popup=None;}
                             *pending=None;*dragging_wire=None;
                             routes.clear();routing_undo.clear();routing_redo.clear();
-                            candidates.clear();candidate_jobs.clear();*connection_search=None;*candidate_base=None;
+                            candidates.clear();*candidate_epoch=candidate_epoch.wrapping_add(1);candidate_jobs.clear();*connection_search=None;*candidate_base=None;
                             candidate_undo.clear();*candidate_selected=None;candidate_notice.clear();
                             *status=format!("Removed {} orphan module{}",removed.len(),if removed.len()==1{""}else{"s"});
                         }
@@ -539,7 +785,7 @@ impl MakerUi {
                             previous.revision=graph.revision.wrapping_add(1);
                             *graph=previous;
                             routes.clear();routing_undo.clear();routing_redo.clear();
-                            candidates.clear();candidate_jobs.clear();*connection_search=None;*candidate_base=None;
+                            candidates.clear();*candidate_epoch=candidate_epoch.wrapping_add(1);candidate_jobs.clear();*connection_search=None;*candidate_base=None;
                             candidate_undo.clear();*candidate_selected=None;candidate_notice.clear();
                             *pending=None;*dragging_wire=None;
                             *status="Restored removed orphan modules".into();
@@ -586,7 +832,7 @@ impl MakerUi {
                     }
                     *selected=None;*parameter_popup=None;*pending=None;*dragging_wire=None;
                     routes.clear();routing_undo.clear();routing_redo.clear();orphan_undo.clear();
-                    candidates.clear();candidate_jobs.clear();*connection_search=None;*candidate_base=None;
+                    candidates.clear();*candidate_epoch=candidate_epoch.wrapping_add(1);candidate_jobs.clear();*connection_search=None;*candidate_base=None;
                     candidate_undo.clear();*candidate_selected=None;candidate_notice.clear();
                     *status=format!("Added {added} modules without connections");
                 }
@@ -662,14 +908,32 @@ impl MakerUi {
                 ui.separator();
                 if *candidate_mode != 0 {
                     if *candidate_mode==2 {
-                        ui.label(format!("Potential configurations (upper bound): {}",connection_permutation_upper_bound(graph)))
-                            .on_hover_text("Independent compatible input choices, including disconnected inputs. Cycles, output reachability, and shader validity reduce the actual total.");
+                        ui.label(reachable_count.as_ref().map_or("Counting output-reachable configurations…".to_owned(),ReachableCount::label))
+                            .on_hover_text("Counts unique Output Color-rooted connection graphs passing structural and GLSL generation checks. Counting is incremental; a budget-limited result is a lower bound, not the global total.");
                     } else {
                         ui.label(format!("Potential parameter combinations: {}",parameter_permutation_count(graph)))
                             .on_hover_text("Exact number of sampled parameter combinations before the discovery cap; animation speed is excluded.");
                     }
+                    egui::ComboBox::from_label("Sort thumbnails")
+                        .selected_text(match *candidate_sort {
+                            1=>"Visual Complexity",2=>"Perceptual Contrast",3=>"Spatial Entropy",
+                            4=>"Color Vibrancy",5=>"Discovery Order",6=>"Motion Activity",_=>"Visual Interest",
+                        })
+                        .show_ui(ui,|ui|{
+                            ui.selectable_value(candidate_sort,0,"Visual Interest");
+                            ui.selectable_value(candidate_sort,1,"Visual Complexity");
+                            ui.selectable_value(candidate_sort,2,"Perceptual Contrast");
+                            ui.selectable_value(candidate_sort,3,"Spatial Entropy");
+                            ui.selectable_value(candidate_sort,4,"Color Vibrancy");
+                            ui.selectable_value(candidate_sort,5,"Discovery Order");
+                            ui.selectable_value(candidate_sort,6,"Motion Activity (lazy)");
+                        });
+                    if *candidate_sort==6 {
+                        let scored=candidates.iter().filter(|c|c.motion.is_some() || c.motion_failed).count();
+                        ui.small(format!("Motion analyzed: {scored} / {} retained (one candidate per frame)",candidates.len()));
+                    }
                     if ui.button(if *candidate_mode==2 {"Discover connections"} else {"Discover parameters"}).clicked(){
-                        candidates.clear();candidate_jobs.clear();candidate_undo.clear();*candidate_selected=None;
+                        candidates.clear();*candidate_epoch=candidate_epoch.wrapping_add(1);candidate_jobs.clear();candidate_undo.clear();*analysis_request=None;*analysis=None;*candidate_selected=None;
                         *candidate_base=Some(graph.clone());
                         *connection_search=None;*candidate_evaluated=0;*candidate_rejections=0;*candidate_uniform=0;*candidate_glsl_errors=0;*candidate_render_errors=0;
                         if *candidate_mode==2 {
@@ -687,7 +951,7 @@ impl MakerUi {
                     }
                     if connection_search.is_some() || !candidate_jobs.is_empty(){
                         if ui.button("Cancel discovery").clicked(){
-                            *connection_search=None;candidate_jobs.clear();
+                            *connection_search=None;*candidate_epoch=candidate_epoch.wrapping_add(1);candidate_jobs.clear();
                             *candidate_notice="Discovery cancelled; completed thumbnails preserved".into();
                         }
                     }
@@ -695,7 +959,7 @@ impl MakerUi {
                         let fraction=search.examined as f32/CONNECTION_EXPLORATIONS as f32;
                         ui.add(egui::ProgressBar::new(fraction.clamp(0.0,1.0)).show_percentage()
                             .text(format!("Exploration: {} / {} states",search.examined,CONNECTION_EXPLORATIONS)));
-                        ui.small(format!("{} GLSL-ready graphs queued · {} incomplete graphs skipped (up to {} evaluations)",search.generated,search.incomplete,CANDIDATES_EVALUATED));
+                        ui.small(format!("{} structurally valid graphs queued · {} incomplete graphs skipped (up to {} evaluations)",search.generated,search.incomplete,CANDIDATES_EVALUATED));
                     }
                     if *candidate_evaluated>0 || !candidate_jobs.is_empty(){
                         let total=(*candidate_evaluated+candidate_jobs.len()).max(1);
@@ -709,12 +973,22 @@ impl MakerUi {
                     if !candidate_notice.is_empty(){ui.small(candidate_notice.as_str());}
                     ui.label(format!("{} visible · {} pending",candidates.iter().filter(|c|!c.dismissed && c.connection_candidate==(*candidate_mode==2)).count(),candidate_jobs.len()));
                     if ui.button("Restore dismissed").clicked(){for c in candidates.iter_mut(){c.dismissed=false;}}
+                    if let Some(report)=analysis.as_ref(){
+                        ui.separator();ui.strong(format!("Analysis: {}",report.name));
+                        let report_text=report.lines.join("\n");
+                        if ui.small_button("Copy report").clicked(){*pending_clipboard=Some(report_text);}
+                        egui::ScrollArea::vertical().max_height(190.0).show(ui,|ui|{
+                            for line in &report.lines {ui.small(line);}
+                        });
+                    } else if analysis_request.is_some(){ui.small("Analyzing candidate...");}
                     egui::ScrollArea::vertical().show(ui,|ui|{
                         let mut display_order:Vec<usize>=(0..candidates.len()).collect();
-                        // Both discovery modes rank by thumbnail color diversity.
-                        // Preserve discovery order for equal scores.
-                        display_order.sort_by(|&a,&b|candidates[b].perceived_colors
-                            .cmp(&candidates[a].perceived_colors).then_with(||a.cmp(&b)));
+                        // Stable ties and discovery-order mode preserve original arrival order.
+                        if *candidate_sort!=5 {
+                            display_order.sort_by(|&a,&b|candidate_score(&candidates[b],*candidate_sort)
+                                .total_cmp(&candidate_score(&candidates[a],*candidate_sort))
+                                .then_with(||a.cmp(&b)));
+                        }
                         for index in display_order {
                             let candidate=&mut candidates[index];
                             if candidate.dismissed || candidate.connection_candidate!=(*candidate_mode==2){continue}
@@ -734,10 +1008,26 @@ impl MakerUi {
                                     }
                                 }
                                 ui.small(&candidate.name);
-                                ui.small(format!("{} perceived color groups",candidate.perceived_colors));
+                                if *candidate_sort==6 {
+                                    ui.small(match candidate.motion {
+                                        Some(score)=>format!("Motion activity: {:.1}%",score*100.0),
+                                        None if candidate.motion_failed=>"Motion activity: unavailable".to_owned(),
+                                        None=>"Motion activity: pending".to_owned(),
+                                    });
+                                } else if *candidate_sort!=5 {
+                                    ui.small(format!("{}: {:.1}%",match *candidate_sort {
+                                        1=>"Complexity",2=>"Contrast",3=>"Entropy",4=>"Vibrancy",_=>"Visual interest",
+                                    },candidate_score(candidate,*candidate_sort)*100.0));
+                                }
                                 ui.horizontal(|ui|{
                                     if ui.small_button(if candidate.favorite{"★ Saved"}else{"☆ Favorite"}).clicked(){candidate.favorite=!candidate.favorite;}
+                                    if ui.small_button("Analyze").clicked(){*analysis_request=Some(index);*analysis=None;}
                                     if ui.small_button("Dismiss").clicked(){candidate.dismissed=true;}
+                                });
+                                // Second row deliberately avoids widening the Inspector dock.
+                                ui.horizontal(|ui|{
+                                    if ui.small_button("Copy GLSL").clicked(){*pending_glsl_export=Some((index,false));}
+                                    if ui.small_button("Save GLSL").clicked(){*pending_glsl_export=Some((index,true));}
                                 });
                             });
                         }
