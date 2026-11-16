@@ -1,13 +1,14 @@
 //! Graph-to-GLSL compiler. Module code comes from validated JSON definitions.
 use crate::maker_graph::{Graph,NodeId};
-use std::collections::HashSet;
+use std::collections::{HashMap,HashSet};
 pub fn fragment_source(graph:&Graph)->Result<String,String>{
- graph.validate()?;
+ graph.validate_renderable()?;
+ let reachable=graph.output_reachable_ids();
  let out=graph.nodes.iter().find(|n|n.definition().terminal).ok_or("Missing output")?;
  let mut src=String::from("#version 330 core\nout vec4 fragColor;\nuniform vec2 u_resolution;\nuniform float u_time;\n");
  let mut emitted=HashSet::new();let mut helpers=HashSet::new();
   // Uniforms precede helpers because callable traversal functions read node parameters.
-  for n in &graph.nodes{for p in &n.definition().parameters{
+  for n in graph.nodes.iter().filter(|n|reachable.contains(&n.id)){for p in &n.definition().parameters{
    let ty=if p.ty=="color3"{"vec3"}else{"float"};
    src.push_str(&format!("uniform {ty} u_n{}_{};\n",n.id,p.id));
   }}
@@ -29,9 +30,9 @@ vec3 maker_rotate_3d(vec3 p,float xy,float yz,float xz){
 }
 "#);
   // Helper functions are emitted once per distinct source.
-  for n in &graph.nodes{let m=n.definition();if !m.helpers.is_empty()&&helpers.insert(m.helpers.as_str()){src.push_str(&m.helpers);src.push('\n')}}
+  for n in graph.nodes.iter().filter(|n|reachable.contains(&n.id)){let m=n.definition();if !m.helpers.is_empty()&&helpers.insert(m.helpers.as_str()){src.push_str(&m.helpers);src.push('\n')}}
   // Node-specific domain-fold functions: GLSL requires a compile-time bounded loop.
-  for n in &graph.nodes {
+  for n in graph.nodes.iter().filter(|n|reachable.contains(&n.id)) {
    if n.module_id=="screenshaver.geometry.domain_fold_3d" {
     let id=n.id;
     src.push_str(&format!(r#"vec3 maker_blue_fold_{id}(vec3 p){{
@@ -45,22 +46,45 @@ vec3 maker_rotate_3d(vec3 p,float xy,float yz,float xz){
 "#));
    }
   }
+  // Generate each callable node/port once, using a vec3 sampling position.
+  // Function calls preserve distinct sample positions without recursive source duplication.
+  let mut callable=CallableGenerator::new(graph);
+  for n in graph.nodes.iter().filter(|n|reachable.contains(&n.id)) {
+   match n.module_id.as_str() {
+    "screenshaver.fields.traversal" => {
+     if let Some(c)=graph.input_connection(n.id,0){callable.require(c.from,c.from_port,"float")?;}
+    }
+    "screenshaver.fields.sdf_raymarch" => {
+     let c=graph.input_connection(n.id,0).ok_or("SDF Ray March requires a connected distance field")?;
+     callable.require(c.from,c.from_port,"float")?;
+     if let Some(c)=graph.input_connection(n.id,1){callable.require(c.from,c.from_port,"vec2")?;}
+    }
+    "screenshaver.lighting.refractive_surface" => {
+     let c=graph.input_connection(n.id,0).ok_or("Refractive Surface Sampling requires a connected Distance Field")?;
+     callable.require(c.from,c.from_port,"float")?;
+     let c=graph.input_connection(n.id,1).ok_or("Refractive Surface Sampling requires a connected Background")?;
+     callable.require(c.from,c.from_port,"vec3")?;
+    }
+    _=>{}
+   }
+  }
+  src.push_str(&callable.source());
   // A connected scalar field becomes a position-dependent callable evaluation.
   // Unlike a precomputed scalar seed, this expression is evaluated inside each ray step.
-  for n in &graph.nodes{
+  for n in graph.nodes.iter().filter(|n|reachable.contains(&n.id)){
    if n.module_id=="screenshaver.fields.traversal" {
     if let Some(c)=graph.input_connection(n.id,0){
-     let field=callable_field(graph,c.from,c.from_port,"sample_position")?;
+     let field=callable.reference(c.from,c.from_port,"sample_position","float")?;
      src.push_str(&format!("vec3 maker_traverse_connected_{}(vec3 origin,float depth,float density,float speed,float mode){{vec3 ray=normalize(vec3(origin.xy,1.25));vec3 sum=vec3(0.0);float t=u_time*speed;for(int k=0;k<10;k++){{float z=(float(k)+0.5)*depth/10.0;vec3 sample_position=vec3(origin.xy,-1.0)+ray*z;float field=({field});float weight=density*exp(-abs(field)*4.0)/(1.0+0.25*z*z);vec3 phase=vec3(0.0,2.1,4.2);sum+=weight*(0.5+0.5*sin(t*0.4+z*2.0+phase));}}vec3 p=vec3(0.0,0.0,-1.0-0.5*sin(u_time*(speed/0.5)*0.1));vec3 d=normalize(vec3(origin.xy,1.0));vec3 light=vec3(0.0);for(int k=0;k<10;k++){{vec3 sample_position=p;float step_distance=max(abs(({field})),0.02);p+=d*step_distance*(depth/2.5);light+=density*(1.0+1.5*sin(float(k)+length(p.xy*0.1)+2.0+vec3(3.0,1.5,0.5)))/step_distance;}}return mix(sum/10.0,light,step(0.5,mode));}}\n",n.id));
     }
    }
   }
  // Generate an independent signed-distance ray marcher for each SDF node.
- for n in &graph.nodes {
+ for n in graph.nodes.iter().filter(|n|reachable.contains(&n.id)) {
   if n.module_id=="screenshaver.fields.sdf_raymarch" {
    let c=graph.input_connection(n.id,0).ok_or("SDF Ray March requires a connected distance field")?;
-   let field=callable_expression(graph,c.from,c.from_port,"sample_position","float")?;
-   let camera=if let Some(c)=graph.input_connection(n.id,1){callable_expression(graph,c.from,c.from_port,"vec3(0.0,0.0,camera_z)","vec2")?}else{"vec2(0.0)".into()};
+   let field=callable.reference(c.from,c.from_port,"sample_position","float")?;
+   let camera=if let Some(c)=graph.input_connection(n.id,1){callable.reference(c.from,c.from_port,"vec3(0.0,0.0,camera_z)","vec2")?}else{"vec2(0.0)".into()};
    let id=n.id;
    src.push_str(&format!(r#"
 float maker_sdf_{id}(vec3 sample_position){{return {field};}}
@@ -113,12 +137,12 @@ vec3 maker_sdf_render_{id}(vec2 uv,float speed,float maxDistance,float epsilon,f
   }
  }
  // Optical sampling: evaluate the connected background at the actual ray direction.
- for n in &graph.nodes {
+ for n in graph.nodes.iter().filter(|n|reachable.contains(&n.id)) {
   if n.module_id=="screenshaver.lighting.refractive_surface" {
    let field_conn=graph.input_connection(n.id,0).ok_or("Refractive Surface Sampling requires a connected Distance Field")?;
    let bg_conn=graph.input_connection(n.id,1).ok_or("Refractive Surface Sampling requires a connected Background")?;
-   let field=callable_expression(graph,field_conn.from,field_conn.from_port,"sample_position","float")?;
-   let background=callable_expression(graph,bg_conn.from,bg_conn.from_port,"sample_direction","vec3")?;
+   let field=callable.reference(field_conn.from,field_conn.from_port,"sample_position","float")?;
+   let background=callable.reference(bg_conn.from,bg_conn.from_port,"sample_direction","vec3")?;
    let id=n.id;
    src.push_str(&format!(r#"
 float maker_optical_sdf_{id}(vec3 sample_position){{return {field};}}
@@ -199,52 +223,77 @@ fn emit(graph:&Graph,id:NodeId,emitted:&mut HashSet<NodeId>,src:&mut String)->Re
  emitted.insert(id);Ok(())
 }
 
-// Build a field expression that can be evaluated at an arbitrary 3D sample position.
-// The first implementation deliberately supports only position-driven scalar field modules.
-// Unsupported graphs produce a clear error instead of silently using a frozen seed.
-fn callable_field(graph:&Graph,id:NodeId,port:usize,position:&str)->Result<String,String>{
- callable_expression(graph,id,port,position,"float")
+// A callable is one GLSL function per node output.  All functions take the sampling
+// position explicitly, allowing domain transformations to evaluate at different
+// coordinates without copying the entire upstream expression tree.
+struct CallableGenerator<'a> {
+ graph:&'a Graph,
+ definitions:Vec<String>,
+ signatures:Vec<String>,
+ generated:HashSet<(NodeId,usize)>,
+ active:HashSet<(NodeId,usize)>,
 }
-fn callable_expression(graph:&Graph,id:NodeId,port:usize,position:&str,expected:&str)->Result<String,String>{
- fn expand(graph:&Graph,id:NodeId,port:usize,position:&str,active:&mut HashSet<NodeId>)->Result<String,String>{
-  if !active.insert(id){return Err("Callable field cycle".into())}
-  let result=(||{
-   let n=graph.node(id).ok_or("Callable source missing")?;
-   let m=n.definition();
+impl<'a> CallableGenerator<'a> {
+ fn new(graph:&'a Graph)->Self { Self {graph,definitions:Vec::new(),signatures:Vec::new(),generated:HashSet::new(),active:HashSet::new()} }
+ fn name(id:NodeId,port:usize)->String {format!("maker_callable_{id}_{port}")}
+ fn reference(&self,id:NodeId,port:usize,position:&str,expected:&str)->Result<String,String>{
+  let n=self.graph.node(id).ok_or("Callable source missing")?;
+  let ty=&n.definition().outputs.get(port).ok_or("Callable output missing")?.ty;
+  if ty!=expected{return Err(format!("Callable source requires {expected}, got {ty}"))}
+  if !self.generated.contains(&(id,port)){return Err(format!("Callable source not generated: {id}:{port}"))}
+  Ok(format!("{}({position})",Self::name(id,port)))
+ }
+ fn require(&mut self,id:NodeId,port:usize,expected:&str)->Result<(),String>{
+  let n=self.graph.node(id).ok_or("Callable source missing")?;
+  let m=n.definition();
+  let ty=m.outputs.get(port).ok_or("Callable output missing")?.ty.clone();
+  if ty!=expected{return Err(format!("Callable source requires {expected}, got {ty}"))}
+  if self.generated.contains(&(id,port)){return Ok(())}
+  if !self.active.insert((id,port)){return Err("Callable field cycle".into())}
+  let result=(||->Result<String,String>{
    if m.terminal{return Err("Output terminal cannot be sampled".into())}
-   let mut vars=std::collections::HashMap::new();
-   // Domain operators re-evaluate their upstream field at transformed coordinates.
-   // This is essential: transforming an already-computed distance has no geometric effect.
+   let mut vars=HashMap::new();
+   let position="maker_position";
    let domain_position=if m.id=="screenshaver.geometry.domain_repeat_3d" {
     format!("(mod(({position})+0.5*vec3(u_n{id}_span_x,u_n{id}_span_y,u_n{id}_span_z),vec3(u_n{id}_span_x,u_n{id}_span_y,u_n{id}_span_z))-0.5*vec3(u_n{id}_span_x,u_n{id}_span_y,u_n{id}_span_z))")
-   } else if m.id=="screenshaver.geometry.domain_fold_3d" {
+   }else if m.id=="screenshaver.geometry.domain_fold_3d"{
     format!("maker_blue_fold_{id}({position})")
-   } else if m.id=="screenshaver.geometry.rotation_3d" {
+   }else if m.id=="screenshaver.geometry.rotation_3d"{
     format!("maker_rotate_3d({position},u_n{id}_xy+u_time*u_n{id}_speed,u_n{id}_yz+u_time*u_n{id}_speed,u_n{id}_xz+u_time*u_n{id}_speed)")
-   } else {position.to_owned()};
+   }else{position.to_owned()};
    for (index,input) in m.inputs.iter().enumerate(){
-    let value=if (m.id=="screenshaver.geometry.domain_repeat_3d" || m.id=="screenshaver.geometry.domain_fold_3d" || m.id=="screenshaver.geometry.rotation_3d") && input.id=="field" {
-     let c=graph.input_connection(id,index).ok_or_else(||format!("{} requires a connected field",m.name))?;
-     expand(graph,c.from,c.from_port,&domain_position,active)?
-    }else if input.id=="position" && input.ty=="vec3" && graph.input_connection(id,index).is_none(){position.to_owned()}
-    else if m.id=="screenshaver.color.angular_wave_background" && input.id=="direction" && graph.input_connection(id,index).is_none(){position.to_owned()}
-    else if m.id=="screenshaver.camera.sinusoidal_path" && input.id=="z" && graph.input_connection(id,index).is_none(){format!("({position}).z")}
-    else if let Some(c)=graph.input_connection(id,index){
-     let from=graph.node(c.from).ok_or("Callable input source missing")?;
-     if from.definition().outputs[c.from_port].ty!=input.ty{return Err("Callable input type mismatch".into())}
-     expand(graph,c.from,c.from_port,position,active)?
+    let is_domain=(m.id=="screenshaver.geometry.domain_repeat_3d" || m.id=="screenshaver.geometry.domain_fold_3d" || m.id=="screenshaver.geometry.rotation_3d") && input.id=="field";
+    let value=if is_domain {
+     let c=self.graph.input_connection(id,index).ok_or_else(||format!("{} requires a connected field",m.name))?;
+     self.require(c.from,c.from_port,&input.ty)?;
+     format!("{}({domain_position})",Self::name(c.from,c.from_port))
+    }else if input.id=="position" && input.ty=="vec3" && self.graph.input_connection(id,index).is_none(){position.to_owned()}
+    else if m.id=="screenshaver.color.angular_wave_background" && input.id=="direction" && self.graph.input_connection(id,index).is_none(){position.to_owned()}
+    else if m.id=="screenshaver.camera.sinusoidal_path" && input.id=="z" && self.graph.input_connection(id,index).is_none(){format!("({position}).z")}
+    else if let Some(c)=self.graph.input_connection(id,index){
+     self.require(c.from,c.from_port,&input.ty)?;
+     format!("{}({position})",Self::name(c.from,c.from_port))
     }else{input.default.clone()};
     if value.is_empty(){return Err(format!("Missing callable input {}:{}",m.id,input.id))}
     vars.insert(input.id.clone(),value);
    }
    for parameter in &m.parameters{vars.insert(parameter.id.clone(),format!("u_n{}_{}",id,parameter.id));}
-   if m.id=="screenshaver.fields.morphing" {return Ok(format!("mix(maker_morph_field({position},u_n{id}_scale,u_n{id}_strength,u_n{id}_speed),maker_original_distance({position},u_n{id}_scale,u_n{id}_strength,u_n{id}_speed),step(0.5,u_n{id}_mode))"))}
-   substitute(&m.glsl_outputs[port],&vars)
+   if m.id=="screenshaver.fields.morphing" {
+    Ok(format!("mix(maker_morph_field({position},u_n{id}_scale,u_n{id}_strength,u_n{id}_speed),maker_original_distance({position},u_n{id}_scale,u_n{id}_strength,u_n{id}_speed),step(0.5,u_n{id}_mode))"))
+   }else{substitute(&m.glsl_outputs[port],&vars)}
   })();
-  active.remove(&id);result
+  self.active.remove(&(id,port));
+  let expression=result?;
+  let name=Self::name(id,port);
+  self.signatures.push(format!("{ty} {name}(vec3 maker_position);\n"));
+  self.definitions.push(format!("{ty} {name}(vec3 maker_position){{vec2 maker_uv=maker_position.xy;return {expression};}}\n"));
+  self.generated.insert((id,port));
+  Ok(())
  }
- let n=graph.node(id).ok_or("Callable source missing")?;
- let ty=&n.definition().outputs.get(port).ok_or("Callable output missing")?.ty;
- if ty!=expected{return Err(format!("Callable source requires {expected}, got {ty}"))}
- expand(graph,id,port,position,&mut HashSet::new())
+ fn source(&self)->String{
+  let mut result=String::new();
+  for signature in &self.signatures{result.push_str(signature)}
+  for definition in &self.definitions{result.push_str(definition)}
+  result
+ }
 }

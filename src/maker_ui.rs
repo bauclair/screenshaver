@@ -136,6 +136,55 @@ fn parameter_permutation_count(graph:&Graph)->String {
     }
     decimal_string(&total)
 }
+// CPU-only eligibility check. This deliberately does not generate GLSL or touch OpenGL.
+// Required inputs must be connected on every node that contributes to Output Color;
+// disconnected modules do not affect the rendered shader.
+
+// CPU-only estimate of expanded evaluation work. Saturating arithmetic prevents
+// large fan-out graphs from overflowing the score. This is a qualification
+// heuristic, not a claim about actual GPU instructions or compilation time.
+pub(crate) fn graph_compile_cost(graph:&Graph)->u64 {
+    use std::collections::{HashMap,HashSet};
+    fn cost(graph:&Graph,id:NodeId,cache:&mut HashMap<NodeId,u64>,visiting:&mut HashSet<NodeId>)->u64 {
+        if let Some(&v)=cache.get(&id){return v}
+        if !visiting.insert(id){return u64::MAX/4} // defensive cycle guard
+        let Some(node)=graph.node(id) else {return u64::MAX/4};
+        let input=|port:usize,cache:&mut HashMap<NodeId,u64>,visiting:&mut HashSet<NodeId>| -> u64 {
+            graph.input_connection(id,port).map(|c|cost(graph,c.from,cache,visiting)).unwrap_or(0)
+        };
+        let kind=node.module_id.as_str();
+        let mut inputs=Vec::new();
+        for port in 0..node.definition().inputs.len(){inputs.push(input(port,cache,visiting));}
+        let total=inputs.iter().fold(0u64,|s,&v|s.saturating_add(v));
+        // Ray marchers repeatedly sample their first input, including normal,
+        // AO and curvature estimates. Optical marchers also resample background.
+        // Conservative weighted factors approximate optimizer expansion pressure.
+        let value=match kind {
+            "screenshaver.fields.sdf_raymarch"=>
+                300u64.saturating_add(inputs.first().copied().unwrap_or(0).saturating_mul(128*8))
+                    .saturating_add(inputs.get(1).copied().unwrap_or(0)),
+            "screenshaver.lighting.refractive_surface"=>
+                250u64.saturating_add(inputs.first().copied().unwrap_or(0).saturating_mul(96*5))
+                    .saturating_add(inputs.get(1).copied().unwrap_or(0).saturating_mul(3)),
+            "screenshaver.fields.traversal"=>
+                60u64.saturating_add(inputs.first().copied().unwrap_or(0).saturating_mul(20))
+                    .saturating_add(total.saturating_sub(inputs.first().copied().unwrap_or(0))),
+            "screenshaver.geometry.domain_fold_3d"=>20u64.saturating_add(total.saturating_mul(8)),
+            _=>8u64.saturating_add(total),
+        };
+        visiting.remove(&id);cache.insert(id,value);value
+    }
+    let Some(out)=graph.nodes.iter().find(|n|n.definition().terminal) else{return u64::MAX};
+    cost(graph,out.id,&mut HashMap::new(),&mut HashSet::new())
+}
+// Initially calibrated as a conservative circuit-protection threshold.
+// This may exclude valid complex shaders; rejected graphs are not invalid.
+pub(crate) const MAX_COMPILE_COST:u64=100_000;
+
+fn graph_preflight(graph:&Graph, _output:NodeId)->Result<(),String> {
+    graph.validate_renderable()
+}
+
 // A bounded, incremental enumeration of distinct Output Color-reachable graphs.
 // Unlike the former independent-input product, it never counts orphan wiring.
 // If the budget is exhausted the observed count is a LOWER bound, not an estimate.
@@ -174,7 +223,7 @@ impl ReachableCount {
             key.sort_unstable();
             if !self.seen.insert(key){continue}
             if current.input_connection(self.output,0).is_some()
-                && current.validate().is_ok() {
+                && graph_preflight(&current,self.output).is_ok() {
                 self.valid+=1;
             }
             let mut reachable=std::collections::HashSet::from([self.output]);
@@ -273,116 +322,274 @@ fn candidate_graphs(graph:&Graph)->Vec<(String,Graph)> {
     }
     result
 }
-/// Incremental, deterministic breadth-first connection discovery.
-/// The work queue is advanced in small batches so egui can repaint and Cancel works.
-const CONNECTION_EXPLORATIONS: usize = 100_000;
-const CANDIDATES_EVALUATED: usize = 5_000;
-const CANDIDATES_RETAINED: usize = 500;
-// Three deterministic depth bands prevent shallow graphs monopolizing discovery.
+/// Six separately timed stages. CPU stages never call GLSL or OpenGL.
+const CONNECTION_EXPLORATIONS:usize=100_000;
+const CANDIDATES_EVALUATED:usize=1_000;
+const CANDIDATES_RETAINED:usize=500;
+const MAX_RAW_GRAPHS:usize=12_000;
+const CPU_STAGE_BATCH:usize=256;
+
+#[derive(Clone,Copy,PartialEq,Eq)]
+enum DiscoveryStage {Feasibility,Enumerate,Validate,Deduplicate,Qualify,Ready}
+impl DiscoveryStage {
+    fn name(self)->&'static str {match self {Self::Feasibility=>"0 Connection feasibility",Self::Enumerate=>"1 Enumeration",Self::Validate=>"2 Structural validation",Self::Deduplicate=>"3 Deduplication",Self::Qualify=>"4 Static qualification",Self::Ready=>"CPU stages complete"}}
+}
+fn discovery_cpu_seconds()->f64 {
+    #[cfg(unix)] unsafe {
+        let mut usage:libc::rusage=std::mem::zeroed();
+        if libc::getrusage(libc::RUSAGE_SELF,&mut usage)==0 {
+            return usage.ru_utime.tv_sec as f64+usage.ru_utime.tv_usec as f64/1e6
+                +usage.ru_stime.tv_sec as f64+usage.ru_stime.tv_usec as f64/1e6;
+        }
+    }
+    0.0
+}
+fn discovery_rss_kib()->usize {
+    #[cfg(target_os="linux")]
+    if let Ok(status)=std::fs::read_to_string("/proc/self/status") {
+        if let Some(line)=status.lines().find(|line|line.starts_with("VmRSS:")) {
+            return line.split_whitespace().nth(1).and_then(|v|v.parse().ok()).unwrap_or(0);
+        }
+    }
+    0
+}
+fn discovery_threads()->usize {
+    let available=std::thread::available_parallelism().map(|n|n.get()).unwrap_or(1);
+    std::env::var("SCREENSHAVER_MAKER_CPU_WORKERS").ok()
+        .and_then(|v|v.parse::<usize>().ok()).unwrap_or((available/2).max(1)).clamp(1,available)
+}
+fn parallel_map<T:Sync,R:Send,F:Fn(&T)->R+Sync>(items:&[T],workers:usize,f:F)->Vec<R>{
+    if items.is_empty(){return Vec::new()}
+    let count=workers.min(items.len());
+    if count==1{return items.iter().map(f).collect()}
+    let chunk=items.len().div_ceil(count);
+    std::thread::scope(|scope|{
+        let f=&f;
+        let handles:Vec<_>=items.chunks(chunk).map(|part|scope.spawn(move ||part.iter().map(f).collect::<Vec<R>>())).collect();
+        let mut output=Vec::with_capacity(items.len());
+        for handle in handles {output.extend(handle.join().expect("Maker CPU qualification worker panicked"));}
+        output
+    })
+}
+fn connection_key(graph:&Graph)->Vec<(NodeId,usize,NodeId,usize)> {
+    let mut key:Vec<_>=graph.connections.iter().map(|c|(c.from,c.from_port,c.to,c.to_port)).collect();
+    key.sort_unstable();key
+}
+fn structural_score(graph:&Graph)->i64 {
+    let reachable=graph.output_reachable_ids();
+    let module_kinds:std::collections::HashSet<_>=graph.nodes.iter().filter(|n|reachable.contains(&n.id))
+        .map(|n|n.module_id.as_str()).collect();
+    (module_kinds.len() as i64)*100+(graph.connections.len() as i64)*7
+}
+/// Stage 0: immutable port-compatibility index for this exact node inventory.
+/// Potential reachability is intentionally optimistic: dynamic cycles are checked
+/// during enumeration, and no partially wired graph is rejected as incomplete.
+struct ConnectionFeasibility {
+    sources:std::collections::BTreeMap<(NodeId,usize),Vec<(NodeId,usize)>>,
+    raw_pairs:usize,
+    typed_pairs:usize,
+    feasible_pairs:usize,
+    reachable_nodes:usize,
+    excluded_nodes:usize,
+}
+impl ConnectionFeasibility {
+    fn build(graph:&Graph,output:NodeId)->Self {
+        let mut index=Self{sources:Default::default(),raw_pairs:0,typed_pairs:0,
+            feasible_pairs:0,reachable_nodes:0,excluded_nodes:0};
+        let mut typed=std::collections::BTreeMap::<(NodeId,usize),Vec<(NodeId,usize)>>::new();
+        for target in &graph.nodes {
+            for (tp,input) in target.definition().inputs.iter().enumerate(){
+                let mut sources=Vec::new();
+                for source in &graph.nodes {
+                    if source.definition().terminal || source.id==target.id {continue}
+                    for (sp,out) in source.definition().outputs.iter().enumerate(){
+                        index.raw_pairs+=1;
+                        if out.ty==input.ty {sources.push((source.id,sp));index.typed_pairs+=1;}
+                    }
+                }
+                typed.insert((target.id,tp),sources);
+            }
+        }
+        // A fixed-point over possible predecessors, not currently connected edges.
+        // Only modules potentially feeding the terminal can contribute to a result.
+        let mut reachable=std::collections::HashSet::from([output]);
+        loop {
+            let mut changed=false;
+            for (&(to,_),sources) in &typed {
+                if !reachable.contains(&to){continue}
+                for &(from,_) in sources {changed|=reachable.insert(from);}
+            }
+            if !changed{break}
+        }
+        index.reachable_nodes=reachable.len();
+        index.excluded_nodes=graph.nodes.len().saturating_sub(reachable.len());
+        for (target,sources) in typed {
+            if !reachable.contains(&target.0){continue}
+            let sources:Vec<_>=sources.into_iter().filter(|(from,_)|reachable.contains(from)).collect();
+            index.feasible_pairs+=sources.len();
+            index.sources.insert(target,sources);
+        }
+        index
+    }
+}
 struct ConnectionSearch {
-    queues: [std::collections::VecDeque<Graph>;3],
-    seen: std::collections::HashSet<Vec<(NodeId,usize,NodeId,usize)>>,
-    output: NodeId,
-    examined: usize,
-    generated: usize,
-    incomplete: usize,
-    turn: usize,
+    feasibility:Option<ConnectionFeasibility>,
+    base:Option<Graph>,
+    queues:[std::collections::VecDeque<Graph>;3],
+    seen:std::collections::HashSet<Vec<(NodeId,usize,NodeId,usize)>>,
+    raw:Vec<Graph>,
+    qualified:Vec<Graph>,
+    scores:Vec<(i64,usize)>,
+    selected_jobs:Vec<CandidateJob>,
+    gpu_started:bool,
+    output:NodeId,
+    examined:usize,
+    generated:usize,
+    incomplete:usize,
+    duplicates:usize,
+    turn:usize,
+    stage:DiscoveryStage,
+    cursor:usize,
+    workers:usize,
+    started:Instant,
+    cpu_started:f64,
+    reports:Vec<String>,
+    peak_rss_kib:usize,
+    deferred_complexity:usize,
 }
 impl ConnectionSearch {
     fn new(graph:&Graph)->Option<Self>{
         let output=graph.nodes.iter().find(|n|n.definition().terminal)?.id;
-        let mut base=graph.clone();base.connections.clear();
-        base.revision=graph.revision.wrapping_add(1);
-        let mut queues=std::array::from_fn(|_|std::collections::VecDeque::new());
-        queues[0].push_back(base);
-        Some(Self{queues,seen:Default::default(),output,examined:0,generated:0,incomplete:0,turn:0})
+        let mut base=graph.clone();base.connections.clear();base.revision=graph.revision.wrapping_add(1);
+        let queues=std::array::from_fn(|_|std::collections::VecDeque::new());
+        Some(Self{feasibility:None,base:Some(base),queues,seen:Default::default(),raw:Vec::new(),qualified:Vec::new(),scores:Vec::new(),selected_jobs:Vec::new(),gpu_started:false,output,
+            examined:0,generated:0,incomplete:0,duplicates:0,turn:0,stage:DiscoveryStage::Feasibility,
+            cursor:0,workers:discovery_threads(),started:Instant::now(),cpu_started:discovery_cpu_seconds(),
+            reports:Vec::new(),peak_rss_kib:discovery_rss_kib(),deferred_complexity:0})
     }
     fn queued(&self)->usize{self.queues.iter().map(|q|q.len()).sum()}
-    fn finished(&self)->bool{self.examined>=CONNECTION_EXPLORATIONS || self.queued()==0 || self.generated>=CANDIDATES_EVALUATED}
-    fn advance(&mut self,source_revision:u64,jobs:&mut Vec<CandidateJob>){
-        let discovery_started=Instant::now();
-        // Let the GL consumer drain its queue before producing more snapshots.
-        if jobs.len()>=MAX_PENDING_RENDER_JOBS {return;}
-        let deadline=std::time::Instant::now()+std::time::Duration::from_millis(8);
-        let mut batch=0;
-        // Weighted rotation: 20% shallow, 35% intermediate, 45% deep.
-        const SCHEDULE:[usize;20]=[0,1,2,2,1,2,0,1,2,2,1,2,0,1,2,2,1,2,0,1];
-        while !self.finished() && jobs.len()<MAX_PENDING_RENDER_JOBS && batch<128 && std::time::Instant::now()<deadline {
-            batch+=1;
-            let mut current=None;
-            for _ in 0..SCHEDULE.len(){
-                let bucket=SCHEDULE[self.turn%SCHEDULE.len()];self.turn+=1;
-                if let Some(graph)=self.queues[bucket].pop_front(){current=Some(graph);break}
+    fn finished(&self)->bool{self.stage==DiscoveryStage::Ready}
+    fn transition(&mut self,next:DiscoveryStage,input:usize,output:usize){
+        self.peak_rss_kib=self.peak_rss_kib.max(discovery_rss_kib());
+        let wall=self.started.elapsed().as_secs_f64();
+        let cpu=(discovery_cpu_seconds()-self.cpu_started).max(0.0);
+        let line=format!("{}: input={} output={} wall={:.3}s cpu={:.3}s peak_observed_rss={} KiB workers={}",
+            self.stage.name(),input,output,wall,cpu,self.peak_rss_kib,self.workers);
+        eprintln!("[MAKER DISCOVERY STAGE] {line}");self.reports.push(line);
+        self.stage=next;self.cursor=0;self.started=Instant::now();
+        self.cpu_started=discovery_cpu_seconds();self.peak_rss_kib=discovery_rss_kib();
+    }
+    fn advance(&mut self,source_revision:u64,_jobs:&mut Vec<CandidateJob>){
+        match self.stage {
+            DiscoveryStage::Feasibility=>{
+                let Some(base)=self.base.take() else {return};
+                let index=ConnectionFeasibility::build(&base,self.output);
+                eprintln!("[MAKER FEASIBILITY] raw_pairs={} type_compatible={} feasible={} reachable_nodes={} excluded_nodes={}",
+                    index.raw_pairs,index.typed_pairs,index.feasible_pairs,index.reachable_nodes,index.excluded_nodes);
+                let input=index.raw_pairs;let output=index.feasible_pairs;
+                self.feasibility=Some(index);
+                self.queues[0].push_back(base);
+                self.transition(DiscoveryStage::Enumerate,input,output);
             }
-            let Some(current)=current else {break};
-            self.examined+=1;
-            let mut key:Vec<_>=current.connections.iter().map(|c|(c.from,c.from_port,c.to,c.to_port)).collect();
-            key.sort_unstable();
-            if !self.seen.insert(key){continue}
-            if current.input_connection(self.output,0).is_some() && current.validate().is_ok(){
-                // GLSL generation is deferred until a graph is actually evaluated.
-                // A structurally valid graph can still fail GLSL generation; that
-                // failure is counted by the candidate renderer, not hidden here.
-                self.generated+=1;
-                jobs.insert(0,CandidateJob{graph:current.clone(),name:format!("Connections: {} wires",current.connections.len()),source_revision,connection_candidate:true});
-            }
-            let mut reachable=std::collections::HashSet::from([self.output]);
-            let mut frontier=vec![self.output];
-            while let Some(id)=frontier.pop(){
-                for c in current.connections.iter().filter(|c|c.to==id){
-                    if reachable.insert(c.from){frontier.push(c.from)}
-                }
-            }
-            let mut targets=Vec::new();
-            for node in &current.nodes {
-                if !reachable.contains(&node.id){continue}
-                for port in 0..node.definition().inputs.len(){
-                    if current.input_connection(node.id,port).is_none(){targets.push((node.id,port))}
-                }
-            }
-            let required=|id:NodeId,port:usize| -> bool {
-                let Some(node)=current.node(id) else {return false};
-                let def=node.definition();
-                let Some(input)=def.inputs.get(port) else {return false};
-                input.default.is_empty() ||
-                    ((node.module_id=="screenshaver.fields.sdf_raymarch" ||
-                      node.module_id=="screenshaver.geometry.rotation_3d" ||
-                      node.module_id=="screenshaver.geometry.domain_fold_3d" ||
-                      node.module_id=="screenshaver.geometry.domain_repeat_3d") && port==0) ||
-                    (node.module_id=="screenshaver.lighting.refractive_surface" && port<=1)
-            };
-            targets.sort_by_key(|&(id,port)|(
-                if id==self.output {0} else if required(id,port){1}else{2},
-                std::cmp::Reverse(id),port));
-            let has_required=targets.iter().any(|&(id,port)|required(id,port));
-            if has_required && current.input_connection(self.output,0).is_some(){
-                targets.retain(|&(id,port)|required(id,port));
-            } else if targets.len()>3 {
-                // Rotate optional input windows instead of always taking the first three.
-                let offset=self.examined%targets.len();targets.rotate_left(offset);
-            }
-            for (to,to_port) in targets.into_iter().take(if has_required {1}else{3}){
-                for source in &current.nodes {
-                    if source.definition().terminal{continue}
-                    for from_port in 0..source.definition().outputs.len(){
-                        if current.check_connection(source.id,from_port,to,to_port).is_err(){continue}
-                        if self.queued()>=MAX_GRAPH_FRONTIER {break;}
-                        let mut proposed=current.clone();
-                        if proposed.connect(source.id,from_port,to,to_port).is_ok() {
-                            let depth=proposed.connections.len();
-                            let bucket=if depth<=3 {0}else if depth<=7 {1}else{2};
-                            self.queues[bucket].push_back(proposed);
+            DiscoveryStage::Enumerate=>{
+                let deadline=Instant::now()+std::time::Duration::from_millis(8);
+                let mut batch=0;
+                const SCHEDULE:[usize;20]=[0,1,2,2,1,2,0,1,2,2,1,2,0,1,2,2,1,2,0,1];
+                while self.examined<CONNECTION_EXPLORATIONS && self.queued()>0
+                    && batch<128 && Instant::now()<deadline {
+                    batch+=1;
+                    let mut current=None;
+                    for _ in 0..SCHEDULE.len(){let bucket=SCHEDULE[self.turn%SCHEDULE.len()];self.turn+=1;
+                        if let Some(g)=self.queues[bucket].pop_front(){current=Some(g);break}}
+                    let Some(current)=current else {break};self.examined+=1;
+                    if !self.seen.insert(connection_key(&current)){self.duplicates+=1;continue}
+                    // Deliberately defer ALL structural validation to stage 2.
+                    if current.input_connection(self.output,0).is_some() && self.raw.len()<MAX_RAW_GRAPHS {self.raw.push(current.clone());}
+                    let mut reachable=std::collections::HashSet::from([self.output]);let mut frontier=vec![self.output];
+                    while let Some(id)=frontier.pop(){for c in current.connections.iter().filter(|c|c.to==id){
+                        if reachable.insert(c.from){frontier.push(c.from)}}}
+                    let mut targets=Vec::new();
+                    for node in &current.nodes {if !reachable.contains(&node.id){continue}
+                        for port in 0..node.definition().inputs.len(){
+                            if current.input_connection(node.id,port).is_none(){targets.push((node.id,port));}}}
+                    let required=|id:NodeId,port:usize|current.input_required(id,port);
+                    targets.sort_by_key(|&(id,port)|(if id==self.output{0}else if required(id,port){1}else{2},std::cmp::Reverse(id),port));
+                    let has_required=targets.iter().any(|&(id,port)|required(id,port));
+                    if has_required && current.input_connection(self.output,0).is_some(){targets.retain(|&(id,port)|required(id,port));}
+                    else if targets.len()>3 {let offset=self.examined%targets.len();targets.rotate_left(offset);}
+                    for (to,to_port) in targets.into_iter().take(if has_required{1}else{3}){
+                        if let Some(sources)=self.feasibility.as_ref().and_then(|f|f.sources.get(&(to,to_port))){
+                            for &(from,from_port) in sources {
+                                if self.queued()>=MAX_GRAPH_FRONTIER{break}
+                                // Stage 0 handles static compatibility; this still checks
+                                // graph-dependent cycles before inserting the edge.
+                                if current.check_connection(from,from_port,to,to_port).is_err(){continue}
+                                let mut proposed=current.clone();
+                                if proposed.connect(from,from_port,to,to_port).is_ok(){
+                                    let depth=proposed.connections.len();let bucket=if depth<=3{0}else if depth<=7{1}else{2};
+                                    self.queues[bucket].push_back(proposed);
+                                }
+                            }
                         }
                     }
                 }
+                if self.examined>=CONNECTION_EXPLORATIONS || self.queued()==0 {
+                    let input=self.examined;let output=self.raw.len();
+                    self.queues.iter_mut().for_each(|q|q.clear());self.seen.clear();
+                    self.transition(DiscoveryStage::Validate,input,output);
+                }
             }
-        }
-        if discovery_started.elapsed().as_millis()>=100 {
-            eprintln!("[MAKER TIMING] discovery elapsed_ms={:.1} explored={} queued={} jobs={} generated={}",
-                discovery_started.elapsed().as_secs_f64()*1000.0,self.examined,self.queued(),jobs.len(),self.generated);
+            DiscoveryStage::Validate=>{
+                let end=(self.cursor+CPU_STAGE_BATCH).min(self.raw.len());
+                let checks=parallel_map(&self.raw[self.cursor..end],self.workers,|g|graph_preflight(g,self.output).is_ok());
+                // Compact in place only at the end of the stage; preserve deterministic order.
+                for (i,valid) in checks.into_iter().enumerate(){if !valid{self.incomplete+=1;}else{self.qualified.push(self.raw[self.cursor+i].clone());}}
+                self.cursor=end;
+                if end==self.raw.len(){let input=self.raw.len();let output=self.qualified.len();
+                    self.raw.clear();self.transition(DiscoveryStage::Deduplicate,input,output);}
+            }
+            DiscoveryStage::Deduplicate=>{
+                let end=(self.cursor+CPU_STAGE_BATCH).min(self.qualified.len());
+                let keys=parallel_map(&self.qualified[self.cursor..end],self.workers,connection_key);
+                for (i,key) in keys.into_iter().enumerate(){
+                    if self.seen.insert(key){self.raw.push(self.qualified[self.cursor+i].clone());}
+                    else{self.duplicates+=1;}
+                }
+                self.cursor=end;
+                if end==self.qualified.len(){let input=self.qualified.len();let output=self.raw.len();
+                    self.qualified.clear();self.seen.clear();self.transition(DiscoveryStage::Qualify,input,output);}
+            }
+            DiscoveryStage::Qualify=>{
+                let end=(self.cursor+CPU_STAGE_BATCH).min(self.raw.len());
+                let scores=parallel_map(&self.raw[self.cursor..end],self.workers,|graph| {
+                    (structural_score(graph),graph_compile_cost(graph))
+                });
+                for (i,(score,cost)) in scores.into_iter().enumerate(){
+                    if cost<=MAX_COMPILE_COST {self.scores.push((score,self.cursor+i));}
+                    else {self.deferred_complexity+=1;}
+                }
+                self.cursor=end;
+                if end==self.raw.len(){
+                    eprintln!("[MAKER DISCOVERY COMPLEXITY] qualified={} deferred={} max_cost={}",
+                        self.scores.len(),self.deferred_complexity,MAX_COMPILE_COST);
+                    self.scores.sort_by(|a,b|b.0.cmp(&a.0).then_with(||a.1.cmp(&b.1)));
+                    let selected=self.scores.len().min(CANDIDATES_EVALUATED);
+                    // Reverse push order because next_candidate_job() pops from the end.
+                    for &(_,index) in self.scores.iter().take(selected).rev(){
+                        let graph=self.raw[index].clone();
+                        self.selected_jobs.push(CandidateJob{graph:graph.clone(),name:format!("Connections: {} wires",graph.connections.len()),
+                            source_revision,connection_candidate:true});
+                    }
+                    self.generated=selected;
+                    let input=self.raw.len();self.raw.clear();self.qualified.clear();self.scores.clear();
+                    self.transition(DiscoveryStage::Ready,input,selected);
+                }
+            }
+            DiscoveryStage::Ready=>{}
         }
     }
 }
+
 
 fn apply_connection_candidate(graph:&mut Graph,candidate:&Candidate,base:&Graph)->Result<(),String>{
     if graph.nodes.len()!=base.nodes.len() {return Err("Modules changed; rediscover connections".into())}
@@ -703,7 +910,11 @@ impl MakerUi {
                 search.advance(base.revision,&mut self.candidate_jobs);
             }else{self.connection_search=None;}
         }
-        if self.connection_search.as_ref().is_some_and(ConnectionSearch::finished){self.connection_search=None;}
+        if self.connection_search.as_ref().is_some_and(|s|s.finished() && s.gpu_started) && self.candidate_jobs.is_empty(){
+            if let Some(search)=self.connection_search.take(){
+                self.candidate_notice=format!("CPU stages complete. {} graphs selected for GPU qualification. {}",search.generated,search.reports.join(" | "));
+            }
+        }
         let scale=scale.max(0.1);
         self.pixels_per_point=scale;
         let mut input=egui::RawInput::default();
@@ -938,7 +1149,7 @@ impl MakerUi {
                         *connection_search=None;*candidate_evaluated=0;*candidate_rejections=0;*candidate_uniform=0;*candidate_glsl_errors=0;*candidate_render_errors=0;
                         if *candidate_mode==2 {
                             *connection_search=ConnectionSearch::new(graph);
-                            *candidate_notice="Exploring connection graphs...".into();
+                            *candidate_notice="Enumerating raw connection graphs (CPU only)...".into();
                         }else{
                             let generated=candidate_graphs(graph);
                             let count=generated.len();
@@ -959,7 +1170,19 @@ impl MakerUi {
                         let fraction=search.examined as f32/CONNECTION_EXPLORATIONS as f32;
                         ui.add(egui::ProgressBar::new(fraction.clamp(0.0,1.0)).show_percentage()
                             .text(format!("Exploration: {} / {} states",search.examined,CONNECTION_EXPLORATIONS)));
-                        ui.small(format!("{} structurally valid graphs queued · {} incomplete graphs skipped (up to {} evaluations)",search.generated,search.incomplete,CANDIDATES_EVALUATED));
+                        ui.small(format!("Stage: {} · raw={} · validated={} · rejected={} · duplicates={} · CPU workers={}",
+                            search.stage.name(),search.raw.len(),search.qualified.len(),search.incomplete,search.duplicates,search.workers));
+                        for report in &search.reports {ui.small(report);}
+                    }
+                    if let Some(search)=connection_search.as_mut(){
+                        if search.finished() && !search.gpu_started {
+                            ui.small(format!("CPU discovery complete: {} selected graphs (raw storage ceiling: {}). No GLSL generated.",search.generated,MAX_RAW_GRAPHS));
+                            if ui.button("Start GPU candidate evaluation").clicked(){
+                                *candidate_jobs=std::mem::take(&mut search.selected_jobs);
+                                search.gpu_started=true;
+                                *candidate_notice=format!("GPU evaluation queued for {} selected graphs",candidate_jobs.len());
+                            }
+                        }
                     }
                     if *candidate_evaluated>0 || !candidate_jobs.is_empty(){
                         let total=(*candidate_evaluated+candidate_jobs.len()).max(1);

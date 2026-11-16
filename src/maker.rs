@@ -17,8 +17,58 @@ enum WorkerReply {
     Motion { epoch:u64, index:usize, result:Result<f32,String> },
     Analysis { epoch:u64, index:usize, result:CandidateAnalysis },
     Failed(String),
+    Interrupted { request:WorkerRequest, error:String },
 }
 enum WorkerError { Glsl(String), Render(String) }
+
+// Linux worker containment: hard virtual-address-space cap and parent-death
+// SIGKILL.  These syscalls are deliberately local to Maker's child process.
+#[cfg(target_os="linux")]
+mod worker_limits {
+    use std::os::raw::{c_int,c_ulong};
+    const PR_SET_PDEATHSIG:c_int=1;
+    const SIGKILL:c_int=9;
+    const RLIMIT_AS:c_int=9;
+    #[repr(C)] struct RLimit {cur:u64,max:u64}
+    unsafe extern "C" {
+        fn prctl(option:c_int, ...) -> c_int;
+        fn getppid()->c_int;
+        fn setrlimit(resource:c_int,rlim:*const RLimit)->c_int;
+        fn kill(pid:c_int,sig:c_int)->c_int;
+    }
+    pub fn child_setup()->Result<(),String>{
+        let parent=unsafe{getppid()};
+        if parent<=1{return Err("Maker parent already exited".into())}
+        if unsafe{prctl(PR_SET_PDEATHSIG,SIGKILL as c_ulong,0usize,0usize,0usize)}!=0 {
+            return Err(format!("PR_SET_PDEATHSIG: {}",std::io::Error::last_os_error()))
+        }
+        if unsafe{getppid()}!=parent{return Err("Maker parent exited during worker startup".into())}
+        // 4 GiB address-space limit.  If the driver needs more, the worker
+        // fails independently rather than exhausting the entire machine.
+        let limit=RLimit{cur:4*1024*1024*1024,max:4*1024*1024*1024};
+        if unsafe{setrlimit(RLIMIT_AS,&limit)}!=0 {
+            return Err(format!("RLIMIT_AS: {}",std::io::Error::last_os_error()))
+        }
+        Ok(())
+    }
+    pub fn terminate(pid:u32){if pid>1{unsafe{kill(pid as c_int,SIGKILL);}}}
+}
+#[cfg(not(target_os="linux"))]
+mod worker_limits {
+    pub fn child_setup()->Result<(),String>{Err("Candidate worker containment requires Linux".into())}
+    pub fn terminate(_pid:u32){}
+}
+
+// A worker PID is published only while its Child handle remains owned by the
+// IPC thread.  The UI's Drop guard kills it even when GPU compilation blocks.
+struct WorkerProcessGuard(std::sync::Arc<std::sync::atomic::AtomicU32>);
+impl Drop for WorkerProcessGuard {
+    fn drop(&mut self){
+        use std::sync::atomic::Ordering;
+        let pid=self.0.swap(0,Ordering::SeqCst);
+        worker_limits::terminate(pid);
+    }
+}
 
 // A dedicated OS process owns SDL2 and OpenGL. The bridge thread handles only
 // pipes; it never initializes SDL2 or touches GL objects.
@@ -74,7 +124,57 @@ fn read_wire_line(reader:&mut impl std::io::BufRead)->Result<serde_json::Value,S
     if n>2_000_000{return Err("Candidate worker response exceeded limit".into())}
     serde_json::from_str(&line).map_err(|e|format!("Invalid candidate worker response: {e}"))
 }
-fn spawn_candidate_worker() -> (SyncSender<WorkerRequest>,Receiver<WorkerReply>) {
+// Persist the exact shader and graph BEFORE entering the native OpenGL compiler.
+// A worker killed by the watchdog or SIGSEGV cannot write a postmortem report.
+fn preserve_candidate_source(graph:&Graph, source:&str)->Result<(),String>{
+    use std::io::Write;
+    let fingerprint=source.bytes().fold(14695981039346656037u64,
+        |h,b|(h^b as u64).wrapping_mul(1099511628211));
+    let home=std::env::var_os("HOME").ok_or("HOME not set")?;
+    let dir=std::path::PathBuf::from(home).join(".config/screenshaver/maker/diagnostics/candidates");
+    std::fs::create_dir_all(&dir).map_err(|e|e.to_string())?;
+    let stem=format!("candidate_{fingerprint:016x}");
+    let source_path=dir.join(format!("{stem}.glsl"));
+    let graph_path=dir.join(format!("{stem}.json"));
+    // Write once per fingerprint, without replacing earlier diagnostic evidence.
+    if !source_path.exists(){
+        let mut f=std::fs::OpenOptions::new().write(true).create_new(true)
+            .open(&source_path).map_err(|e|e.to_string())?;
+        f.write_all(source.as_bytes()).map_err(|e|e.to_string())?;
+    }
+    if !graph_path.exists(){
+        let data=serde_json::to_vec_pretty(&graph_to_wire(graph)).map_err(|e|e.to_string())?;
+        let mut f=std::fs::OpenOptions::new().write(true).create_new(true)
+            .open(&graph_path).map_err(|e|e.to_string())?;
+        f.write_all(&data).map_err(|e|e.to_string())?;
+    }
+    eprintln!("[MAKER GLSL SNAPSHOT] fingerprint={fingerprint:016x} bytes={} source={} graph={}",
+        source.len(),source_path.display(),graph_path.display());
+    Ok(())
+}
+
+// Conservative structural complexity guard. Byte size is not a proxy for
+// compiler work; repeated field sampling and callable fan-out also matter.
+fn candidate_complexity_gate(source:&str)->Result<(),String>{
+    let callables=source.matches("(vec3 maker_position){").count();
+    let loop_sites=source.matches("for(int ").count();
+    let sdf_marchers=source.matches("for(int i=0;i<128;i++)").count();
+    let optical_marchers=source.matches("for(int k=0;k<96;k++)").count();
+    eprintln!("[MAKER GLSL PREFLIGHT] bytes={} callable_definitions={} loop_sites={} sdf_marchers={} optical_marchers={}",
+        source.len(),callables,loop_sites,sdf_marchers,optical_marchers);
+    if source.len()>64*1024 {return Err(format!("GLSL source budget exceeded: {} bytes",source.len()))}
+    // Conservative hard ceilings; these are safety budgets, not visual-quality filters.
+    if callables>96 || loop_sites>24 || sdf_marchers+optical_marchers>4 {
+        return Err(format!("GLSL structural safety budget exceeded: {callables} callables, {loop_sites} loops, {} marchers",sdf_marchers+optical_marchers));
+    }
+    Ok(())
+}
+
+fn spawn_candidate_worker() -> (SyncSender<WorkerRequest>,Receiver<WorkerReply>,WorkerProcessGuard) {
+    use std::sync::atomic::{AtomicU32,Ordering};
+    let active_pid=std::sync::Arc::new(AtomicU32::new(0));
+    let guard=WorkerProcessGuard(active_pid.clone());
+    let thread_pid=active_pid.clone();
     let (requests_tx,requests_rx)=mpsc::sync_channel::<WorkerRequest>(1);
     let (replies_tx,replies_rx)=mpsc::sync_channel::<WorkerReply>(1);
     std::thread::Builder::new().name("maker-candidate-ipc".into()).spawn(move || {
@@ -85,19 +185,58 @@ fn spawn_candidate_worker() -> (SyncSender<WorkerRequest>,Receiver<WorkerReply>)
             let mut child=Command::new(exe).arg("--maker-candidate-worker")
                 .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::inherit())
                 .spawn().map_err(|e|format!("Unable to start candidate worker process: {e}"))?;
-            eprintln!("[MAKER WORKER] spawned child pid={}",child.id());
-            let mut input=child.stdin.take().ok_or("Missing worker stdin")?;
-            let mut output=BufReader::new(child.stdout.take().ok_or("Missing worker stdout")?);
+            struct ReapChild(std::process::Child);
+            impl Drop for ReapChild {fn drop(&mut self){let _=self.0.kill();let _=self.0.wait();}}
+            let mut child=ReapChild(child);
+            thread_pid.store(child.0.id(),Ordering::SeqCst);
+            eprintln!("[MAKER WORKER] spawned child pid={} (4 GiB address-space limit; 15s watchdog)",child.0.id());
+            // A detached watchdog never calls GL or blocks the UI.  It kills
+            // this exact worker if startup or a request exceeds its deadline.
+            let pending=std::sync::Arc::new(std::sync::Mutex::new(Some(Instant::now())));
+            let watch_pending=pending.clone();
+            let watch_pid=thread_pid.clone();
+            std::thread::Builder::new().name("maker-worker-watchdog".into()).spawn(move || {
+                loop {
+                    std::thread::sleep(Duration::from_millis(200));
+                    if watch_pid.load(Ordering::SeqCst)==0 {break}
+                    let overdue=watch_pending.lock().map(|p|p.map(|t|t.elapsed()>Duration::from_secs(15)).unwrap_or(false)).unwrap_or(true);
+                    if overdue {
+                        eprintln!("[MAKER WORKER] 15s deadline exceeded; killing worker pid={}",watch_pid.load(Ordering::SeqCst));
+                        worker_limits::terminate(watch_pid.load(Ordering::SeqCst));
+                        break;
+                    }
+                }
+            }).map_err(|e|e.to_string())?;
+            let mut input=child.0.stdin.take().ok_or("Missing worker stdin")?;
+            let mut output=BufReader::new(child.0.stdout.take().ok_or("Missing worker stdout")?);
             // Child confirms SDL2/GL readiness before any candidate is sent.
             let ready=read_wire_line(&mut output)?;
             if ready["status"]!="ready" {return Err(format!("Worker startup failed: {}",ready))}
+            *pending.lock().map_err(|e|e.to_string())?=None;
             while let Ok(request)=requests_rx.recv() {
                 let encoded=wire_request(&request).to_string();
                 if encoded.len()>2_000_000{return Err("Candidate request exceeded limit".into())}
-                input.write_all(encoded.as_bytes()).map_err(|e|e.to_string())?;
-                input.write_all(b"\n").map_err(|e|e.to_string())?;
-                input.flush().map_err(|e|e.to_string())?;
-                let response=read_wire_line(&mut output)?;
+                *pending.lock().map_err(|e|e.to_string())?=Some(Instant::now());
+                let response=(||->Result<serde_json::Value,String>{
+                    input.write_all(encoded.as_bytes()).map_err(|e|e.to_string())?;
+                    input.write_all(b"\n").map_err(|e|e.to_string())?;
+                    input.flush().map_err(|e|e.to_string())?;
+                    read_wire_line(&mut output)
+                })();
+                let response=match response {
+                    Ok(value)=>value,
+                    Err(error)=>{
+                        eprintln!("[MAKER WORKER] interrupted request: {error}");
+                        let exit_detail=match child.0.try_wait() {
+                            Ok(Some(status))=>format!("; child exit status: {status}"),
+                            Ok(None)=>"; child status not yet available".to_owned(),
+                            Err(e)=>format!("; child wait error: {e}"),
+                        };
+                        let _=replies_tx.send(WorkerReply::Interrupted{request,error:format!("{error}{exit_detail}")});
+                        return Ok(());
+                    }
+                };
+                *pending.lock().map_err(|e|e.to_string())?=None;
                 let reply=match request {
                     WorkerRequest::Candidate{epoch,job}=>{
                         let result=if let Some(error)=response["glsl_error"].as_str(){Err(WorkerError::Glsl(error.into()))}
@@ -119,21 +258,24 @@ fn spawn_candidate_worker() -> (SyncSender<WorkerRequest>,Receiver<WorkerReply>)
                 if replies_tx.send(reply).is_err(){break}
             }
             drop(input); // EOF requests worker shutdown.
-            let _=child.kill(); // Never wait on a blocked GL driver call.
-            let _=child.wait();
+            let _=child.0.kill(); // Force termination before reaping.
+            let _=child.0.wait();
+            thread_pid.store(0,Ordering::SeqCst);
             Ok(())
         })();
+        thread_pid.store(0,Ordering::SeqCst);
         if let Err(error)=result {
             eprintln!("[MAKER WORKER] process failed: {error}");
             let _=replies_tx.try_send(WorkerReply::Failed(error));
         }
     }).expect("Failed to start Maker IPC thread");
-    (requests_tx,replies_rx)
+    (requests_tx,replies_rx,guard)
 }
 
 // Called only in a separate process, before normal argument parsing.
 pub fn run_candidate_worker()->Result<(),String>{
     use std::io::{BufRead,BufReader,Write};
+    worker_limits::child_setup()?;
     let sdl=sdl2::init()?;
     let video=sdl.video()?;
     {let a=video.gl_attr();a.set_context_profile(GLProfile::Core);a.set_context_version(3,3);}
@@ -153,13 +295,24 @@ pub fn run_candidate_worker()->Result<(),String>{
         let result=(||->Result<serde_json::Value,String>{
             let graph=graph_from_wire(&request["graph"])?;
             match request["kind"].as_str().ok_or("Missing request kind")? {
-                "candidate"=>match crate::maker_compiler::fragment_source(&graph){
+                "candidate"=>{let cost=crate::maker_ui::graph_compile_cost(&graph);
+                if cost>crate::maker_ui::MAX_COMPILE_COST {
+                    eprintln!("[MAKER GRAPH COMPLEXITY] deferred cost={cost} max={}",crate::maker_ui::MAX_COMPILE_COST);
+                    Ok(serde_json::json!({"glsl_error":format!("Graph complexity deferred: estimated cost {cost}")}))
+                } else {match crate::maker_compiler::fragment_source(&graph){
                     Err(e)=>Ok(serde_json::json!({"glsl_error":e})),
-                    Ok(source)=>match preview.candidate_thumbnail_with_source(&graph,&source)? {
+                    Ok(source)=>{
+                        // Snapshot is mandatory: never submit unreproducible GLSL to GL.
+                        preserve_candidate_source(&graph,&source)?;
+                        match candidate_complexity_gate(&source){
+                            Err(error)=>Ok(serde_json::json!({"glsl_error":error})),
+                            Ok(())=>match preview.candidate_thumbnail_with_source(&graph,&source)? {
                         Some(pixels)=>Ok(serde_json::json!({"pixels":pixels})),
                         None=>Ok(serde_json::json!({"uniform":true}))
+                            }
+                        }
                     }
-                },
+                }}},
                 "motion"=>Ok(serde_json::json!({"score":preview.motion_activity(&graph)?})),
                 "analysis"=>{let report=preview.analyze_candidate(&graph,
                     request["name"].as_str().unwrap_or("Candidate").to_owned(),
@@ -191,9 +344,16 @@ pub fn run()->Result<(),String>{
     // automatically forwarded to the native system clipboard.
     let clipboard=video.clipboard();
     let mut preview=crate::maker_preview::Preview::new()?;
-    let (worker_tx,worker_rx)=spawn_candidate_worker();
+    let (mut worker_tx,mut worker_rx,mut worker_process_guard)=spawn_candidate_worker();
     let mut worker_busy=false;
     let mut worker_failed=false;
+    let mut retry_request:Option<WorkerRequest>=None;
+    let mut consecutive_interruptions:u32=0;
+    let mut gpu_circuit_open=false;
+    const MAX_CONSECUTIVE_INTERRUPTS:u32=3;
+    let mut restarts:u32=0;
+    const MAX_WORKER_RESTARTS:u32=8;
+    let mut next_restart=Instant::now();
     let mut events=sdl.event_pump()?;let start=Instant::now();
     let mut diagnostic_frame: u64=0;
     eprintln!("[MAKER TIMING] enabled; slow stage threshold 100 ms; GL compile/readback start/end markers");
@@ -218,6 +378,9 @@ pub fn run()->Result<(),String>{
             match worker_rx.try_recv() {
                 Ok(reply)=>{
                     worker_busy=false;
+                    if !matches!(&reply,WorkerReply::Failed(_)|WorkerReply::Interrupted{..}) {
+                        consecutive_interruptions=0;
+                    }
                     match reply {
                         WorkerReply::Candidate{epoch,job,result}=>{
                             if epoch==ui.candidate_epoch() {
@@ -241,6 +404,24 @@ pub fn run()->Result<(),String>{
                         WorkerReply::Analysis{epoch,index,result}=>{
                             if epoch==ui.candidate_epoch(){ui.receive_analysis(index,result)}
                         }
+                        WorkerReply::Interrupted{request,error}=>{
+                            eprintln!("[MAKER WORKER] request interrupted; quarantining request: {error}");
+                            consecutive_interruptions+=1;
+                            {
+                                eprintln!("[MAKER WORKER] abandoning interrupted request without replay");
+                                match request {
+                                    WorkerRequest::Candidate{epoch,..} if epoch==ui.candidate_epoch()=>ui.candidate_rejected_render(),
+                                    WorkerRequest::Motion{epoch,index,..} if epoch==ui.candidate_epoch()=>ui.receive_motion_score(index,Err("Worker resource limit or timeout exceeded".into())),
+                                    WorkerRequest::Analysis{epoch,index,name,..} if epoch==ui.candidate_epoch()=>ui.receive_analysis(index,CandidateAnalysis{name,lines:vec!["Worker resource limit or timeout exceeded".into()]}),
+                                    _=>{}
+                                }
+                            }
+                            worker_failed=true;
+                            if consecutive_interruptions>=MAX_CONSECUTIVE_INTERRUPTS {
+                                gpu_circuit_open=true;
+                                eprintln!("[MAKER WORKER] GPU CIRCUIT OPEN after {consecutive_interruptions} consecutive interruptions; pending candidates retained; restart Maker to reset");
+                            }
+                        }
                         WorkerReply::Failed(error)=>{
                             eprintln!("[MAKER WORKER] unavailable: {error}");
                             worker_failed=true;
@@ -254,9 +435,25 @@ pub fn run()->Result<(),String>{
                 }
             }
         }
-        if !worker_busy && !worker_failed {
+        if worker_failed && !gpu_circuit_open && Instant::now()>=next_restart && restarts<MAX_WORKER_RESTARTS {
+            drop(worker_tx);
+            drop(worker_process_guard);
+            let (tx,rx,guard)=spawn_candidate_worker();
+            worker_tx=tx; worker_rx=rx; worker_process_guard=guard;
+            worker_failed=false;
+            worker_busy=false;
+            restarts+=1;
+            next_restart=Instant::now()+Duration::from_secs(2);
+            eprintln!("[MAKER WORKER] restarting worker ({restarts}/{MAX_WORKER_RESTARTS})");
+        }
+        if !worker_busy && !worker_failed && !gpu_circuit_open {
             let epoch=ui.candidate_epoch();
-            let request=if let Some((index,graph,name))=ui.next_analysis_job(){
+            if retry_request.as_ref().is_some_and(|r|match r {
+                WorkerRequest::Candidate{epoch:e,..}|WorkerRequest::Motion{epoch:e,..}|
+                WorkerRequest::Analysis{epoch:e,..}=>*e!=epoch
+            }) { retry_request=None; }
+            let request=if let Some(retry)=retry_request.take(){Some(retry)}
+            else if let Some((index,graph,name))=ui.next_analysis_job(){
                 Some(WorkerRequest::Analysis{epoch,index,graph,name,
                     size:(ui.preview_rect().width().max(1.0) as i32,
                           ui.preview_rect().height().max(1.0) as i32),
@@ -274,7 +471,10 @@ pub fn run()->Result<(),String>{
                         eprintln!("[MAKER WORKER] request channel unexpectedly full");
                         worker_busy=true;
                     }
-                    Err(mpsc::TrySendError::Disconnected(_))=>worker_failed=true,
+                    Err(mpsc::TrySendError::Disconnected(request))=>{
+                        retry_request=Some(request);
+                        worker_failed=true;
+                    },
                 }
             }
         }
@@ -313,6 +513,7 @@ pub fn run()->Result<(),String>{
     // Do not join a worker blocked inside a GPU driver call: the process must
     // remain able to exit. Dropping the sender requests shutdown when idle.
     drop(worker_tx);
+    drop(worker_process_guard);
     ui.destroy();preview.destroy();Ok(())
 }
 

@@ -62,6 +62,40 @@ impl Graph {
    }
    removed
   }
+  /// Only nodes contributing to the output participate in shader compilation.
+  pub fn output_reachable_ids(&self)->HashSet<NodeId>{
+   let mut ids=HashSet::new();
+   let mut pending:Vec<NodeId>=self.nodes.iter().filter(|n|n.definition().terminal).map(|n|n.id).collect();
+   while let Some(id)=pending.pop(){
+    if ids.insert(id){for c in self.connections.iter().filter(|c|c.to==id){pending.push(c.from);}}
+   }
+   ids
+  }
+  /// A single rule used by discovery and the compiler for mandatory connections.
+  pub fn input_required(&self,id:NodeId,port:usize)->bool{
+   let Some(node)=self.node(id) else{return false};
+   let Some(input)=node.definition().inputs.get(port) else{return false};
+   input.default.trim().is_empty() ||
+    ((matches!(node.module_id.as_str(),
+       "screenshaver.fields.sdf_raymarch" | "screenshaver.geometry.rotation_3d" |
+       "screenshaver.geometry.domain_fold_3d" | "screenshaver.geometry.domain_repeat_3d") && port==0) ||
+     (node.module_id=="screenshaver.lighting.refractive_surface" && port<=1))
+  }
+  /// Validate required inputs only for nodes contributing to Output Color.
+  pub fn validate_renderable(&self)->Result<(),String>{
+   self.validate()?;
+   let reachable=self.output_reachable_ids();
+   let output=self.nodes.iter().find(|n|n.definition().terminal).ok_or("Missing output")?;
+   if self.input_connection(output.id,0).is_none(){return Err("Output Color is not connected".into())}
+   for node in self.nodes.iter().filter(|n|reachable.contains(&n.id)){
+    for (port,input) in node.definition().inputs.iter().enumerate(){
+     if self.input_required(node.id,port) && self.input_connection(node.id,port).is_none(){
+      return Err(format!("{} requires connected input {}",node.definition().name,input.name));
+     }
+    }
+   }
+   Ok(())
+  }
  pub fn node(&self,id:NodeId)->Option<&Node>{self.nodes.iter().find(|n|n.id==id)}
  pub fn node_mut(&mut self,id:NodeId)->Option<&mut Node>{self.nodes.iter_mut().find(|n|n.id==id)}
  pub fn remove(&mut self,id:NodeId)->Result<(),String>{
