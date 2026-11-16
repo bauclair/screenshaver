@@ -72,7 +72,7 @@ impl Drop for WorkerProcessGuard {
 
 // A dedicated OS process owns SDL2 and OpenGL. The bridge thread handles only
 // pipes; it never initializes SDL2 or touches GL objects.
-fn graph_to_wire(graph:&Graph)->serde_json::Value {
+pub(crate) fn graph_to_wire(graph:&Graph)->serde_json::Value {
     serde_json::json!({"nodes":graph.nodes.iter().map(|n|serde_json::json!({
         "id":n.id,"module_id":n.module_id,"pos":n.pos,"expanded":n.expanded,
         "parameters":n.parameters})).collect::<Vec<_>>(),
@@ -80,7 +80,7 @@ fn graph_to_wire(graph:&Graph)->serde_json::Value {
         "from":c.from,"from_port":c.from_port,"to":c.to,"to_port":c.to_port
         })).collect::<Vec<_>>(),"revision":graph.revision})
 }
-fn graph_from_wire(v:&serde_json::Value)->Result<Graph,String>{
+pub(crate) fn graph_from_wire(v:&serde_json::Value)->Result<Graph,String>{
     use std::collections::HashMap;
     let nodes=v["nodes"].as_array().ok_or("Missing nodes")?;
     let mut graph=Graph::blank();
@@ -331,6 +331,10 @@ pub fn run_candidate_worker()->Result<(),String>{
 }
 
 pub fn run()->Result<(),String>{
+    if std::env::var_os("SCREENSHAVER_MAKER_DISCOVERY_TEST").is_some(){
+        crate::maker_library::initialize()?;
+        return crate::maker_ui::run_discovery_test();
+    }
     let sdl=sdl2::init()?;let video=sdl.video()?;
     {let a=video.gl_attr();a.set_context_profile(GLProfile::Core);a.set_context_version(3,3);a.set_double_buffer(true);}
     let window=video.window("Screenshaver Maker — graph prototype",1440,850).position_centered().resizable().opengl().build().map_err(|e|e.to_string())?;

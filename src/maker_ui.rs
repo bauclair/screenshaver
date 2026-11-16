@@ -1964,3 +1964,7 @@ fn module_library_tooltip(ui:&mut egui::Ui,module:&Module){
         ui.colored_label(egui::Color32::YELLOW,"This is a third-party module, not provided by Screenshaver.");
     }else{ui.small("Official Screenshaver Library");}
 }
+
+#[path = "maker_discovery_test.rs"]
+mod maker_discovery_test;
+pub fn run_discovery_test()->Result<(),String>{maker_discovery_test::run()}
