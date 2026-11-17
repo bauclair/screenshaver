@@ -6,9 +6,9 @@
   "name": "SDF Octahedron",
   "category": "Geometry",
   "header_color": "#557C9C",
-  "description": "Exact octahedron distance from Blue.",
+  "description": "Approximate signed distance to an axis-aligned regular octahedron.",
   "uses": "Reusable signed-distance geometry and procedural field composition.",
-  "notes": "Position is evaluated at the active ray-march sample. No texture dependency.",
+  "notes": "Uses the elementary L1 implicit surface |x|+|y|+|z|=size and its normalized plane distance, rather than the source-matched exact piecewise SDF. Conservative raymarch stepping may be needed near vertices.",
   "inputs": [
     {
       "id": "position",
@@ -34,6 +34,6 @@
       "max": 8.0
     }
   ],
-  "helpers": "float maker_blue_octahedron(vec3 p,float s){p=abs(p);float m=p.x+p.y+p.z-s;vec3 q;if(3.0*p.x<m)q=p.xyz;else if(3.0*p.y<m)q=p.yzx;else if(3.0*p.z<m)q=p.zxy;else return m*0.57735027;float k=clamp(0.5*(q.z-q.y+s),0.0,s);return length(vec3(q.x,q.y-s+k,q.z-k));}",
-  "glsl": "maker_blue_octahedron({position},{size})"
+  "helpers": "float maker_octahedron_plane_distance(vec3 p,float size){\n  vec3 a=abs(p);\n  return (a.x+a.y+a.z-max(size,0.0001))*0.5773502691896258;\n}",
+  "glsl": "maker_octahedron_plane_distance({position},{size})"
 }

@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.color.procedural_sine_rgb",
+  "name": "Procedural Sine RGB",
+  "category": "Color",
+  "created_by": "Screenshaver",
+  "header_color": "#B46A35",
+  "description": "Generates three phase-shifted sinusoidal color channels from a 2D position.",
+  "uses": "Psychedelic color patterns and coordinate-driven palettes.",
+  "notes": "Independent phase-wheel design. Channel values are in [0,1] before brightness scaling; differs from the original 70s Melt blue channel.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "color",
+      "name": "Color",
+      "type": "vec3"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "frequency",
+      "name": "Frequency",
+      "type": "float",
+      "default": 3,
+      "min": 0.05,
+      "max": 20
+    },
+    {
+      "id": "brightness",
+      "name": "Brightness",
+      "type": "float",
+      "default": 0.975,
+      "min": 0,
+      "max": 3
+    },
+    {
+      "id": "phase",
+      "name": "Phase",
+      "type": "float",
+      "default": 0,
+      "min": -6.283,
+      "max": 6.283
+    }
+  ],
+  "helpers": "vec3 maker_sine_color_wheel(vec2 q,float f,float gain,float phase){float a=f*(q.x+0.35*q.y)+phase;float b=f*(q.y-0.25*q.x)+phase;return gain*(vec3(1.0)+sin(vec3(a,b,0.5*(a+b))+vec3(0.0,2.0943951,4.1887902)))*0.5;}",
+  "glsl": "maker_sine_color_wheel({position},{frequency},{brightness},{phase})",
+  "terminal": false
+}

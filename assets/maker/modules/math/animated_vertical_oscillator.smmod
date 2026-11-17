@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "created_by": "Screenshaver",
+  "terminal": false,
+  "id": "screenshaver.math.animated_vertical_oscillator",
+  "name": "Animated Vertical Oscillator",
+  "category": "Math",
+  "header_color": "#587F9B",
+  "description": "Smooth periodic vertical displacement with configurable period, phase, and amplitude.",
+  "uses": "Bobbing objects, camera motion, and field animation.",
+  "notes": "General sinusoidal motion, independently implemented. Output is an offset; add it to a base height.",
+  "inputs": [
+    {
+      "id": "time",
+      "name": "Time",
+      "type": "float",
+      "default": "u_time"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "offset",
+      "name": "Offset",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "amplitude",
+      "name": "Amplitude",
+      "type": "float",
+      "default": 1.0,
+      "min": 0.0,
+      "max": 30.0
+    },
+    {
+      "id": "period",
+      "name": "Period",
+      "type": "float",
+      "default": 3.0,
+      "min": 0.05,
+      "max": 60.0
+    },
+    {
+      "id": "phase",
+      "name": "Phase",
+      "type": "float",
+      "default": 0.0,
+      "min": -6.2831853,
+      "max": 6.2831853
+    }
+  ],
+  "helpers": "",
+  "glsl": "({amplitude}*sin(6.28318530718*({time})/max({period},0.0001)+{phase}))"
+}

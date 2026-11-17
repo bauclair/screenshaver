@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "created_by": "Screenshaver",
+  "terminal": false,
+  "id": "screenshaver.geometry.3d_cellular_tile_field",
+  "name": "3D Cellular Tile Field",
+  "category": "Geometry",
+  "header_color": "#557C9C",
+  "description": "Four sequentially rotated repeated 3D tile metrics with second-order boundary extraction.",
+  "uses": "Abstract faceted surfaces and cellular masks.",
+  "notes": "Derived from Abstract Plane.glsl. No external texture dependency.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "default": "vec3(maker_uv,0.0)"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "field",
+      "name": "Field",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "tile_scale",
+      "name": "Tile Scale",
+      "type": "float",
+      "default": 5.5,
+      "min": 0.1,
+      "max": 30
+    },
+    {
+      "id": "gain",
+      "name": "Boundary Gain",
+      "type": "float",
+      "default": 2.66,
+      "min": 0,
+      "max": 8
+    }
+  ],
+  "helpers": "float maker_ap_metric(vec3 p){return dot(abs(fract(p)-0.5),vec3(0.5));}float maker_ap_cell(vec3 p,float tileScale,float gain){p/=max(tileScale,0.0001);float a=maker_ap_metric(p-vec3(.81,.62,.53));p.xy=vec2(p.y-p.x,p.y+p.x)*.7071;float b=maker_ap_metric(p-vec3(.39,.2,.11));p.yz=vec2(p.z-p.y,p.z+p.y)*.7071;float c=maker_ap_metric(p-vec3(.62,.24,.06));p.xz=vec2(p.z-p.x,p.z+p.x)*.7071;float d=maker_ap_metric(p-vec3(.2,.82,.64));vec4 v=vec4(min(a,c),min(b,d),min(max(a,b),max(c,d)),max(min(a,c),min(b,d)));return (min(v.z,v.w)-min(v.x,v.y))*gain;}",
+  "glsl": "maker_ap_cell({position},{tile_scale},{gain})"
+}

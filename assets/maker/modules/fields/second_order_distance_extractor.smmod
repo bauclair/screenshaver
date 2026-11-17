@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "created_by": "Screenshaver",
+  "terminal": false,
+  "id": "screenshaver.fields.second_order_distance_extractor",
+  "name": "Second-Order Distance Extractor",
+  "category": "Fields",
+  "header_color": "#6C7D9B",
+  "description": "Second-nearest minus nearest of four scalar distances, preserving the Abstract Plane distance ordering.",
+  "uses": "Cell boundaries and beveled cellular patterns.",
+  "notes": "Derived from Abstract Plane.glsl. No external texture dependency.",
+  "inputs": [
+    {
+      "id": "a",
+      "name": "Distance A",
+      "type": "float",
+      "default": "0.0"
+    },
+    {
+      "id": "b",
+      "name": "Distance B",
+      "type": "float",
+      "default": "0.0"
+    },
+    {
+      "id": "c",
+      "name": "Distance C",
+      "type": "float",
+      "default": "0.0"
+    },
+    {
+      "id": "d",
+      "name": "Distance D",
+      "type": "float",
+      "default": "0.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "field",
+      "name": "Field",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "gain",
+      "name": "Gain",
+      "type": "float",
+      "default": 2.66,
+      "min": 0,
+      "max": 8
+    }
+  ],
+  "helpers": "",
+  "glsl": "max(0.0,(min(min(max({a},{b}),max({c},{d})),max(min({a},{c}),min({b},{d})))-min(min({a},{b}),min({c},{d})))*{gain})"
+}

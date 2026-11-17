@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.color.rgb_to_alpha",
+  "name": "RGB-to-Alpha",
+  "category": "Color",
+  "created_by": "Screenshaver",
+  "header_color": "#B46A35",
+  "description": "Computes a scalar alpha/extrusion value from the sum of RGB channels.",
+  "uses": "Brightness-driven opacity and scalar extrusion masks.",
+  "notes": "Outputs a float, not framebuffer alpha. Current Output Color forces alpha=1.0; no output-stage changes included.",
+  "inputs": [
+    {
+      "id": "color",
+      "name": "Color",
+      "type": "vec3",
+      "default": "vec3(0.0)"
+    },
+    {
+      "id": "mask",
+      "name": "Mask",
+      "type": "float",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "alpha",
+      "name": "Alpha",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "divisor",
+      "name": "Channel Divisor",
+      "type": "float",
+      "default": 4,
+      "min": 1,
+      "max": 12
+    },
+    {
+      "id": "strength",
+      "name": "Extrusion Strength",
+      "type": "float",
+      "default": 1.5,
+      "min": 0,
+      "max": 5
+    },
+    {
+      "id": "clamp_alpha",
+      "name": "Clamp Alpha (0/1)",
+      "type": "float",
+      "default": 0,
+      "min": 0,
+      "max": 1
+    }
+  ],
+  "helpers": "float maker_70s_alpha(vec3 c,float mask,float divisor,float strength,float clamp_alpha){float a=(c.r+c.g+c.b)/max(divisor,0.001)*strength*mask;return clamp_alpha>=0.5?clamp(a,0.0,1.0):a;}",
+  "glsl": "maker_70s_alpha({color},{mask},{divisor},{strength},{clamp_alpha})",
+  "terminal": false
+}

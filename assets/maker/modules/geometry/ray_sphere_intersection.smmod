@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "created_by": "Screenshaver",
+  "terminal": false,
+  "id": "screenshaver.geometry.ray_sphere_intersection",
+  "name": "Ray\u2013Sphere Intersection",
+  "category": "Geometry",
+  "header_color": "#557C9C",
+  "description": "Analytic nearest forward intersection with an arbitrary sphere.",
+  "uses": "Ray-based procedural scenes and geometry queries.",
+  "notes": "Independently implemented using the quadratic formula. A miss returns distance -1 and zero normal. Ray direction need not be normalized; hit distance is the ray parameter.",
+  "inputs": [
+    {
+      "id": "origin",
+      "name": "Origin",
+      "type": "vec3",
+      "default": "vec3(0.0,0.0,-4.0)"
+    },
+    {
+      "id": "direction",
+      "name": "Direction",
+      "type": "vec3",
+      "default": "normalize(vec3(maker_uv,1.5))"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec3",
+      "default": "vec3(0.0)"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "distance",
+      "name": "Distance",
+      "type": "float"
+    },
+    {
+      "id": "normal",
+      "name": "Normal",
+      "type": "vec3"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "radius",
+      "name": "Radius",
+      "type": "float",
+      "default": 1.0,
+      "min": 0.01,
+      "max": 30.0
+    }
+  ],
+  "helpers": "vec4 maker_ray_sphere_hit(vec3 origin,vec3 direction,vec3 center,float radius){vec3 v=origin-center;float aa=dot(direction,direction);if(aa<1e-12)return vec4(0.0,0.0,0.0,-1.0);float bb=dot(v,direction);float cc=dot(v,v)-radius*radius;float disc=bb*bb-aa*cc;if(disc<0.0)return vec4(0.0,0.0,0.0,-1.0);float root=sqrt(max(disc,0.0));float t=(-bb-root)/aa;if(t<=0.00001)t=(-bb+root)/aa;if(t<=0.00001)return vec4(0.0,0.0,0.0,-1.0);vec3 n=normalize(origin+t*direction-center);return vec4(n,t);}",
+  "glsl": "maker_ray_sphere_hit({origin},{direction},{center},{radius}).w",
+  "glsl_outputs": {
+    "distance": "maker_ray_sphere_hit({origin},{direction},{center},{radius}).w",
+    "normal": "maker_ray_sphere_hit({origin},{direction},{center},{radius}).xyz"
+  }
+}

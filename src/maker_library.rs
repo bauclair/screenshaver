@@ -2,12 +2,12 @@
 use crate::maker_module::{Module,Trust};
 use std::{collections::BTreeMap,fs,path::Path,sync::OnceLock};
 static LIBRARY:OnceLock<Library>=OnceLock::new();
-pub struct Library { pub modules:BTreeMap<String,Module>, pub categories:BTreeMap<String,String>, pub errors:Vec<String> }
+pub struct Library { pub modules:BTreeMap<String,Module>, pub categories:BTreeMap<String,String>, pub errors:Vec<String>, pub catalog_fingerprint:u64 }
 pub fn get()->&'static Library{LIBRARY.get().expect("Maker library must initialize before graph creation")}
 pub fn initialize()->Result<(),String>{LIBRARY.set(Library::load()).map_err(|_|"Maker library already initialized".into())}
 impl Library {
  fn load()->Self{
-    let mut result=Self{modules:BTreeMap::new(),categories:BTreeMap::new(),errors:Vec::new()};
+    let mut result=Self{modules:BTreeMap::new(),categories:BTreeMap::new(),errors:Vec::new(),catalog_fingerprint:0xcbf29ce484222325};
     let official=[
       ("coordinates/uv_coordinates.smmod",include_str!("../assets/maker/modules/coordinates/uv_coordinates.smmod")),
       ("noise/value_noise_2d.smmod",include_str!("../assets/maker/modules/noise/value_noise_2d.smmod")),
@@ -45,6 +45,28 @@ impl Library {
       ("geometry/sdf_morph.smmod",include_str!("../assets/maker/modules/geometry/sdf_morph.smmod")),
       ("geometry/domain_repeat_3d.smmod",include_str!("../assets/maker/modules/geometry/domain_repeat_3d.smmod")),
       ("geometry/domain_fold_3d.smmod",include_str!("../assets/maker/modules/geometry/domain_fold_3d.smmod")),
+      ("fields/iterative_plasma_field.smmod",include_str!("../assets/maker/modules/fields/iterative_plasma_field.smmod")),
+      ("coordinates/coordinate_feedback_warp.smmod",include_str!("../assets/maker/modules/coordinates/coordinate_feedback_warp.smmod")),
+      ("color/weighted_rgb_colorizer.smmod",include_str!("../assets/maker/modules/color/weighted_rgb_colorizer.smmod")),
+      ("coordinates/cross_axis_sine_warp.smmod",include_str!("../assets/maker/modules/coordinates/cross_axis_sine_warp.smmod")),
+      ("math/cosine_range_oscillator.smmod",include_str!("../assets/maker/modules/math/cosine_range_oscillator.smmod")),
+      ("color/procedural_sine_rgb.smmod",include_str!("../assets/maker/modules/color/procedural_sine_rgb.smmod")),
+      ("fields/vignette_mask.smmod",include_str!("../assets/maker/modules/fields/vignette_mask.smmod")),
+      ("color/rgb_to_alpha.smmod",include_str!("../assets/maker/modules/color/rgb_to_alpha.smmod")),
+      ("noise/fbm_2d.smmod",include_str!("../assets/maker/modules/noise/fbm_2d.smmod")),
+      ("coordinates/deep_fbm_domain_warp.smmod",include_str!("../assets/maker/modules/coordinates/deep_fbm_domain_warp.smmod")),
+      ("fields/four_wave_plasma_field.smmod",include_str!("../assets/maker/modules/fields/four_wave_plasma_field.smmod")),
+      ("fields/neon_filament_extractor.smmod",include_str!("../assets/maker/modules/fields/neon_filament_extractor.smmod")),
+      ("color/three_color_cycling_palette.smmod",include_str!("../assets/maker/modules/color/three_color_cycling_palette.smmod")),
+      ("fields/second_order_distance_extractor.smmod",include_str!("../assets/maker/modules/fields/second_order_distance_extractor.smmod")),
+      ("geometry/3d_cellular_tile_field.smmod",include_str!("../assets/maker/modules/geometry/3d_cellular_tile_field.smmod")),
+      ("geometry/warped_plane_field.smmod",include_str!("../assets/maker/modules/geometry/warped_plane_field.smmod")),
+      ("lighting/procedural_environment_reflection.smmod",include_str!("../assets/maker/modules/lighting/procedural_environment_reflection.smmod")),
+      ("lighting/distance_fog.smmod",include_str!("../assets/maker/modules/lighting/distance_fog.smmod")),
+      ("geometry/ray_sphere_intersection.smmod",include_str!("../assets/maker/modules/geometry/ray_sphere_intersection.smmod")),
+      ("geometry/ray_plane_intersection.smmod",include_str!("../assets/maker/modules/geometry/ray_plane_intersection.smmod")),
+      ("geometry/procedural_sphere_distribution.smmod",include_str!("../assets/maker/modules/geometry/procedural_sphere_distribution.smmod")),
+      ("math/animated_vertical_oscillator.smmod",include_str!("../assets/maker/modules/math/animated_vertical_oscillator.smmod")),
     ];
     for (path,src) in official {result.register(path,src,Trust::Official)}
     if let Some(home)=std::env::var_os("HOME"){
@@ -61,6 +83,16 @@ impl Library {
             let category=category.split('/').rev().nth(1).unwrap_or("Other");
             let category=if category=="modules" {"Other"} else {category};
             self.categories.insert(module.id.clone(),category.to_owned());
+            // Fingerprint only successfully registered modules. Hash the complete
+            // definition (including ports, defaults, GLSL and helpers), not just IDs.
+            // This stable FNV-1a stream is independent of process-randomized hashers.
+            for byte in (module.id.len() as u64).to_le_bytes().iter().copied()
+                .chain(module.id.bytes())
+                .chain((src.len() as u64).to_le_bytes().iter().copied())
+                .chain(src.bytes()) {
+                self.catalog_fingerprint^=u64::from(byte);
+                self.catalog_fingerprint=self.catalog_fingerprint.wrapping_mul(0x100000001b3);
+            }
             self.modules.insert(module.id.clone(),module);
         }
     },Err(e)=>self.errors.push(format!("{path}: {e}"))}

@@ -1,4 +1,4 @@
-//! CPU-only canonical, resumable depth-first graph discovery experiment.
+//! CPU-only canonical, resumable iterative-deepening graph discovery.
 //! Each rooted graph has one canonical parent: delete the greatest removable edge.
 //! This is deliberately separate from production Maker discovery and GPU work.
 use super::*;
@@ -9,6 +9,12 @@ use std::path::PathBuf;
 type Edge=(NodeId,usize,NodeId,usize);
 fn setting(name:&str,default:usize,min:usize,max:usize)->usize{
     std::env::var(name).ok().and_then(|v|v.parse().ok()).unwrap_or(default).clamp(min,max)
+}
+// UI-selected production limit; the command-line test harness retains its env override.
+static PRODUCTION_WIRE_LIMIT:std::sync::atomic::AtomicUsize=std::sync::atomic::AtomicUsize::new(5);
+fn wire_limit()->usize{PRODUCTION_WIRE_LIMIT.load(std::sync::atomic::Ordering::Relaxed)}
+pub(super) fn set_production_wire_limit(limit:usize){
+    PRODUCTION_WIRE_LIMIT.store(limit.clamp(3,25),std::sync::atomic::Ordering::Relaxed);
 }
 fn seed()->u64{std::env::var("SCREENSHAVER_MAKER_TEST_SEED").ok().and_then(|s|s.parse().ok()).unwrap_or(0xBADC0FFEE)}
 fn mix(mut x:u64)->u64{x^=x>>30;x=x.wrapping_mul(0xbf58476d1ce4e5b9);x^=x>>27;x=x.wrapping_mul(0x94d049bb133111eb);x^(x>>31)}
@@ -166,25 +172,61 @@ fn candidates(g:&Graph,output:NodeId,index:&ConnectionFeasibility,seed:u64)->Vec
     edges.sort_unstable_by_key(|e|(edge_rank(*e,seed),*e));
     edges
 }
-struct Frame {graph:Graph, choices:Vec<Edge>, next:usize}
+// Parent pruning lemma: if an edge can be deleted from a rooted parent,
+// it remains deletable after adding a valid edge only when the new target
+// is STILL reachable after that deletion. A newly attached edge may otherwise
+// reconnect an orphaned leaf, so edge ordering alone is not sufficient. This precheck precedes cloning.
+fn parent_threshold(g:&Graph,output:NodeId)->Option<(Edge,HashSet<NodeId>)>{
+    let edge=reference_parent(g,output)?;
+    let mut reached=HashSet::from([output]);
+    let mut frontier=vec![output];
+    while let Some(to)=frontier.pop(){
+        for c in &g.connections {
+            if (c.from,c.from_port,c.to,c.to_port)!=edge && c.to==to && reached.insert(c.from){
+                frontier.push(c.from);
+            }
+        }
+    }
+    Some((edge,reached))
+}
+struct Frame {graph:Graph, choices:Vec<Edge>, next:usize, threshold:Option<(Edge,HashSet<NodeId>)>}
 struct Explorer {
     base:Graph, output:NodeId, feasibility:ConnectionFeasibility,
-    frames:Vec<Frame>, seed:u64, examined:u64, valid:u64, rejected_parent:u64,
-    reference_checks:u64, reference_mismatches:u64, reference_enabled:bool,
+    frames:Vec<Frame>, depth_limit:usize, max_depth:usize, seed:u64, examined:u64, valid:u64, rejected_parent:u64,
+    reference_checks:u64, reference_mismatches:u64, reference_enabled:bool, prefilter_enabled:bool, prefiltered:u64, traversal_digest:u64,
 }
 impl Explorer {
-    fn new(base:Graph,seed:u64,reference_enabled:bool)->Result<Self,String>{
+    fn new(base:Graph,seed:u64,reference_enabled:bool,prefilter_enabled:bool)->Result<Self,String>{
         let output=base.nodes.iter().find(|n|n.definition().terminal).ok_or("Missing output node")?.id;
         let feasibility=ConnectionFeasibility::build(&base,output);
         let mut root=base.clone();root.connections.clear();
         let choices=candidates(&root,output,&feasibility,seed);
-        Ok(Self{base,output,feasibility,frames:vec![Frame{graph:root,choices,next:0}],seed,examined:0,valid:0,rejected_parent:0,reference_checks:0,reference_mismatches:0,reference_enabled})
+        let cap=wire_limit();
+        let max_depth=if cap==0 {feasibility.sources.len()} else {feasibility.sources.len().min(cap)};
+        Ok(Self{base,output,feasibility,frames:vec![Frame{graph:root,choices,next:0,threshold:None}],depth_limit:1,max_depth,seed,examined:0,valid:0,rejected_parent:0,reference_checks:0,reference_mismatches:0,reference_enabled,prefilter_enabled,prefiltered:0,traversal_digest:0x6a09e667f3bcc909})
     }
     fn step(&mut self)->Result<Option<Vec<Edge>>,String>{
         loop {
+            if self.frames.is_empty() {
+                if self.depth_limit>=self.max_depth {return Ok(None)}
+                self.depth_limit+=1;
+                let mut root=self.base.clone();root.connections.clear();
+                let choices=candidates(&root,self.output,&self.feasibility,self.seed);
+                self.frames.push(Frame{graph:root,choices,next:0,threshold:None});
+                continue;
+            }
             let Some(frame)=self.frames.last_mut() else {return Ok(None)};
+            // Expand only through the current iterative-deepening horizon.
+            // Graph size is never used as an admission or gallery ranking criterion.
+            if frame.graph.connections.len()>=self.depth_limit {self.frames.pop();continue;}
             if frame.next>=frame.choices.len(){self.frames.pop();continue}
             let edge=frame.choices[frame.next];frame.next+=1;
+            let predicted_rejection=self.prefilter_enabled && frame.threshold.as_ref().is_some_and(|(e,reached)|*e>edge && reached.contains(&edge.2));
+            if predicted_rejection && !self.reference_enabled {
+                self.prefiltered+=1;
+                self.rejected_parent+=1;
+                continue;
+            }
             let mut child=frame.graph.clone();
             if child.connect(edge.0,edge.1,edge.2,edge.3).is_err(){continue}
             let optimized=is_canonical_child(&child,edge,self.output);
@@ -193,10 +235,11 @@ impl Explorer {
             if self.reference_enabled {
             let reference=reference_parent(&child,self.output);
             self.reference_checks+=1;
-            if optimized!=(reference==Some(edge)) {
+            if optimized!=(reference==Some(edge)) || (predicted_rejection && reference==Some(edge)) {
                 self.reference_mismatches+=1;
                 let payload=serde_json::json!({
-                    "reason":"canonical parent disagreement",
+                    "reason":"canonical parent disagreement or invalid parent prefilter",
+                    "predicted_rejection":predicted_rejection,
                     "attempt":self.reference_checks,
                     "added_edge":edge,"optimized_accepts":optimized,
                     "reference_parent_edge":reference,
@@ -210,34 +253,55 @@ impl Explorer {
                 return Err(format!("Canonical parent disagreement; diagnostic: {}",path.display()));
             }
             }
+            if predicted_rejection {self.prefiltered+=1;}
             if !optimized {self.rejected_parent+=1;continue}
-            self.examined+=1;
-            if child.input_connection(self.output,0).is_some() && graph_preflight(&child,self.output).is_ok(){self.valid+=1}
+            if child.connections.len()==self.depth_limit {self.examined+=1;}
+            if child.connections.len()==self.depth_limit && child.input_connection(self.output,0).is_some() && graph_preflight(&child,self.output).is_ok(){self.valid+=1}
             let key=graph_edges(&child);
-            let choices=candidates(&child,self.output,&self.feasibility,self.seed);
-            self.frames.push(Frame{graph:child,choices,next:0});
+            if child.connections.len()!=self.depth_limit {
+                let choices=candidates(&child,self.output,&self.feasibility,self.seed);
+                let threshold=if self.prefilter_enabled {parent_threshold(&child,self.output)} else {None};
+                self.frames.push(Frame{graph:child,choices,next:0,threshold});
+                continue;
+            }
+            // Stable, order-sensitive fingerprint of every emitted graph, independent
+            // of session and process boundaries. Not a cryptographic proof.
+            self.traversal_digest=mix(self.traversal_digest ^ (key.len() as u64));
+            for &(from,from_port,to,to_port) in &key {
+                self.traversal_digest=mix(self.traversal_digest ^ mix(from));
+                self.traversal_digest=mix(self.traversal_digest ^ mix(from_port as u64));
+                self.traversal_digest=mix(self.traversal_digest ^ mix(to));
+                self.traversal_digest=mix(self.traversal_digest ^ mix(to_port as u64));
+            }
             return Ok(Some(key))
         }
     }
-    fn checkpoint(&self,scale:usize)->Result<usize,String>{
-        let path=checkpoint_path();let tmp=path.with_extension("tmp");
+    fn checkpoint(&self,scale:usize)->Result<usize,String>{self.checkpoint_at(scale,&checkpoint_path())}
+    fn checkpoint_at(&self,scale:usize,path:&std::path::Path)->Result<usize,String>{
+        let tmp=path.with_extension("tmp");
         let frames:Vec<_>=self.frames.iter().map(|f|serde_json::json!({"edges":graph_edges(&f.graph),"next":f.next})).collect();
-        let bytes=serde_json::to_vec(&serde_json::json!({"version":9,"scale":scale,"seed":self.seed,
+        let bytes=serde_json::to_vec(&serde_json::json!({"version":13,"wire_limit":wire_limit(),"depth_limit":self.depth_limit,"scale":scale,"seed":self.seed,
             "catalog":catalog_fingerprint(&self.base),"examined":self.examined,"valid":self.valid,
-            "rejected_parent":self.rejected_parent,"reference_checks":self.reference_checks,
+            "rejected_parent":self.rejected_parent,"traversal_digest":self.traversal_digest,"prefiltered":self.prefiltered,"prefilter_enabled":self.prefilter_enabled,"reference_checks":self.reference_checks,
             "reference_mismatches":self.reference_mismatches,"frames":frames})).map_err(|e|e.to_string())?;
         std::fs::write(&tmp,&bytes).map_err(|e|e.to_string())?;
         std::fs::rename(&tmp,&path).map_err(|e|e.to_string())?;
         Ok(bytes.len())
     }
-    fn restore(base:Graph,scale:usize,seed:u64,reference_enabled:bool)->Result<Self,String>{
-        let bytes=std::fs::read(checkpoint_path()).map_err(|e|e.to_string())?;
+    fn restore(base:Graph,scale:usize,seed:u64,reference_enabled:bool,prefilter_enabled:bool)->Result<Self,String>{
+        Self::restore_at(base,scale,seed,reference_enabled,prefilter_enabled,&checkpoint_path())
+    }
+    fn restore_at(base:Graph,scale:usize,seed:u64,reference_enabled:bool,prefilter_enabled:bool,path:&std::path::Path)->Result<Self,String>{
+        let bytes=std::fs::read(path).map_err(|e|e.to_string())?;
         let v:serde_json::Value=serde_json::from_slice(&bytes).map_err(|e|e.to_string())?;
-        if v["version"].as_u64()!=Some(9)||v["scale"].as_u64()!=Some(scale as u64)
-            ||v["seed"].as_u64()!=Some(seed)||v["catalog"].as_u64()!=Some(catalog_fingerprint(&base)){
+        if v["version"].as_u64()!=Some(13)||v["wire_limit"].as_u64()!=Some(wire_limit() as u64)||v["scale"].as_u64()!=Some(scale as u64)
+            ||v["seed"].as_u64()!=Some(seed)||v["catalog"].as_u64()!=Some(catalog_fingerprint(&base))
+            ||v["prefilter_enabled"].as_bool()!=Some(prefilter_enabled){
             return Err("Checkpoint version, catalog, scale or seed mismatch".into())
         }
-        let mut result=Self::new(base,seed,reference_enabled)?;
+        let mut result=Self::new(base,seed,reference_enabled,prefilter_enabled)?;
+        result.depth_limit=v["depth_limit"].as_u64().ok_or("Missing depth limit")? as usize;
+        if result.depth_limit==0 || result.depth_limit>result.max_depth {return Err("Checkpoint depth limit out of bounds".into())}
         result.frames.clear();
         for item in v["frames"].as_array().ok_or("Missing frames")? {
             let mut g=result.base.clone();g.connections.clear();
@@ -251,11 +315,14 @@ impl Explorer {
             let choices=candidates(&g,result.output,&result.feasibility,seed);
             let next=item["next"].as_u64().ok_or("Missing cursor")? as usize;
             if next>choices.len(){return Err("Checkpoint cursor out of bounds".into())}
-            result.frames.push(Frame{graph:g,choices,next});
+            let threshold=if prefilter_enabled {parent_threshold(&g,result.output)} else {None};
+            result.frames.push(Frame{graph:g,choices,next,threshold});
         }
         result.examined=v["examined"].as_u64().ok_or("Missing examined")?;
         result.valid=v["valid"].as_u64().ok_or("Missing valid")?;
         result.rejected_parent=v["rejected_parent"].as_u64().ok_or("Missing rejected_parent")?;
+        result.prefiltered=v["prefiltered"].as_u64().ok_or("Missing prefiltered")?;
+        result.traversal_digest=v["traversal_digest"].as_u64().ok_or("Missing traversal_digest")?;
         result.reference_checks=v["reference_checks"].as_u64().ok_or("Missing reference_checks")?;
         result.reference_mismatches=v["reference_mismatches"].as_u64().ok_or("Missing reference_mismatches")?;
         Ok(result)
@@ -264,9 +331,73 @@ impl Explorer {
 fn catalog_fingerprint(g:&Graph)->u64{
     let mut hash=0x6a09e667f3bcc909u64;
     for n in &g.nodes {hash=mix(hash^n.id);for b in n.module_id.bytes(){hash=mix(hash^(b as u64));}}
-    hash
+    // Include full source definitions of all registered official and community
+    // modules, not only the graph's node IDs. A port/GLSL/parameter edit changes
+    // the catalog fingerprint even when its module ID is unchanged.
+    mix(hash ^ maker_library::get().catalog_fingerprint)
 }
-fn checkpoint_path()->PathBuf{std::env::temp_dir().join("screenshaver-maker-discovery-canonical-v9.json")}
+fn checkpoint_path()->PathBuf{std::env::temp_dir().join("screenshaver-maker-discovery-canonical-v13.json")}
+
+// Production adapter: the qualified traversal remains the single implementation.
+// Its checkpoint is intentionally separate from the /tmp test harness.
+pub(super) struct ProductionEnumeration { explorer:Explorer, path:PathBuf }
+impl ProductionEnumeration {
+    fn path()->Result<PathBuf,String>{
+        let home=std::env::var_os("HOME").ok_or("HOME is not set")?;
+        Ok(PathBuf::from(home).join(format!(".config/screenshaver/maker/discovery-canonical-v13-maxwires-{}.json",wire_limit())))
+    }
+    pub(super) fn reset_checkpoint_for_limit(limit:usize)->Result<(),String>{
+        if !(3..=25).contains(&limit) {return Err(format!("Invalid maximum wire count: {limit}"));}
+        let home=std::env::var_os("HOME").ok_or("HOME is not set")?;
+        let path=PathBuf::from(home).join(format!(".config/screenshaver/maker/discovery-canonical-v13-maxwires-{limit}.json"));
+        match std::fs::remove_file(path){Ok(())=>Ok(()),Err(e) if e.kind()==std::io::ErrorKind::NotFound=>Ok(()),Err(e)=>Err(e.to_string())}
+    }
+    pub(super) fn open(base:Graph)->Result<(Self,bool),String>{
+        let path=Self::path()?;
+        let seed=seed();
+        // Inspect only the catalog identity before restoring. Other mismatches,
+        // malformed JSON, unreadable files, and corrupt traversal frames remain
+        // errors rather than being silently interpreted as catalog changes.
+        let mut resumed=false;
+        let mut catalog_changed=false;
+        if path.exists() {
+            let bytes=std::fs::read(&path).map_err(|e|format!("Cannot read enumeration checkpoint: {e}"))?;
+            let checkpoint:serde_json::Value=serde_json::from_slice(&bytes)
+                .map_err(|e|format!("Invalid enumeration checkpoint JSON: {e}"))?;
+            let stored=checkpoint["catalog"].as_u64()
+                .ok_or("Enumeration checkpoint is missing a valid catalog fingerprint")?;
+            if stored!=catalog_fingerprint(&base) {
+                // Only the selected wire-limit checkpoint will be overwritten on
+                // the next save. Other wire-limit checkpoints remain untouched.
+                catalog_changed=true;
+                eprintln!("[MAKER DISCOVERY] module catalog changed; starting fresh enumeration for max_wires={}",wire_limit());
+            } else {
+                resumed=true;
+            }
+        }
+        let explorer=if catalog_changed || !resumed {Explorer::new(base,seed,false,true)?}
+            else {Explorer::restore_at(base,1,seed,false,true,&path)?};
+        Ok((Self{explorer,path},resumed))
+    }
+    pub(super) fn next_graph(&mut self)->Result<Option<Graph>,String>{
+        let Some(edges)=self.explorer.step()? else {return Ok(None)};
+        // Iterative deepening emits horizon leaves without pushing a frame.
+        // Reconstruct the emitted graph, not its parent DFS frame.
+        let mut graph=self.explorer.base.clone();
+        graph.connections.clear();
+        for (from,from_port,to,to_port) in edges {graph.connect(from,from_port,to,to_port)?;}
+        Ok(Some(graph))
+    }
+    pub(super) fn save(&self)->Result<(),String>{
+        if let Some(dir)=self.path.parent(){std::fs::create_dir_all(dir).map_err(|e|e.to_string())?;}
+        self.explorer.checkpoint_at(1,&self.path).map(|_|())
+    }
+    pub(super) fn examined(&self)->u64{self.explorer.examined}
+    pub(super) fn valid(&self)->u64{self.explorer.valid}
+    pub(super) fn rejected(&self)->u64{self.explorer.rejected_parent}
+    pub(super) fn digest(&self)->u64{self.explorer.traversal_digest}
+    pub(super) fn depth_limit(&self)->usize{self.explorer.depth_limit}
+}
 
 // Exhaustive independent queue oracle on a deliberately small inventory.
 // The oracle uses no canonical-parent pruning and deduplicates by sorted edges.
@@ -322,7 +453,7 @@ fn exhaustive_crosscheck(seed:u64)->Result<(),String>{
     let limit=setting("SCREENSHAVER_MAKER_TEST_SMALL_LIMIT",100_000,10,2_000_000);
     let base=small_catalog_graph(modules)?;
     let oracle=exhaustive_oracle(&base,limit)?;
-    let mut explorer=Explorer::new(base,seed,true)?;
+    let mut explorer=Explorer::new(base,seed,true,true)?;
     let mut actual=HashSet::from([Vec::<Edge>::new()]);
     while let Some(key)=explorer.step()? {
         if !actual.insert(key){return Err("Small-catalog canonical traversal repeated a state".into())}
@@ -341,6 +472,7 @@ fn exhaustive_crosscheck(seed:u64)->Result<(),String>{
 }
 
 pub(super) fn run()->Result<(),String>{
+    set_production_wire_limit(setting("SCREENSHAVER_MAKER_MAX_WIRES",5,3,25));
     if std::env::var("SCREENSHAVER_MAKER_TEST_EXHAUSTIVE").ok().as_deref()==Some("1") {return exhaustive_crosscheck(seed())}
     let budget=setting("SCREENSHAVER_MAKER_TEST_BUDGET",25_000,1,1_000_000);
     let runs=setting("SCREENSHAVER_MAKER_TEST_RUNS",5,1,100);
@@ -349,13 +481,24 @@ pub(super) fn run()->Result<(),String>{
     let seed=seed();
     let verify=std::env::var("SCREENSHAVER_MAKER_TEST_VERIFY").ok().as_deref()==Some("1");
     let reference_enabled=std::env::var("SCREENSHAVER_MAKER_TEST_REFERENCE").ok().as_deref()==Some("1");
+    let prefilter_enabled=std::env::var("SCREENSHAVER_MAKER_TEST_PREFILTER").ok().as_deref()!=Some("0");
     let base=catalog_graph(scale)?;
-    let mut explorer=Explorer::new(base.clone(),seed,reference_enabled)?;
+    let resume=std::env::var("SCREENSHAVER_MAKER_TEST_RESUME").ok().as_deref()==Some("1");
+    let mut explorer=if resume {
+        Explorer::restore(base.clone(),scale,seed,reference_enabled,prefilter_enabled)?
+    } else {
+        Explorer::new(base.clone(),seed,reference_enabled,prefilter_enabled)?
+    };
     let mut independent=BTreeMap::<Vec<Edge>,Vec<Edge>>::new();
-    println!("[MAKER CANONICAL TEST] catalog_nonterminal={} instances={} scale={} budget={} runs={} seed={} feasible_pairs={} verify={} reference={}",
-        maker_library::get().modules.values().filter(|m|!m.terminal).count(),base.nodes.len()-1,scale,budget,runs,seed,explorer.feasibility.feasible_pairs,verify,reference_enabled);
+    if resume && verify {
+        println!("[MAKER CANONICAL QUALIFICATION] WARNING: duplicate-history verifier covers only this process; traversal_digest covers the full resumed sequence");
+    }
+    println!("[MAKER CANONICAL LIMIT] max_wires={} (0 means unlimited)",wire_limit());
+    println!("[MAKER CANONICAL TEST] catalog_nonterminal={} instances={} scale={} budget={} runs={} seed={} feasible_pairs={} verify={} reference={} prefilter={}",
+        maker_library::get().modules.values().filter(|m|!m.terminal).count(),base.nodes.len()-1,scale,budget,runs,seed,explorer.feasibility.feasible_pairs,verify,reference_enabled,prefilter_enabled);
+    println!("[MAKER CANONICAL QUALIFICATION] resume={} initial_examined={} initial_digest={:016x} nodes={} reachability_path={}",resume,explorer.examined,explorer.traversal_digest,base.nodes.len(),if base.nodes.len()>64 {"general"} else {"bitset"});
     for session in 1..=runs {
-        if session>1 {explorer=Explorer::restore(base.clone(),scale,seed,reference_enabled)?;}
+        if session>1 {explorer=Explorer::restore(base.clone(),scale,seed,reference_enabled,prefilter_enabled)?;}
         let tick=Instant::now();let mut attempts=0;let mut repeats=0;
         while attempts<budget && tick.elapsed()<Duration::from_secs(limit as u64){
             let Some(key)=explorer.step()? else {break};
@@ -382,8 +525,8 @@ pub(super) fn run()->Result<(),String>{
         }
         let enumeration_s=tick.elapsed().as_secs_f64();
         let save_start=Instant::now();let checkpoint_bytes=explorer.checkpoint(scale)?;
-        println!("[MAKER CANONICAL TEST] session={} attempted={} total_examined={} valid_cumulative={} rejected_parent={} independent_repeats={} reference_checks={} reference_mismatches={} depth={} checkpoint_bytes={} enumeration_s={:.3} checkpoint_save_ms={:.2} rss_kib={}",
-            session,attempts,explorer.examined,explorer.valid,explorer.rejected_parent,repeats,explorer.reference_checks,explorer.reference_mismatches,explorer.frames.len(),checkpoint_bytes,enumeration_s,save_start.elapsed().as_secs_f64()*1000.0,discovery_rss_kib());
+        println!("[MAKER CANONICAL TEST] session={} attempted={} total_examined={} valid_cumulative={} rejected_parent={} prefiltered={} independent_repeats={} reference_checks={} reference_mismatches={} depth={} checkpoint_bytes={} enumeration_s={:.3} checkpoint_save_ms={:.2} rss_kib={} traversal_digest={:016x}",
+            session,attempts,explorer.examined,explorer.valid,explorer.rejected_parent,explorer.prefiltered,repeats,explorer.reference_checks,explorer.reference_mismatches,explorer.frames.len(),checkpoint_bytes,enumeration_s,save_start.elapsed().as_secs_f64()*1000.0,discovery_rss_kib(),explorer.traversal_digest);
         if repeats>0{return Err(format!("Canonical uniqueness failure: {repeats} repeated states"))}
         if attempts==0 {println!("[MAKER CANONICAL TEST] exhausted");break}
     }

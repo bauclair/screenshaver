@@ -1,0 +1,79 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.cross_axis_sine_warp",
+  "name": "Cross-Axis Sine Warp",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "header_color": "#287C9B",
+  "description": "Bounded cross-coupled sine displacement with rotating phase, without the original 70s Melt recurrence.",
+  "uses": "Liquid patterns, coupled sine distortions, animated UV warps.",
+  "notes": "Reimplemented using fixed-amplitude averaged waves and phase rotation. The x/y boost parameters now represent constant translations, not the original oscillating boosts. Bounded to 12 steps for GPU cost.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "iterations",
+      "name": "Iterations",
+      "type": "float",
+      "default": 39,
+      "min": 1,
+      "max": 64
+    },
+    {
+      "id": "strength",
+      "name": "Strength",
+      "type": "float",
+      "default": 0.25,
+      "min": 0,
+      "max": 2
+    },
+    {
+      "id": "scale",
+      "name": "Frequency Scale",
+      "type": "float",
+      "default": 1,
+      "min": 0.05,
+      "max": 5
+    },
+    {
+      "id": "speed",
+      "name": "Time Speed",
+      "type": "float",
+      "default": 1.25,
+      "min": 0,
+      "max": 5
+    },
+    {
+      "id": "x_boost",
+      "name": "X Boost",
+      "type": "float",
+      "default": 5,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "y_boost",
+      "name": "Y Boost",
+      "type": "float",
+      "default": 5,
+      "min": -10,
+      "max": 10
+    }
+  ],
+  "helpers": "vec2 maker_cross_warp_independent(vec2 p,float time,float iterations,float strength,float scale,float speed,float xb,float yb){vec2 q=p;float t=time*speed;int count=clamp(int(iterations+0.5),1,12);for(int j=0;j<12;j++){if(j>=count)break;float k=float(j)+1.0;vec2 v=vec2(sin(scale*q.y*(1.0+0.3*k)+t+0.7*k),cos(scale*q.x*(1.0+0.2*k)-t+0.9*k));q+=strength*v/(k*float(count));}return q+vec2(xb,yb);}",
+  "glsl": "maker_cross_warp_independent({position},u_time,{iterations},{strength},{scale},{speed},{x_boost},{y_boost})",
+  "terminal": false
+}

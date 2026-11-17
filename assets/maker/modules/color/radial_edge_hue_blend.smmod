@@ -1,0 +1,67 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.color.radial_edge_hue_blend",
+  "name": "Radial Edge Hue Blend",
+  "category": "Color",
+  "created_by": "Screenshaver",
+  "header_color": "#A27660",
+  "description": "Blends a base RGB color toward an independently chosen edge RGB color using radial distance.",
+  "uses": "Colored borders, radial chroma gradients, glowing procedural compositions.",
+  "notes": "Uses standard radial smoothstep interpolation. No channel-swapping formula or startup fade from the source shader.",
+  "inputs": [
+    {
+      "id": "color",
+      "name": "Base Color",
+      "type": "vec3",
+      "default": "vec3(0.8,0.4,0.1)"
+    },
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv"
+    },
+    {
+      "id": "edge_color",
+      "name": "Edge Color",
+      "type": "vec3",
+      "default": "vec3(0.05,0.75,0.85)"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "color",
+      "name": "Color",
+      "type": "vec3"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "inner_radius",
+      "name": "Blend Start",
+      "type": "float",
+      "default": 0.3,
+      "min": 0,
+      "max": 3
+    },
+    {
+      "id": "outer_radius",
+      "name": "Blend End",
+      "type": "float",
+      "default": 0.95,
+      "min": 0,
+      "max": 4
+    },
+    {
+      "id": "strength",
+      "name": "Blend Strength",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 1
+    }
+  ],
+  "helpers": "vec3 maker_radial_edge_blend(vec3 base,vec2 p,vec3 edge,float innerRadius,float outerRadius,float strength){float lo=max(innerRadius,0.0);float hi=max(outerRadius,lo+0.0001);float blend=smoothstep(lo,hi,length(p))*clamp(strength,0.0,1.0);return mix(base,edge,blend);}",
+  "glsl": "maker_radial_edge_blend({color},{position},{edge_color},{inner_radius},{outer_radius},{strength})",
+  "terminal": false
+}

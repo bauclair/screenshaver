@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.kaleidoscopic_sector_fold",
+  "name": "Kaleidoscopic Sector Fold",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "header_color": "#287C9B",
+  "description": "Reflects a 2D coordinate into a configurable angular wedge using polar geometry.",
+  "uses": "Kaleidoscopic patterns, radial motifs, symmetric coordinate domains.",
+  "notes": "Original implementation of a general polar mirror-fold technique. No source-specific deformation or startup fade.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "segments",
+      "name": "Sectors",
+      "type": "float",
+      "default": 6,
+      "min": 2,
+      "max": 24
+    },
+    {
+      "id": "angle",
+      "name": "Rotation (radians)",
+      "type": "float",
+      "default": 0,
+      "min": -6.2832,
+      "max": 6.2832
+    },
+    {
+      "id": "radial_scale",
+      "name": "Radial Scale",
+      "type": "float",
+      "default": 1,
+      "min": 0.05,
+      "max": 8
+    }
+  ],
+  "helpers": "vec2 maker_sector_fold(vec2 point,float sectors,float angle,float radialScale){float count=clamp(floor(sectors+0.5),2.0,24.0);float wedge=6.28318530718/count;float theta=atan(point.y,point.x)+angle;float phase=mod(theta,wedge);float folded=min(phase,wedge-phase);float radius=length(point)*max(radialScale,0.001);return radius*vec2(cos(folded),sin(folded));}",
+  "glsl": "maker_sector_fold({position},{segments},{angle},{radial_scale})",
+  "terminal": false
+}

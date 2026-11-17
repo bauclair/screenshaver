@@ -2,7 +2,7 @@
   "schema_version": 1,
   "created_by": "Screenshaver",
   "uses": "Organic textures, masks, and procedural variation.",
-  "notes": "Unconnected UV defaults to centered screen coordinates.",
+  "notes": "Replaces common sine-dot hash constants with unsigned integer mixing. GLSL 330+ required.",
   "inputs": [
     {
       "id": "uv",
@@ -28,12 +28,12 @@
       "max": 20.0
     }
   ],
-  "helpers": "float maker_hash(vec2 p) { return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453123); }\nfloat maker_noise(vec2 p) { vec2 i=floor(p),f=fract(p);f=f*f*(3.0-2.0*f); return mix(mix(maker_hash(i),maker_hash(i+vec2(1,0)),f.x),mix(maker_hash(i+vec2(0,1)),maker_hash(i+vec2(1,1)),f.x),f.y); }",
+  "helpers": "float maker_value_hash(ivec2 p){uvec2 q=uvec2(p);uint h=q.x*1597334677u+q.y*3812015801u+1013904223u;h^=h>>16;h*=2246822519u;h^=h>>13;return float(h&0x00ffffffu)/16777215.0;}\nfloat maker_value_lattice(vec2 p){ivec2 cell=ivec2(floor(p));vec2 f=fract(p);vec2 w=f*f*f*(f*(f*6.0-15.0)+10.0);float lo=mix(maker_value_hash(cell),maker_value_hash(cell+ivec2(1,0)),w.x);float hi=mix(maker_value_hash(cell+ivec2(0,1)),maker_value_hash(cell+ivec2(1,1)),w.x);return mix(lo,hi,w.y);}",
   "terminal": false,
   "id": "screenshaver.noise.value2d",
   "name": "Value Noise 2D",
   "category": "Noise",
   "header_color": "#8660B0",
-  "description": "Smooth animated 2D value noise.",
-  "glsl": "maker_noise({uv}*{scale}+vec2(u_time*0.17,-u_time*0.11))"
+  "description": "Smooth animated 2D lattice value noise using a distinct integer hash.",
+  "glsl": "maker_value_lattice({uv}*{scale}+vec2(u_time*0.17,-u_time*0.11))"
 }

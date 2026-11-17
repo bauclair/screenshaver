@@ -1,13 +1,13 @@
 {
   "schema_version": 1,
   "id": "screenshaver.color.aces_tonemap",
-  "name": "ACES Tone Mapping",
+  "name": "Filmic Tone Mapping (ACES Replacement)",
   "category": "Color",
   "created_by": "Screenshaver",
   "header_color": "#A27660",
-  "description": "Maps high dynamic range linear RGB through the ACES fitted transform.",
+  "description": "Independent luminance-preserving filmic highlight compression; replaces the previously embedded ACES fitted matrices.",
   "uses": "Color grading of accumulated field illumination.",
-  "notes": "Matrices and fitted rational curve from Morphing Abstract, attributed there to https://www.shadertoy.com/view/Xc3yzM; preserve original licensing and attribution.",
+  "notes": "Compatibility: retains historical screenshaver.color.aces_tonemap ID and ports, but is NOT an ACES transform. Existing graphs will render differently. Rename ID in a future project-format migration.",
   "inputs": [
     {
       "id": "color",
@@ -24,7 +24,7 @@
     }
   ],
   "parameters": [],
-  "helpers": "vec3 maker_aces_tonemap(vec3 c){mat3 m1=mat3(0.59719,0.07600,0.02840,0.35458,0.90834,0.13383,0.04823,0.01566,0.83777);mat3 m2=mat3(1.60475,-0.10208,-0.00327,-0.53108,1.10813,-0.07276,-0.07367,-0.00605,1.07602);vec3 v=m1*c;vec3 a=v*(v+0.0245786)-0.000090537;vec3 b=v*(0.983729*v+0.4329510)+0.238081;return m2*(a/b);}",
-  "glsl": "maker_aces_tonemap({color})",
+  "helpers": "vec3 maker_filmic_independent(vec3 rgb){vec3 c=max(rgb,vec3(0.0));float lum=dot(c,vec3(0.2126,0.7152,0.0722));float mapped=lum/(1.0+lum);float factor=mapped/max(lum,0.000001);return clamp(c*factor,0.0,1.0);}",
+  "glsl": "maker_filmic_independent({color})",
   "terminal": false
 }

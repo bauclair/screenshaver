@@ -295,10 +295,10 @@ pub fn run_candidate_worker()->Result<(),String>{
         let result=(||->Result<serde_json::Value,String>{
             let graph=graph_from_wire(&request["graph"])?;
             match request["kind"].as_str().ok_or("Missing request kind")? {
-                "candidate"=>{let cost=crate::maker_ui::graph_compile_cost(&graph);
-                if cost>crate::maker_ui::MAX_COMPILE_COST {
-                    eprintln!("[MAKER GRAPH COMPLEXITY] deferred cost={cost} max={}",crate::maker_ui::MAX_COMPILE_COST);
-                    Ok(serde_json::json!({"glsl_error":format!("Graph complexity deferred: estimated cost {cost}")}))
+                "candidate"=>{
+                if let Err(reason)=crate::maker_ui::candidate_admission(&graph) {
+                    eprintln!("[MAKER GRAPH COMPLEXITY] {reason}");
+                    Ok(serde_json::json!({"glsl_error":reason}))
                 } else {match crate::maker_compiler::fragment_source(&graph){
                     Err(e)=>Ok(serde_json::json!({"glsl_error":e})),
                     Ok(source)=>{
@@ -331,7 +331,7 @@ pub fn run_candidate_worker()->Result<(),String>{
 }
 
 pub fn run()->Result<(),String>{
-    if std::env::var_os("SCREENSHAVER_MAKER_DISCOVERY_TEST").is_some(){
+    if std::env::var("SCREENSHAVER_MAKER_DISCOVERY_TEST").ok().as_deref()==Some("1"){
         crate::maker_library::initialize()?;
         return crate::maker_ui::run_discovery_test();
     }
@@ -389,8 +389,8 @@ pub fn run()->Result<(),String>{
                         WorkerReply::Candidate{epoch,job,result}=>{
                             if epoch==ui.candidate_epoch() {
                                 match result {
-                                    Ok(Some(pixels))=>ui.receive_candidate(job,pixels,192,108),
-                                    Ok(None)=>ui.candidate_rejected_uniform(),
+                                    Ok(Some(pixels))=>{ui.candidate_glsl_capable();ui.receive_candidate(job,pixels,192,108)},
+                                    Ok(None)=>{ui.candidate_glsl_capable();ui.candidate_rejected_uniform()},
                                     Err(WorkerError::Glsl(e))=>{
                                         eprintln!("[MAKER CANDIDATE GLSL] {}: {}",job.name,e);
                                         ui.candidate_rejected_glsl();

@@ -5,9 +5,9 @@
   "category": "Noise",
   "created_by": "Screenshaver",
   "header_color": "#6D729A",
-  "description": "Golden-ratio dot noise sampled at a 3D position.",
+  "description": "Smooth 3D lattice value noise from independently chosen integer-coordinate hashing.",
   "uses": "Reusable scalar field detail and procedural modulation.",
-  "notes": "Mathematical form adapted from Xor\u2019s Dot Noise, credited in Morphing Abstract; CC BY-NC-SA 4.0 attribution applies.",
+  "notes": "Replaces the credited Xor dot-noise algorithm entirely. Retains scalar 3D noise interface but intentionally changes visual behavior.",
   "inputs": [
     {
       "id": "position",
@@ -24,7 +24,7 @@
     }
   ],
   "parameters": [],
-  "helpers": "float maker_dot_noise_3d(vec3 p){const float PHI=1.618033988;const mat3 GOLD=mat3(-0.571464913,0.814921382,0.096597072,-0.278044873,-0.303026659,0.911518454,0.772087367,0.494042493,0.399753815);return dot(cos(GOLD*p),sin(PHI*p*GOLD));}",
-  "glsl": "maker_dot_noise_3d({position})",
+  "helpers": "float maker_lattice_hash3(vec3 cell){\n  vec3 v=fract(cell*vec3(0.1031,0.11369,0.13787));\n  v+=dot(v,v.yxz+19.19);\n  return fract((v.x+v.y)*v.z);\n}\nfloat maker_lattice_noise3(vec3 p){\n  vec3 base=floor(p);\n  vec3 w=fract(p);\n  w=w*w*(3.0-2.0*w);\n  float x00=mix(maker_lattice_hash3(base),maker_lattice_hash3(base+vec3(1,0,0)),w.x);\n  float x10=mix(maker_lattice_hash3(base+vec3(0,1,0)),maker_lattice_hash3(base+vec3(1,1,0)),w.x);\n  float x01=mix(maker_lattice_hash3(base+vec3(0,0,1)),maker_lattice_hash3(base+vec3(1,0,1)),w.x);\n  float x11=mix(maker_lattice_hash3(base+vec3(0,1,1)),maker_lattice_hash3(base+vec3(1,1,1)),w.x);\n  return mix(mix(x00,x10,w.y),mix(x01,x11,w.y),w.z);\n}",
+  "glsl": "maker_lattice_noise3({position})",
   "terminal": false
 }

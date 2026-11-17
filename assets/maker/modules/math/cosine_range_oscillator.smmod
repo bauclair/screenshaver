@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.math.cosine_range_oscillator",
+  "name": "Cosine Range Oscillator",
+  "category": "Math",
+  "created_by": "Screenshaver",
+  "header_color": "#7C72B3",
+  "description": "Smooth cosine oscillation between minimum and minimum plus range, with phase measured in degrees.",
+  "uses": "Periodic modulation of shader parameters and scalar fields.",
+  "notes": "Preserves 70s Melt cosRange degree-based semantics. Negative range reverses the output interval.",
+  "inputs": [],
+  "outputs": [
+    {
+      "id": "value",
+      "name": "Value",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "speed",
+      "name": "Degrees Per Time",
+      "type": "float",
+      "default": 5,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "phase",
+      "name": "Phase Degrees",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "range",
+      "name": "Range",
+      "type": "float",
+      "default": 3,
+      "min": -20,
+      "max": 20
+    },
+    {
+      "id": "minimum",
+      "name": "Minimum",
+      "type": "float",
+      "default": 1.1,
+      "min": -20,
+      "max": 20
+    }
+  ],
+  "helpers": "float maker_70s_cosrange(float degrees,float range,float minimum){return minimum+0.5*(1.0+cos(radians(degrees)))*range;}",
+  "glsl": "maker_70s_cosrange(u_time*{speed}+{phase},{range},{minimum})",
+  "terminal": false
+}

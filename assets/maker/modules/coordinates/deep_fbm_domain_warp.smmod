@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "created_by": "Screenshaver",
+  "terminal": false,
+  "id": "screenshaver.coordinates.deep_fbm_domain_warp",
+  "name": "Deep FBM Domain Warp",
+  "category": "Coordinates",
+  "header_color": "#287C9B",
+  "description": "Two-stage 2D domain distortion using independent integer-hash value noise.",
+  "uses": "Swirling liquid patterns, warped fields.",
+  "notes": "Replaces source-specific Abstraction hash, offsets, frequency schedule and helper code. Same interface, different warp character.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "strength",
+      "name": "Strength",
+      "type": "float",
+      "default": 1.5,
+      "min": 0,
+      "max": 4
+    },
+    {
+      "id": "speed",
+      "name": "Speed",
+      "type": "float",
+      "default": 0.3,
+      "min": 0,
+      "max": 2
+    },
+    {
+      "id": "octaves",
+      "name": "Octaves",
+      "type": "float",
+      "default": 4,
+      "min": 1,
+      "max": 8
+    }
+  ],
+  "helpers": "uint maker_fbm_mixbits(uint v){\n  v^=v>>16;\n  v*=0x7feb352du;\n  v^=v>>15;\n  v*=0x846ca68bu;\n  return v^(v>>16);\n}\nfloat maker_fbm_cell(ivec2 cell){\n  uint h=maker_fbm_mixbits(uint(cell.x)*0x9e3779b9u ^ uint(cell.y)*0x85ebca6bu);\n  return float(h & 0x00ffffffu)/16777215.0;\n}\nfloat maker_fbm_value(vec2 p){\n  ivec2 cell=ivec2(floor(p));\n  vec2 f=fract(p);\n  vec2 w=f*f*(3.0-2.0*f);\n  float bottom=mix(maker_fbm_cell(cell),maker_fbm_cell(cell+ivec2(1,0)),w.x);\n  float top=mix(maker_fbm_cell(cell+ivec2(0,1)),maker_fbm_cell(cell+ivec2(1,1)),w.x);\n  return mix(bottom,top,w.y);\n}\nfloat maker_warp_fbm(vec2 p,int steps){\n  float amp=1.0,sum=0.0,norm=0.0;\n  for(int k=0;k<8;k++){\n    if(k>=steps)break;\n    sum+=amp*maker_fbm_value(p);\n    norm+=amp;\n    p=p*2.0+vec2(7.0,-3.0);\n    amp*=0.55;\n  }\n  return sum/max(norm,0.0001);\n}\nvec2 maker_warp_pair(vec2 p,int steps,float t){\n  return vec2(maker_warp_fbm(p+vec2(13.0,2.0)+t*vec2(0.2,-0.1),steps),\n              maker_warp_fbm(p+vec2(-4.0,17.0)+t*vec2(-0.13,0.19),steps))-0.5;\n}\nvec2 maker_warp_independent(vec2 p,float speed,float strength,float oct){\n  int steps=int(clamp(floor(oct+0.5),1.0,8.0));\n  float t=u_time*speed;\n  vec2 first=maker_warp_pair(p,steps,t);\n  return p+strength*(first+0.5*maker_warp_pair(p+strength*first,steps,t+1.0));\n}",
+  "glsl": "maker_warp_independent({position},{speed},{strength},{octaves})"
+}

@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "created_by": "Screenshaver",
+  "terminal": false,
+  "id": "screenshaver.geometry.warped_plane_field",
+  "name": "Warped Plane Field",
+  "category": "Geometry",
+  "header_color": "#557C9C",
+  "description": "Plane distance-like field displaced by nested sine waves and the original cellular tile metric.",
+  "uses": "Abstract terrain and raymarched surfaces.",
+  "notes": "Derived from Abstract Plane.glsl. No external texture dependency.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "default": "vec3(maker_uv,0.0)"
+    },
+    {
+      "id": "cell",
+      "name": "Cell Field",
+      "type": "float",
+      "default": "0.5"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "field",
+      "name": "Field",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "wave_strength",
+      "name": "Wave Strength",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 4
+    },
+    {
+      "id": "cell_strength",
+      "name": "Cell Strength",
+      "type": "float",
+      "default": 1.5,
+      "min": 0,
+      "max": 5
+    },
+    {
+      "id": "cell_center",
+      "name": "Cell Center",
+      "type": "float",
+      "default": 0.5,
+      "min": -2,
+      "max": 2
+    }
+  ],
+  "helpers": "",
+  "glsl": "({position}.y+{wave_strength}*dot(sin({position}/2.0+cos({position}.yzx/2.0+1.570795)),vec3(0.5))+({cell_center}-{cell})*{cell_strength})"
+}

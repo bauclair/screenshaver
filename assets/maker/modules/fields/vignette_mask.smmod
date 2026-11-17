@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.vignette_mask",
+  "name": "Vignette Mask",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "header_color": "#5A78A8",
+  "description": "Separable polynomial vignette mask with optional nonnegative clamping.",
+  "uses": "Edge attenuation, masks, and modulation of scalar fields.",
+  "notes": "Input must be normalized UV in [0,1], unlike centered Maker UV. Unconnected default uses fragment coordinates and resolution; confirm uniform naming in shader generator. Polynomial may be negative.",
+  "inputs": [
+    {
+      "id": "uv",
+      "name": "UV",
+      "type": "vec2",
+      "default": "gl_FragCoord.xy / u_resolution.xy"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "mask",
+      "name": "Mask",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "amount",
+      "name": "Amount",
+      "type": "float",
+      "default": 5,
+      "min": 0,
+      "max": 12
+    },
+    {
+      "id": "clamp_mask",
+      "name": "Clamp Mask (0/1)",
+      "type": "float",
+      "default": 0,
+      "min": 0,
+      "max": 1
+    }
+  ],
+  "helpers": "float maker_70s_vignette(vec2 uv,float amount,float clamp_mask){vec2 d=uv-vec2(0.5);float mask=(1.0-amount*d.x*d.x)*(1.0-amount*d.y*d.y);return clamp_mask>=0.5?clamp(mask,0.0,1.0):mask;}",
+  "glsl": "maker_70s_vignette({uv},{amount},{clamp_mask})",
+  "terminal": false
+}

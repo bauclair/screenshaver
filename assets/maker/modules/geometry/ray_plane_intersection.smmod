@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "created_by": "Screenshaver",
+  "terminal": false,
+  "id": "screenshaver.geometry.ray_plane_intersection",
+  "name": "Ray\u2013Plane Intersection",
+  "category": "Geometry",
+  "header_color": "#557C9C",
+  "description": "Nearest forward ray intersection with a plane specified by point and normal.",
+  "uses": "Analytic geometry and procedural ground surfaces.",
+  "notes": "Independent plane equation. A miss or parallel ray returns -1. Distance is a ray parameter (not necessarily world-space distance).",
+  "inputs": [
+    {
+      "id": "origin",
+      "name": "Origin",
+      "type": "vec3",
+      "default": "vec3(0.0,1.0,-3.0)"
+    },
+    {
+      "id": "direction",
+      "name": "Direction",
+      "type": "vec3",
+      "default": "normalize(vec3(maker_uv,-1.0))"
+    },
+    {
+      "id": "plane_point",
+      "name": "Plane Point",
+      "type": "vec3",
+      "default": "vec3(0.0)"
+    },
+    {
+      "id": "plane_normal",
+      "name": "Plane Normal",
+      "type": "vec3",
+      "default": "vec3(0.0,1.0,0.0)"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "distance",
+      "name": "Distance",
+      "type": "float"
+    }
+  ],
+  "parameters": [],
+  "helpers": "float maker_ray_plane_t(vec3 origin,vec3 direction,vec3 point,vec3 normal){float n2=dot(normal,normal);if(n2<1e-12)return -1.0;float denom=dot(direction,normal);if(abs(denom)<1e-7)return -1.0;float t=dot(point-origin,normal)/denom;return t>0.00001?t:-1.0;}",
+  "glsl": "maker_ray_plane_t({origin},{direction},{plane_point},{plane_normal})"
+}

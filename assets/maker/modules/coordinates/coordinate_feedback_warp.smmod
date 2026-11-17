@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.coordinate_feedback_warp",
+  "name": "Coordinate Feedback Warp",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "header_color": "#287C9B",
+  "description": "Bounded, iterative 3D coordinate deformation using independently specified axis rotations and smooth periodic displacement.",
+  "uses": "Warp positions for procedural noise, geometry, and animated fields.",
+  "notes": "Replaces the source-derived 24K feedback equations with a different iterative coordinate map. Same ports and parameters; visual output intentionally differs.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "default": "vec3(maker_uv,0.0)"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "iterations",
+      "name": "Iterations",
+      "type": "float",
+      "default": 8,
+      "min": 1,
+      "max": 40
+    },
+    {
+      "id": "scale",
+      "name": "Output Scale",
+      "type": "float",
+      "default": 20,
+      "min": 1,
+      "max": 60
+    },
+    {
+      "id": "strength",
+      "name": "Distortion Strength",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 2
+    },
+    {
+      "id": "speed",
+      "name": "Animation Speed",
+      "type": "float",
+      "default": 1,
+      "min": 0.05,
+      "max": 4
+    }
+  ],
+  "helpers": "vec3 maker_independent_feedback(vec3 position,float time,float count,float scale,float strength,float speed){\n  vec3 q=position;\n  float phase=time*speed;\n  int steps=int(clamp(floor(count+0.5),1.0,40.0));\n  for(int k=0;k<40;k++){\n    if(k>=steps)break;\n    float angle=0.19+0.04*sin(phase*0.21+float(k)*0.3);\n    float c=cos(angle),s=sin(angle);\n    q.xy=mat2(c,-s,s,c)*q.xy;\n    vec3 displacement=sin(q.yzx*1.7+vec3(0.0,1.9,3.8)+phase*0.17);\n    q+=displacement*(0.18*strength/(1.0+0.12*float(k)));\n  }\n  return q/max(scale,0.001);\n}",
+  "glsl": "maker_independent_feedback({position},u_time,{iterations},{scale},{strength},{speed})",
+  "terminal": false
+}

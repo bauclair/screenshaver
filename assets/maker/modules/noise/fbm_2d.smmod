@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "created_by": "Screenshaver",
+  "terminal": false,
+  "id": "screenshaver.noise.fbm_2d",
+  "name": "FBM Noise 2D",
+  "category": "Noise",
+  "header_color": "#5B789C",
+  "description": "Normalized multi-octave value noise with integer lattice hashing.",
+  "uses": "Clouds, turbulence, procedural fields.",
+  "notes": "Replaces the source-matched Abstraction hash. Uses independently chosen integer mixing, standard smooth interpolation and weighted octave accumulation.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "field",
+      "name": "Field",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "scale",
+      "name": "Scale",
+      "type": "float",
+      "default": 1,
+      "min": 0.01,
+      "max": 12
+    },
+    {
+      "id": "octaves",
+      "name": "Octaves",
+      "type": "float",
+      "default": 4,
+      "min": 1,
+      "max": 8
+    },
+    {
+      "id": "persistence",
+      "name": "Persistence",
+      "type": "float",
+      "default": 0.5,
+      "min": 0.05,
+      "max": 0.95
+    },
+    {
+      "id": "lacunarity",
+      "name": "Lacunarity",
+      "type": "float",
+      "default": 2.13,
+      "min": 1.1,
+      "max": 4
+    }
+  ],
+  "helpers": "uint maker_fbm_mixbits(uint v){\n  v^=v>>16;\n  v*=0x7feb352du;\n  v^=v>>15;\n  v*=0x846ca68bu;\n  return v^(v>>16);\n}\nfloat maker_fbm_cell(ivec2 cell){\n  uint h=maker_fbm_mixbits(uint(cell.x)*0x9e3779b9u ^ uint(cell.y)*0x85ebca6bu);\n  return float(h & 0x00ffffffu)/16777215.0;\n}\nfloat maker_fbm_value(vec2 p){\n  ivec2 cell=ivec2(floor(p));\n  vec2 f=fract(p);\n  vec2 w=f*f*(3.0-2.0*f);\n  float bottom=mix(maker_fbm_cell(cell),maker_fbm_cell(cell+ivec2(1,0)),w.x);\n  float top=mix(maker_fbm_cell(cell+ivec2(0,1)),maker_fbm_cell(cell+ivec2(1,1)),w.x);\n  return mix(bottom,top,w.y);\n}\nfloat maker_fbm_independent(vec2 p,float oct,float persistence,float lacunarity){\n  int steps=int(clamp(floor(oct+0.5),1.0,8.0));\n  float amplitude=1.0,weight=0.0,acc=0.0;\n  for(int j=0;j<8;j++){\n    if(j>=steps)break;\n    acc+=amplitude*maker_fbm_value(p);\n    weight+=amplitude;\n    p*=lacunarity;\n    amplitude*=persistence;\n  }\n  return acc/max(weight,0.0001);\n}",
+  "glsl": "maker_fbm_independent({position}*{scale},{octaves},{persistence},{lacunarity})"
+}

@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.iterative_plasma_field",
+  "name": "Iterative Plasma Field",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "header_color": "#5A78A8",
+  "description": "Scalar plasma field from a bounded sequence of rotated, phase-shifted periodic waves.",
+  "uses": "Animated plasma, gold-like swirls, turbulent color fields.",
+  "notes": "Replaces the original 24K-specific state and equations with a new iterative harmonic field. Same inputs and parameters; output is not pixel-equivalent.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "default": "vec3(maker_uv.x,maker_uv.y,maker_uv.x)"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "field",
+      "name": "Field",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "iterations",
+      "name": "Iterations",
+      "type": "float",
+      "default": 30,
+      "min": 1,
+      "max": 40
+    },
+    {
+      "id": "scale",
+      "name": "Field Scale",
+      "type": "float",
+      "default": 20,
+      "min": 1,
+      "max": 60
+    },
+    {
+      "id": "strength",
+      "name": "Distortion Strength",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 2
+    },
+    {
+      "id": "speed",
+      "name": "Animation Speed",
+      "type": "float",
+      "default": 1,
+      "min": 0.05,
+      "max": 4
+    }
+  ],
+  "helpers": "float maker_independent_plasma(vec3 position,float time,float count,float scale,float strength,float speed){\n  vec3 q=position/max(scale,0.001)*8.0;\n  float t=time*speed;\n  float sum=0.0;\n  float weight=1.0;\n  float total=0.0;\n  int steps=int(clamp(floor(count+0.5),1.0,40.0));\n  for(int k=0;k<40;k++){\n    if(k>=steps)break;\n    float f=float(k)+1.0;\n    float wave=sin(dot(q,vec3(1.0,0.7,0.43))*f*0.37+t*0.29);\n    sum+=weight*wave;\n    total+=weight;\n    q=q.yzx+strength*0.14*vec3(cos(q.z+t),sin(q.x-t),cos(q.y+t*0.4));\n    weight*=0.84;\n  }\n  return sum/max(total,0.0001);\n}",
+  "glsl": "maker_independent_plasma({position},u_time,{iterations},{scale},{strength},{speed})",
+  "terminal": false
+}

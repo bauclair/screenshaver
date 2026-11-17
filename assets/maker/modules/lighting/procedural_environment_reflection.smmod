@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "created_by": "Screenshaver",
+  "terminal": false,
+  "id": "screenshaver.lighting.procedural_environment_reflection",
+  "name": "Procedural Environment Reflection",
+  "category": "Lighting",
+  "header_color": "#477D9A",
+  "description": "Maps a reflected direction into an icy, cell-derived RGB environment response.",
+  "uses": "Procedural reflections without cubemaps or texture samplers.",
+  "notes": "Derived from Abstract Plane.glsl. No external texture dependency.",
+  "inputs": [
+    {
+      "id": "incident",
+      "name": "Incident Direction",
+      "type": "vec3",
+      "default": "vec3(0.0,0.0,-1.0)"
+    },
+    {
+      "id": "normal",
+      "name": "Surface Normal",
+      "type": "vec3",
+      "default": "vec3(0.0,1.0,0.0)"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "color",
+      "name": "Color",
+      "type": "vec3"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "frequency",
+      "name": "Pattern Frequency",
+      "type": "float",
+      "default": 6,
+      "min": 0.1,
+      "max": 20
+    },
+    {
+      "id": "tile_scale",
+      "name": "Tile Scale",
+      "type": "float",
+      "default": 5.5,
+      "min": 0.1,
+      "max": 30
+    },
+    {
+      "id": "strength",
+      "name": "Reflection Strength",
+      "type": "float",
+      "default": 0.5,
+      "min": 0,
+      "max": 4
+    }
+  ],
+  "helpers": "float maker_ap_env_metric(vec3 p){return dot(abs(fract(p)-0.5),vec3(0.5));}float maker_ap_env_cell(vec3 p,float tileScale){p/=max(tileScale,0.0001);float a=maker_ap_env_metric(p-vec3(.81,.62,.53));p.xy=vec2(p.y-p.x,p.y+p.x)*.7071;float b=maker_ap_env_metric(p-vec3(.39,.2,.11));p.yz=vec2(p.z-p.y,p.z+p.y)*.7071;float c=maker_ap_env_metric(p-vec3(.62,.24,.06));p.xz=vec2(p.z-p.x,p.z+p.x)*.7071;float d=maker_ap_env_metric(p-vec3(.2,.82,.64));return (min(min(max(a,b),max(c,d)),max(min(a,c),min(b,d)))-min(min(a,b),min(c,d)))*2.66;}vec3 maker_ap_env(vec3 direction,float freq,float scale,float strength){float c=maker_ap_env_cell(normalize(direction+vec3(1e-6))*freq,scale);c=smoothstep(0.2,1.0,c);return vec3(pow(c,8.0),c*c,c)*strength;}",
+  "glsl": "maker_ap_env(reflect(normalize({incident}+vec3(1e-6)),normalize({normal}+vec3(1e-6))),{frequency},{tile_scale},{strength})"
+}

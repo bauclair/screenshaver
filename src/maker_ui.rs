@@ -63,6 +63,7 @@ fn candidate_score(candidate:&Candidate, sort:u8)->f32 {
         4=>candidate.visual.vibrancy,
         5=>0.0,
         6=>candidate.motion.unwrap_or(-1.0),
+        7=>candidate.connections.len() as f32,
         _=>candidate.visual.interest,
     }
 }
@@ -180,90 +181,54 @@ pub(crate) fn graph_compile_cost(graph:&Graph)->u64 {
 // Initially calibrated as a conservative circuit-protection threshold.
 // This may exclude valid complex shaders; rejected graphs are not invalid.
 pub(crate) const MAX_COMPILE_COST:u64=100_000;
+// The compiler emits each callable node/port once; this estimate models source
+// generation rather than multiplying the cost of every call site by loop bounds.
+// Keep the historical expanded-work estimate separately as a runtime risk guard.
+const MAX_ESTIMATED_RUNTIME_WORK:u64=50_000_000;
+const MAX_CONNECTION_GPU_JOBS:usize=32; // bounded per discovery batch
+const DEFAULT_MAX_CANDIDATES:usize=250;
+pub(crate) fn graph_source_cost(graph:&Graph)->u64 {
+    let reachable=graph.output_reachable_ids();
+    let mut score=0u64;
+    for node in graph.nodes.iter().filter(|n|reachable.contains(&n.id)) {
+        let definition=node.definition();
+        score=score.saturating_add(16)
+            .saturating_add(definition.glsl_outputs.iter().map(|s|s.len() as u64).sum::<u64>())
+            .saturating_add(definition.helpers.len() as u64);
+        score=score.saturating_add(match node.module_id.as_str() {
+            "screenshaver.fields.sdf_raymarch"=>8_000,
+            "screenshaver.lighting.refractive_surface"=>5_000,
+            "screenshaver.fields.traversal"=>3_000,
+            "screenshaver.geometry.domain_fold_3d"=>1_000,
+            _=>0,
+        });
+    }
+    score
+}
+
+
+// Single admission policy used by both CPU discovery and the isolated GPU worker.
+// These estimates are conservative screening heuristics, not proof of GPU safety.
+pub(crate) fn candidate_admission(graph:&Graph)->Result<(),String> {
+    let source_cost=graph_source_cost(graph);
+    if source_cost>MAX_COMPILE_COST {
+        return Err(format!("Source complexity deferred: estimated cost {source_cost} exceeds {MAX_COMPILE_COST}"));
+    }
+    let runtime_work=graph_compile_cost(graph);
+    if runtime_work>MAX_ESTIMATED_RUNTIME_WORK {
+        return Err(format!("Runtime complexity deferred: estimated work {runtime_work} exceeds {MAX_ESTIMATED_RUNTIME_WORK}"));
+    }
+    Ok(())
+}
+
 
 fn graph_preflight(graph:&Graph, _output:NodeId)->Result<(),String> {
     graph.validate_renderable()
 }
 
-// A bounded, incremental enumeration of distinct Output Color-reachable graphs.
-// Unlike the former independent-input product, it never counts orphan wiring.
-// If the budget is exhausted the observed count is a LOWER bound, not an estimate.
-const REACHABLE_COUNT_LIMIT: usize = 100_000;
-// Bound graph snapshots independently in both searches.
+// Bound graph snapshots independently in discovery.
 const MAX_GRAPH_FRONTIER: usize = 4_096;
 const MAX_PENDING_RENDER_JOBS: usize = 96;
-struct ReachableCount {
-    signature: Vec<(NodeId,String)>,
-    queue: std::collections::VecDeque<Graph>,
-    seen: std::collections::HashSet<Vec<(NodeId,usize,NodeId,usize)>>,
-    output: NodeId,
-    examined: usize,
-    valid: usize,
-    complete: bool,
-}
-impl ReachableCount {
-    fn signature(graph:&Graph)->Vec<(NodeId,String)> {
-        let mut result:Vec<_>=graph.nodes.iter().map(|n|(n.id,n.module_id.clone())).collect();
-        result.sort();result
-    }
-    fn new(graph:&Graph)->Option<Self> {
-        let output=graph.nodes.iter().find(|n|n.definition().terminal)?.id;
-        let mut base=graph.clone();base.connections.clear();
-        Some(Self{signature:Self::signature(graph),queue:std::collections::VecDeque::from([base]),
-            seen:Default::default(),output,examined:0,valid:0,complete:false})
-    }
-    fn advance(&mut self) {
-        if self.complete{return}
-        let deadline=std::time::Instant::now()+std::time::Duration::from_millis(5);
-        let mut batch=0;
-        while self.examined<REACHABLE_COUNT_LIMIT && batch<64 && std::time::Instant::now()<deadline {
-            let Some(current)=self.queue.pop_front() else {self.complete=true;break};
-            self.examined+=1;batch+=1;
-            let mut key:Vec<_>=current.connections.iter().map(|c|(c.from,c.from_port,c.to,c.to_port)).collect();
-            key.sort_unstable();
-            if !self.seen.insert(key){continue}
-            if current.input_connection(self.output,0).is_some()
-                && graph_preflight(&current,self.output).is_ok() {
-                self.valid+=1;
-            }
-            let mut reachable=std::collections::HashSet::from([self.output]);
-            let mut frontier=vec![self.output];
-            while let Some(id)=frontier.pop(){
-                for c in current.connections.iter().filter(|c|c.to==id){
-                    if reachable.insert(c.from){frontier.push(c.from)}
-                }
-            }
-            let mut targets=Vec::new();
-            for node in &current.nodes {
-                if !reachable.contains(&node.id){continue}
-                for port in 0..node.definition().inputs.len(){
-                    if current.input_connection(node.id,port).is_none(){targets.push((node.id,port))}
-                }
-            }
-            targets.sort_by_key(|&(id,port)|(if id==self.output{0}else{1},std::cmp::Reverse(id),port));
-            for (to,to_port) in targets.into_iter().take(3){
-                for source in &current.nodes {
-                    if source.definition().terminal{continue}
-                    for from_port in 0..source.definition().outputs.len(){
-                        if current.check_connection(source.id,from_port,to,to_port).is_err(){continue}
-                        if self.queue.len()>=MAX_GRAPH_FRONTIER {break;}
-                        let mut proposed=current.clone();
-                        if proposed.connect(source.id,from_port,to,to_port).is_ok() {
-                            self.queue.push_back(proposed);
-                        }
-                    }
-                }
-            }
-        }
-        if self.queue.is_empty(){self.complete=true;}
-    }
-    fn label(&self)->String {
-        if self.complete {format!("Output-reachable, structurally valid configurations: {} (exact)",self.valid)}
-        else if self.examined>=REACHABLE_COUNT_LIMIT {
-            format!("Output-reachable, structurally valid configurations: at least {} ({}-state limit)",self.valid,REACHABLE_COUNT_LIMIT)
-        } else {format!("Output-reachable, structurally valid configurations found: {} (counting… {} states)",self.valid,self.examined)}
-    }
-}
 fn candidate_graphs(graph:&Graph)->Vec<(String,Graph)> {
     const MAX_CANDIDATES:usize=1_000;
     // Deterministic mixed-radix enumeration. Each numeric slider has exactly
@@ -323,7 +288,7 @@ fn candidate_graphs(graph:&Graph)->Vec<(String,Graph)> {
     result
 }
 /// Six separately timed stages. CPU stages never call GLSL or OpenGL.
-const CONNECTION_EXPLORATIONS:usize=100_000;
+const DEFAULT_MAX_ENUMERATIONS:usize=50_000;
 const CANDIDATES_EVALUATED:usize=1_000;
 const CANDIDATES_RETAINED:usize=500;
 const MAX_RAW_GRAPHS:usize=12_000;
@@ -375,12 +340,35 @@ fn connection_key(graph:&Graph)->Vec<(NodeId,usize,NodeId,usize)> {
     let mut key:Vec<_>=graph.connections.iter().map(|c|(c.from,c.from_port,c.to,c.to_port)).collect();
     key.sort_unstable();key
 }
-fn structural_score(graph:&Graph)->i64 {
-    let reachable=graph.output_reachable_ids();
-    let module_kinds:std::collections::HashSet<_>=graph.nodes.iter().filter(|n|reachable.contains(&n.id))
-        .map(|n|n.module_id.as_str()).collect();
-    (module_kinds.len() as i64)*100+(graph.connections.len() as i64)*7
+// Stable, connection-count-neutral priority for GPU admission. The hash
+// uses connection identities, never the number of connections or a complexity
+// score. It makes selection reproducible across runs and worker counts.
+fn discovery_priority(graph:&Graph)->u64 {
+    let mut h=0xcbf29ce484222325u64;
+    for (from,from_port,to,to_port) in connection_key(graph) {
+        for value in [from,from_port as u64,to,to_port as u64] {
+            for byte in value.to_le_bytes() {
+                h=(h^(byte as u64)).wrapping_mul(0x100000001b3);
+            }
+        }
+    }
+    // Avalanche to remove ordering patterns from low hash bits.
+    h^=h>>30;h=h.wrapping_mul(0xbf58476d1ce4e5b9);
+    h^=h>>27;h=h.wrapping_mul(0x94d049bb133111eb);h^(h>>31)
 }
+
+// Deterministic reservoir admission: every output-connected graph encountered
+// has equal probability of occupying one of the bounded raw slots. This avoids
+// keeping only the first 12,000 states of a depth-first traversal.
+fn reservoir_slot(ordinal:u64,capacity:usize)->Option<usize>{
+    if ordinal<=capacity as u64 {return Some((ordinal-1) as usize)}
+    let mut x=ordinal^0x9e3779b97f4a7c15;
+    x^=x>>30;x=x.wrapping_mul(0xbf58476d1ce4e5b9);
+    x^=x>>27;x=x.wrapping_mul(0x94d049bb133111eb);x^=x>>31;
+    let index=((x as u128*ordinal as u128)>>64) as u64;
+    (index<capacity as u64).then_some(index as usize)
+}
+
 /// Stage 0: immutable port-compatibility index for this exact node inventory.
 /// Potential reachability is intentionally optimistic: dynamic cycles are checked
 /// during enumeration, and no partially wired graph is rejected as incomplete.
@@ -436,10 +424,16 @@ struct ConnectionSearch {
     feasibility:Option<ConnectionFeasibility>,
     base:Option<Graph>,
     queues:[std::collections::VecDeque<Graph>;3],
+    canonical:Option<maker_discovery_test::ProductionEnumeration>,
+    legacy:bool,
+    enumeration_start:u64,
+    max_enumerations:usize,
+    discovery_error:Option<String>,
     seen:std::collections::HashSet<Vec<(NodeId,usize,NodeId,usize)>>,
     raw:Vec<Graph>,
     qualified:Vec<Graph>,
-    scores:Vec<(i64,usize)>,
+    scores:Vec<(u64,usize)>,
+    raw_seen:u64,
     selected_jobs:Vec<CandidateJob>,
     gpu_started:bool,
     output:NodeId,
@@ -456,16 +450,20 @@ struct ConnectionSearch {
     reports:Vec<String>,
     peak_rss_kib:usize,
     deferred_complexity:usize,
+    min_runtime_cost:u64,
+    max_runtime_cost:u64,
+    min_source_cost:u64,
+    max_source_cost:u64,
 }
 impl ConnectionSearch {
-    fn new(graph:&Graph)->Option<Self>{
+    fn new(graph:&Graph,max_enumerations:usize)->Option<Self>{
         let output=graph.nodes.iter().find(|n|n.definition().terminal)?.id;
         let mut base=graph.clone();base.connections.clear();base.revision=graph.revision.wrapping_add(1);
         let queues=std::array::from_fn(|_|std::collections::VecDeque::new());
-        Some(Self{feasibility:None,base:Some(base),queues,seen:Default::default(),raw:Vec::new(),qualified:Vec::new(),scores:Vec::new(),selected_jobs:Vec::new(),gpu_started:false,output,
+        Some(Self{feasibility:None,base:Some(base),queues,canonical:None,legacy:std::env::var("SCREENSHAVER_MAKER_DISCOVERY_LEGACY").ok().as_deref()==Some("1"),enumeration_start:0,max_enumerations,discovery_error:None,seen:Default::default(),raw:Vec::new(),qualified:Vec::new(),scores:Vec::new(),raw_seen:0,selected_jobs:Vec::new(),gpu_started:false,output,
             examined:0,generated:0,incomplete:0,duplicates:0,turn:0,stage:DiscoveryStage::Feasibility,
             cursor:0,workers:discovery_threads(),started:Instant::now(),cpu_started:discovery_cpu_seconds(),
-            reports:Vec::new(),peak_rss_kib:discovery_rss_kib(),deferred_complexity:0})
+            reports:Vec::new(),peak_rss_kib:discovery_rss_kib(),deferred_complexity:0,min_runtime_cost:u64::MAX,max_runtime_cost:0,min_source_cost:u64::MAX,max_source_cost:0})
     }
     fn queued(&self)->usize{self.queues.iter().map(|q|q.len()).sum()}
     fn finished(&self)->bool{self.stage==DiscoveryStage::Ready}
@@ -488,14 +486,33 @@ impl ConnectionSearch {
                     index.raw_pairs,index.typed_pairs,index.feasible_pairs,index.reachable_nodes,index.excluded_nodes);
                 let input=index.raw_pairs;let output=index.feasible_pairs;
                 self.feasibility=Some(index);
-                self.queues[0].push_back(base);
-                self.transition(DiscoveryStage::Enumerate,input,output);
+                if self.legacy {
+                    eprintln!("[MAKER DISCOVERY] legacy queue fallback enabled by environment");
+                    self.queues[0].push_back(base);
+                    self.transition(DiscoveryStage::Enumerate,input,output);
+                    return;
+                }
+                match maker_discovery_test::ProductionEnumeration::open(base) {
+                    Ok((canonical,resumed))=>{
+                        self.enumeration_start=canonical.examined();
+                        eprintln!("[MAKER DISCOVERY] canonical enumeration {} from state={} digest={:016x}",
+                            if resumed {"resumed"} else {"started"},self.enumeration_start,canonical.digest());
+                        self.canonical=Some(canonical);
+                        self.transition(DiscoveryStage::Enumerate,input,output);
+                    }
+                    Err(error)=>{
+                        self.discovery_error=Some(format!("Unable to start canonical enumeration: {error}. Use Reset Enumeration to discard an incompatible checkpoint."));
+                        self.transition(DiscoveryStage::Ready,input,0);
+                    }
+                }
             }
             DiscoveryStage::Enumerate=>{
+                if self.legacy {
+
                 let deadline=Instant::now()+std::time::Duration::from_millis(8);
                 let mut batch=0;
                 const SCHEDULE:[usize;20]=[0,1,2,2,1,2,0,1,2,2,1,2,0,1,2,2,1,2,0,1];
-                while self.examined<CONNECTION_EXPLORATIONS && self.queued()>0
+                while self.examined<self.max_enumerations && self.queued()>0
                     && batch<128 && Instant::now()<deadline {
                     batch+=1;
                     let mut current=None;
@@ -533,9 +550,52 @@ impl ConnectionSearch {
                         }
                     }
                 }
-                if self.examined>=CONNECTION_EXPLORATIONS || self.queued()==0 {
+                if self.examined>=self.max_enumerations || self.queued()==0 {
                     let input=self.examined;let output=self.raw.len();
                     self.queues.iter_mut().for_each(|q|q.clear());self.seen.clear();
+                    self.transition(DiscoveryStage::Validate,input,output);
+                }
+
+                    return;
+                }
+                let deadline=Instant::now()+std::time::Duration::from_millis(8);
+                let mut batch=0usize;
+                let mut exhausted=false;
+                while self.examined<self.max_enumerations
+                    && batch<128 && Instant::now()<deadline {
+                    let next=match self.canonical.as_mut() {
+                        Some(enumerator)=>enumerator.next_graph(),
+                        None=>Err("Canonical enumerator is missing".into()),
+                    };
+                    let graph=match next {
+                        Ok(Some(graph))=>graph,
+                        Ok(None)=>{exhausted=true;break},
+                        Err(error)=>{
+                            self.discovery_error=Some(format!("Canonical enumeration stopped: {error}"));
+                            exhausted=true;break;
+                        }
+                    };
+                    batch+=1;
+                    self.examined+=1;
+                    // Preserve Stage 2's structural validation boundary.
+                    if graph.input_connection(self.output,0).is_some() {
+                        self.raw_seen+=1;
+                        if let Some(slot)=reservoir_slot(self.raw_seen,MAX_RAW_GRAPHS){
+                            if slot==self.raw.len(){self.raw.push(graph)}
+                            else {self.raw[slot]=graph}
+                        }
+                    }
+                }
+                if let Some(enumerator)=self.canonical.as_ref(){
+                    self.duplicates=0;
+                    if let Err(error)=enumerator.save(){
+                        self.discovery_error=Some(format!("Cannot persist discovery checkpoint: {error}"));
+                        exhausted=true;
+                    }
+                }
+                if exhausted || self.examined>=self.max_enumerations {
+                    let input=self.examined;let output=self.raw.len();
+                    self.canonical=None;
                     self.transition(DiscoveryStage::Validate,input,output);
                 }
             }
@@ -562,18 +622,34 @@ impl ConnectionSearch {
             DiscoveryStage::Qualify=>{
                 let end=(self.cursor+CPU_STAGE_BATCH).min(self.raw.len());
                 let scores=parallel_map(&self.raw[self.cursor..end],self.workers,|graph| {
-                    (structural_score(graph),graph_compile_cost(graph))
+                    (discovery_priority(graph),graph_source_cost(graph),graph_compile_cost(graph))
                 });
-                for (i,(score,cost)) in scores.into_iter().enumerate(){
-                    if cost<=MAX_COMPILE_COST {self.scores.push((score,self.cursor+i));}
-                    else {self.deferred_complexity+=1;}
+                for (i,(score,source_cost,runtime_cost)) in scores.into_iter().enumerate(){
+                    self.min_source_cost=self.min_source_cost.min(source_cost);
+                    self.max_source_cost=self.max_source_cost.max(source_cost);
+                    self.min_runtime_cost=self.min_runtime_cost.min(runtime_cost);
+                    self.max_runtime_cost=self.max_runtime_cost.max(runtime_cost);
+                    if candidate_admission(&self.raw[self.cursor+i]).is_ok() {
+                        self.scores.push((score,self.cursor+i));
+                    } else {self.deferred_complexity+=1;}
                 }
                 self.cursor=end;
                 if end==self.raw.len(){
-                    eprintln!("[MAKER DISCOVERY COMPLEXITY] qualified={} deferred={} max_cost={}",
-                        self.scores.len(),self.deferred_complexity,MAX_COMPILE_COST);
-                    self.scores.sort_by(|a,b|b.0.cmp(&a.0).then_with(||a.1.cmp(&b.1)));
-                    let selected=self.scores.len().min(CANDIDATES_EVALUATED);
+                    eprintln!("[MAKER DISCOVERY COMPLEXITY] qualified={} deferred={} max_source_cost={} max_runtime_work={} source_range={}..{} runtime_range={}..{}",
+                        self.scores.len(),self.deferred_complexity,MAX_COMPILE_COST,MAX_ESTIMATED_RUNTIME_WORK,
+                        if self.min_source_cost==u64::MAX {0}else{self.min_source_cost},self.max_source_cost,
+                        if self.min_runtime_cost==u64::MAX {0}else{self.min_runtime_cost},self.max_runtime_cost);
+                    // No connection-count, structural-diversity, or cost ranking.
+                    // Resource estimates are admission guards only. A stable hash
+                    // selects 32 from the complete eligible reservoir.
+                    self.scores.sort_unstable_by(|a,b|a.0.cmp(&b.0).then_with(||a.1.cmp(&b.1)));
+                    let selected=self.scores.len().min(MAX_CONNECTION_GPU_JOBS);
+                    let mut counts=std::collections::BTreeMap::<usize,usize>::new();
+                    for &(_,index) in self.scores.iter().take(selected){
+                        *counts.entry(self.raw[index].connections.len()).or_default()+=1;
+                    }
+                    eprintln!("[MAKER DISCOVERY SAMPLE] output_connected={} reservoir={} admissible={} gpu_selected={} selected_wire_counts={:?} (diagnostic only)",
+                        self.raw_seen,self.raw.len(),self.scores.len(),selected,counts);
                     // Reverse push order because next_candidate_job() pops from the end.
                     for &(_,index) in self.scores.iter().take(selected).rev(){
                         let graph=self.raw[index].clone();
@@ -653,6 +729,9 @@ pub struct MakerUi {
     routing_redo: Vec<(Graph,Routes)>,
     candidate_mode: u8,
     candidate_sort: u8,
+    max_wire_connections: usize,
+    max_enumerations: usize,
+    max_candidates: usize,
     candidates: Vec<Candidate>,
     candidate_jobs: Vec<CandidateJob>,
     candidate_epoch: u64,
@@ -663,8 +742,9 @@ pub struct MakerUi {
     candidate_notice: String,
     library_expanded: HashMap<String,bool>,
     connection_search: Option<ConnectionSearch>,
-    reachable_count: Option<ReachableCount>,
+    reset_enumeration_confirm:bool,
     candidate_evaluated: usize,
+    candidate_glsl_capable: usize,
     candidate_rejections: usize,
     candidate_uniform: usize,
     candidate_glsl_errors: usize,
@@ -684,9 +764,9 @@ impl MakerUi {
             modifiers:egui::Modifiers::default(),start:Instant::now(),graph,selected,parameter_popup:None,pending_source:None,dragging_wire:None,
             status:"Click an output port, then a compatible input port".into(),open:true,
             preview_rect:egui::Rect::from_min_size(egui::pos2(210.0,600.0),egui::vec2(950.0,210.0)),
-            preview_height:None,routes:Routes::new(),canvas_pan:egui::Vec2::ZERO,canvas_rect:egui::Rect::NOTHING,panning:false,pan_button:None,space_held:false,pixels_per_point:1.0,routing_undo:Vec::new(),routing_redo:Vec::new(),candidate_mode:0,candidate_sort:0,
+            preview_height:None,routes:Routes::new(),canvas_pan:egui::Vec2::ZERO,canvas_rect:egui::Rect::NOTHING,panning:false,pan_button:None,space_held:false,pixels_per_point:1.0,routing_undo:Vec::new(),routing_redo:Vec::new(),candidate_mode:0,candidate_sort:0,max_wire_connections:5,max_enumerations:DEFAULT_MAX_ENUMERATIONS,max_candidates:DEFAULT_MAX_CANDIDATES,
             candidates:Vec::new(),candidate_jobs:Vec::new(),candidate_epoch:0,candidate_base:None,
-            candidate_selected:None,candidate_undo:Vec::new(),orphan_undo:Vec::new(),candidate_notice:String::new(),library_expanded:HashMap::new(),connection_search:None,reachable_count:None,candidate_evaluated:0,candidate_rejections:0,candidate_uniform:0,candidate_glsl_errors:0,candidate_render_errors:0,analysis_request:None,analysis:None,pending_clipboard:None,pending_glsl_export:None})
+            candidate_selected:None,candidate_undo:Vec::new(),orphan_undo:Vec::new(),candidate_notice:String::new(),library_expanded:HashMap::new(),connection_search:None,reset_enumeration_confirm:false,candidate_evaluated:0,candidate_glsl_capable:0,candidate_rejections:0,candidate_uniform:0,candidate_glsl_errors:0,candidate_render_errors:0,analysis_request:None,analysis:None,pending_clipboard:None,pending_glsl_export:None})
     }
     /// Returns the exact candidate reconstruction, independent of the currently applied graph.
     /// The boolean requests saving to disk rather than copying to the clipboard.
@@ -711,6 +791,7 @@ impl MakerUi {
     pub fn next_candidate_job(&mut self)->Option<CandidateJob>{
         if self.candidate_base.is_none(){return None}
         if self.candidates.len()>=CANDIDATES_RETAINED && self.connection_search.is_none() && self.candidate_jobs.first().is_some_and(|job|!job.connection_candidate) {self.candidate_jobs.clear();return None}
+        if self.connection_search.is_some() && self.candidate_glsl_capable>=self.max_candidates {self.candidate_jobs.clear();return None}
         let job=self.candidate_jobs.pop();
         if job.is_some(){self.candidate_evaluated+=1;}
         job
@@ -823,6 +904,7 @@ impl MakerUi {
         }
     }
 
+    pub fn candidate_glsl_capable(&mut self){self.candidate_glsl_capable+=1;}
     pub fn candidate_rejected_uniform(&mut self){self.candidate_rejections+=1;self.candidate_uniform+=1;}
     pub fn candidate_rejected_glsl(&mut self){self.candidate_rejections+=1;self.candidate_glsl_errors+=1;}
     pub fn candidate_rejected_render(&mut self){self.candidate_rejections+=1;self.candidate_render_errors+=1;}
@@ -892,27 +974,35 @@ impl MakerUi {
         }
     }
     pub fn frame(&mut self,dw:u32,dh:u32,scale:f32,compile_error:Option<&str>)->bool{
-        // Recount only when the module inventory changes; moving nodes or
-        // rewiring the live graph does not change the discovery search space.
-        let signature=ReachableCount::signature(&self.graph);
-        if self.reachable_count.as_ref().is_none_or(|c|c.signature!=signature){
-            self.reachable_count=ReachableCount::new(&self.graph);
-        }
-        // Counting is informational. Do not compete with active discovery for
-        // memory, CPU, or UI responsiveness.
-        if self.connection_search.is_none() {
-            if let Some(counter)=self.reachable_count.as_mut(){counter.advance();}
-        }
-
         // CPU-only exploration is incremental. OpenGL thumbnails remain on the caller's GL thread.
         if let Some(search)=self.connection_search.as_mut(){
             if let Some(base)=self.candidate_base.as_ref(){
                 search.advance(base.revision,&mut self.candidate_jobs);
             }else{self.connection_search=None;}
         }
-        if self.connection_search.as_ref().is_some_and(|s|s.finished() && s.gpu_started) && self.candidate_jobs.is_empty(){
-            if let Some(search)=self.connection_search.take(){
-                self.candidate_notice=format!("CPU stages complete. {} graphs selected for GPU qualification. {}",search.generated,search.reports.join(" | "));
+        // Each bounded canonical DFS batch is followed by bounded GPU work.
+        // Resume the saved canonical checkpoint only after every reply from the
+        // previous batch has been accounted for by the UI thread.
+        if self.connection_search.as_ref().is_some_and(|s|s.finished()) && self.candidate_jobs.is_empty()
+            && self.candidate_evaluated==self.candidate_glsl_capable+self.candidate_glsl_errors+self.candidate_render_errors {
+            if let Some(mut search)=self.connection_search.take(){
+                if search.discovery_error.is_some(){
+                    self.candidate_notice=search.discovery_error.take().unwrap();
+                } else if !search.gpu_started {
+                    // The UI below schedules this batch's jobs. Do not advance yet.
+                    self.connection_search=Some(search);
+                } else if self.candidate_glsl_capable>=self.max_candidates {
+                    self.candidate_notice=format!("GLSL target reached: {} / {} capable; {} thumbnails retained",self.candidate_glsl_capable,self.max_candidates,self.candidates.len());
+                    eprintln!("[MAKER DISCOVERY TARGET] reached capable={} retained={}",self.candidate_glsl_capable,self.candidates.len());
+                } else if search.examined<search.max_enumerations && !search.legacy {
+                    self.candidate_notice=format!("Canonical enumeration exhausted after {} GLSL-capable candidates",self.candidate_glsl_capable);
+                    eprintln!("[MAKER DISCOVERY TARGET] exhausted capable={}",self.candidate_glsl_capable);
+                } else if search.generated==0 && search.examined==0 {
+                    self.candidate_notice="Discovery stopped: no progress in last batch".into();
+                } else if let Some(base)=self.candidate_base.as_ref(){
+                    self.candidate_notice=format!("GLSL-capable: {} / {}; resuming canonical checkpoint",self.candidate_glsl_capable,self.max_candidates);
+                    self.connection_search=ConnectionSearch::new(base,self.max_enumerations);
+                }
             }
         }
         let scale=scale.max(0.1);
@@ -939,6 +1029,9 @@ impl MakerUi {
         let routing_redo=&mut self.routing_redo;
         let candidate_mode=&mut self.candidate_mode;
         let candidate_sort=&mut self.candidate_sort;
+        let max_wire_connections=&mut self.max_wire_connections;
+        let max_enumerations=&mut self.max_enumerations;
+        let max_candidates=&mut self.max_candidates;
         let candidates=&mut self.candidates;
         let candidate_jobs=&mut self.candidate_jobs;
         let candidate_epoch=&mut self.candidate_epoch;
@@ -955,7 +1048,8 @@ impl MakerUi {
         let candidate_glsl_errors=&mut self.candidate_glsl_errors;
         let candidate_render_errors=&mut self.candidate_render_errors;
         let connection_search=&mut self.connection_search;
-        let reachable_count=&self.reachable_count;
+        let candidate_glsl_capable=&mut self.candidate_glsl_capable;
+        let reset_enumeration_confirm=&mut self.reset_enumeration_confirm;
         let candidate_evaluated=&mut self.candidate_evaluated;
         let candidate_rejections=&mut self.candidate_rejections;
         let library_expanded=&mut self.library_expanded;
@@ -963,6 +1057,38 @@ impl MakerUi {
         let mut fit_requested=false;
         let mut editor_anchor: Option<(NodeId, egui::Pos2)> = None;
         let output=self.context.run(input,|ctx|{
+            if *reset_enumeration_confirm {
+                egui::Window::new("Reset Enumeration?").collapsible(false).resizable(false).show(ctx,|ui|{
+                    ui.label(format!("Reset enumeration for maximum {} wire connections?", *max_wire_connections));
+                    ui.label("Only the checkpoint for this wire limit will be discarded.");
+                    ui.label("Saved projects, exported shaders and module definitions will not be deleted.");
+                    ui.horizontal(|ui|{
+                        if ui.button("Cancel").clicked(){*reset_enumeration_confirm=false;}
+                        if ui.button("Reset Enumeration").clicked(){
+                            // The enumeration is advanced synchronously on the UI thread.
+                            // Epoch invalidation discards replies from older GPU requests.
+                            *connection_search=None;
+                            *candidate_epoch=candidate_epoch.wrapping_add(1);
+                            candidate_jobs.clear();
+                            *candidate_base=None;
+                            *candidate_selected=None;
+                            *candidate_evaluated=0;
+                            *candidate_glsl_capable=0;
+                            *candidate_rejections=0;
+                            *candidate_uniform=0;
+                            *candidate_glsl_errors=0;
+                            *candidate_render_errors=0;
+                            *analysis_request=None;
+                            *analysis=None;
+                            match maker_discovery_test::ProductionEnumeration::reset_checkpoint_for_limit(*max_wire_connections){
+                                Ok(())=>*candidate_notice=format!("Enumeration reset for maximum {} wire connections. Click Start Discovery to begin again; other checkpoints and thumbnails are preserved.", *max_wire_connections),
+                                Err(error)=>*candidate_notice=format!("Enumeration reset failed: {error}"),
+                            }
+                            *reset_enumeration_confirm=false;
+                        }
+                    });
+                });
+            }
             egui::TopBottomPanel::top("maker_header").show(ctx,|ui|{
                 ui.horizontal(|ui|{
                     ui.heading("Screenshaver Maker");ui.separator();ui.label("Untitled graph");
@@ -1119,16 +1245,40 @@ impl MakerUi {
                 ui.separator();
                 if *candidate_mode != 0 {
                     if *candidate_mode==2 {
-                        ui.label(reachable_count.as_ref().map_or("Counting output-reachable configurations…".to_owned(),ReachableCount::label))
-                            .on_hover_text("Counts unique Output Color-rooted connection graphs passing structural and GLSL generation checks. Counting is incremental; a budget-limited result is a lower bound, not the global total.");
+                        // Connection feasibility and structural validity are reported by discovery itself.
                     } else {
                         ui.label(format!("Potential parameter combinations: {}",parameter_permutation_count(graph)))
                             .on_hover_text("Exact number of sampled parameter combinations before the discovery cap; animation speed is excluded.");
                     }
+                    if *candidate_mode==2 {
+                        ui.add_enabled_ui(connection_search.is_none() && candidate_jobs.is_empty(),|ui|{
+                            egui::ComboBox::from_label("Max. enumerations")
+                                .selected_text(max_enumerations.to_string())
+                                .show_ui(ui,|ui|{
+                                    for count in [10_000usize,25_000,50_000,100_000] {
+                                        ui.selectable_value(max_enumerations,count,count.to_string());
+                                    }
+                                });
+                            egui::ComboBox::from_label("Max. GLSL candidates")
+                                .selected_text(max_candidates.to_string())
+                                .show_ui(ui,|ui|{
+                                    for count in [100usize,250,500,1_000] {
+                                        ui.selectable_value(max_candidates,count,count.to_string());
+                                    }
+                                });
+                            egui::ComboBox::from_label("Max. wire connections")
+                                .selected_text(max_wire_connections.to_string())
+                                .show_ui(ui,|ui|{
+                                    for count in 3..=25 {
+                                        ui.selectable_value(max_wire_connections,count,count.to_string());
+                                    }
+                                });
+                        });
+                    }
                     egui::ComboBox::from_label("Sort thumbnails")
                         .selected_text(match *candidate_sort {
                             1=>"Visual Complexity",2=>"Perceptual Contrast",3=>"Spatial Entropy",
-                            4=>"Color Vibrancy",5=>"Discovery Order",6=>"Motion Activity",_=>"Visual Interest",
+                            4=>"Color Vibrancy",5=>"Discovery Order",6=>"Motion Activity",7=>"Wire Connections",_=>"Visual Interest",
                         })
                         .show_ui(ui,|ui|{
                             ui.selectable_value(candidate_sort,0,"Visual Interest");
@@ -1138,18 +1288,20 @@ impl MakerUi {
                             ui.selectable_value(candidate_sort,4,"Color Vibrancy");
                             ui.selectable_value(candidate_sort,5,"Discovery Order");
                             ui.selectable_value(candidate_sort,6,"Motion Activity (lazy)");
+                            ui.selectable_value(candidate_sort,7,"Wire Connections (most first)");
                         });
                     if *candidate_sort==6 {
                         let scored=candidates.iter().filter(|c|c.motion.is_some() || c.motion_failed).count();
                         ui.small(format!("Motion analyzed: {scored} / {} retained (one candidate per frame)",candidates.len()));
                     }
-                    if ui.button(if *candidate_mode==2 {"Discover connections"} else {"Discover parameters"}).clicked(){
+                    if ui.button(if *candidate_mode==2 {"Start Discovery"} else {"Discover parameters"}).clicked(){
                         candidates.clear();*candidate_epoch=candidate_epoch.wrapping_add(1);candidate_jobs.clear();candidate_undo.clear();*analysis_request=None;*analysis=None;*candidate_selected=None;
                         *candidate_base=Some(graph.clone());
-                        *connection_search=None;*candidate_evaluated=0;*candidate_rejections=0;*candidate_uniform=0;*candidate_glsl_errors=0;*candidate_render_errors=0;
+                        *connection_search=None;*candidate_evaluated=0;*candidate_glsl_capable=0;*candidate_rejections=0;*candidate_uniform=0;*candidate_glsl_errors=0;*candidate_render_errors=0;
                         if *candidate_mode==2 {
-                            *connection_search=ConnectionSearch::new(graph);
-                            *candidate_notice="Enumerating raw connection graphs (CPU only)...".into();
+                            maker_discovery_test::set_production_wire_limit(*max_wire_connections);
+                            *connection_search=ConnectionSearch::new(graph,*max_enumerations);
+                            *candidate_notice="Canonical discovery (CPU only); compatible checkpoint resumes automatically...".into();
                         }else{
                             let generated=candidate_graphs(graph);
                             let count=generated.len();
@@ -1160,6 +1312,11 @@ impl MakerUi {
                             *candidate_notice=format!("Evaluating {count} parameter combinations...");
                         }
                     }
+                    if *candidate_mode==2 {
+                        if ui.button("Reset Enumeration").on_hover_text("Reset only the checkpoint for the selected maximum wire count. Other wire limits and retained thumbnails are preserved.").clicked(){
+                            *reset_enumeration_confirm=true;
+                        }
+                    }
                     if connection_search.is_some() || !candidate_jobs.is_empty(){
                         if ui.button("Cancel discovery").clicked(){
                             *connection_search=None;*candidate_epoch=candidate_epoch.wrapping_add(1);candidate_jobs.clear();
@@ -1167,20 +1324,46 @@ impl MakerUi {
                         }
                     }
                     if let Some(search)=connection_search.as_ref(){
-                        let fraction=search.examined as f32/CONNECTION_EXPLORATIONS as f32;
-                        ui.add(egui::ProgressBar::new(fraction.clamp(0.0,1.0)).show_percentage()
-                            .text(format!("Exploration: {} / {} states",search.examined,CONNECTION_EXPLORATIONS)));
+                        // The canonical checkpoint count is cumulative, while the
+                        // progress bar describes only this bounded CPU batch.
+                        // The selected batch size is not the lifetime graph limit.
+                        let batch_size=search.max_enumerations as u64;
+                        let total=if search.legacy {search.examined as u64}
+                            else {search.enumeration_start.saturating_add(search.examined as u64)};
+                        let batch_number=if search.legacy {1}
+                            else {search.enumeration_start / batch_size + 1};
+                        let batch_progress=(search.examined as u64).min(batch_size);
+                        ui.label(format!("Total states examined: {}",total));
+                        if let Some(enumerator)=search.canonical.as_ref(){
+                            ui.small(format!("Structurally valid configurations encountered: {}",enumerator.valid()));
+                        }
+                        ui.add(egui::ProgressBar::new(batch_progress as f32 / batch_size as f32)
+                            .show_percentage()
+                            .text(format!("Current discovery batch {}: {} / {} states",batch_number,batch_progress,batch_size)));
                         ui.small(format!("Stage: {} · raw={} · validated={} · rejected={} · duplicates={} · CPU workers={}",
                             search.stage.name(),search.raw.len(),search.qualified.len(),search.incomplete,search.duplicates,search.workers));
+                        if let Some(error)=&search.discovery_error {ui.colored_label(egui::Color32::RED,error);}
                         for report in &search.reports {ui.small(report);}
                     }
                     if let Some(search)=connection_search.as_mut(){
-                        if search.finished() && !search.gpu_started {
-                            ui.small(format!("CPU discovery complete: {} selected graphs (raw storage ceiling: {}). No GLSL generated.",search.generated,MAX_RAW_GRAPHS));
-                            if ui.button("Start GPU candidate evaluation").clicked(){
+                        if search.finished() && !search.gpu_started && search.discovery_error.is_none() {
+                            // Automatically begin the next GPU batch. The 32-job cap
+                            // limits a batch, not the lifetime discovery target.
+                            if search.generated>0 && *candidate_glsl_capable<*max_candidates {
                                 *candidate_jobs=std::mem::take(&mut search.selected_jobs);
                                 search.gpu_started=true;
-                                *candidate_notice=format!("GPU evaluation queued for {} selected graphs",candidate_jobs.len());
+                                *candidate_notice=format!("GPU batch queued: {} graphs; GLSL-capable {} / {}",candidate_jobs.len(),*candidate_glsl_capable,*max_candidates);
+                            } else if search.generated==0 {
+                                search.gpu_started=true;
+                            }
+
+                            ui.small(format!("CPU discovery complete: {} selected graphs (raw storage ceiling: {}). No GLSL generated.",search.generated,MAX_RAW_GRAPHS));
+                            ui.small(format!("Qualified: {} · deferred for complexity: {} · source score: {}..{} · runtime estimate: {}..{}",
+                                search.generated,search.deferred_complexity,
+                                if search.min_source_cost==u64::MAX {0}else{search.min_source_cost},search.max_source_cost,
+                                if search.min_runtime_cost==u64::MAX {0}else{search.min_runtime_cost},search.max_runtime_cost));
+                            if search.generated==0 {
+                                ui.colored_label(egui::Color32::YELLOW,"No candidates passed the source-size and runtime-risk guards; GPU evaluation is unavailable for this batch.");
                             }
                         }
                     }
@@ -1188,7 +1371,7 @@ impl MakerUi {
                         let total=(*candidate_evaluated+candidate_jobs.len()).max(1);
                         ui.add(egui::ProgressBar::new(*candidate_evaluated as f32/total as f32)
                             .text(format!("Evaluated: {} · rejected: {} · retained: {}",*candidate_evaluated,*candidate_rejections,candidates.len())));
-                        ui.small(format!("Rejected: {} uniform · {} GLSL generation · {} compilation/rendering",*candidate_uniform,*candidate_glsl_errors,*candidate_render_errors));
+                        ui.small(format!("GLSL-capable: {} / {} · rejected: {} uniform · {} GLSL · {} render",*candidate_glsl_capable,*max_candidates,*candidate_uniform,*candidate_glsl_errors,*candidate_render_errors));
                     }
                     if ui.add_enabled(!candidate_undo.is_empty(),egui::Button::new("Undo candidate selection")).clicked(){
                         if let Some(mut previous)=candidate_undo.pop(){previous.revision=graph.revision+1;*graph=previous;*candidate_selected=None;}
@@ -1237,6 +1420,8 @@ impl MakerUi {
                                         None if candidate.motion_failed=>"Motion activity: unavailable".to_owned(),
                                         None=>"Motion activity: pending".to_owned(),
                                     });
+                                } else if *candidate_sort==7 {
+                                    ui.small(format!("Wire connections: {}",candidate.connections.len()));
                                 } else if *candidate_sort!=5 {
                                     ui.small(format!("{}: {:.1}%",match *candidate_sort {
                                         1=>"Complexity",2=>"Contrast",3=>"Entropy",4=>"Vibrancy",_=>"Visual interest",

@@ -1,0 +1,67 @@
+{
+  "schema_version": 1,
+  "created_by": "Screenshaver",
+  "terminal": false,
+  "id": "screenshaver.lighting.distance_fog",
+  "name": "Distance Fog",
+  "category": "Lighting",
+  "header_color": "#477D9A",
+  "description": "Blend a scene color toward fog color by linear near/far depth.",
+  "uses": "Depth fade for raymarched scenes.",
+  "notes": "Derived from Abstract Plane.glsl. No external texture dependency.",
+  "inputs": [
+    {
+      "id": "color",
+      "name": "Scene Color",
+      "type": "vec3",
+      "default": "vec3(0.2,0.3,0.4)"
+    },
+    {
+      "id": "fog_color",
+      "name": "Fog Color",
+      "type": "vec3",
+      "default": "vec3(0.02,0.03,0.05)"
+    },
+    {
+      "id": "distance",
+      "name": "Distance",
+      "type": "float",
+      "default": "0.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "color",
+      "name": "Color",
+      "type": "vec3"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "near",
+      "name": "Near",
+      "type": "float",
+      "default": 5,
+      "min": 0,
+      "max": 100
+    },
+    {
+      "id": "far",
+      "name": "Far",
+      "type": "float",
+      "default": 40,
+      "min": 0.01,
+      "max": 200
+    },
+    {
+      "id": "density",
+      "name": "Density",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 4
+    }
+  ],
+  "helpers": "",
+  "glsl": "mix({color},{fog_color},clamp((({distance}-{near})/max({far}-{near},0.0001))*{density},0.0,1.0))"
+}

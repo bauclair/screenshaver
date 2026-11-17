@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "created_by": "Screenshaver",
+  "terminal": false,
+  "id": "screenshaver.fields.neon_filament_extractor",
+  "name": "Neon Filament Extractor",
+  "category": "Fields",
+  "header_color": "#5A78A8",
+  "description": "Extracts thin bright filaments from a scalar field.",
+  "uses": "Neon contours, plasma highlights and light streams.",
+  "notes": "Original line formula uses sharpness 2 and concentration 6; output remains scalar for palette and multiplication.",
+  "inputs": [
+    {
+      "id": "field",
+      "name": "Field",
+      "type": "float",
+      "default": "0.5"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "intensity",
+      "name": "Intensity",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "sharpness",
+      "name": "Sharpness",
+      "type": "float",
+      "default": 2,
+      "min": 0.5,
+      "max": 6
+    },
+    {
+      "id": "concentration",
+      "name": "Concentration",
+      "type": "float",
+      "default": 6,
+      "min": 0.5,
+      "max": 16
+    }
+  ],
+  "helpers": "float maker_abs_filament(float v,float sharp,float concentration){float raw=abs(sin(v*6.28318530718*sharp));return pow(max(1.0-raw*raw,0.0),max(concentration,0.1));}",
+  "glsl": "maker_abs_filament({field},{sharpness},{concentration})"
+}

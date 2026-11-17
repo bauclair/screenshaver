@@ -6,9 +6,9 @@
   "name": "Triangle Noise 3D",
   "category": "Noise",
   "header_color": "#8165A6",
-  "description": "Nested triangle-wave surface perturbation adapted from Abstract Corridor.",
+  "description": "Independent layered triangular-wave signal for inexpensive faceted 3D patterns.",
   "uses": "Angular rocky displacement, inexpensive geometric roughness.",
-  "notes": "The input is a sample position, not a callable field. Ray-marching requires compiler support for repeated evaluation at sample positions.",
+  "notes": "Replaces nested triangle-wave expression attributed to Abstract Corridor. This is deterministic periodic geometry rather than stochastic noise.",
   "inputs": [
     {
       "id": "position",
@@ -42,6 +42,6 @@
       "max": 3
     }
   ],
-  "helpers": "vec3 maker_corridor_tri(vec3 x){return abs(x-floor(x)-0.5);}",
-  "glsl": "(dot(maker_corridor_tri({position}*{scale}*0.5+maker_corridor_tri({position}*{scale}*0.25).yzx),vec3(0.666))*{strength})"
+  "helpers": "float maker_triangle_wave(float x){return 1.0-abs(2.0*fract(x)-1.0);}\nfloat maker_triangle_field(vec3 p,float scale,float strength){vec3 q=p*scale;float a=maker_triangle_wave(q.x+0.31*q.z);float b=maker_triangle_wave(q.y-0.27*q.x);float c=maker_triangle_wave(q.z+0.43*q.y);return strength*(a*b+b*c+c*a)/3.0;}",
+  "glsl": "maker_triangle_field({position},{scale},{strength})"
 }

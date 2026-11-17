@@ -1,0 +1,77 @@
+{
+  "schema_version": 1,
+  "created_by": "Screenshaver",
+  "terminal": false,
+  "id": "screenshaver.color.three_color_cycling_palette",
+  "name": "Three-Color Cycling Palette",
+  "category": "Color",
+  "header_color": "#B46A35",
+  "description": "Cycles through three adjustable colors using a scalar field.",
+  "uses": "Neon plasma, animated palettes and gradients.",
+  "notes": "Preserves Abstraction two-segment palette; cycle wraps from C to A at the boundary.",
+  "inputs": [
+    {
+      "id": "value",
+      "name": "Value",
+      "type": "float",
+      "default": "0.5"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "color",
+      "name": "Color",
+      "type": "vec3"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "shift",
+      "name": "Shift",
+      "type": "float",
+      "default": 0,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "cycle_speed",
+      "name": "Cycle Speed",
+      "type": "float",
+      "default": 0,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "color_a",
+      "name": "Primary Color",
+      "type": "color3",
+      "default": [
+        0.15,
+        0,
+        1
+      ]
+    },
+    {
+      "id": "color_b",
+      "name": "Secondary Color",
+      "type": "color3",
+      "default": [
+        1,
+        0.15,
+        0.85
+      ]
+    },
+    {
+      "id": "color_c",
+      "name": "Accent Color",
+      "type": "color3",
+      "default": [
+        0.05,
+        0.3,
+        1
+      ]
+    }
+  ],
+  "helpers": "vec3 maker_abs_three_palette(float v,float shift,float cycle,vec3 a,vec3 b,vec3 c){float t=fract(v+shift+u_time*cycle*0.1);return t<0.5?mix(a,b,t*2.0):mix(b,c,(t-0.5)*2.0);}",
+  "glsl": "maker_abs_three_palette({value},{shift},{cycle_speed},{color_a},{color_b},{color_c})"
+}

@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "created_by": "Screenshaver",
+  "terminal": false,
+  "id": "screenshaver.geometry.procedural_sphere_distribution",
+  "name": "Procedural Sphere Distribution",
+  "category": "Geometry",
+  "header_color": "#557C9C",
+  "description": "Deterministic jittered sphere center for an integer 3D grid cell.",
+  "uses": "Independent placement of repeated procedural spheres.",
+  "notes": "Original hash and cell jitter design, not the source shader\u2019s placement or constants. Cell is floored; output is the sphere center in world units.",
+  "inputs": [
+    {
+      "id": "cell",
+      "name": "Cell",
+      "type": "vec3",
+      "default": "vec3(floor(maker_uv*5.0),0.0)"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec3"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "spacing",
+      "name": "Spacing",
+      "type": "float",
+      "default": 2.0,
+      "min": 0.1,
+      "max": 30.0
+    },
+    {
+      "id": "jitter",
+      "name": "Jitter",
+      "type": "float",
+      "default": 0.65,
+      "min": 0.0,
+      "max": 1.0
+    },
+    {
+      "id": "seed",
+      "name": "Seed",
+      "type": "float",
+      "default": 1.0,
+      "min": 0.0,
+      "max": 100.0
+    }
+  ],
+  "helpers": "float maker_sphere_hash(vec3 p){p=fract(p*0.1031);p+=dot(p,p.yzx+19.19);return fract((p.x+p.z)*p.y);}vec3 maker_sphere_cell_center(vec3 cell,float spacing,float jitter,float seed){vec3 c=floor(cell);vec3 h=vec3(maker_sphere_hash(c+vec3(seed,1.0,3.0)),maker_sphere_hash(c+vec3(7.0,seed,5.0)),maker_sphere_hash(c+vec3(2.0,9.0,seed)));return (c+vec3(0.5)+(h-vec3(0.5))*clamp(jitter,0.0,1.0))*max(spacing,0.0001);}",
+  "glsl": "maker_sphere_cell_center({cell},{spacing},{jitter},{seed})"
+}
