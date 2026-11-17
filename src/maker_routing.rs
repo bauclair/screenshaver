@@ -62,7 +62,7 @@ pub fn route(start:[f32;2],end:[f32;2],boxes:&[(NodeId,Box2)],from:NodeId,to:Nod
  };
  let exit=stub(start,1.0,from).ok_or("Insufficient horizontal clearance at source connector")?;
  let entry=stub(end,-1.0,to).ok_or("Insufficient horizontal clearance at destination connector")?;
- let core=route_core(exit,entry,boxes,from,to)?;
+ let core=route_core(exit,entry,boxes,from,to,&[],8.0)?;
  let mut result=Vec::with_capacity(core.len()+2);
  result.push(start);result.extend(core);result.push(end);
  // Avoid duplicate points while retaining the required connector stubs.
@@ -70,9 +70,15 @@ pub fn route(start:[f32;2],end:[f32;2],boxes:&[(NodeId,Box2)],from:NodeId,to:Nod
  Ok(result)
 }
 
-fn route_core(start:[f32;2],end:[f32;2],boxes:&[(NodeId,Box2)],from:NodeId,to:NodeId)->Result<Vec<[f32;2]>,String>{
+fn route_core(start:[f32;2],end:[f32;2],boxes:&[(NodeId,Box2)],from:NodeId,to:NodeId,
+ occupied:&[([f32;2],[f32;2])],gap:f32)->Result<Vec<[f32;2]>,String>{
  let mut xs=vec![start[0],end[0]];let mut ys=vec![start[1],end[1]];
  for &(_,b) in boxes {let b=b.inflated(13.0);xs.extend([b.min[0],b.max[0]]);ys.extend([b.min[1],b.max[1]]);}
+ // Candidate lanes are generated on either side of occupied parallel segments.
+ for &(a,b) in occupied {
+  if (a[1]-b[1]).abs()<0.05 {ys.extend([a[1]-gap,a[1]+gap]);}
+  if (a[0]-b[0]).abs()<0.05 {xs.extend([a[0]-gap,a[0]+gap]);}
+ }
  xs.sort_by(f32::total_cmp);xs.dedup_by(|a,b|(*a-*b).abs()<0.05);
  ys.sort_by(f32::total_cmp);ys.dedup_by(|a,b|(*a-*b).abs()<0.05);
  let w=xs.len();let h=ys.len();if w*h>25000{return Err("Routing grid exceeds safety limit".into())}
@@ -87,6 +93,20 @@ fn route_core(start:[f32;2],end:[f32;2],boxes:&[(NodeId,Box2)],from:NodeId,to:No
    if nx>=w||ny>=h{continue}
    let p=[xs[x],ys[y]];let next=[xs[nx],ys[ny]];
    if !clear_segment(p,next,boxes,None){continue}
+    // Reject parallel overlapping or too-close runs, but allow perpendicular
+    // crossings so the existing UI bridge_crossings() remains authoritative.
+    if occupied.iter().any(|&(a,b)| {
+     if (p[1]-next[1]).abs()<0.05 && (a[1]-b[1]).abs()<0.05 {
+      (p[1]-a[1]).abs()<gap-0.01 &&
+      p[0].min(next[0])<a[0].max(b[0])-0.05 &&
+      p[0].max(next[0])>a[0].min(b[0])+0.05
+     } else if (p[0]-next[0]).abs()<0.05 && (a[0]-b[0]).abs()<0.05 {
+      (p[0]-a[0]).abs()<gap-0.01 &&
+      p[1].min(next[1])<a[1].max(b[1])-0.05 &&
+      p[1].max(next[1])>a[1].min(b[1])+0.05
+     } else {false}
+    }) {continue}
+
    if q.index==src && next[0]<p[0]-0.05 {continue}
    let ni=ny*w+nx;
    if ni==dst && p[0]>next[0]+0.05 {continue}let state2=ni*3+dir as usize;
@@ -102,6 +122,61 @@ fn route_core(start:[f32;2],end:[f32;2],boxes:&[(NodeId,Box2)],from:NodeId,to:No
  // Remove collinear intermediate points, retaining endpoints.
  let mut compact:Vec<[f32;2]>=Vec::new();for p in path {compact.push(p);while compact.len()>=3 {let n=compact.len();let a=compact[n-3];let b=compact[n-2];let c=compact[n-1];if (a[0]-b[0]).abs()<0.05&&(b[0]-c[0]).abs()<0.05 || (a[1]-b[1]).abs()<0.05&&(b[1]-c[1]).abs()<0.05 {compact.remove(n-2);}else{break}}}
  Ok(compact)
+}
+
+/// Sequential deterministic lane assignment; separation is specified in screen pixels.
+pub fn route_all_separated(graph:&Graph,ports:&BTreeMap<ConnectionKey,PortPair>,
+ boxes:&[(NodeId,Box2)],zoom:f32)->Result<Routes,String>{
+ // Reserve 8 screen pixels even at minimum zoom (40%). Keeping lanes
+ // fixed in graph space avoids route topology changes during zoom.
+ let gap=8.0/0.4;
+ let _=zoom;
+ let mut routes=Routes::new();
+ let mut occupied:Vec<([f32;2],[f32;2])>=Vec::new();
+ let mut connections:Vec<_>=graph.connections.iter().collect();
+ connections.sort_by_key(|c|key(c));
+ for c in connections {
+  let k=key(c);
+  let pair=ports.get(&k).ok_or("Missing port geometry")?;
+  // Keep the existing mandatory connector stub policy.
+  let source=boxes.iter().find(|(id,_)|*id==c.from).ok_or("Missing source rectangle")?.1;
+  let target=boxes.iter().find(|(id,_)|*id==c.to).ok_or("Missing target rectangle")?.1;
+  if (pair.from[0]-source.max[0]).abs()>2.0 || (pair.to[0]-target.min[0]).abs()>2.0 {
+   return Err("Connector center is not aligned with its module sidewall".into());
+  }
+  let stub=|port:[f32;2],sign:f32,owner:NodeId| -> Option<[f32;2]> {
+   let mut length=24.0;
+   while length>=4.0 {
+    let tip=[port[0]+sign*length,port[1]];
+    if clear_segment(port,tip,boxes,Some(owner)){return Some(tip)}
+    length-=1.0;
+   }
+   None
+  };
+  let exit=stub(pair.from,1.0,c.from).ok_or("Insufficient source connector clearance")?;
+  let entry=stub(pair.to,-1.0,c.to).ok_or("Insufficient target connector clearance")?;
+  let core=match route_core(exit,entry,boxes,c.from,c.to,&occupied,gap) {
+   Ok(core)=>core,
+   Err(_)=>{
+    // Preserve visibility of this connection without invalidating every
+    // other lane; its fallback may still overlap in a congested graph.
+    let fallback=route(pair.from,pair.to,boxes,c.from,c.to)?;
+    routes.insert(k,fallback);
+    continue;
+   }
+  };
+  let mut path=Vec::with_capacity(core.len()+2);
+  path.push(pair.from);path.extend(core);path.push(pair.to);
+  path.dedup_by(|a,b|(a[0]-b[0]).abs()<0.05&&(a[1]-b[1]).abs()<0.05);
+  // Do not reserve stubs: multiple connections can legitimately originate
+  // at the same output port. Core lanes must remain separated.
+  for segment in path[1..path.len()-1].windows(2) {
+   occupied.push((segment[0],segment[1]));
+  }
+  routes.insert(k,path);
+ }
+ graph.validate()?;
+ Ok(routes)
 }
 
 pub fn route_all(graph:&Graph,ports:&BTreeMap<ConnectionKey,PortPair>,boxes:&[(NodeId,Box2)])->Result<Routes,String>{

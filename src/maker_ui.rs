@@ -720,10 +720,12 @@ pub struct MakerUi {
     preview_height: Option<f32>,
     routes: Routes,
     canvas_pan: egui::Vec2,
+    canvas_zoom: f32,
+    pending_zoom: Option<f32>,
+    pending_zoom_to_fit: bool,
     canvas_rect: egui::Rect,
-    panning: bool,
-    pan_button: Option<MouseButton>,
-    space_held: bool,
+    workspace_min: [f32;2],
+    workspace_max: [f32;2],
     pixels_per_point: f32,
     routing_undo: Vec<(Graph,Routes)>,
     routing_redo: Vec<(Graph,Routes)>,
@@ -739,6 +741,7 @@ pub struct MakerUi {
     candidate_selected: Option<usize>,
     candidate_undo: Vec<Graph>,
     orphan_undo: Vec<Graph>,
+    orphan_restore_pending: bool,
     candidate_notice: String,
     library_expanded: HashMap<String,bool>,
     connection_search: Option<ConnectionSearch>,
@@ -764,9 +767,9 @@ impl MakerUi {
             modifiers:egui::Modifiers::default(),start:Instant::now(),graph,selected,parameter_popup:None,pending_source:None,dragging_wire:None,
             status:"Click an output port, then a compatible input port".into(),open:true,
             preview_rect:egui::Rect::from_min_size(egui::pos2(210.0,600.0),egui::vec2(950.0,210.0)),
-            preview_height:None,routes:Routes::new(),canvas_pan:egui::Vec2::ZERO,canvas_rect:egui::Rect::NOTHING,panning:false,pan_button:None,space_held:false,pixels_per_point:1.0,routing_undo:Vec::new(),routing_redo:Vec::new(),candidate_mode:0,candidate_sort:0,max_wire_connections:5,max_enumerations:DEFAULT_MAX_ENUMERATIONS,max_candidates:DEFAULT_MAX_CANDIDATES,
+            preview_height:None,routes:Routes::new(),canvas_pan:egui::Vec2::ZERO,canvas_zoom:1.0,pending_zoom:None,pending_zoom_to_fit:false,canvas_rect:egui::Rect::NOTHING,workspace_min:[-1000.0,-1000.0],workspace_max:[2000.0,2000.0],pixels_per_point:1.0,routing_undo:Vec::new(),routing_redo:Vec::new(),candidate_mode:0,candidate_sort:0,max_wire_connections:5,max_enumerations:DEFAULT_MAX_ENUMERATIONS,max_candidates:DEFAULT_MAX_CANDIDATES,
             candidates:Vec::new(),candidate_jobs:Vec::new(),candidate_epoch:0,candidate_base:None,
-            candidate_selected:None,candidate_undo:Vec::new(),orphan_undo:Vec::new(),candidate_notice:String::new(),library_expanded:HashMap::new(),connection_search:None,reset_enumeration_confirm:false,candidate_evaluated:0,candidate_glsl_capable:0,candidate_rejections:0,candidate_uniform:0,candidate_glsl_errors:0,candidate_render_errors:0,analysis_request:None,analysis:None,pending_clipboard:None,pending_glsl_export:None})
+            candidate_selected:None,candidate_undo:Vec::new(),orphan_undo:Vec::new(),orphan_restore_pending:false,candidate_notice:String::new(),library_expanded:HashMap::new(),connection_search:None,reset_enumeration_confirm:false,candidate_evaluated:0,candidate_glsl_capable:0,candidate_rejections:0,candidate_uniform:0,candidate_glsl_errors:0,candidate_render_errors:0,analysis_request:None,analysis:None,pending_clipboard:None,pending_glsl_export:None})
     }
     /// Returns the exact candidate reconstruction, independent of the currently applied graph.
     /// The boolean requests saving to disk rather than copying to the clipboard.
@@ -914,7 +917,6 @@ impl MakerUi {
         match event {
             Event::MouseMotion { x, y, .. } => {
                 let next=egui::pos2(*x as f32/self.pixels_per_point,*y as f32/self.pixels_per_point);
-                if self.panning { self.canvas_pan += next-self.pointer; }
                 self.pointer = next;
                 self.events.push(egui::Event::PointerMoved(self.pointer));
             }
@@ -924,29 +926,37 @@ impl MakerUi {
                     MouseButton::Right => egui::PointerButton::Secondary,
                     MouseButton::Middle => egui::PointerButton::Middle, _ => return };
                 self.pointer = egui::pos2(*x as f32/self.pixels_per_point, *y as f32/self.pixels_per_point);
-                // Track the button that actually started a pan. Releasing Space
-                // during a drag must not strand the canvas in panning mode.
-                if pressed && self.canvas_rect.contains(self.pointer)
-                    && (*mouse_btn == MouseButton::Middle
-                        || (*mouse_btn == MouseButton::Left && self.space_held)) {
-                    self.panning = true;
-                    self.pan_button = Some(*mouse_btn);
-                }
-                if !pressed && self.pan_button == Some(*mouse_btn) {
-                    self.panning = false;
-                    self.pan_button = None;
-                }
-                // Forward all button transitions so egui never retains a stale
-                // pointer-down state after a canvas pan.
+                // Mango owns the middle mouse button. The graph navigates via
+                // scrollbars and node-drag edge auto-pan, not mouse-button panning.
+                if *mouse_btn == MouseButton::Middle { return; }
                 self.events.push(egui::Event::PointerButton { pos: self.pointer, button, pressed, modifiers: self.modifiers });
             }
-            Event::MouseWheel { x, y, .. } => self.events.push(egui::Event::MouseWheel {
-                unit: egui::MouseWheelUnit::Line, delta: egui::vec2(*x as f32, *y as f32), modifiers: self.modifiers }),
-            Event::Window { win_event: sdl2::event::WindowEvent::FocusLost, .. } => {
-                self.panning = false;
-                self.pan_button = None;
-                self.space_held = false;
+            Event::MouseWheel { x, y, .. } => {
+                if self.canvas_rect.contains(self.pointer) {
+                    let delta = if self.modifiers.shift { *y as f32 + *x as f32 }
+                                else { *y as f32 };
+                    let axis=if self.modifiers.shift {0} else {1};
+                    let proposed=if axis==0 {self.canvas_pan.x+delta*48.0}
+                        else {self.canvas_pan.y+delta*48.0};
+                    let visible=if axis==0 {self.canvas_rect.width()/self.canvas_zoom}
+                        else {self.canvas_rect.height()/self.canvas_zoom};
+                    let low=self.workspace_min[axis];
+                    let upper=(self.workspace_max[axis]-visible).max(low);
+                    // Wheel navigation respects the current finite workspace;
+                    // no wheel input should expand its dimensions.
+                    if upper>low {
+                        let position=(-proposed/self.canvas_zoom).clamp(low,upper);
+                        if axis==0 {self.canvas_pan.x=-position*self.canvas_zoom;}
+                        else {self.canvas_pan.y=-position*self.canvas_zoom;}
+                    }
+                } else {
+                    self.events.push(egui::Event::MouseWheel {
+                        unit: egui::MouseWheelUnit::Line,
+                        delta: egui::vec2(*x as f32, *y as f32), modifiers: self.modifiers,
+                    });
+                }
             }
+            Event::Window { win_event: sdl2::event::WindowEvent::FocusLost, .. } => {}
             Event::TextInput { text, .. } => self.events.push(egui::Event::Text(text.clone())),
             Event::KeyDown { keycode: Some(key), keymod, repeat, .. } |
             Event::KeyUp { keycode: Some(key), keymod, repeat, .. } => {
@@ -957,8 +967,16 @@ impl MakerUi {
                     shift: keymod.intersects(Mod::LSHIFTMOD | Mod::RSHIFTMOD),
                     mac_cmd: false, command: keymod.intersects(Mod::LCTRLMOD | Mod::RCTRLMOD),
                 };
-                if *key==Keycode::Space { self.space_held=matches!(event,Event::KeyDown{..}); }
                 if *repeat { return; }
+                if matches!(event,Event::KeyDown{..}) && self.modifiers.ctrl {
+                    match *key {
+                        Keycode::Equals | Keycode::Plus | Keycode::KpPlus => self.pending_zoom=Some(self.canvas_zoom*1.2),
+                        Keycode::Minus | Keycode::KpMinus => self.pending_zoom=Some(self.canvas_zoom/1.2),
+                        Keycode::Num0 | Keycode::Kp0 => self.pending_zoom=Some(1.0),
+                        Keycode::F => self.pending_zoom_to_fit=true,
+                        _=>{}
+                    }
+                }
                 let mapped = match *key {
                     Keycode::Tab => Some(egui::Key::Tab), Keycode::Return | Keycode::KpEnter => Some(egui::Key::Enter),
                     Keycode::Escape => Some(egui::Key::Escape), Keycode::Backspace => Some(egui::Key::Backspace),
@@ -1024,7 +1042,13 @@ impl MakerUi {
         let preview_height=&mut self.preview_height;
         let routes=&mut self.routes;
         let canvas_pan=&mut self.canvas_pan;
+        let canvas_zoom=&mut self.canvas_zoom;
+        let pending_zoom=&mut self.pending_zoom;
+        let pending_zoom_to_fit=&mut self.pending_zoom_to_fit;
         let canvas_rect=&mut self.canvas_rect;
+        let pointer_position=self.pointer;
+        let workspace_min=&mut self.workspace_min;
+        let workspace_max=&mut self.workspace_max;
         let routing_undo=&mut self.routing_undo;
         let routing_redo=&mut self.routing_redo;
         let candidate_mode=&mut self.candidate_mode;
@@ -1039,6 +1063,7 @@ impl MakerUi {
         let candidate_selected=&mut self.candidate_selected;
         let candidate_undo=&mut self.candidate_undo;
         let orphan_undo=&mut self.orphan_undo;
+        let orphan_restore_pending=&mut self.orphan_restore_pending;
         let candidate_notice=&mut self.candidate_notice;
         let analysis_request=&mut self.analysis_request;
         let analysis=&mut self.analysis;
@@ -1093,7 +1118,7 @@ impl MakerUi {
                 ui.horizontal(|ui|{
                     ui.heading("Screenshaver Maker");ui.separator();ui.label("Untitled graph");
                     if ui.button("Clear Graph").clicked(){let revision=graph.revision;*graph=Graph::blank();graph.revision=revision.wrapping_add(1);
-                        *selected=None;*parameter_popup=None;*pending=None;*dragging_wire=None;routes.clear();routing_undo.clear();routing_redo.clear();orphan_undo.clear();
+                        *selected=None;*parameter_popup=None;*pending=None;*dragging_wire=None;routes.clear();routing_undo.clear();routing_redo.clear();orphan_undo.clear();*orphan_restore_pending=false;
                         candidates.clear();*candidate_epoch=candidate_epoch.wrapping_add(1);candidate_jobs.clear();*connection_search=None;*candidate_base=None;candidate_undo.clear();*candidate_selected=None;
                         *status="Graph cleared; Output Color retained".into();
                     }
@@ -1110,9 +1135,12 @@ impl MakerUi {
                             if parameter_popup.is_some_and(|id|removed.contains(&id)){*parameter_popup=None;}
                             *pending=None;*dragging_wire=None;
                             routes.clear();routing_undo.clear();routing_redo.clear();
-                            candidates.clear();*candidate_epoch=candidate_epoch.wrapping_add(1);candidate_jobs.clear();*connection_search=None;*candidate_base=None;
-                            candidate_undo.clear();*candidate_selected=None;candidate_notice.clear();
-                            *status=format!("Removed {} orphan module{}",removed.len(),if removed.len()==1{""}else{"s"});
+                            // Keep existing thumbnails and their discovery snapshot. The most
+                            // recent undo entry is the exact pre-removal graph for reactivation.
+                            *orphan_restore_pending=true;
+                            *candidate_epoch=candidate_epoch.wrapping_add(1);candidate_jobs.clear();*connection_search=None;
+                            *candidate_selected=None;
+                            *status=format!("Removed {} orphan module{}; thumbnails retained (click to restore)",removed.len(),if removed.len()==1{""}else{"s"});
                         }
                     }
                     if ui.add_enabled(!orphan_undo.is_empty(),egui::Button::new("Undo Remove"))
@@ -1122,14 +1150,19 @@ impl MakerUi {
                             previous.revision=graph.revision.wrapping_add(1);
                             *graph=previous;
                             routes.clear();routing_undo.clear();routing_redo.clear();
-                            candidates.clear();*candidate_epoch=candidate_epoch.wrapping_add(1);candidate_jobs.clear();*connection_search=None;*candidate_base=None;
-                            candidate_undo.clear();*candidate_selected=None;candidate_notice.clear();
+                            *orphan_restore_pending=false;
+                            *candidate_epoch=candidate_epoch.wrapping_add(1);candidate_jobs.clear();*connection_search=None;
+                            *candidate_selected=None;
                             *pending=None;*dragging_wire=None;
-                            *status="Restored removed orphan modules".into();
+                            *status="Restored removed orphan modules; thumbnails retained".into();
                         }
                     }
                     if ui.button("Optimize Routing").clicked(){optimize_requested=true;}
                     if ui.button("Center Graph").clicked(){fit_requested=true;}
+                    if ui.button("Zoom to Fit").on_hover_text("Fit all nodes and routed connections (Ctrl+F)").clicked(){*pending_zoom_to_fit=true;}
+                    if ui.small_button("−").on_hover_text("Zoom out (Ctrl+-)").clicked(){*pending_zoom=Some(*canvas_zoom/1.2);}
+                    if ui.small_button(format!("{:.0}%",*canvas_zoom*100.0)).on_hover_text("Reset zoom (Ctrl+0)").clicked(){*pending_zoom=Some(1.0);}
+                    if ui.small_button("+").on_hover_text("Zoom in (Ctrl++)").clicked(){*pending_zoom=Some(*canvas_zoom*1.2);}
                     if ui.add_enabled(!routing_undo.is_empty(),egui::Button::new("Undo Routing")).clicked(){
                         if let Some((previous,old_routes))=routing_undo.pop(){
                             routing_redo.push((graph.clone(),routes.clone()));
@@ -1151,6 +1184,23 @@ impl MakerUi {
                 ui.horizontal_wrapped(|ui|{
                     ui.label("Batch 07 · field traversal + anchored parameter editor");ui.separator();
                     ui.label(format!("{} nodes / {} connections",graph.nodes.len(),graph.connections.len()));ui.separator();
+                    // Graph coordinates use logical graph pixels: they are stable
+                    // across viewport zoom and SDL display scaling. The cursor
+                    // is reported only while it is inside the graph canvas.
+                    if canvas_rect.is_positive() && canvas_rect.contains(pointer_position) {
+                        let graph_position=(pointer_position-canvas_rect.min-*canvas_pan)/ *canvas_zoom;
+                        ui.monospace(format!("Cursor X: {:.0}  Y: {:.0} px",graph_position.x,graph_position.y));
+                    } else {
+                        ui.monospace("Cursor X: —  Y: — px");
+                    }
+                    ui.separator();
+                    // Workspace extents, not the bounding box of placed nodes:
+                    // users can scroll into empty space and extend these limits.
+                    let graph_width=(workspace_max[0]-workspace_min[0]).max(0.0);
+                    let graph_height=(workspace_max[1]-workspace_min[1]).max(0.0);
+                    ui.monospace(format!("Graph X: {:.0}  Y: {:.0} px",graph_width,graph_height))
+                        .on_hover_text("Current expandable graph workspace width × height in logical graph pixels; expands as you navigate");
+                    ui.separator();
                     if let Some(e)=compile_error{ui.colored_label(egui::Color32::LIGHT_RED,format!("GLSL: {}",e));}
                     else{ui.label(status.as_str());}
                 });
@@ -1168,7 +1218,7 @@ impl MakerUi {
                         if graph.add(&module_id,[40.0+col as f32*265.0,40.0+row as f32*200.0]).is_ok(){added+=1;}
                     }
                     *selected=None;*parameter_popup=None;*pending=None;*dragging_wire=None;
-                    routes.clear();routing_undo.clear();routing_redo.clear();orphan_undo.clear();
+                    routes.clear();routing_undo.clear();routing_redo.clear();orphan_undo.clear();*orphan_restore_pending=false;
                     candidates.clear();*candidate_epoch=candidate_epoch.wrapping_add(1);candidate_jobs.clear();*connection_search=None;*candidate_base=None;
                     candidate_undo.clear();*candidate_selected=None;candidate_notice.clear();
                     *status=format!("Added {added} modules without connections");
@@ -1402,14 +1452,30 @@ impl MakerUi {
                                 let image=egui::Image::new(&candidate.texture).fit_to_exact_size(egui::vec2(ui.available_width().min(240.0),135.0));
                                 if ui.add(egui::ImageButton::new(image).selected(*candidate_selected==Some(index))).clicked(){
                                     let previous=graph.clone();
+                                    // Apply atomically: if the candidate cannot be applied, the
+                                    // cleaned graph remains unchanged. Never restore a stale graph
+                                    // after an unrelated edit has already changed its revision.
+                                    let restoring=*orphan_restore_pending;
+                                    let mut proposed=if restoring {
+                                        orphan_undo.last().cloned().unwrap_or_else(||graph.clone())
+                                    } else {graph.clone()};
                                     let applied=if candidate.connection_candidate {
                                         match candidate_base.as_ref() {
-                                            Some(base)=>apply_connection_candidate(graph,candidate,base),
+                                            Some(base)=>apply_connection_candidate(&mut proposed,candidate,base),
                                             None=>Err("Discovery snapshot missing".into()),
                                         }
-                                    } else {apply_candidate(graph,candidate)};
+                                    } else {apply_candidate(&mut proposed,candidate)};
                                     match applied {
-                                        Ok(())=>{candidate_undo.push(previous);*candidate_selected=Some(index);*status=format!("Applied {}",candidate.name);},
+                                        Ok(())=>{
+                                            proposed.revision=graph.revision.wrapping_add(1);
+                                            *graph=proposed;
+                                            candidate_undo.push(previous);
+                                            routes.clear();routing_undo.clear();routing_redo.clear();
+                                            *pending=None;*dragging_wire=None;
+                                            if restoring {*orphan_restore_pending=false;orphan_undo.pop();}
+                                            *candidate_selected=Some(index);
+                                            *status=if restoring {format!("Restored pre-removal graph and applied {}",candidate.name)} else {format!("Applied {}",candidate.name)};
+                                        },
                                         Err(e)=>*status=e,
                                     }
                                 }
@@ -1497,8 +1563,61 @@ impl MakerUi {
                 });
             egui::CentralPanel::default().frame(egui::Frame::default().fill(egui::Color32::from_rgba_unmultiplied(12,16,25,228))).show(ctx,|ui|{
                 ui.heading("Node Graph");ui.small("Drag from output to input to wire · click-to-connect also works · drag node headers to move");ui.separator();
-                let canvas=ui.available_rect_before_wrap();
+                let available=ui.available_rect_before_wrap();
+                // Reserve the bottom and right strips for graph navigation.
+                let canvas=egui::Rect::from_min_max(available.min,
+                    egui::pos2((available.max.x-15.0).max(available.min.x+1.0),
+                               (available.max.y-15.0).max(available.min.y+1.0)));
                 *canvas_rect=canvas;
+                if let Some(requested)=pending_zoom.take() {
+                    let next=requested.clamp(0.4,2.0);
+                    if (next-*canvas_zoom).abs()>0.0001 {
+                        let anchor=canvas.center();
+                        let graph_at_center=(anchor-canvas.min-*canvas_pan)/ *canvas_zoom;
+                        *canvas_zoom=next;
+                        *canvas_pan=anchor-canvas.min-graph_at_center*next;
+                        // Invalidate routes together with the viewport transform.
+                        routes.clear();
+                    }
+                }
+                if *pending_zoom_to_fit {
+                    *pending_zoom_to_fit=false;
+                    if !graph.nodes.is_empty() {
+                        // Graph-space bounds: node frames and all routed wire points.
+                        // A fit changes only zoom and pan, never graph coordinates.
+                        let mut left=f32::INFINITY;
+                        let mut top=f32::INFINITY;
+                        let mut right=f32::NEG_INFINITY;
+                        let mut bottom=f32::NEG_INFINITY;
+                        for n in &graph.nodes {
+                            let rows=n.definition().inputs.len().max(n.definition().outputs.len());
+                            let width=186.0_f32;
+                            let height=110.0_f32.max(55.0+25.0*rows as f32);
+                            left=left.min(n.pos[0]);top=top.min(n.pos[1]);
+                            right=right.max(n.pos[0]+width);
+                            bottom=bottom.max(n.pos[1]+height);
+                        }
+                        for path in routes.values() {
+                            for p in path {
+                                left=left.min(p[0]);top=top.min(p[1]);
+                                right=right.max(p[0]);bottom=bottom.max(p[1]);
+                            }
+                        }
+                        if left.is_finite() && right.is_finite() &&
+                           canvas.width()>64.0 && canvas.height()>64.0 {
+                            let width=(right-left).max(1.0);
+                            let height=(bottom-top).max(1.0);
+                            // 32 screen pixels of clearance on each side.
+                            let fit_x=(canvas.width()-64.0)/width;
+                            let fit_y=(canvas.height()-64.0)/height;
+                            *canvas_zoom=fit_x.min(fit_y).clamp(0.4,1.0);
+                            routes.clear();
+                            *canvas_pan=egui::vec2(
+                                canvas.width()*0.5-(left+right)*0.5* *canvas_zoom,
+                                canvas.height()*0.5-(top+bottom)*0.5* *canvas_zoom);
+                        }
+                    }
+                }
                 if fit_requested && !graph.nodes.is_empty() {
                     // Center the *complete* existing layout, including routed
                     // wires. This is a translation only: graph coordinates and
@@ -1524,16 +1643,24 @@ impl MakerUi {
                     }
                     if left.is_finite() && right.is_finite() {
                         *canvas_pan=egui::vec2(
-                            (canvas.width()-(right-left))*0.5-left,
-                            (canvas.height()-(bottom-top))*0.5-top);
+                            (canvas.width()-(right-left)* *canvas_zoom)*0.5-left* *canvas_zoom,
+                            (canvas.height()-(bottom-top)* *canvas_zoom)*0.5-top* *canvas_zoom);
                     }
                 }
+                // Areas are independent egui layers. Clipping their painting to
+                // the canvas does not necessarily prevent their hit-test regions
+                // from capturing input over the toolbar or docks. Evaluate the
+                // pointer against the actual canvas each frame, not a cached rect.
+                let graph_pointer_active=ctx.input(|i| {
+                    i.pointer.hover_pos().is_some_and(|p| canvas.contains(p))
+                });
                 let origin=canvas.min+*canvas_pan;
 
                 let mut input_ports=std::collections::HashMap::new();
                 let mut input_hit_rects=std::collections::HashMap::new();
                 let mut output_ports=std::collections::HashMap::new();
                 let mut module_boxes:BTreeMap<NodeId,Box2>=BTreeMap::new();
+                let mut active_node_drag=false;
                 let ids:Vec<NodeId>=graph.nodes.iter().map(|n|n.id).collect();
                 for id in ids{
                     // Copy the immutable node fields before entering the UI closure.
@@ -1544,15 +1671,32 @@ impl MakerUi {
                     let expanded = node.expanded;
                     let area=egui::Area::new(egui::Id::new(("maker_node",id)))
                         .order(egui::Order::Middle).movable(false)
-                        .current_pos(origin+egui::vec2(pos[0],pos[1]))
+                        // Graph nodes may travel beyond the viewport when scrolling.
+                        // Area's default screen constraint otherwise pins offscreen
+                        // rows to the upper screen edge, stacking them together.
+                        // The node UI remains clipped to the graph canvas below.
+                        .constrain(false)
+                        // Never let a scrolled-out Area intercept toolbar/dock
+                        // pointer events. Partially visible nodes remain fully
+                        // interactive while the pointer is inside the canvas.
+                        .interactable(graph_pointer_active)
+                        // The position must follow pan/zoom every frame. current_pos
+                        // only initializes an Area and may reuse a stored location.
+                        .fixed_pos(origin+egui::vec2(pos[0],pos[1])* *canvas_zoom)
                         .show(ctx,|ui|{
                             ui.set_clip_rect(ui.clip_rect().intersect(canvas));
+                            // Scale only graph node widgets, not the Maker toolbar or library.
+                            let mut style=(**ui.style()).clone();
+                            for font in style.text_styles.values_mut(){font.size*=*canvas_zoom;}
+                            style.spacing.item_spacing*=*canvas_zoom;
+                            style.spacing.button_padding*=*canvas_zoom;
+                            ui.set_style(style);
                             egui::Frame::window(ui.style()).show(ui,|ui|{
                                 // Fixed standard width and height; only port count may grow height.
-                                let node_width = 170.0;
+                                let node_width = 170.0 * *canvas_zoom;
                                 let rows = module.inputs.len().max(module.outputs.len());
-                                let port_height = rows as f32 * 25.0;
-                                let header_height = 27.0;
+                                let port_height = rows as f32 * 25.0 * *canvas_zoom;
+                                let header_height = 27.0 * *canvas_zoom;
                                 ui.set_min_width(node_width);
                                 ui.set_max_width(node_width);
                                 let header_color = node_header_color(module);
@@ -1561,17 +1705,17 @@ impl MakerUi {
                                     egui::vec2(node_width, header_height), egui::Sense::click_and_drag(),
                                 );
                                 ui.painter().rect_filled(header_rect, 3.0, header_color);
-                                ui.painter().text(header_rect.left_center()+egui::vec2(7.0,0.0),
+                                ui.painter().text(header_rect.left_center()+egui::vec2(7.0* *canvas_zoom,0.0),
                                     egui::Align2::LEFT_CENTER,title,egui::TextStyle::Button.resolve(ui.style()),egui::Color32::WHITE);
                                 let header_response=header_response.on_hover_text("Drag title bar to move the module");
                                 if header_response.clicked() {
                                     *selected=Some(id);
                                     if *parameter_popup==Some(id) { *parameter_popup=None; }
                                 }
-                                if header_response.dragged(){*selected=Some(id);}
+                                if header_response.dragged(){*selected=Some(id);active_node_drag=true;}
                                 if header_response.dragged(){
                                     let delta=ui.ctx().input(|i|i.pointer.delta());
-                                    if let Some(n)=graph.node_mut(id){n.pos[0]+=delta.x;n.pos[1]+=delta.y;}
+                                    if let Some(n)=graph.node_mut(id){n.pos[0]+=delta.x/ *canvas_zoom;n.pos[1]+=delta.y/ *canvas_zoom;}
                                 }
                                 // All editable values live exclusively in the attached editor.
                                 // The compact node exposes only a Parameters link.
@@ -1586,7 +1730,7 @@ impl MakerUi {
                                 // Keep a compact, consistent minimum body height;
                                 // extra connector rows may expand it as required.
                                 let used = ui.min_rect().height();
-                                let target = (110.0_f32 - port_height - 16.0).max(0.0);
+                                let target = (110.0_f32* *canvas_zoom - port_height - 16.0* *canvas_zoom).max(0.0);
                                 if used < target { ui.add_space(target - used); }
                                 // Ports occupy the vertical left/right edges of the node.
                                 // They remain visible when the node is collapsed.
@@ -1598,17 +1742,17 @@ impl MakerUi {
                                 let body_width = node_width;
                                 for row in 0..rows {
                                     let (row_rect, _) = ui.allocate_exact_size(
-                                        egui::vec2(body_width, 25.0), egui::Sense::hover());
+                                        egui::vec2(body_width, 25.0* *canvas_zoom), egui::Sense::hover());
                                     if let Some(port) = inputs.get(row) {
                                         let name=&port.name;let ty=port.ty.as_str();
                                         let center = egui::pos2(row_rect.left(), row_rect.center().y);
-                                        let hit = egui::Rect::from_center_size(center, egui::vec2(22.0, 22.0));
+                                        let hit = egui::Rect::from_center_size(center, egui::vec2(22.0* *canvas_zoom, 22.0* *canvas_zoom));
                                         let response = ui.interact(hit, ui.id().with((id, "input", row)), egui::Sense::click_and_drag());
                                         input_ports.insert((id,row), center);
                                         input_hit_rects.insert((id,row), hit);
                                         let color = port_color(ty);
                                         // Connector disk is drawn once in the foreground at the measured outer sidewall.
-                                        ui.painter().text(center + egui::vec2(11.0, 0.0), egui::Align2::LEFT_CENTER,
+                                        ui.painter().text(center + egui::vec2(11.0* *canvas_zoom, 0.0), egui::Align2::LEFT_CENTER,
                                             name, egui::TextStyle::Small.resolve(ui.style()), ui.visuals().text_color());
                                         let response = response.on_hover_text(port_hint(graph,id,row,*pending,*dragging_wire));
                                         if response.clicked() && dragging_wire.is_none() {
@@ -1627,11 +1771,11 @@ impl MakerUi {
                                     if let Some(port) = outputs.get(row) {
                                         let name=&port.name;let ty=port.ty.as_str();
                                         let center = egui::pos2(row_rect.right(), row_rect.center().y);
-                                        let hit = egui::Rect::from_center_size(center, egui::vec2(22.0, 22.0));
+                                        let hit = egui::Rect::from_center_size(center, egui::vec2(22.0* *canvas_zoom, 22.0* *canvas_zoom));
                                         let response = ui.interact(hit, ui.id().with((id, "output", row)), egui::Sense::click_and_drag());
                                         output_ports.insert((id,row),center);
                                         // Connector disk is drawn once in the foreground at the measured outer sidewall.
-                                        ui.painter().text(center - egui::vec2(11.0,0.0), egui::Align2::RIGHT_CENTER,
+                                        ui.painter().text(center - egui::vec2(11.0* *canvas_zoom,0.0), egui::Align2::RIGHT_CENTER,
                                             name, egui::TextStyle::Small.resolve(ui.style()),ui.visuals().text_color());
                                         let response = response.on_hover_text(format!(
                                             "{} output ({})\nMultiple destinations allowed. Click or drag to an input.",name,ty));
@@ -1651,8 +1795,8 @@ impl MakerUi {
                                 }
                             });
                         });
-                    module_boxes.insert(id,Box2{min:[area.response.rect.min.x-origin.x,area.response.rect.min.y-origin.y],
-                        max:[area.response.rect.max.x-origin.x,area.response.rect.max.y-origin.y]});
+                    module_boxes.insert(id,Box2{min:[(area.response.rect.min.x-origin.x)/ *canvas_zoom,(area.response.rect.min.y-origin.y)/ *canvas_zoom],
+                        max:[(area.response.rect.max.x-origin.x)/ *canvas_zoom,(area.response.rect.max.y-origin.y)/ *canvas_zoom]});
                     // Use the measured outer module rectangle as the single
                     // authoritative left/right sidewall for connector centers.
                     // Port-row rects are inset by egui Frame margins; using their
@@ -1668,7 +1812,7 @@ impl MakerUi {
                     for (&(port_node, port_row), hit) in input_hit_rects.iter_mut() {
                         if port_node == id {
                             if let Some(center) = input_ports.get(&(port_node, port_row)) {
-                                *hit = egui::Rect::from_center_size(*center, egui::vec2(22.0, 22.0));
+                                *hit = egui::Rect::from_center_size(*center, egui::vec2(22.0* *canvas_zoom, 22.0* *canvas_zoom));
                             }
                         }
                     }
@@ -1714,7 +1858,7 @@ impl MakerUi {
                     graph.connections.iter().filter_map(|c|{
                         let a=output_ports.get(&(c.from,c.from_port))?;
                         let b=input_ports.get(&(c.to,c.to_port))?;
-                        Some((maker_routing::key(c),PortPair{from:[a.x-origin.x,a.y-origin.y],to:[b.x-origin.x,b.y-origin.y]}))
+                        Some((maker_routing::key(c),PortPair{from:[(a.x-origin.x)/ *canvas_zoom,(a.y-origin.y)/ *canvas_zoom],to:[(b.x-origin.x)/ *canvas_zoom,(b.y-origin.y)/ *canvas_zoom]}))
                     }).collect()
                 };
                 let boxes_now:Vec<_>=module_boxes.iter().map(|(&id,&rect)|(id,rect)).collect();
@@ -1762,7 +1906,7 @@ impl MakerUi {
                                 }).collect();
                                 let mut proposed=graph.clone();
                                 for n in &mut proposed.nodes {if let Some(&pos)=candidate.get(&n.id){n.pos=pos;}}
-                                let Ok(mut new_routes)=maker_routing::route_all(&proposed,&shifted,&candidate_boxes) else {rejected+=1;continue};
+                                let Ok(mut new_routes)=maker_routing::route_all_separated(&proposed,&shifted,&candidate_boxes,*canvas_zoom) else {rejected+=1;continue};
                                 let mut min=[f32::INFINITY;2];let mut max=[f32::NEG_INFINITY;2];
                                 for &(_,b) in &candidate_boxes {
                                     for axis in 0..2 {min[axis]=min[axis].min(b.min[axis]);max[axis]=max[axis].max(b.max[axis]);}
@@ -1775,7 +1919,7 @@ impl MakerUi {
                                     bends+=path.len().saturating_sub(2);
                                 }
                                 let w=(max[0]-min[0]).max(1.0);let h=(max[1]-min[1]).max(1.0);
-                                let fits=w+2.0*margin<=canvas.width() && h+2.0*margin<=canvas.height();
+                                let fits=w+2.0*margin<=canvas.width()/ *canvas_zoom && h+2.0*margin<=canvas.height()/ *canvas_zoom;
                                 let ratio=(w.max(h)/w.min(h)) as f64;
                                 let area=(w as f64)*(h as f64);
                                 // Fit first, then favor a square compact footprint;
@@ -1799,7 +1943,60 @@ impl MakerUi {
                         if routing_undo.len()>32{routing_undo.remove(0);}
                         routing_redo.clear();
                         *graph=proposed;*routes=new_routes;graph.revision+=1;
-                        *status="Optimized modules and routed wires for a compact, near-square footprint (Undo available)".into();
+                        // Refit the virtual workspace to the optimized layout.
+                        // The routing operation must never inherit previously
+                        // expanded scrollbar ranges or grow them on its own.
+                        let mut bounds_min=[f32::INFINITY;2];
+                        let mut bounds_max=[f32::NEG_INFINITY;2];
+                        for node in &graph.nodes {
+                            let rows=node.definition().inputs.len().max(node.definition().outputs.len());
+                            let size=[186.0,110.0_f32.max(55.0+25.0*rows as f32)];
+                            for axis in 0..2 {
+                                bounds_min[axis]=bounds_min[axis].min(node.pos[axis]);
+                                bounds_max[axis]=bounds_max[axis].max(node.pos[axis]+size[axis]);
+                            }
+                        }
+                        // Include routed wires so no connector is clipped.
+                        for path in routes.values() {
+                            for point in path {
+                                for axis in 0..2 {
+                                    bounds_min[axis]=bounds_min[axis].min(point[axis]);
+                                    bounds_max[axis]=bounds_max[axis].max(point[axis]);
+                                }
+                            }
+                        }
+                        // Normalize the actual final layout, not merely the candidate
+                        // layout: node and routed-wire bounds must begin at +24 px.
+                        // This keeps the optimized workspace origin at (0, 0),
+                        // regardless of negative coordinates before optimization.
+                        let margin=24.0_f32;
+                        let offset=[margin-bounds_min[0],margin-bounds_min[1]];
+                        for node in &mut graph.nodes {
+                            node.pos[0]+=offset[0];
+                            node.pos[1]+=offset[1];
+                        }
+                        for path in routes.values_mut() {
+                            for point in path {
+                                point[0]+=offset[0];
+                                point[1]+=offset[1];
+                            }
+                        }
+                        for axis in 0..2 {
+                            let visible=if axis==0 {canvas.width()/ *canvas_zoom}
+                                else {canvas.height()/ *canvas_zoom};
+                            // At minimum show the full layout plus a 24 px margin
+                            // on both sides; if it fits, show the viewport width.
+                            let content_size=bounds_max[axis]-bounds_min[axis]+2.0*margin;
+                            workspace_min[axis]=0.0;
+                            workspace_max[axis]=content_size.max(visible);
+                        }
+                        // Center the normalized contents within the available view,
+                        // while the subsequent common clamp enforces scroll bounds.
+                        let cx=(margin+(bounds_max[0]-bounds_min[0])*0.5);
+                        let cy=(margin+(bounds_max[1]-bounds_min[1])*0.5);
+                        *canvas_pan=egui::vec2(canvas.width()*0.5-cx* *canvas_zoom,
+                            canvas.height()*0.5-cy* *canvas_zoom);
+                        *status="Optimized routing and fitted graph workspace to its contents (Undo available)".into();
                     } else {
                         *status=format!("Routing unchanged: no valid candidate ({rejected} tested)");
                     }
@@ -1809,24 +2006,46 @@ impl MakerUi {
                     // A blocked connection must never erase routes for other wires.
                     // Recompute from the measured port geometry on every frame,
                     // including the first one, without requiring module movement.
-                    let mut updated=Routes::new();
-                    let mut failed=0usize;
-                    let mut first_error=None;
-                    for c in &graph.connections {
-                        let k=maker_routing::key(c);
-                        if let Some(pair)=measured_ports.get(&k) {
-                            match maker_routing::route(pair.from,pair.to,&boxes_now,c.from,c.to) {
-                                Ok(path)=>{updated.insert(k,path);},
-                                Err(e)=>{failed+=1;if first_error.is_none(){first_error=Some(e);}}
+                    let separated=maker_routing::route_all_separated(graph,&measured_ports,&boxes_now,*canvas_zoom);
+                    match separated {
+                        Ok(updated)=>*routes=updated,
+                        Err(separation_error)=>{
+                            // The all-graph validator rejects layouts containing
+                            // overlapping module rectangles, even when individual
+                            // connections have perfectly valid routes. Candidate
+                            // selection must never depend on Optimize Routing to
+                            // make the first set of wires visible.
+                            let mut repaired=Routes::new();
+                            let mut failures=Vec::new();
+                            for connection in &graph.connections {
+                                let k=maker_routing::key(connection);
+                                match measured_ports.get(&k) {
+                                    Some(pair)=>match maker_routing::route(
+                                        pair.from,pair.to,&boxes_now,connection.from,connection.to) {
+                                        Ok(path)=>{repaired.insert(k,path);},
+                                        Err(error)=>failures.push(format!("{k:?}: {error}")),
+                                    },
+                                    None=>failures.push(format!("{k:?}: port geometry missing")),
+                                }
                             }
-                        } else {
-                            failed+=1;
-                            if first_error.is_none(){first_error=Some("Port geometry not available".into());}
+                            // Retain a previously computed path only for the same
+                            // connection; never carry a route over to a different
+                            // candidate connection key.
+                            for connection in &graph.connections {
+                                let k=maker_routing::key(connection);
+                                if !repaired.contains_key(&k) {
+                                    if let Some(path)=routes.get(&k) {
+                                        repaired.insert(k,path.clone());
+                                    }
+                                }
+                            }
+                            let visible=repaired.len();
+                            *routes=repaired;
+                            if !failures.is_empty() {
+                                *status=format!("Routing: {visible}/{} wires visible; {} failed. First: {}. Lane routing: {}",
+                                    graph.connections.len(),failures.len(),failures[0],separation_error);
+                            }
                         }
-                    }
-                    *routes=updated;
-                    if failed>0 {
-                        *status=format!("Connection routing unavailable for {failed} wire(s): {}",first_error.unwrap_or_default());
                     }
                 }
                 let painter=ctx.layer_painter(egui::LayerId::new(egui::Order::Background,egui::Id::new("maker_wire_layer"))).with_clip_rect(canvas);
@@ -1838,7 +2057,7 @@ impl MakerUi {
                     // Never draw a fallback path that could cross a module or
                     // appear to connect anywhere other than its actual port.
                     let path:Vec<egui::Pos2>=routes.get(&maker_routing::key(c))?
-                        .iter().map(|v|egui::pos2(v[0]+origin.x,v[1]+origin.y)).collect();
+                        .iter().map(|v|egui::pos2(v[0]* *canvas_zoom+origin.x,v[1]* *canvas_zoom+origin.y)).collect();
                     Some((path,color))
                 }).collect();
                 for (index,(path,color)) in wire_paths.iter().enumerate() {
@@ -1892,7 +2111,111 @@ impl MakerUi {
                             }
                         }
                     });
-                ui.allocate_rect(canvas,egui::Sense::hover());
+                // Edge-triggered auto-pan during an actual node-header drag.
+                // Move the viewport and the dragged node by equal screen-space
+                // amounts: the node stays under the pointer without jumping.
+                if active_node_drag {
+                    if let Some(pointer)=ctx.input(|i|i.pointer.interact_pos()) {
+                        let zone=32.0_f32;
+                        let edge_speed=|distance:f32| -> f32 {
+                            if distance>=zone {0.0} else {
+                                let strength=((zone-distance)/zone).clamp(0.0,1.0);
+                                100.0*strength+500.0*strength*strength
+                            }
+                        };
+                        let dx=edge_speed(pointer.x-canvas.left())
+                            -edge_speed(canvas.right()-pointer.x);
+                        let dy=edge_speed(pointer.y-canvas.top())
+                            -edge_speed(canvas.bottom()-pointer.y);
+                        let dt=ctx.input(|i|i.stable_dt).clamp(0.0,0.05);
+                        let movement=egui::vec2(dx,dy)*dt;
+                        if movement.length_sq()>0.0 {
+                            *canvas_pan+=movement;
+                            if let Some(id)=*selected {
+                                if let Some(n)=graph.node_mut(id) {
+                                    n.pos[0]-=movement.x/ *canvas_zoom;
+                                    n.pos[1]-=movement.y/ *canvas_zoom;
+                                }
+                            }
+                            ctx.request_repaint();
+                        }
+                    }
+                }
+                // Keep the scrollable workspace large enough for every module,
+                // including rows created by Add All, candidate restoration, and
+                // automatic layout. Previously only node dragging expanded it,
+                // so the vertical thumb could reach its end above the last rows.
+                // Bounds are monotonic: ordinary scrolling must not grow them.
+                const WORKSPACE_CLEARANCE: f32 = 64.0;
+                for node in &graph.nodes {
+                    let rows=node.definition().inputs.len().max(node.definition().outputs.len());
+                    let height=110.0_f32.max(55.0+25.0*rows as f32);
+                    workspace_min[0]=workspace_min[0].min(node.pos[0]-WORKSPACE_CLEARANCE);
+                    workspace_min[1]=workspace_min[1].min(node.pos[1]-WORKSPACE_CLEARANCE);
+                    workspace_max[0]=workspace_max[0].max(node.pos[0]+186.0+WORKSPACE_CLEARANCE);
+                    workspace_max[1]=workspace_max[1].max(node.pos[1]+height+WORKSPACE_CLEARANCE);
+                }
+                // Wire detours can extend beyond module frames, and must also
+                // be reachable with the scrollbars at every supported zoom.
+                for path in routes.values() {
+                    for point in path {
+                        workspace_min[0]=workspace_min[0].min(point[0]-WORKSPACE_CLEARANCE);
+                        workspace_min[1]=workspace_min[1].min(point[1]-WORKSPACE_CLEARANCE);
+                        workspace_max[0]=workspace_max[0].max(point[0]+WORKSPACE_CLEARANCE);
+                        workspace_max[1]=workspace_max[1].max(point[1]+WORKSPACE_CLEARANCE);
+                    }
+                }
+                // Workspace boundaries are stable under scrollbar movement.
+                // Only a node being actively dragged may grow the workspace
+                // beyond the actual graph content.
+                let view_size=[canvas.width()/ *canvas_zoom,canvas.height()/ *canvas_zoom];
+                if active_node_drag {
+                    for node in &graph.nodes {
+                        let rows=node.definition().inputs.len().max(node.definition().outputs.len());
+                        let height=110.0_f32.max(55.0+25.0*rows as f32);
+                        workspace_min[0]=workspace_min[0].min(node.pos[0]-48.0);
+                        workspace_min[1]=workspace_min[1].min(node.pos[1]-48.0);
+                        workspace_max[0]=workspace_max[0].max(node.pos[0]+186.0+48.0);
+                        workspace_max[1]=workspace_max[1].max(node.pos[1]+height+48.0);
+                    }
+                    // Grow in the direction of an edge-triggered drag only.
+                    // Do not expand merely because the viewport is near an edge.
+                    if let Some(pointer)=ctx.input(|i|i.pointer.interact_pos()) {
+                        let edge=32.0;
+                        let view_min=[-canvas_pan.x/ *canvas_zoom,-canvas_pan.y/ *canvas_zoom];
+                        for axis in 0..2 {
+                            let (coord,lo,hi)=if axis==0 {(pointer.x,canvas.left(),canvas.right())}
+                                else {(pointer.y,canvas.top(),canvas.bottom())};
+                            if coord<=lo+edge && view_min[axis]<=workspace_min[axis]+view_size[axis]*0.2 {
+                                workspace_min[axis]-=view_size[axis].max(250.0);
+                            }
+                            if coord>=hi-edge && view_min[axis]+view_size[axis]>=workspace_max[axis]-view_size[axis]*0.2 {
+                                workspace_max[axis]+=view_size[axis].max(250.0);
+                            }
+                        }
+                    }
+                }
+                // Keep the visible region inside the finite current workspace.
+                // This also handles zooming out beyond the current workspace size.
+                for axis in 0..2 {
+                    let extent=workspace_max[axis]-workspace_min[axis];
+                    if extent<view_size[axis] {
+                        let center=(workspace_min[axis]+workspace_max[axis])*0.5;
+                        workspace_min[axis]=center-view_size[axis]*0.5;
+                        workspace_max[axis]=center+view_size[axis]*0.5;
+                    }
+                    // Do not clamp the viewport here. Center Graph and
+                    // Optimize Routing intentionally position graph content
+                    // independently of scrollbar limits, particularly when
+                    // zoomed in. The scrollbar interaction itself clamps its
+                    // own requested position. A per-frame clamp here caused
+                    // one-frame centering followed by a snap to the corner.
+                }
+                graph_scrollbar(ui,canvas,available,true,canvas_pan,*canvas_zoom,
+                    workspace_min[0],workspace_max[0]);
+                graph_scrollbar(ui,canvas,available,false,canvas_pan,*canvas_zoom,
+                    workspace_min[1],workspace_max[1]);
+                ui.allocate_rect(available,egui::Sense::hover());
             });
             // Module-attached editor is a foreground Area, not a Popup. Its
             // lifetime is independent of nested color-picker popups.
@@ -1923,6 +2246,9 @@ impl MakerUi {
                         egui::Area::new(egui::Id::new(("maker_parameter_area", id)))
                             .order(egui::Order::Foreground)
                             .movable(false)
+                            .interactable(ctx.input(|i| {
+                                i.pointer.hover_pos().is_some_and(|p| bounds.contains(p))
+                            }))
                             .fixed_pos(egui::pos2(x, y))
                             .show(ctx, |ui| {
                                 ui.set_clip_rect(ui.clip_rect().intersect(bounds));
@@ -2153,3 +2479,54 @@ fn module_library_tooltip(ui:&mut egui::Ui,module:&Module){
 #[path = "maker_discovery_test.rs"]
 mod maker_discovery_test;
 pub fn run_discovery_test()->Result<(),String>{maker_discovery_test::run()}
+
+/// Scrollbar positions are graph-space values, not node-space mutations.
+/// A drag on the track jumps toward the pointer; a drag on the thumb scrolls
+/// proportionally to its available travel. The ranges grow as needed.
+fn graph_scrollbar(ui:&mut egui::Ui,canvas:egui::Rect,available:egui::Rect,
+    horizontal:bool,pan:&mut egui::Vec2,zoom:f32,low:f32,high:f32) {
+    let track=if horizontal {
+        egui::Rect::from_min_max(egui::pos2(canvas.left(),canvas.bottom()+2.0),
+            egui::pos2(canvas.right(),available.bottom()-2.0))
+    } else {
+        egui::Rect::from_min_max(egui::pos2(canvas.right()+2.0,canvas.top()),
+            egui::pos2(available.right()-2.0,canvas.bottom()))
+    };
+    let length=if horizontal {track.width()} else {track.height()};
+    if length<=4.0 {return;}
+    let extent=(high-low).max(1.0);
+    let visible=if horizontal {canvas.width()/zoom} else {canvas.height()/zoom};
+    let scrollable=(extent-visible).max(0.0);
+    let thumb_length=(length*(visible/extent)).clamp(24.0,length);
+    let travel=(length-thumb_length).max(0.0);
+    let position=if horizontal {-pan.x/zoom} else {-pan.y/zoom};
+    let fraction=if scrollable>0.0 {((position-low)/scrollable).clamp(0.0,1.0)} else {0.0};
+    let offset=fraction*travel;
+    let thumb=if horizontal {
+        egui::Rect::from_min_size(egui::pos2(track.left()+offset,track.top()),
+            egui::vec2(thumb_length,track.height()))
+    } else {
+        egui::Rect::from_min_size(egui::pos2(track.left(),track.top()+offset),
+            egui::vec2(track.width(),thumb_length))
+    };
+    let axis=if horizontal {"horizontal"} else {"vertical"};
+    let track_response=ui.interact(track,egui::Id::new(("maker_scroll_track",axis)),egui::Sense::click());
+    let thumb_response=ui.interact(thumb,egui::Id::new(("maker_scroll_thumb",axis)),egui::Sense::click_and_drag());
+    ui.painter().rect_filled(track,3.0,egui::Color32::from_rgb(48,59,76));
+    ui.painter().rect_filled(thumb,3.0,egui::Color32::from_rgb(139,161,190));
+    if thumb_response.dragged() && travel>0.0 {
+        let delta=ui.input(|i|i.pointer.delta());
+        let component=if horizontal {delta.x} else {delta.y};
+        // A viewport-sized workspace can round to high-visible < low.
+        let upper=(high-visible).max(low);
+        let new_position=(position+component*scrollable/travel).clamp(low,upper);
+        if horizontal {pan.x=-new_position*zoom;} else {pan.y=-new_position*zoom;}
+    } else if track_response.clicked() && scrollable>0.0 {
+        if let Some(pointer)=track_response.interact_pointer_pos() {
+            let coord=if horizontal {pointer.x-track.left()} else {pointer.y-track.top()};
+            let fraction=((coord-thumb_length*0.5)/travel.max(1.0)).clamp(0.0,1.0);
+            let new_position=low+fraction*scrollable;
+            if horizontal {pan.x=-new_position*zoom;} else {pan.y=-new_position*zoom;}
+        }
+    }
+}
