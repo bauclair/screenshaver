@@ -1,0 +1,79 @@
+{
+  "schema_version": 1,
+  "created_by": "Screenshaver",
+  "terminal": false,
+  "id": "screenshaver.lighting.distance_attenuated_point_light",
+  "name": "Distance-Attenuated Point Lighting",
+  "category": "Lighting",
+  "header_color": "#477D9A",
+  "description": "Diffuse point lighting with inverse-square-style distance falloff and a softening radius.",
+  "uses": "Illuminating a known surface point and normal in procedural 3D scenes.",
+  "notes": "Independently implemented from conventional Lambert diffuse lighting and inverse-distance attenuation. The light position is a point, not a direction. Output is linear RGB and is not clamped.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Surface Position",
+      "type": "vec3",
+      "default": "vec3(0.0)"
+    },
+    {
+      "id": "normal",
+      "name": "Surface Normal",
+      "type": "vec3",
+      "default": "vec3(0.0,0.0,1.0)"
+    },
+    {
+      "id": "albedo",
+      "name": "Surface Color",
+      "type": "vec3",
+      "default": "vec3(0.8)"
+    },
+    {
+      "id": "light_position",
+      "name": "Light Position",
+      "type": "vec3",
+      "default": "vec3(1.0,2.0,3.0)"
+    },
+    {
+      "id": "light_color",
+      "name": "Light Color",
+      "type": "vec3",
+      "default": "vec3(1.0)"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "color",
+      "name": "Lit Color",
+      "type": "vec3"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "intensity",
+      "name": "Intensity",
+      "type": "float",
+      "default": 4.0,
+      "min": 0,
+      "max": 30
+    },
+    {
+      "id": "ambient",
+      "name": "Ambient",
+      "type": "float",
+      "default": 0.12,
+      "min": 0,
+      "max": 2
+    },
+    {
+      "id": "softening",
+      "name": "Softening Radius",
+      "type": "float",
+      "default": 1.0,
+      "min": 0.01,
+      "max": 20
+    }
+  ],
+  "helpers": "vec3 maker_point_light_diffuse(vec3 p,vec3 n,vec3 albedo,vec3 lp,vec3 lc,float intensity,float ambient,float soften){vec3 v=lp-p;float r2=dot(v,v);float inv= inversesqrt(max(r2,1e-10));float cosine=max(dot(normalize(n+vec3(1e-8)),v*inv),0.0);float attenuation=1.0/(r2+soften*soften);return albedo*(vec3(max(ambient,0.0))+lc*(max(intensity,0.0)*cosine*attenuation));}",
+  "glsl": "maker_point_light_diffuse({position},{normal},{albedo},{light_position},{light_color},{intensity},{ambient},{softening})"
+}

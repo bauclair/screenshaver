@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "created_by": "Screenshaver",
+  "terminal": false,
+  "id": "screenshaver.geometry.grid_ray_step_3d",
+  "name": "3D Grid Ray Step",
+  "category": "Geometry",
+  "header_color": "#557C9C",
+  "description": "Find the next voxel-grid boundary crossed by a ray using a single 3D DDA step.",
+  "uses": "Composable spatial traversal and voxel-grid inspection; call repeatedly with a progressively advanced ray origin to traverse multiple cells.",
+  "notes": "This is a stateless single-cell DDA primitive, NOT a complete scene ray tracer or arbitrary-occupancy search. Returns distance along ray and the next cell index; cell_size must be positive. Zero ray direction yields distance -1. For repeated traversal, advance the origin slightly beyond the returned crossing.",
+  "inputs": [
+    {
+      "id": "origin",
+      "name": "Ray Origin",
+      "type": "vec3",
+      "default": "vec3(0.1,0.2,0.3)"
+    },
+    {
+      "id": "direction",
+      "name": "Ray Direction",
+      "type": "vec3",
+      "default": "normalize(vec3(1.0,0.4,0.3))"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "distance",
+      "name": "Boundary Distance",
+      "type": "float"
+    },
+    {
+      "id": "cell",
+      "name": "Entered Cell",
+      "type": "vec3"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "cell_size",
+      "name": "Cell Size",
+      "type": "float",
+      "default": 1.0,
+      "min": 0.01,
+      "max": 100
+    }
+  ],
+  "helpers": "vec4 maker_grid_ray_step(vec3 p,vec3 d,float cellSize){float s=max(cellSize,0.00001);vec3 c=floor(p/s);if(dot(d,d)<1e-12)return vec4(c,-1.0);vec3 edge=vec3(d.x>0.0?c.x+1.0:c.x,d.y>0.0?c.y+1.0:c.y,d.z>0.0?c.z+1.0:c.z)*s;vec3 t=vec3(d.x==0.0?1e30:(edge.x-p.x)/d.x,d.y==0.0?1e30:(edge.y-p.y)/d.y,d.z==0.0?1e30:(edge.z-p.z)/d.z);t=max(t,vec3(0.0));float dt=min(t.x,min(t.y,t.z));vec3 delta=vec3(t.x<=dt+1e-6?sign(d.x):0.0,t.y<=dt+1e-6?sign(d.y):0.0,t.z<=dt+1e-6?sign(d.z):0.0);return vec4(c+delta,dt);}",
+  "glsl": "maker_grid_ray_step({origin},{direction},{cell_size}).w",
+  "glsl_outputs": {
+    "distance": "maker_grid_ray_step({origin},{direction},{cell_size}).w",
+    "cell": "maker_grid_ray_step({origin},{direction},{cell_size}).xyz"
+  }
+}

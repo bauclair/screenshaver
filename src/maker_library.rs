@@ -67,6 +67,8 @@ impl Library {
       ("geometry/ray_plane_intersection.smmod",include_str!("../assets/maker/modules/geometry/ray_plane_intersection.smmod")),
       ("geometry/procedural_sphere_distribution.smmod",include_str!("../assets/maker/modules/geometry/procedural_sphere_distribution.smmod")),
       ("math/animated_vertical_oscillator.smmod",include_str!("../assets/maker/modules/math/animated_vertical_oscillator.smmod")),
+      ("lighting/distance_attenuated_point_light.smmod",include_str!("../assets/maker/modules/lighting/distance_attenuated_point_light.smmod")),
+      ("geometry/grid_ray_step_3d.smmod",include_str!("../assets/maker/modules/geometry/grid_ray_step_3d.smmod")),
     ];
     for (path,src) in official {result.register(path,src,Trust::Official)}
     if let Some(home)=std::env::var_os("HOME"){
