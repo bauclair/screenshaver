@@ -2,13 +2,13 @@
   "schema_version": 1,
   "created_by": "Screenshaver",
   "terminal": false,
-  "id": "screenshaver.fields.second_order_distance_extractor",
-  "name": "Second-Order Distance Extractor",
+  "id": "screenshaver.fields.2nd_order_distance_extractor",
+  "name": "2nd-Order Distance Extractor",
   "category": "Fields",
   "header_color": "#6C7D9B",
   "description": "Second-nearest minus nearest of four scalar distances, preserving the Abstract Plane distance ordering.",
   "uses": "Cell boundaries and beveled cellular patterns.",
-  "notes": "Derived from Abstract Plane.glsl. No external texture dependency.",
+  "notes": "No external texture dependency.",
   "inputs": [
     {
       "id": "a",

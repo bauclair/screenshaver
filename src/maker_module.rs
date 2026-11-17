@@ -71,7 +71,11 @@ impl Module {
     if src.len()>131072{return Err("Module definition exceeds 128 KiB".into())}
     if glsl_outputs.iter().chain(std::iter::once(&glsl)).any(|s|s.contains("#version")||s.contains("#include")||s.contains("void main")) {return Err("GLSL module may not redefine shader entry point".into())}
     Ok(Self{id,name:required(&v,"name")?.into(),category:required(&v,"category")?.into(),created_by:required(&v,"created_by")?.into(),
-        description:required(&v,"description")?.into(),uses:required(&v,"uses")?.into(),notes:required(&v,"notes")?.into(),
+        description:required(&v,"description")?.into(),uses:required(&v,"uses")?.into(),notes:match v.get("notes") {
+            None | Some(Value::Null) => String::new(),
+            Some(Value::String(text)) => text.clone(),
+            Some(_) => return Err("Field 'notes' must be a string".into()),
+        },
         header_color:[rgb(1)?,rgb(3)?,rgb(5)?],inputs,outputs,parameters,glsl,glsl_outputs,
         helpers:v.get("helpers").and_then(Value::as_str).unwrap_or("").into(),terminal,trust})
  }

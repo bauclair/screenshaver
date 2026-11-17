@@ -1,13 +1,13 @@
 {
   "schema_version": 1,
-  "id": "screenshaver.color.aces_tonemap",
-  "name": "Filmic Tone Mapping (ACES Replacement)",
+  "id": "screenshaver.color.filmic_tonemapping",
+  "name": "Filmic Tone Mapping",
   "category": "Color",
   "created_by": "Screenshaver",
   "header_color": "#A27660",
-  "description": "Independent luminance-preserving filmic highlight compression; replaces the previously embedded ACES fitted matrices.",
+  "description": "Independent luminance-preserving filmic highlight compression.",
   "uses": "Color grading of accumulated field illumination.",
-  "notes": "Compatibility: retains historical screenshaver.color.aces_tonemap ID and ports, but is NOT an ACES transform. Existing graphs will render differently. Rename ID in a future project-format migration.",
+  "notes": "",
   "inputs": [
     {
       "id": "color",

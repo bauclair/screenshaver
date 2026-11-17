@@ -987,7 +987,7 @@ pub fn print_help() {
          Available options:\n\
          \n\
              --maker\n\
-                 Launch the independent Screenshaver Maker experiment.\n\
+                 Launch Screenshaver Maker, the shader composition editor.\n\
              --start\n\
                  Start Screenshaver normally. Equivalent to launching without an option.\n\
          \n\
@@ -1092,6 +1092,7 @@ pub fn print_help() {
              screenshaver --start\n\
              screenshaver --stop\n\
              screenshaver --control\n\
+             screenshaver --maker\n\
              screenshaver --control \"Heartfelt.glsl\"\n\
          \n\
          Configuration:\n\

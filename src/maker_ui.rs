@@ -424,7 +424,7 @@ struct ConnectionSearch {
     feasibility:Option<ConnectionFeasibility>,
     base:Option<Graph>,
     queues:[std::collections::VecDeque<Graph>;3],
-    canonical:Option<maker_discovery_test::ProductionEnumeration>,
+    canonical:Option<maker_discovery::ProductionEnumeration>,
     legacy:bool,
     enumeration_start:u64,
     max_enumerations:usize,
@@ -492,7 +492,7 @@ impl ConnectionSearch {
                     self.transition(DiscoveryStage::Enumerate,input,output);
                     return;
                 }
-                match maker_discovery_test::ProductionEnumeration::open(base) {
+                match maker_discovery::ProductionEnumeration::open(base) {
                     Ok((canonical,resumed))=>{
                         self.enumeration_start=canonical.examined();
                         eprintln!("[MAKER DISCOVERY] canonical enumeration {} from state={} digest={:016x}",
@@ -1105,7 +1105,7 @@ impl MakerUi {
                             *candidate_render_errors=0;
                             *analysis_request=None;
                             *analysis=None;
-                            match maker_discovery_test::ProductionEnumeration::reset_checkpoint_for_limit(*max_wire_connections){
+                            match maker_discovery::ProductionEnumeration::reset_checkpoint_for_limit(*max_wire_connections){
                                 Ok(())=>*candidate_notice=format!("Enumeration reset for maximum {} wire connections. Click Start Discovery to begin again; other checkpoints and thumbnails are preserved.", *max_wire_connections),
                                 Err(error)=>*candidate_notice=format!("Enumeration reset failed: {error}"),
                             }
@@ -1205,7 +1205,27 @@ impl MakerUi {
                     else{ui.label(status.as_str());}
                 });
             });
-            egui::SidePanel::left("maker_library").resizable(true).default_width(190.0).min_width(155.0).show(ctx,|ui|{
+            // Size the dock from the longest displayed module label, including the
+            // "+ " prefix. All category buttons share this single width.
+            let library_button_width = {
+                let font_id = egui::TextStyle::Button.resolve(&ctx.style());
+                let painter = ctx.debug_painter();
+                maker_library::get().modules.values()
+                    .map(|module| {
+                        let label = format!("+ {}", module.name);
+                        painter.layout_no_wrap(label, font_id.clone(), egui::Color32::WHITE).size().x
+                    })
+                    .fold(0.0_f32, f32::max)
+                    + 24.0 // Button horizontal padding.
+            };
+            // Category indentation, panel margins and a little breathing room.
+            let library_dock_width = library_button_width + 48.0;
+            egui::SidePanel::left("maker_library")
+                .resizable(false)
+                .default_width(library_dock_width)
+                .min_width(library_dock_width)
+                .max_width(library_dock_width)
+                .show(ctx,|ui|{
                 ui.heading("Module Library");ui.separator();
                 if ui.button("+ Add All").on_hover_text("Add one instance of every nonterminal module without connecting wires").clicked(){
                     let modules:Vec<String>=maker_library::get().modules.values()
@@ -1245,6 +1265,27 @@ impl MakerUi {
                     let category=library.categories.get(&module.id).map(String::as_str).unwrap_or("Other");
                     grouped.entry(category.to_owned()).or_default().push(module);
                 }
+                // Size all category headers to the longest category caption,
+                // independent of the module-button and dock widths.
+                let category_header_font = egui::TextStyle::Button.resolve(ui.style());
+                let category_header_width = grouped.keys().map(|category| {
+                    let display = category.split(|c: char| c == '_' || c == '-' || c == ' ')
+                        .filter(|part| !part.is_empty())
+                        .map(|part| {
+                            let mut chars = part.chars();
+                            match chars.next() {
+                                Some(first) => format!("{}{}", first.to_uppercase(), chars.as_str()),
+                                None => String::new(),
+                            }
+                        }).collect::<Vec<_>>().join(" ");
+                    ["▶", "▼"].iter().map(|arrow| {
+                        ui.painter().layout_no_wrap(
+                            format!("{} {}", arrow, display),
+                            category_header_font.clone(),
+                            egui::Color32::WHITE,
+                        ).size().x
+                    }).fold(0.0_f32, f32::max)
+                }).fold(0.0_f32, f32::max) + 24.0;
                 for (category,modules) in &mut grouped {
                     modules.sort_by(|a,b|a.name.to_lowercase().cmp(&b.name.to_lowercase()).then_with(||a.id.cmp(&b.id)));
                     // Display capitalization does not change category paths or IDs.
@@ -1255,23 +1296,46 @@ impl MakerUi {
                             match chars.next(){Some(first)=>format!("{}{}",first.to_uppercase(),chars.as_str()),None=>String::new()}
                         }).collect::<Vec<_>>().join(" ");
                     let expanded=library_expanded.entry(category.clone()).or_insert(false);
-                    if ui.selectable_label(*expanded,format!("{} {}",if *expanded{"▼"}else{"▶"},display)).clicked(){
-                        *expanded=!*expanded;
-                    }
+                    // The category header and its module buttons share one palette entry.
+                    let category_color = maker_category_color(category);
+                    let header_text = format!("{} {}", if *expanded {"▼"} else {"▶"}, display);
+                    // Use an empty native button and paint its caption at a fixed left inset.
+                    // This avoids egui's default centered Button text alignment while
+                    // preserving the uniform header width and native button interaction.
+                    let header_response = ui.add_sized(
+                        [category_header_width, ui.spacing().interact_size.y],
+                        egui::Button::new("").fill(category_color),
+                    );
+                    ui.painter().text(
+                        header_response.rect.left_center() + egui::vec2(8.0, 0.0),
+                        egui::Align2::LEFT_CENTER,
+                        header_text,
+                        egui::TextStyle::Button.resolve(ui.style()),
+                        egui::Color32::WHITE,
+                    );
+                    if header_response.clicked(){*expanded=!*expanded;}
                     if *expanded {ui.indent(("maker_library_category",category.as_str()),|ui|{
                         for module in modules.iter().copied(){
                     // Reuse the node-header palette so the library and graph stay in sync.
-                    let add_response = ui.add(
-                        egui::Button::new(
-                            egui::RichText::new(format!("+ {}", module.name.as_str()))
-                                .color(egui::Color32::WHITE),
-                        )
-                        .fill(node_header_color(module)),
+                    let add_response = ui.add_sized(
+                        [library_button_width, ui.spacing().interact_size.y],
+                        egui::Button::new("")
+                            .fill(node_header_color(module)),
                     )
                         .on_hover_ui(|ui| {
                             ui.set_max_width(350.0);
                             module_library_tooltip(ui, module);
                         });
+                    // Paint the caption at a fixed left inset. egui::Button does not
+                    // expose a text-alignment method in this egui version; keeping
+                    // the actual Button preserves native hover, focus and clicks.
+                    ui.painter().text(
+                        add_response.rect.left_center() + egui::vec2(8.0, 0.0),
+                        egui::Align2::LEFT_CENTER,
+                        format!("+ {}", module.name),
+                        egui::TextStyle::Button.resolve(ui.style()),
+                        egui::Color32::WHITE,
+                    );
                     if add_response.clicked(){
                         let count=graph.nodes.len();
                         match graph.add(&module.id,[80.0+(count%3) as f32*45.0,180.0+(count%4) as f32*42.0]){
@@ -1349,7 +1413,7 @@ impl MakerUi {
                         *candidate_base=Some(graph.clone());
                         *connection_search=None;*candidate_evaluated=0;*candidate_glsl_capable=0;*candidate_rejections=0;*candidate_uniform=0;*candidate_glsl_errors=0;*candidate_render_errors=0;
                         if *candidate_mode==2 {
-                            maker_discovery_test::set_production_wire_limit(*max_wire_connections);
+                            maker_discovery::set_production_wire_limit(*max_wire_connections);
                             *connection_search=ConnectionSearch::new(graph,*max_enumerations);
                             *candidate_notice="Canonical discovery (CPU only); compatible checkpoint resumes automatically...".into();
                         }else{
@@ -2451,9 +2515,30 @@ fn port_hint(graph: &Graph, to: NodeId, to_port: usize,
     hint
 }
 
-/// Stable module-type colors, independent of selection and connection validity.
+/// Central Maker category palette. Change colors here, not in individual .smmod files.
+/// These colors are used by category headers, library buttons and graph node titles.
+fn maker_category_color(category: &str) -> egui::Color32 {
+    let rgb = match category.to_ascii_lowercase().as_str() {
+        "camera" => [0, 119, 133],
+        "color" => [207, 45, 157],
+        "coordinates" => [35, 91, 177],
+        "fields" => [38, 122, 73],
+        "geometry" => [169, 79, 31],
+        "lighting" => [132, 113, 0],
+        "math" => [16, 143, 204],
+        "noise" => [118, 54, 153],
+        "output" => [190, 45, 31],
+        "other" => [83, 91, 99],
+        // Unrecognized categories have a stable fallback until assigned a color.
+        _ => [83, 91, 99],
+    };
+    egui::Color32::from_rgb(rgb[0], rgb[1], rgb[2])
+}
+
 fn node_header_color(module:&Module)->egui::Color32 {
-    egui::Color32::from_rgb(module.header_color[0],module.header_color[1],module.header_color[2])
+    let category = maker_library::get().categories.get(&module.id)
+        .map(String::as_str).unwrap_or("Other");
+    maker_category_color(category)
 }
 
 fn module_library_tooltip(ui:&mut egui::Ui,module:&Module){
@@ -2476,9 +2561,9 @@ fn module_library_tooltip(ui:&mut egui::Ui,module:&Module){
     }else{ui.small("Official Screenshaver Library");}
 }
 
-#[path = "maker_discovery_test.rs"]
-mod maker_discovery_test;
-pub fn run_discovery_test()->Result<(),String>{maker_discovery_test::run()}
+#[path = "maker_discovery.rs"]
+mod maker_discovery;
+pub fn run_discovery_test()->Result<(),String>{maker_discovery::run()}
 
 /// Scrollbar positions are graph-space values, not node-space mutations.
 /// A drag on the track jumps toward the pointer; a drag on the thumb scrolls
