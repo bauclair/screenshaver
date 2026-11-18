@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "created_by": "Screenshaver",
+  "terminal": false,
+  "id": "screenshaver.geometry.triangle_edge_mask",
+  "name": "Triangle Edge Mask",
+  "category": "Geometry",
+  "header_color": "#A94F1F",
+  "description": "Anti-aliased boundary mask for an equilateral triangular tessellation.",
+  "uses": "Wireframe overlays, triangular tiles, geometric masks, and animated pattern accents.",
+  "notes": "Width and Softness are expressed in the same coordinate units as Position. Cell boundaries include both diagonal and lattice edges.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "mask",
+      "name": "Edge Mask",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "scale",
+      "name": "Scale",
+      "type": "float",
+      "default": 6.0,
+      "min": 0.1,
+      "max": 40.0
+    },
+    {
+      "id": "width",
+      "name": "Width",
+      "type": "float",
+      "default": 0.012,
+      "min": 0.0,
+      "max": 0.2
+    },
+    {
+      "id": "softness",
+      "name": "Softness",
+      "type": "float",
+      "default": 0.005,
+      "min": 0.0001,
+      "max": 0.1
+    }
+  ],
+  "helpers": "// Equilateral triangular lattice: inverse basis of (1,0), (1/2,sqrt(3)/2).\nvec2 maker_tri_grid(vec2 p){return vec2(p.x-0.577350269189626*p.y,1.154700538379252*p.y);}\nvec3 maker_tri_weights(vec2 f){return (f.x+f.y<=1.0)?vec3(1.0-f.x-f.y,f.x,f.y):vec3(f.x+f.y-1.0,1.0-f.x,1.0-f.y);}\nfloat maker_tri_edge(vec2 p,float scale,float width,float softness){float s=max(scale,0.0001);vec2 f=fract(maker_tri_grid(p*s));vec3 w=maker_tri_weights(f);float dist=min(w.x,min(w.y,w.z))*0.866025403784439/s;float a=max(width,0.0);float b=a+max(softness,0.000001);return 1.0-smoothstep(a,b,dist);}\n",
+  "glsl": "maker_tri_edge({position},{scale},{width},{softness})"
+}

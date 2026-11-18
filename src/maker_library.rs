@@ -10,6 +10,9 @@ impl Library {
     let mut result=Self{modules:BTreeMap::new(),categories:BTreeMap::new(),errors:Vec::new(),catalog_fingerprint:0xcbf29ce484222325};
     let official=[
       ("coordinates/uv_coordinates.smmod",include_str!("../assets/maker/modules/coordinates/uv_coordinates.smmod")),
+      ("coordinates/spherical_direction.smmod",include_str!("../assets/maker/modules/coordinates/spherical_direction.smmod")),
+      ("coordinates/log_polar_mapping.smmod",include_str!("../assets/maker/modules/coordinates/log_polar_mapping.smmod")),
+      ("fields/iterative_radial_field.smmod",include_str!("../assets/maker/modules/fields/iterative_radial_field.smmod")),
       ("noise/value_noise_2d.smmod",include_str!("../assets/maker/modules/noise/value_noise_2d.smmod")),
       ("math/multiply.smmod",include_str!("../assets/maker/modules/math/multiply.smmod")),
       ("color/cosine_palette.smmod",include_str!("../assets/maker/modules/color/cosine_palette.smmod")),
@@ -69,6 +72,9 @@ impl Library {
       ("math/animated_vertical_oscillator.smmod",include_str!("../assets/maker/modules/math/animated_vertical_oscillator.smmod")),
       ("lighting/distance_attenuated_point_light.smmod",include_str!("../assets/maker/modules/lighting/distance_attenuated_point_light.smmod")),
       ("geometry/grid_ray_step_3d.smmod",include_str!("../assets/maker/modules/geometry/grid_ray_step_3d.smmod")),
+      ("noise/triangular_lattice_field.smmod",include_str!("../assets/maker/modules/noise/triangular_lattice_field.smmod")),
+      ("geometry/triangle_edge_mask.smmod",include_str!("../assets/maker/modules/geometry/triangle_edge_mask.smmod")),
+      ("math/periodic_pulse_gate.smmod",include_str!("../assets/maker/modules/math/periodic_pulse_gate.smmod")),
     ];
     for (path,src) in official {result.register(path,src,Trust::Official)}
     if let Some(home)=std::env::var_os("HOME"){

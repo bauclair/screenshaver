@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.log_polar_mapping",
+  "name": "Log Polar Mapping",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "header_color": "#235BB1",
+  "description": "Converts a 2D position into logarithmic radius and angular position.",
+  "uses": "Spiral patterns, radial distortions, and procedural coordinate systems.",
+  "notes": "",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "polar",
+      "name": "Log Radius / Angle",
+      "type": "vec2"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "radius_floor",
+      "name": "Radius Floor",
+      "type": "float",
+      "default": 0.001,
+      "min": 1e-05,
+      "max": 0.1
+    }
+  ],
+  "helpers": "vec2 maker_log_polar(vec2 p,float radius_floor){float r=max(length(p),max(radius_floor,0.000001));return vec2(log(r),atan(p.y,p.x));}",
+  "glsl": "maker_log_polar({position},{radius_floor})",
+  "terminal": false
+}

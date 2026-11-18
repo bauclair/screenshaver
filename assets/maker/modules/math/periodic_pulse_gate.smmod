@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "created_by": "Screenshaver",
+  "terminal": false,
+  "id": "screenshaver.math.periodic_pulse_gate",
+  "name": "Periodic Pulse Gate",
+  "category": "Math",
+  "header_color": "#108FCC",
+  "description": "Produces narrow, nonnegative periodic pulses with adjustable frequency, phase, and peak sharpness.",
+  "uses": "Rhythmic modulation, flashing masks, scanning effects, and intermittent field activation.",
+  "notes": "Frequency is in cycles per unit of Time; Phase is measured in cycles. Output ranges from 0 to 1. Increasing Sharpness narrows each pulse without changing its repetition rate.",
+  "inputs": [
+    {
+      "id": "time",
+      "name": "Time",
+      "type": "float",
+      "default": "u_time"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "pulse",
+      "name": "Pulse",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "frequency",
+      "name": "Frequency",
+      "type": "float",
+      "default": 1.0,
+      "min": 0.0,
+      "max": 60.0
+    },
+    {
+      "id": "phase",
+      "name": "Phase",
+      "type": "float",
+      "default": 0.0,
+      "min": -10.0,
+      "max": 10.0
+    },
+    {
+      "id": "sharpness",
+      "name": "Sharpness",
+      "type": "float",
+      "default": 16.0,
+      "min": 1.0,
+      "max": 128.0
+    }
+  ],
+  "helpers": "",
+  "glsl": "pow(max(cos(6.283185307179586*(({time})*{frequency}+{phase})),0.0),max({sharpness},1.0))"
+}

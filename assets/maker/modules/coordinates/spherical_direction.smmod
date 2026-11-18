@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.spherical_direction",
+  "name": "Spherical Direction",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "header_color": "#235BB1",
+  "description": "Maps normalized 2D coordinates to a unit-length direction on a sphere.",
+  "uses": "Panoramic mapping, spherical projections, and procedural direction fields.",
+  "notes": "",
+  "inputs": [
+    {
+      "id": "uv",
+      "name": "UV",
+      "type": "vec2",
+      "default": "maker_uv"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "direction",
+      "name": "Direction",
+      "type": "vec3"
+    }
+  ],
+  "parameters": [],
+  "helpers": "vec3 maker_spherical_direction(vec2 uv){float a=6.28318530718*uv.x;float b=3.14159265359*clamp(uv.y,0.0,1.0);return vec3(cos(a)*sin(b),cos(b),sin(a)*sin(b));}",
+  "glsl": "maker_spherical_direction({uv})",
+  "terminal": false
+}

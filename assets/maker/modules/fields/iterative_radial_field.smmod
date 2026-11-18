@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.iterative_radial_field",
+  "name": "Iterative Radial Field",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "header_color": "#267A49",
+  "description": "Computes a bounded scalar field by repeatedly folding, rotating, and contracting a 2D point.",
+  "uses": "General-purpose abstract textures and animated contour patterns.",
+  "notes": "",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv"
+    },
+    {
+      "id": "time",
+      "name": "Time",
+      "type": "float",
+      "default": "u_time"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "field",
+      "name": "Field",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "frequency",
+      "name": "Frequency",
+      "type": "float",
+      "default": 2.0,
+      "min": 0.1,
+      "max": 12.0
+    },
+    {
+      "id": "rotation",
+      "name": "Rotation",
+      "type": "float",
+      "default": 0.35,
+      "min": -3.14159,
+      "max": 3.14159
+    },
+    {
+      "id": "decay",
+      "name": "Decay",
+      "type": "float",
+      "default": 0.72,
+      "min": 0.1,
+      "max": 0.95
+    }
+  ],
+  "helpers": "float maker_iterative_radial_field(vec2 p,float t,float frequency,float rotation,float decay){float v=0.0;float weight=0.5;float total=0.0;float d=clamp(decay,0.1,0.95);for(int i=0;i<8;i++){float angle=rotation+0.07*t;float c=cos(angle),s=sin(angle);p=vec2(c*p.x-s*p.y,s*p.x+c*p.y);p=abs(fract(p*0.5+0.5)*2.0-1.0);float ring=0.5+0.5*cos(length(p)*frequency*6.28318530718);v+=weight*ring;total+=weight;p=p*1.37-vec2(0.41,0.23);weight*=d;}return clamp(v/max(total,0.00001),0.0,1.0);}",
+  "glsl": "maker_iterative_radial_field({position},{time},{frequency},{rotation},{decay})",
+  "terminal": false
+}
