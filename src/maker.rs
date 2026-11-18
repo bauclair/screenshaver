@@ -462,11 +462,11 @@ pub fn run()->Result<(),String>{
                     size:(ui.preview_rect().width().max(1.0) as i32,
                           ui.preview_rect().height().max(1.0) as i32),
                     time:start.elapsed().as_secs_f32()})
-            } else if let Some(job)=ui.next_candidate_job(){
-                Some(WorkerRequest::Candidate{epoch,job})
             } else if let Some((index,graph))=ui.next_motion_job(){
                 Some(WorkerRequest::Motion{epoch,index,graph})
-            } else {None};
+            } else {
+                ui.next_candidate_job().map(|job|WorkerRequest::Candidate{epoch,job})
+            };
             if let Some(request)=request {
                 match worker_tx.try_send(request){
                     Ok(())=>worker_busy=true,
@@ -483,8 +483,21 @@ pub fn run()->Result<(),String>{
             }
         }
         let preview_started=Instant::now();
-        preview.update(ui.graph());
-        preview.render(dw as i32,dh as i32,scale,ui.preview_rect(),start.elapsed().as_secs_f32(),ui.graph());
+        if ui.preview_active() {
+            preview.update(ui.graph());
+            preview.render(dw as i32,dh as i32,scale,ui.preview_rect(),start.elapsed().as_secs_f32(),ui.graph());
+        } else {
+            // Stopping the shader does not erase pixels already in the SDL
+            // default framebuffer. The preview panel is translucent, so those
+            // pixels otherwise survive as a static image after Close Project.
+            // Clear the entire drawable before egui paints the blank panel;
+            // leave the panel's geometry unchanged.
+            unsafe {
+                gl::Disable(gl::SCISSOR_TEST);
+                gl::ClearColor(0.0, 0.0, 0.0, 1.0);
+                gl::Clear(gl::COLOR_BUFFER_BIT);
+            }
+        }
         maker_timing("preview",diagnostic_frame,preview_started);
         let ui_started=Instant::now();
         if !ui.frame(dw,dh,scale,preview.error.as_deref()){break}

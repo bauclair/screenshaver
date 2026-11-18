@@ -11,6 +11,209 @@ use serde_json::Value;
 use crate::maker_module::{Module, Trust};
 use crate::maker_library;
 
+const MAKER_MENU_ICON_RGBA: [u8; 1936] = [
+    62, 1, 0, 192, 142, 3, 0, 198, 142, 3, 0, 198, 142, 3, 0, 198, 142, 3, 0, 198, 142, 3, 0, 198, 142, 3, 0, 198, 142, 3, 0, 198, 142, 3, 0, 198, 142, 3, 0, 198, 142, 3, 0, 198, 142, 3, 0, 198, 142, 3, 0, 198, 142, 3, 0, 198, 142, 3, 0, 198, 142, 3, 0, 198, 142, 3, 0, 198, 142, 3, 0, 198, 130, 3, 0, 202, 53, 1, 0, 229, 40, 1, 0, 235, 37, 0, 0, 214, 142, 18, 0, 198, 255, 32, 0, 255, 255, 32, 0, 255, 255, 32, 0, 255, 255, 32, 0, 255, 255, 32, 0, 255, 255, 32, 0, 255, 255, 32, 0, 255, 255, 32, 0, 255, 255, 32, 0, 255, 255, 32, 0, 255, 255, 32, 0, 255, 255, 32, 0, 255, 255, 32, 0, 255, 255, 32, 0, 255, 255, 32, 0, 255, 255, 32, 0, 255, 229, 29, 0, 255, 39, 5, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 40, 5, 0, 235, 142, 33, 0, 198, 255, 60, 0, 255, 255, 60, 0, 255, 255, 60, 0, 255, 255, 60, 0, 255, 255, 60, 0, 255, 255, 60, 0, 255, 255, 60, 0, 255, 255, 60, 0, 255, 255, 60, 0, 255, 255, 60, 0, 255, 255, 60, 0, 255, 255, 60, 0, 255, 255, 60, 0, 255, 255, 60, 0, 255, 255, 60, 0, 255, 229, 54, 0, 255, 39, 9, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 77, 19, 0, 220, 142, 48, 0, 198, 255, 87, 0, 255, 255, 87, 0, 255, 255, 87, 0, 255, 255, 87, 0, 255, 255, 87, 0, 255, 255, 87, 0, 255, 255, 87, 0, 255, 255, 87, 0, 255, 255, 87, 0, 255, 255, 87, 0, 255, 255, 87, 0, 255, 255, 87, 0, 255, 255, 87, 0, 255, 255, 87, 0, 255, 232, 79, 0, 255, 42, 14, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 99, 34, 0, 255, 140, 48, 0, 198, 142, 64, 0, 198, 255, 115, 0, 255, 255, 115, 0, 255, 255, 115, 0, 255, 255, 115, 0, 255, 255, 115, 0, 255, 255, 115, 0, 255, 255, 115, 0, 255, 255, 115, 0, 255, 255, 115, 0, 255, 255, 115, 0, 255, 255, 115, 0, 255, 255, 115, 0, 255, 255, 115, 0, 255, 232, 105, 0, 255, 42, 19, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 99, 45, 0, 255, 253, 114, 0, 255, 142, 64, 0, 198, 142, 79, 0, 198, 255, 141, 0, 255, 255, 141, 0, 255, 255, 141, 0, 255, 255, 141, 0, 255, 255, 141, 0, 255, 255, 141, 0, 255, 255, 141, 0, 255, 255, 141, 0, 255, 255, 141, 0, 255, 255, 141, 0, 255, 255, 141, 0, 255, 255, 141, 0, 255, 232, 128, 0, 255, 42, 23, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 99, 55, 0, 255, 253, 140, 0, 255, 255, 141, 0, 255, 142, 79, 0, 198, 142, 94, 0, 198, 255, 168, 0, 255, 255, 168, 0, 255, 255, 168, 0, 255, 255, 168, 0, 255, 255, 168, 0, 255, 255, 168, 0, 255, 255, 168, 0, 255, 255, 168, 0, 255, 255, 168, 0, 255, 255, 168, 0, 255, 255, 168, 0, 255, 232, 153, 0, 255, 42, 28, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 99, 65, 0, 255, 253, 167, 0, 255, 255, 168, 0, 255, 255, 168, 0, 255, 142, 94, 0, 198, 142, 108, 0, 198, 255, 194, 0, 255, 255, 194, 0, 255, 255, 194, 0, 255, 255, 194, 0, 255, 255, 194, 0, 255, 255, 194, 0, 255, 255, 194, 0, 255, 255, 194, 0, 255, 255, 194, 0, 255, 255, 194, 0, 255, 232, 177, 0, 255, 42, 32, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 99, 75, 0, 255, 253, 192, 0, 255, 255, 194, 0, 255, 255, 194, 0, 255, 255, 194, 0, 255, 142, 108, 0, 198, 142, 124, 0, 198, 255, 221, 0, 255, 255, 221, 0, 255, 255, 221, 0, 255, 255, 221, 0, 255, 255, 221, 0, 255, 255, 221, 0, 255, 255, 221, 0, 255, 255, 221, 0, 255, 255, 221, 0, 255, 232, 201, 0, 255, 42, 36, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 99, 86, 0, 255, 253, 219, 0, 255, 255, 221, 0, 255, 255, 221, 0, 255, 255, 221, 0, 255, 255, 221, 0, 255, 142, 124, 0, 198, 138, 134, 0, 198, 248, 241, 0, 255, 248, 241, 0, 255, 248, 241, 0, 255, 248, 241, 0, 255, 248, 241, 0, 255, 248, 241, 0, 255, 248, 241, 0, 255, 248, 241, 0, 255, 226, 219, 0, 255, 41, 40, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 67, 65, 0, 255, 246, 239, 0, 255, 248, 241, 0, 255, 248, 241, 0, 255, 248, 241, 0, 255, 248, 241, 0, 255, 248, 241, 0, 255, 138, 134, 0, 198, 118, 133, 0, 198, 213, 238, 0, 255, 213, 238, 0, 255, 213, 238, 0, 255, 213, 238, 0, 255, 213, 238, 0, 255, 213, 238, 0, 255, 213, 238, 0, 255, 194, 217, 0, 255, 35, 39, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 6, 7, 0, 255, 150, 168, 0, 255, 213, 238, 0, 255, 213, 238, 0, 255, 213, 238, 0, 255, 213, 238, 0, 255, 213, 238, 0, 255, 118, 133, 0, 198, 99, 131, 0, 198, 178, 235, 0, 255, 178, 235, 0, 255, 178, 235, 0, 255, 178, 235, 0, 255, 178, 235, 0, 255, 178, 235, 0, 255, 162, 214, 0, 255, 29, 39, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 4, 6, 0, 255, 124, 163, 0, 255, 178, 235, 0, 255, 178, 235, 0, 255, 178, 235, 0, 255, 178, 235, 0, 255, 99, 131, 0, 198, 80, 129, 0, 198, 143, 231, 0, 255, 143, 231, 0, 255, 143, 231, 0, 255, 143, 231, 0, 255, 143, 231, 0, 255, 130, 210, 0, 255, 24, 38, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 56, 90, 0, 255, 38, 61, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 3, 5, 0, 255, 99, 160, 0, 255, 143, 231, 0, 255, 143, 231, 0, 255, 143, 231, 0, 255, 80, 129, 0, 198, 59, 126, 0, 198, 108, 228, 0, 255, 108, 228, 0, 255, 108, 228, 0, 255, 108, 228, 0, 255, 98, 207, 0, 255, 18, 38, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 42, 89, 0, 255, 107, 226, 0, 255, 88, 186, 0, 255, 1, 3, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 3, 5, 0, 255, 75, 158, 0, 255, 108, 228, 0, 255, 108, 228, 0, 255, 59, 126, 0, 198, 40, 125, 0, 198, 73, 224, 0, 255, 73, 224, 0, 255, 73, 224, 0, 255, 66, 204, 0, 255, 12, 37, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 28, 87, 0, 255, 72, 222, 0, 255, 73, 224, 0, 255, 73, 224, 0, 255, 28, 87, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 2, 5, 0, 255, 51, 155, 0, 255, 73, 224, 0, 255, 40, 125, 0, 198, 28, 118, 15, 198, 52, 214, 29, 255, 52, 214, 29, 255, 47, 195, 26, 255, 9, 35, 5, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 20, 83, 11, 255, 52, 212, 29, 255, 52, 214, 29, 255, 52, 214, 29, 255, 52, 214, 29, 255, 48, 196, 26, 255, 3, 12, 2, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 1, 5, 1, 255, 36, 149, 20, 255, 28, 118, 15, 198, 18, 113, 35, 198, 33, 203, 62, 255, 30, 185, 56, 255, 5, 33, 10, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 13, 79, 24, 255, 33, 201, 62, 255, 33, 203, 62, 255, 33, 203, 62, 255, 33, 203, 62, 255, 33, 203, 62, 255, 33, 203, 62, 255, 17, 107, 33, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 1, 5, 1, 255, 15, 85, 27, 209, 8, 107, 53, 198, 13, 175, 86, 255, 2, 32, 16, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 5, 75, 37, 255, 14, 190, 94, 255, 14, 192, 95, 255, 14, 192, 95, 255, 14, 192, 95, 255, 14, 192, 95, 255, 14, 192, 95, 255, 14, 192, 95, 255, 14, 186, 92, 255, 2, 24, 12, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 2, 31, 16, 235, 0, 90, 67, 201, 0, 29, 21, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 68, 50, 255, 0, 175, 129, 255, 0, 176, 130, 255, 0, 176, 130, 255, 0, 176, 130, 255, 0, 176, 130, 255, 0, 176, 130, 255, 0, 176, 130, 255, 0, 176, 130, 255, 0, 176, 130, 255, 0, 117, 87, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 28, 21, 235, 0, 31, 37, 229, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 58, 68, 255, 0, 143, 169, 255, 0, 144, 170, 255, 0, 144, 170, 255, 0, 144, 170, 255, 0, 144, 170, 255, 0, 144, 170, 255, 0, 144, 170, 255, 0, 144, 170, 255, 0, 144, 170, 255, 0, 144, 170, 255, 0, 144, 170, 255, 0, 35, 41, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 23, 27, 235, 0, 17, 34, 235, 0, 0, 0, 255, 0, 0, 0, 255, 0, 45, 84, 255, 0, 113, 208, 255, 0, 113, 209, 255, 0, 113, 209, 255, 0, 113, 209, 255, 0, 113, 209, 255, 0, 113, 209, 255, 0, 113, 209, 255, 0, 113, 209, 255, 0, 113, 209, 255, 0, 113, 209, 255, 0, 113, 209, 255, 0, 113, 209, 255, 0, 91, 169, 255, 0, 1, 2, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 17, 34, 235, 0, 15, 45, 206, 0, 13, 40, 235, 0, 24, 74, 221, 0, 45, 138, 198, 0, 45, 138, 198, 0, 45, 138, 198, 0, 45, 138, 198, 0, 45, 138, 198, 0, 45, 138, 198, 0, 45, 138, 198, 0, 45, 138, 198, 0, 45, 138, 198, 0, 45, 138, 198, 0, 45, 138, 198, 0, 45, 138, 198, 0, 45, 138, 198, 0, 45, 138, 198, 0, 23, 72, 222, 0, 13, 40, 235, 0, 13, 40, 235, 0, 13, 40, 235, 0, 10, 30, 220
+];
+
+
+
+// Maker's last *run* range belongs to application state, not a .smprj or
+// the canonical discovery checkpoint. Preserve every unrelated Maker JSON field.
+const MAKER_DEFAULT_MIN_WIRES:usize=2;
+const MAKER_DEFAULT_MAX_WIRES:usize=5;
+
+fn maker_state_path()->Option<std::path::PathBuf>{
+    Some(std::path::PathBuf::from(std::env::var_os("HOME")?)
+        .join(".config/screenshaver/maker/state.json"))
+}
+
+// Preview height is application UI state, never part of a .smprj graph.
+fn maker_saved_preview_height()->Option<f32>{
+    let path=maker_state_path()?;
+    let contents=std::fs::read_to_string(path).ok()?;
+    let root:serde_json::Value=serde_json::from_str(&contents).ok()?;
+    let height=root.pointer("/maker/ui/live_preview_height")?.as_f64()? as f32;
+    (height.is_finite() && (120.0..=10000.0).contains(&height)).then_some(height)
+}
+
+fn maker_save_preview_height(height:f32)->Result<(),String>{
+    if !height.is_finite() || height<120.0 {return Err("Invalid preview height".into());}
+    let path=maker_state_path().ok_or("HOME is not set")?;
+    let parent=path.parent().ok_or("Invalid Maker state path")?;
+    std::fs::create_dir_all(parent).map_err(|e|e.to_string())?;
+    let mut root=match std::fs::read_to_string(&path){
+        Ok(contents)=>serde_json::from_str::<serde_json::Value>(&contents)
+            .map_err(|e|format!("Maker state JSON is invalid; not overwriting: {e}"))?,
+        Err(e) if e.kind()==std::io::ErrorKind::NotFound=>serde_json::json!({}),
+        Err(e)=>return Err(e.to_string()),
+    };
+    let maker=root.as_object_mut().ok_or("Maker state root is not an object")?
+        .entry("maker").or_insert_with(||serde_json::json!({}));
+    let ui=maker.as_object_mut().ok_or("Maker state 'maker' is not an object")?
+        .entry("ui").or_insert_with(||serde_json::json!({}));
+    ui.as_object_mut().ok_or("Maker state 'maker.ui' is not an object")?
+        .insert("live_preview_height".into(),serde_json::json!(height));
+    let bytes=serde_json::to_vec_pretty(&root).map_err(|e|e.to_string())?;
+    use std::io::Write;
+    let mut temporary=None;
+    for attempt in 0..16u32 {
+        let candidate=parent.join(format!(".state.json.tmp-{}-{attempt}.tmp",std::process::id()));
+        match std::fs::OpenOptions::new().write(true).create_new(true).open(&candidate){
+            Ok(file)=>{temporary=Some((candidate,file));break},
+            Err(e) if e.kind()==std::io::ErrorKind::AlreadyExists=>continue,
+            Err(e)=>return Err(e.to_string()),
+        }
+    }
+    let (temp_path,mut file)=temporary.ok_or("Unable to allocate Maker state temporary file")?;
+    let result=(||->Result<(),String>{
+        file.write_all(&bytes).map_err(|e|e.to_string())?;
+        file.sync_all().map_err(|e|e.to_string())?;
+        drop(file);
+        std::fs::rename(&temp_path,&path).map_err(|e|e.to_string())?;
+        Ok(())
+    })();
+    if result.is_err(){let _=std::fs::remove_file(&temp_path);}
+    result
+}
+
+fn maker_last_discovery_settings()->(usize,usize,usize,usize){
+    let fallback=(MAKER_DEFAULT_MIN_WIRES,MAKER_DEFAULT_MAX_WIRES,DEFAULT_MAX_ENUMERATIONS,DEFAULT_MAX_CANDIDATES);
+    let Some(path)=maker_state_path() else{return fallback};
+    let Ok(contents)=std::fs::read_to_string(&path) else{return fallback};
+    let Ok(root)=serde_json::from_str::<serde_json::Value>(&contents) else{
+        eprintln!("[MAKER STATE] Invalid Maker state JSON; using wire defaults");
+        return fallback;
+    };
+    let Some(range)=root.pointer("/maker/discovery") else{return fallback};
+    let (Some(min),Some(max))=(range["min_wire_connections"].as_u64(),range["max_wire_connections"].as_u64()) else{return fallback};
+    if !(2..=25).contains(&min) || !(2..=25).contains(&max) || min>max {return fallback}
+    // Validate against the actual selectable values; older state files without
+    // these keys retain the existing defaults independently.
+    let enumerations=range["max_enumerations"].as_u64()
+        .and_then(|n|usize::try_from(n).ok())
+        .filter(|n|[10_000,25_000,50_000,100_000].contains(n))
+        .unwrap_or(DEFAULT_MAX_ENUMERATIONS);
+    let candidates=range["max_glsl_candidates"].as_u64()
+        .and_then(|n|usize::try_from(n).ok())
+        .filter(|n|[100,250,500,1_000].contains(n))
+        .unwrap_or(DEFAULT_MAX_CANDIDATES);
+    (min as usize,max as usize,enumerations,candidates)
+}
+
+fn maker_save_discovery_settings(min:usize,max:usize,enumerations:usize,candidates:usize)->Result<(),String>{
+    if !(2..=25).contains(&min) || !(2..=25).contains(&max) || min>max {
+        return Err("Invalid Maker wire-connection range".into());
+    }
+    if ![10_000,25_000,50_000,100_000].contains(&enumerations)
+        || ![100,250,500,1_000].contains(&candidates) {
+        return Err("Invalid Maker discovery limits".into());
+    }
+    let path=maker_state_path().ok_or("HOME is not set")?;
+    let parent=path.parent().ok_or("Invalid Maker state path")?;
+    std::fs::create_dir_all(parent).map_err(|e|e.to_string())?;
+    // Read at write time to retain any other Maker state fields.
+    // Never overwrite malformed existing Maker state JSON.
+    let mut root=match std::fs::read_to_string(&path){
+        Ok(contents)=>serde_json::from_str::<serde_json::Value>(&contents)
+            .map_err(|e|format!("Maker state JSON is invalid; not overwriting: {e}"))?,
+        Err(e) if e.kind()==std::io::ErrorKind::NotFound=>serde_json::json!({}),
+        Err(e)=>return Err(e.to_string()),
+    };
+    let object=root.as_object_mut().ok_or("Maker state JSON root is not an object")?;
+    let maker=object.entry("maker").or_insert_with(||serde_json::json!({}));
+    let maker=maker.as_object_mut().ok_or("Maker state 'maker' is not an object")?;
+    let discovery=maker.entry("discovery").or_insert_with(||serde_json::json!({}));
+    let discovery=discovery.as_object_mut().ok_or("Maker state 'maker.discovery' is not an object")?;
+    discovery.insert("min_wire_connections".into(),serde_json::json!(min));
+    discovery.insert("max_wire_connections".into(),serde_json::json!(max));
+    discovery.insert("max_enumerations".into(),serde_json::json!(enumerations));
+    discovery.insert("max_glsl_candidates".into(),serde_json::json!(candidates));
+    let bytes=serde_json::to_vec_pretty(&root).map_err(|e|e.to_string())?;
+    use std::io::Write;
+    // Unique create_new temp avoids clobbering another writer's temporary file.
+    let mut temporary=None;
+    for attempt in 0..16u32 {
+        let candidate=parent.join(format!(".state.json.tmp-{}-{attempt}.tmp",std::process::id()));
+        match std::fs::OpenOptions::new().write(true).create_new(true).open(&candidate){
+            Ok(file)=>{temporary=Some((candidate,file));break},
+            Err(e) if e.kind()==std::io::ErrorKind::AlreadyExists=>continue,
+            Err(e)=>return Err(e.to_string()),
+        }
+    }
+    let (temp_path,mut file)=temporary.ok_or("Unable to allocate Maker state temporary file")?;
+    let result=(||->Result<(),String>{
+        file.write_all(&bytes).map_err(|e|e.to_string())?;
+        file.sync_all().map_err(|e|e.to_string())?;
+        drop(file);
+        std::fs::rename(&temp_path,&path).map_err(|e|e.to_string())?;
+        Ok(())
+    })();
+    if result.is_err(){let _=std::fs::remove_file(&temp_path);}
+    result
+}
+
+// Recent projects are stored alongside discovery preferences, not in .smprj files.
+const MAKER_RECENT_PROJECT_LIMIT:usize=8;
+fn maker_recent_projects()->Vec<std::path::PathBuf>{
+    let Some(path)=maker_state_path() else{return Vec::new()};
+    let Ok(data)=std::fs::read_to_string(path) else{return Vec::new()};
+    let Ok(root)=serde_json::from_str::<serde_json::Value>(&data) else{return Vec::new()};
+    let mut paths=Vec::new();
+    if let Some(items)=root.pointer("/maker/recent_projects").and_then(|v|v.as_array()){
+        for item in items {
+            if let Some(path)=item.as_str(){
+                let path=std::path::PathBuf::from(path);
+                if path.is_absolute() && !paths.contains(&path){paths.push(path);}
+                if paths.len()==MAKER_RECENT_PROJECT_LIMIT{break;}
+            }
+        }
+    }
+    paths
+}
+fn maker_record_recent_project(path:&std::path::Path)->Result<Vec<std::path::PathBuf>,String>{
+    let path=maker_project_path(path)?;
+    // Canonicalize when possible so the same project cannot appear under aliases.
+    let path=std::fs::canonicalize(&path).unwrap_or(path);
+    let mut recent=maker_recent_projects();
+    recent.retain(|other|other!=&path);
+    recent.insert(0,path);
+    recent.truncate(MAKER_RECENT_PROJECT_LIMIT);
+    let state=maker_state_path().ok_or("HOME is not set")?;
+    let parent=state.parent().ok_or("Invalid Maker state path")?;
+    std::fs::create_dir_all(parent).map_err(|e|e.to_string())?;
+    let mut root=match std::fs::read_to_string(&state){
+        Ok(contents)=>serde_json::from_str::<serde_json::Value>(&contents)
+            .map_err(|e|format!("Maker state JSON is invalid; not overwriting: {e}"))?,
+        Err(e) if e.kind()==std::io::ErrorKind::NotFound=>serde_json::json!({}),
+        Err(e)=>return Err(e.to_string()),
+    };
+    let object=root.as_object_mut().ok_or("Maker state JSON root is not an object")?;
+    let maker=object.entry("maker").or_insert_with(||serde_json::json!({}));
+    let maker=maker.as_object_mut().ok_or("Maker state 'maker' is not an object")?;
+    maker.insert("recent_projects".into(),serde_json::json!(recent));
+    let bytes=serde_json::to_vec_pretty(&root).map_err(|e|e.to_string())?;
+    use std::io::Write;
+    let mut temporary=None;
+    for attempt in 0..16u32 {
+        let candidate=parent.join(format!(".state.json.tmp-{}-{attempt}.tmp",std::process::id()));
+        match std::fs::OpenOptions::new().write(true).create_new(true).open(&candidate){
+            Ok(file)=>{temporary=Some((candidate,file));break},
+            Err(e) if e.kind()==std::io::ErrorKind::AlreadyExists=>continue,
+            Err(e)=>return Err(e.to_string()),
+        }
+    }
+    let (temp_path,mut file)=temporary.ok_or("Unable to allocate Maker state temporary file")?;
+    let result=(||->Result<(),String>{
+        file.write_all(&bytes).map_err(|e|e.to_string())?;
+        file.sync_all().map_err(|e|e.to_string())?;
+        drop(file);
+        std::fs::rename(&temp_path,&state).map_err(|e|e.to_string())?;
+        Ok(())
+    })();
+    if result.is_err(){let _=std::fs::remove_file(&temp_path);}
+    result.map(|()|recent)
+}
+
 /// Thumbnail-only visual descriptors; computed once after rendering.
 #[derive(Clone, Copy, Default)]
 struct VisualMetrics { interest:f32, complexity:f32, contrast:f32, entropy:f32, vibrancy:f32 }
@@ -779,16 +982,57 @@ fn maker_projects_dir()->Result<std::path::PathBuf,String>{
     let home=std::env::var_os("HOME").ok_or("HOME is not set")?;
     Ok(std::path::PathBuf::from(home).join(".config/screenshaver/maker/projects"))
 }
-fn maker_project_path(name:&str)->Result<std::path::PathBuf,String>{
-    let name=name.trim().trim_end_matches(".smprj");
-    if name.is_empty() || name=="." || name==".." || name.contains('/') || name.contains('\\') || name.chars().any(|c|c.is_control()) {
-        return Err("Enter a project filename without path separators".into());
+// An explicit filesystem path is used for both load and save. The project
+// directory is a starting location, not a restriction on where files may live.
+fn maker_project_path(path:&std::path::Path)->Result<std::path::PathBuf,String>{
+    let name=path.file_name().and_then(|n|n.to_str()).ok_or("Enter a project filename")?;
+    if name.is_empty() || name=="." || name==".." || name.chars().any(|c|c.is_control()) {
+        return Err("Invalid project filename".into());
     }
-    Ok(maker_projects_dir()?.join(format!("{name}.smprj")))
+    let mut result=path.to_path_buf();
+    if result.extension().is_none(){result.set_extension("smprj");}
+    if result.extension().and_then(|s|s.to_str())!=Some("smprj") {
+        return Err("Maker projects must use the .smprj extension".into());
+    }
+    Ok(result)
 }
-fn maker_save_project(graph:&Graph,name:&str)->Result<(),String>{
+
+#[derive(Clone)]
+struct MakerProjectBrowser {
+    save:bool,
+    directory:std::path::PathBuf,
+    filename:String,
+    overwrite:Option<std::path::PathBuf>,
+    error:Option<String>,
+}
+impl MakerProjectBrowser {
+    fn open(save:bool,current:Option<&std::path::Path>,name:&str)->Self{
+        let directory=maker_projects_dir().ok()
+            .unwrap_or_else(||std::path::PathBuf::from("."));
+        if save {let _=std::fs::create_dir_all(&directory);}
+        let filename=current.and_then(|p|p.file_name()).and_then(|n|n.to_str())
+            .map(str::to_owned).unwrap_or_else(||format!("{}.smprj",name.trim_end_matches(".smprj")));
+        Self{save,directory,filename,overwrite:None,error:None}
+    }
+    fn change_directory(&mut self,path:std::path::PathBuf){
+        match std::fs::canonicalize(&path){
+            Ok(p) if p.is_dir()=>{self.directory=p;self.overwrite=None;self.error=None;},
+            Ok(_)=>self.error=Some("Not a directory".into()),
+            Err(e)=>self.error=Some(format!("Cannot open directory: {e}")),
+        }
+    }
+    fn selected_path(&self)->Result<std::path::PathBuf,String>{
+        let name=self.filename.trim();
+        if name.is_empty() || name=="." || name==".." || name.contains('/') || name.contains('\\') {
+            return Err("Enter a filename without path separators".into());
+        }
+        maker_project_path(&self.directory.join(name))
+    }
+}
+
+fn maker_save_project(graph:&Graph,path:&std::path::Path)->Result<(),String>{
     use std::io::Write;
-    let path=maker_project_path(name)?;
+    let path=maker_project_path(path)?;
     let dir=path.parent().ok_or("Invalid projects directory")?;
     std::fs::create_dir_all(dir).map_err(|e|e.to_string())?;
     let data=serde_json::to_vec_pretty(&serde_json::json!({
@@ -806,8 +1050,8 @@ fn maker_save_project(graph:&Graph,name:&str)->Result<(),String>{
     if result.is_err(){let _=std::fs::remove_file(&tmp);}
     result
 }
-fn maker_load_project(name:&str)->Result<Graph,String>{
-    let path=maker_project_path(name)?;
+fn maker_load_project(path:&std::path::Path)->Result<Graph,String>{
+    let path=maker_project_path(path)?;
     let bytes=std::fs::read(&path).map_err(|e|e.to_string())?;
     let value:serde_json::Value=serde_json::from_slice(&bytes).map_err(|e|e.to_string())?;
     if value["format"].as_str()!=Some("screenshaver-maker-project") || value["version"].as_u64()!=Some(1){
@@ -826,15 +1070,19 @@ fn maker_load_project(name:&str)->Result<Graph,String>{
     graph.validate()?;
     Ok(graph)
 }
-fn maker_project_names()->Vec<String>{
-    let Ok(dir)=maker_projects_dir() else{return Vec::new()};
-    let Ok(entries)=std::fs::read_dir(dir) else{return Vec::new()};
-    let mut names:Vec<String>=entries.filter_map(Result::ok).filter_map(|e|{
-        let path=e.path();
-        if !path.is_file() || path.extension().and_then(|s|s.to_str())!=Some("smprj"){return None}
-        path.file_stem().and_then(|s|s.to_str()).map(str::to_owned)
-    }).collect();
-    names.sort_unstable();names
+fn maker_browser_entries(directory:&std::path::Path)->Result<Vec<(String,bool)>,String>{
+    let mut entries=Vec::new();
+    for item in std::fs::read_dir(directory).map_err(|e|e.to_string())? {
+        let item=item.map_err(|e|e.to_string())?;
+        let kind=item.file_type().map_err(|e|e.to_string())?;
+        let is_dir=kind.is_dir();
+        let name=item.file_name().to_string_lossy().into_owned();
+        if is_dir || (kind.is_file() && item.path().extension().and_then(|s|s.to_str())==Some("smprj")) {
+            entries.push((name,is_dir));
+        }
+    }
+    entries.sort_by(|a,b|b.1.cmp(&a.1).then_with(||a.0.to_lowercase().cmp(&b.0.to_lowercase())).then_with(||a.0.cmp(&b.0)));
+    Ok(entries)
 }
 
 pub struct MakerUi {
@@ -846,21 +1094,31 @@ pub struct MakerUi {
     start: Instant,
     graph: Graph,
     project_name: String,
-    project_dialog: Option<bool>, // true = save, false = load
+    project_dialog: Option<MakerProjectBrowser>,
+    glsl_export_dialog: Option<(String,String,bool)>,
+    project_path: Option<std::path::PathBuf>,
+    recent_projects: Vec<std::path::PathBuf>,
+    saved_graph_snapshot: serde_json::Value,
+    unsaved_action: Option<&'static str>,
+    after_save_action: Option<&'static str>,
+    discard_approved: Option<&'static str>,
     selected: Option<NodeId>,
     parameter_popup: Option<NodeId>,
     pending_source: Option<(NodeId, usize)>,
     dragging_wire: Option<(NodeId, usize)>,
 
     status: String,
+    menu_icon: egui::TextureHandle,
     open: bool,
     preview_rect: egui::Rect,
     preview_height: Option<f32>,
+    preview_active: bool,
     routes: Routes,
     canvas_pan: egui::Vec2,
     canvas_zoom: f32,
     pending_zoom: Option<f32>,
     pending_zoom_to_fit: bool,
+    pending_menu_command: Option<&'static str>,
     canvas_rect: egui::Rect,
     pinpoint_next: HashMap<String, NodeId>,
     pinpoint_target: Option<NodeId>,
@@ -884,6 +1142,8 @@ pub struct MakerUi {
     candidate_selected: Option<usize>,
     candidate_undo: Vec<Graph>,
     orphan_undo: Vec<Graph>,
+    orphan_redo: Vec<Graph>,
+    delete_project_confirm: bool,
     orphan_restore_pending: bool,
     candidate_notice: String,
     library_expanded: HashMap<String,bool>,
@@ -906,13 +1166,22 @@ impl MakerUi {
         let gl=unsafe{glow::Context::from_loader_function(|s|video.gl_get_proc_address(s) as *const _)};
         let painter=egui_glow::Painter::new(Arc::new(gl),"",None,false).map_err(|e|e.to_string())?;
         let graph=Graph::blank();let selected=None;
-        Ok(Self{context:egui::Context::default(),painter,events:Vec::new(),pointer:egui::Pos2::ZERO,
-            modifiers:egui::Modifiers::default(),start:Instant::now(),graph,project_name:"Untitled".into(),project_dialog:None,selected,parameter_popup:None,pending_source:None,dragging_wire:None,
-            status:"Click an output port, then a compatible input port".into(),open:true,
+        let saved_graph_snapshot=serde_json::json!(crate::maker::graph_to_wire(&graph));
+        let recent_projects=maker_recent_projects();
+        let (saved_min_wires,saved_max_wires,saved_max_enumerations,saved_max_candidates)=maker_last_discovery_settings();
+        let context=egui::Context::default();
+        let menu_icon=context.load_texture(
+            "screenshaver_maker_menu_icon",
+            egui::ColorImage::from_rgba_unmultiplied([22,22], &MAKER_MENU_ICON_RGBA),
+            egui::TextureOptions::LINEAR,
+        );
+        Ok(Self{context,painter,events:Vec::new(),pointer:egui::Pos2::ZERO,
+            modifiers:egui::Modifiers::default(),start:Instant::now(),graph,project_name:"Untitled".into(),project_dialog:None,glsl_export_dialog:None,project_path:None,recent_projects,saved_graph_snapshot,unsaved_action:None,after_save_action:None,discard_approved:None,selected,parameter_popup:None,pending_source:None,dragging_wire:None,
+            status:"Click an output port, then a compatible input port".into(),menu_icon,open:true,
             preview_rect:egui::Rect::from_min_size(egui::pos2(210.0,600.0),egui::vec2(950.0,210.0)),
-            preview_height:None,routes:Routes::new(),canvas_pan:egui::Vec2::ZERO,canvas_zoom:1.0,pending_zoom:None,pending_zoom_to_fit:false,canvas_rect:egui::Rect::NOTHING,pinpoint_next:HashMap::new(),pinpoint_target:None,pinpoint_pulse:None,pinpoint_boxes:BTreeMap::new(),workspace_min:[-1000.0,-1000.0],workspace_max:[2000.0,2000.0],pixels_per_point:1.0,routing_undo:Vec::new(),routing_redo:Vec::new(),candidate_mode:0,candidate_sort:0,max_wire_connections:5,min_wire_connections:2,max_enumerations:DEFAULT_MAX_ENUMERATIONS,max_candidates:DEFAULT_MAX_CANDIDATES,
+            preview_height:maker_saved_preview_height(),preview_active:true,routes:Routes::new(),canvas_pan:egui::Vec2::ZERO,canvas_zoom:1.0,pending_zoom:None,pending_zoom_to_fit:false,pending_menu_command:None,canvas_rect:egui::Rect::NOTHING,pinpoint_next:HashMap::new(),pinpoint_target:None,pinpoint_pulse:None,pinpoint_boxes:BTreeMap::new(),workspace_min:[-1000.0,-1000.0],workspace_max:[2000.0,2000.0],pixels_per_point:1.0,routing_undo:Vec::new(),routing_redo:Vec::new(),candidate_mode:0,candidate_sort:0,max_wire_connections:saved_max_wires,min_wire_connections:saved_min_wires,max_enumerations:saved_max_enumerations,max_candidates:saved_max_candidates,
             candidates:Vec::new(),candidate_jobs:Vec::new(),candidate_epoch:0,candidate_base:None,
-            candidate_selected:None,candidate_undo:Vec::new(),orphan_undo:Vec::new(),orphan_restore_pending:false,candidate_notice:String::new(),library_expanded:HashMap::new(),connection_search:None,reset_enumeration_confirm:false,candidate_evaluated:0,candidate_glsl_capable:0,candidate_rejections:0,candidate_uniform:0,candidate_glsl_errors:0,candidate_render_errors:0,analysis_request:None,analysis:None,pending_clipboard:None,pending_glsl_export:None})
+            candidate_selected:None,candidate_undo:Vec::new(),orphan_undo:Vec::new(),orphan_redo:Vec::new(),delete_project_confirm:false,orphan_restore_pending:false,candidate_notice:String::new(),library_expanded:HashMap::new(),connection_search:None,reset_enumeration_confirm:false,candidate_evaluated:0,candidate_glsl_capable:0,candidate_rejections:0,candidate_uniform:0,candidate_glsl_errors:0,candidate_render_errors:0,analysis_request:None,analysis:None,pending_clipboard:None,pending_glsl_export:None})
     }
     /// Returns the exact candidate reconstruction, independent of the currently applied graph.
     /// The boolean requests saving to disk rather than copying to the clipboard.
@@ -1071,6 +1340,7 @@ impl MakerUi {
     pub fn candidate_rejected_render(&mut self){self.candidate_rejections+=1;self.candidate_render_errors+=1;}
 
     pub fn preview_rect(&self)->egui::Rect{self.preview_rect}
+    pub fn preview_active(&self)->bool{self.preview_active}
     pub fn handle_event(&mut self, event: &Event) {
         match event {
             Event::MouseMotion { x, y, .. } => {
@@ -1131,7 +1401,15 @@ impl MakerUi {
                         Keycode::Equals | Keycode::Plus | Keycode::KpPlus => self.pending_zoom=Some(self.canvas_zoom*1.2),
                         Keycode::Minus | Keycode::KpMinus => self.pending_zoom=Some(self.canvas_zoom/1.2),
                         Keycode::Num0 | Keycode::Kp0 => self.pending_zoom=Some(1.0),
-                        Keycode::F => self.pending_zoom_to_fit=true,
+                        Keycode::F if self.modifiers.shift => self.pending_zoom_to_fit=true,
+                        Keycode::N if !self.modifiers.shift => self.pending_menu_command=Some("new"),
+                        Keycode::O if !self.modifiers.shift => self.pending_menu_command=Some("open"),
+                        Keycode::S if self.modifiers.shift => self.pending_menu_command=Some("save_as"),
+                        Keycode::S => self.pending_menu_command=Some("save"),
+                        Keycode::C if !self.modifiers.shift => self.pending_menu_command=Some("close"),
+                        Keycode::X if !self.modifiers.shift => self.pending_menu_command=Some("export_glsl"),
+                        Keycode::D if self.modifiers.shift => self.pending_menu_command=Some("delete"),
+                        Keycode::Q if !self.modifiers.shift => self.pending_menu_command=Some("exit"),
                         _=>{}
                     }
                 }
@@ -1191,20 +1469,30 @@ impl MakerUi {
         let old_parameters:Vec<_>=self.graph.nodes.iter().map(|n|(n.id,n.parameters.clone())).collect();
         let project_name=&mut self.project_name;
         let project_dialog=&mut self.project_dialog;
+        let glsl_export_dialog=&mut self.glsl_export_dialog;
+        let project_path=&mut self.project_path;
+        let recent_projects=&mut self.recent_projects;
+        let saved_graph_snapshot=&mut self.saved_graph_snapshot;
+        let unsaved_action=&mut self.unsaved_action;
+        let after_save_action=&mut self.after_save_action;
+        let discard_approved=&mut self.discard_approved;
         let graph=&mut self.graph;
         let selected=&mut self.selected;
         let parameter_popup=&mut self.parameter_popup;
         let pending=&mut self.pending_source;
         let dragging_wire=&mut self.dragging_wire;
+        let menu_icon=&self.menu_icon;
         let status=&mut self.status;
         let open=&mut self.open;
         let preview_rect=&mut self.preview_rect;
         let preview_height=&mut self.preview_height;
+        let preview_active=&mut self.preview_active;
         let routes=&mut self.routes;
         let canvas_pan=&mut self.canvas_pan;
         let canvas_zoom=&mut self.canvas_zoom;
         let pending_zoom=&mut self.pending_zoom;
         let pending_zoom_to_fit=&mut self.pending_zoom_to_fit;
+        let pending_menu_command=&mut self.pending_menu_command;
         let canvas_rect=&mut self.canvas_rect;
         let pinpoint_next=&mut self.pinpoint_next;
         let pinpoint_target=&mut self.pinpoint_target;
@@ -1228,6 +1516,8 @@ impl MakerUi {
         let candidate_selected=&mut self.candidate_selected;
         let candidate_undo=&mut self.candidate_undo;
         let orphan_undo=&mut self.orphan_undo;
+        let orphan_redo=&mut self.orphan_redo;
+        let delete_project_confirm=&mut self.delete_project_confirm;
         let orphan_restore_pending=&mut self.orphan_restore_pending;
         let candidate_notice=&mut self.candidate_notice;
         let analysis_request=&mut self.analysis_request;
@@ -1279,122 +1569,170 @@ impl MakerUi {
                     });
                 });
             }
-            if let Some(save_mode)=*project_dialog {
+            if let Some(browser)=project_dialog.as_mut() {
                 let mut close=false;
-                egui::Window::new(if save_mode{"Save Maker Project"}else{"Load Maker Project"})
-                    .collapsible(false).resizable(false).show(ctx,|ui|{
-                        ui.label("Directory: ~/.config/screenshaver/maker/projects");
-                        ui.horizontal(|ui|{ui.label("Project:");ui.text_edit_singleline(project_name);ui.label(".smprj");});
-                        if !save_mode {
-                            ui.separator();ui.label("Existing projects:");
-                            egui::ScrollArea::vertical().max_height(190.0).show(ui,|ui|{
-                                for name in maker_project_names(){
-                                    if ui.selectable_label(project_name.as_str()==name,name.as_str()).clicked(){*project_name=name;}
+                let mut completed:Option<(std::path::PathBuf,Option<Graph>)>=None;
+                egui::Window::new(if browser.save{"Save Maker Project"}else{"Open Maker Project"})
+                    .id(egui::Id::new("maker_project_file_browser"))
+                    .collapsible(false).resizable(true).default_width(650.0).min_width(480.0)
+                    .show(ctx,|ui|{
+                        ui.label("Browse to a folder, select a .smprj project, or enter a filename.");
+                        ui.horizontal(|ui|{
+                            if ui.button("Home").clicked(){if let Ok(p)=maker_projects_dir(){browser.change_directory(p);}}
+                            if ui.button("Up").clicked(){if let Some(p)=browser.directory.parent(){browser.change_directory(p.to_path_buf());}}
+                            if ui.button("Refresh").clicked(){browser.error=None;}
+                        });
+                        ui.horizontal(|ui|{
+                            ui.label("Folder:");
+                            let mut typed=browser.directory.to_string_lossy().into_owned();
+                            let response=ui.add(egui::TextEdit::singleline(&mut typed).desired_width(f32::INFINITY));
+                            let enter=response.lost_focus() && ui.input(|i|i.key_pressed(egui::Key::Enter));
+                            if ui.button("Go").clicked() || enter {
+                                browser.change_directory(std::path::PathBuf::from(typed));
+                            }
+                        });
+                        ui.separator();
+                        let mut open_on_double_click = false;
+                        match maker_browser_entries(&browser.directory){
+                            Ok(entries)=>{
+                                egui::ScrollArea::vertical().max_height(310.0).show(ui,|ui|{
+                                    for (name,is_dir) in entries {
+                                        let label=if is_dir{format!("[Folder] {name}")}else{name.clone()};
+                                        let selected=!is_dir && browser.filename==name;
+                                        let response=ui.selectable_label(selected,label);
+                                        if response.clicked(){
+                                            if is_dir{browser.change_directory(browser.directory.join(&name));}
+                                            else{browser.filename=name.clone();browser.overwrite=None;browser.error=None;}
+                                        }
+                                        if response.double_clicked() && !is_dir {
+                                            browser.filename=name;
+                                            browser.overwrite=None;
+                                            browser.error=None;
+                                            // Opening a file uses the same validation and loading path as Open.
+                                            // Save dialogs keep their explicit confirmation/overwrite workflow.
+                                            if !browser.save { open_on_double_click = true; }
+                                        }
+                                    }
+                                });
+                            }
+                            Err(e)=>{ui.colored_label(egui::Color32::LIGHT_RED,format!("Cannot list folder: {e}"));}
+                        }
+                        ui.separator();
+                        ui.horizontal(|ui|{
+                            ui.label("File name:");
+                            ui.add(egui::TextEdit::singleline(&mut browser.filename).desired_width(400.0));
+                        });
+                        if let Some(path)=browser.overwrite.clone(){
+                            ui.colored_label(egui::Color32::YELLOW,format!("Overwrite existing project {}?",path.display()));
+                            ui.horizontal(|ui|{
+                                if ui.button("Confirm Overwrite").clicked(){
+                                    match maker_save_project(graph,&path){
+                                        Ok(())=>completed=Some((path,None)),
+                                        Err(e)=>browser.error=Some(format!("Save failed: {e}")),
+                                    }
                                 }
+                                if ui.button("Keep Existing").clicked(){browser.overwrite=None;}
+                            });
+                        }else{
+                            ui.horizontal(|ui|{
+                                let open_button_clicked = ui.button(if browser.save{"Save"}else{"Open"}).clicked();
+                                if open_button_clicked || open_on_double_click {
+                                    match browser.selected_path(){
+                                        Ok(path)=>{
+                                            if browser.save {
+                                                if path.exists(){browser.overwrite=Some(path);}
+                                                else {match maker_save_project(graph,&path){
+                                                    Ok(())=>completed=Some((path,None)),
+                                                    Err(e)=>browser.error=Some(format!("Save failed: {e}")),
+                                                }}
+                                            }else{
+                                                match maker_load_project(&path){
+                                                    Ok(loaded)=>completed=Some((path,Some(loaded))),
+                                                    Err(e)=>browser.error=Some(format!("Open failed: {e}")),
+                                                }
+                                            }
+                                        }
+                                        Err(e)=>browser.error=Some(e),
+                                    }
+                                }
+                                if ui.button("Cancel").clicked(){close=true;}
                             });
                         }
-                        ui.horizontal(|ui|{
-                            if ui.button(if save_mode{"Save"}else{"Load"}).clicked(){
-                                if save_mode {
-                                    match maker_save_project(graph,project_name){
-                                        Ok(())=>{*status=format!("Saved project {}.smprj",project_name);close=true;},
-                                        Err(e)=>*status=format!("Save Project failed: {e}"),
-                                    }
-                                } else {
-                                    match maker_load_project(project_name){
-                                        Ok(mut loaded)=>{
-                                            loaded.revision=graph.revision.wrapping_add(1);
-                                            *graph=loaded;
-                                            *selected=None;*parameter_popup=None;*pending=None;*dragging_wire=None;
-                                            routes.clear();routing_undo.clear();routing_redo.clear();orphan_undo.clear();*orphan_restore_pending=false;
-                                            candidates.clear();*candidate_epoch=candidate_epoch.wrapping_add(1);
-                                            candidate_jobs.clear();*connection_search=None;*candidate_base=None;
-                                            candidate_undo.clear();*candidate_selected=None;
-                                            pinpoint_next.clear();*pinpoint_target=None;*pinpoint_pulse=None;
-                                            *pending_zoom_to_fit=true;
-                                            *status=format!("Loaded project {}.smprj",project_name);
-                                            close=true;
-                                        },
-                                        Err(e)=>*status=format!("Load Project failed: {e}"),
-                                    }
-                                }
-                            }
-                            if ui.button("Cancel").clicked(){close=true;}
-                        });
-                        if status.contains("Project failed:"){ui.colored_label(egui::Color32::LIGHT_RED,status.as_str());}
+                        if let Some(e)=&browser.error{ui.colored_label(egui::Color32::LIGHT_RED,e);}
                     });
-                if close{*project_dialog=None;}
+                let did_complete=completed.is_some();
+                if let Some((path,loaded))=completed {
+                    let was_open=loaded.is_some();
+                    if let Some(mut loaded)=loaded {
+                        loaded.revision=graph.revision.wrapping_add(1);
+                        *graph=loaded;
+                        *preview_active=true;
+                        *selected=None;*parameter_popup=None;*pending=None;*dragging_wire=None;
+                        routes.clear();routing_undo.clear();routing_redo.clear();orphan_undo.clear();orphan_redo.clear();*orphan_restore_pending=false;
+                        candidates.clear();*candidate_epoch=candidate_epoch.wrapping_add(1);
+                        candidate_jobs.clear();*connection_search=None;*candidate_base=None;
+                        candidate_undo.clear();*candidate_selected=None;
+                        pinpoint_next.clear();*pinpoint_target=None;*pinpoint_pulse=None;
+                        *pending_zoom_to_fit=true;
+                        *saved_graph_snapshot=serde_json::json!(crate::maker::graph_to_wire(graph));
+                        *status=format!("Opened project {}",path.display());
+                    }else{
+                        *saved_graph_snapshot=serde_json::json!(crate::maker::graph_to_wire(graph));
+                        *status=format!("Saved project {}",path.display());
+                        if let Some(action)=after_save_action.take(){*pending_menu_command=Some(action);}
+                    }
+                    *project_name=path.file_stem().and_then(|s|s.to_str()).unwrap_or("Untitled").to_owned();
+                    if was_open {
+                        match maker_record_recent_project(&path){
+                            Ok(updated)=>*recent_projects=updated,
+                            Err(e)=>*status=format!("Opened project {}, but recent-project history could not be saved: {e}",path.display()),
+                        }
+                    }
+                    *project_path=Some(path);
+                    close=true;
+                }
+                if close{
+                    if !did_complete { *after_save_action=None; }
+                    *project_dialog=None;
+                }
             }
-            egui::TopBottomPanel::top("maker_header").show(ctx,|ui|{
-                ui.horizontal(|ui|{
-                    ui.heading("Screenshaver Maker");ui.separator();ui.label(format!("{}.smprj",project_name));
-                    if ui.button("Save Project").clicked(){*project_dialog=Some(true);}
-                    if ui.button("Load Project").clicked(){*project_dialog=Some(false);}
-                    if ui.button("Clear Graph").clicked(){let revision=graph.revision;*graph=Graph::blank();graph.revision=revision.wrapping_add(1);
-                        *selected=None;*parameter_popup=None;*pending=None;*dragging_wire=None;routes.clear();routing_undo.clear();routing_redo.clear();orphan_undo.clear();*orphan_restore_pending=false;
-                        candidates.clear();*candidate_epoch=candidate_epoch.wrapping_add(1);candidate_jobs.clear();*connection_search=None;*candidate_base=None;candidate_undo.clear();*candidate_selected=None;
-                        *status="Graph cleared; Output Color retained".into();
-                    }
-                    let orphan_count=graph.orphan_ids().len();
-                    if ui.add_enabled(orphan_count>0,egui::Button::new("Remove orphan modules"))
-                        .on_hover_text("Remove all modules without a directed path to Output Color, including disconnected groups")
-                        .clicked(){
-                        let previous=graph.clone();
-                        let removed=graph.remove_orphans();
-                        if !removed.is_empty(){
-                            orphan_undo.push(previous);
-                            if orphan_undo.len()>32{orphan_undo.remove(0);}
-                            if selected.is_some_and(|id|removed.contains(&id)){*selected=None;}
-                            if parameter_popup.is_some_and(|id|removed.contains(&id)){*parameter_popup=None;}
-                            *pending=None;*dragging_wire=None;
-                            routes.clear();routing_undo.clear();routing_redo.clear();
-                            // Keep existing thumbnails and their discovery snapshot. The most
-                            // recent undo entry is the exact pre-removal graph for reactivation.
-                            *orphan_restore_pending=true;
-                            *candidate_epoch=candidate_epoch.wrapping_add(1);candidate_jobs.clear();*connection_search=None;
-                            *candidate_selected=None;
-                            *status=format!("Removed {} orphan module{}; thumbnails retained (click to restore)",removed.len(),if removed.len()==1{""}else{"s"});
-                        }
-                    }
-                    if ui.add_enabled(!orphan_undo.is_empty(),egui::Button::new("Undo Remove"))
-                        .on_hover_text("Restore the most recently removed modules and their connections")
-                        .clicked(){
-                        if let Some(mut previous)=orphan_undo.pop(){
-                            previous.revision=graph.revision.wrapping_add(1);
-                            *graph=previous;
-                            routes.clear();routing_undo.clear();routing_redo.clear();
-                            *orphan_restore_pending=false;
-                            *candidate_epoch=candidate_epoch.wrapping_add(1);candidate_jobs.clear();*connection_search=None;
-                            *candidate_selected=None;
-                            *pending=None;*dragging_wire=None;
-                            *status="Restored removed orphan modules; thumbnails retained".into();
-                        }
-                    }
-                    if ui.button("Optimize Routing").clicked(){optimize_requested=true;}
-                    if ui.button("Center Graph").clicked(){fit_requested=true;}
-                    if ui.button("Zoom to Fit").on_hover_text("Fit all nodes and routed connections (Ctrl+F)").clicked(){*pending_zoom_to_fit=true;}
-                    if ui.small_button("−").on_hover_text("Zoom out (Ctrl+-)").clicked(){*pending_zoom=Some(*canvas_zoom/1.2);}
-                    if ui.small_button(format!("{:.0}%",*canvas_zoom*100.0)).on_hover_text("Reset zoom (Ctrl+0)").clicked(){*pending_zoom=Some(1.0);}
-                    if ui.small_button("+").on_hover_text("Zoom in (Ctrl++)").clicked(){*pending_zoom=Some(*canvas_zoom*1.2);}
-                    if ui.add_enabled(!routing_undo.is_empty(),egui::Button::new("Undo Routing")).clicked(){
-                        if let Some((previous,old_routes))=routing_undo.pop(){
-                            routing_redo.push((graph.clone(),routes.clone()));
-                            *graph=previous;*routes=old_routes;graph.revision+=1;
-                            *status="Restored previous routing layout".into();
-                        }
-                    }
-                    if ui.add_enabled(!routing_redo.is_empty(),egui::Button::new("Redo Routing")).clicked(){
-                        if let Some((next,next_routes))=routing_redo.pop(){
-                            routing_undo.push((graph.clone(),routes.clone()));
-                            *graph=next;*routes=next_routes;graph.revision+=1;
-                            *status="Reapplied routing layout".into();
-                        }
-                    }
-                    if ui.button("Exit").clicked(){*open=false;}
+            // Size the dock from the longest displayed module label, including the
+            // "+ " prefix. All category buttons share this single width.
+            let library_button_width = {
+                let font_id = egui::TextStyle::Button.resolve(&ctx.style());
+                let painter = ctx.debug_painter();
+                maker_library::get().modules.values()
+                    .map(|module| {
+                        let label = format!("+ {}", module.name);
+                        painter.layout_no_wrap(label, font_id.clone(), egui::Color32::WHITE).size().x
+                    })
+                    .fold(0.0_f32, f32::max)
+                    + 24.0 // Button horizontal padding.
+            };
+            // Category indentation, panel margins and a little breathing room.
+            let pinpoint_column_width = 25.0_f32;
+            let library_dock_width = library_button_width + pinpoint_column_width + 48.0;
+            if *delete_project_confirm {
+                egui::Window::new("Delete Maker Project").collapsible(false).resizable(false).show(ctx,|ui|{
+                    if let Some(path)=project_path.clone(){
+                        ui.label(format!("Permanently delete project file {}?",path.display()));
+                        ui.label("The current graph will remain open.");
+                        ui.horizontal(|ui|{
+                            if ui.button("Delete Project").clicked(){
+                                match std::fs::remove_file(&path) {
+                                    Ok(())=>{*status=format!("Deleted project {}",path.display());*project_path=None;*project_name="Untitled".into();},
+                                    Err(e)=>*status=format!("Delete failed: {e}"),
+                                }
+                                *delete_project_confirm=false;
+                            }
+                            if ui.button("Cancel").clicked(){*delete_project_confirm=false;}
+                        });
+                    }else{*delete_project_confirm=false;}
                 });
-            });
+            }
             egui::TopBottomPanel::bottom("maker_footer").show(ctx,|ui|{
                 ui.horizontal_wrapped(|ui|{
+                    ui.label(format!("{}.smprj",project_name));ui.separator();
                     ui.label("Batch 07 · field traversal + anchored parameter editor");ui.separator();
                     ui.label(format!("{} nodes / {} connections",graph.nodes.len(),graph.connections.len()));ui.separator();
                     // Graph coordinates use logical graph pixels: they are stable
@@ -1418,29 +1756,15 @@ impl MakerUi {
                     else{ui.label(status.as_str());}
                 });
             });
-            // Size the dock from the longest displayed module label, including the
-            // "+ " prefix. All category buttons share this single width.
-            let library_button_width = {
-                let font_id = egui::TextStyle::Button.resolve(&ctx.style());
-                let painter = ctx.debug_painter();
-                maker_library::get().modules.values()
-                    .map(|module| {
-                        let label = format!("+ {}", module.name);
-                        painter.layout_no_wrap(label, font_id.clone(), egui::Color32::WHITE).size().x
-                    })
-                    .fold(0.0_f32, f32::max)
-                    + 24.0 // Button horizontal padding.
-            };
-            // Category indentation, panel margins and a little breathing room.
-            let pinpoint_column_width = 25.0_f32;
-            let library_dock_width = library_button_width + pinpoint_column_width + 48.0;
             egui::SidePanel::left("maker_library")
                 .resizable(false)
                 .default_width(library_dock_width)
                 .min_width(library_dock_width)
                 .max_width(library_dock_width)
                 .show(ctx,|ui|{
-                ui.heading("Module Library");ui.separator();
+                ui.heading("Screenshaver Maker");
+                ui.label(egui::RichText::new("Module Library").heading());
+                ui.separator();
                 if ui.button("+ Add All").on_hover_text("Add one instance of every nonterminal module without connecting wires").clicked(){
                     let modules:Vec<String>=maker_library::get().modules.values()
                         .filter(|m|!m.terminal).map(|m|m.id.clone()).collect();
@@ -1452,7 +1776,7 @@ impl MakerUi {
                         if graph.add(&module_id,[40.0+col as f32*265.0,40.0+row as f32*200.0]).is_ok(){added+=1;}
                     }
                     *selected=None;*parameter_popup=None;*pending=None;*dragging_wire=None;
-                    routes.clear();routing_undo.clear();routing_redo.clear();orphan_undo.clear();*orphan_restore_pending=false;
+                    routes.clear();routing_undo.clear();routing_redo.clear();orphan_undo.clear();orphan_redo.clear();*orphan_restore_pending=false;
                     candidates.clear();*candidate_epoch=candidate_epoch.wrapping_add(1);candidate_jobs.clear();*connection_search=None;*candidate_base=None;
                     candidate_undo.clear();*candidate_selected=None;candidate_notice.clear();
                     *status=format!("Added {added} modules without connections");
@@ -1617,6 +1941,314 @@ impl MakerUi {
                 ui.separator();ui.small("Drag from an output port to a compatible input, or click output then input. Outputs support fan-out; each input has one source.");
                 if let Some((id,port))=*pending{ui.label(format!("Source: node #{id}, port {port}"));if ui.button("Cancel connection").clicked(){*pending=None;*dragging_wire=None;}}
             });
+            if let Some(action)=*unsaved_action {
+                egui::Window::new("Unsaved Project Changes")
+                    .id(egui::Id::new("maker_unsaved_changes"))
+                    .collapsible(false).resizable(false).default_width(390.0)
+                    .anchor(egui::Align2::CENTER_CENTER,egui::Vec2::ZERO)
+                    .show(ctx,|ui|{
+                        ui.label(format!("Save changes to {}.smprj before continuing?",project_name));
+                        ui.label("Discard will lose changes made since the last save.");
+                        ui.horizontal(|ui|{
+                            if ui.button("Save").clicked(){
+                                *unsaved_action=None;
+                                *after_save_action=Some(action);
+                                if project_path.is_some(){*pending_menu_command=Some("save");}
+                                else {*project_dialog=Some(MakerProjectBrowser::open(true,None,project_name));}
+                            }
+                            if ui.button("Discard").clicked(){
+                                *unsaved_action=None;
+                                *pending_menu_command=Some(action);
+                                // One-shot bypass: the graph remains dirty until the
+                                // chosen action actually completes.
+                                *discard_approved=Some(action);
+                            }
+                            if ui.button("Cancel").clicked(){*unsaved_action=None;}
+                        });
+                    });
+            }
+            if let Some((directory,filename,confirm_overwrite))=glsl_export_dialog.as_mut(){
+                let mut close_export=false;
+                egui::Window::new("Export GLSL")
+                    .id(egui::Id::new("maker_export_glsl"))
+                    .collapsible(false).resizable(false).default_width(440.0)
+                    .anchor(egui::Align2::CENTER_CENTER,egui::Vec2::ZERO)
+                    .show(ctx,|ui|{
+                        ui.label("Export the current Node Graph as a GLSL shader:");
+                        ui.label("Export directory:");
+                        if ui.add(egui::TextEdit::singleline(directory).desired_width(410.0)).changed(){
+                            *confirm_overwrite=false;
+                        }
+                        ui.label("Filename:");
+                        if ui.add(egui::TextEdit::singleline(filename).desired_width(410.0)).changed(){
+                            *confirm_overwrite=false;
+                        }
+                        if *confirm_overwrite {
+                            ui.colored_label(egui::Color32::YELLOW,"File exists. Replace it?");
+                        }
+                        ui.horizontal(|ui|{
+                            if ui.button(if *confirm_overwrite {"Confirm Overwrite"} else {"Export"}).clicked(){
+                                let name=filename.trim();
+                                let dir=directory.trim();
+                                let valid_name=!name.is_empty()
+                                    && name!="." && name!=".."
+                                    && !name.contains('/') && !name.contains('\\')
+                                    && std::path::Path::new(name).extension().and_then(|v|v.to_str())==Some("glsl");
+                                let path=std::path::PathBuf::from(dir).join(name);
+                                if dir.is_empty() {
+                                    *status="Export directory cannot be empty".into();
+                                }else if !valid_name {
+                                    *status="Export filename must be a .glsl filename without directory separators".into();
+                                }else if path.exists() && !*confirm_overwrite {
+                                    *confirm_overwrite=true;
+                                }else{
+                                    match crate::maker_compiler::fragment_source(graph){
+                                        Ok(source)=>{
+                                            let result=(||->Result<(),String>{
+                                                let parent=path.parent().ok_or("Invalid export directory")?;
+                                                std::fs::create_dir_all(parent).map_err(|e|e.to_string())?;
+                                                std::fs::write(&path,source.as_bytes()).map_err(|e|e.to_string())
+                                            })();
+                                            match result {
+                                                Ok(())=>{*status=format!("Exported GLSL to {}",path.display());close_export=true;},
+                                                Err(e)=>*status=format!("GLSL export failed: {e}"),
+                                            }
+                                        }
+                                        Err(e)=>*status=format!("GLSL generation failed: {e}"),
+                                    }
+                                }
+                            }
+                            if ui.button("Cancel").clicked(){close_export=true;}
+                        });
+                    });
+                if close_export {*glsl_export_dialog=None;}
+            }
+            // The dock is laid out first. The top menu panel therefore occupies
+            // exactly the remaining region to its right, with no cached coordinates.
+            egui::TopBottomPanel::top("maker_header")
+                .frame(egui::Frame::none()
+                    .fill(egui::Color32::from_gray(110))
+                    .inner_margin(egui::Margin::symmetric(8, 3)))
+                .show(ctx, |ui| {
+                let mut command = pending_menu_command.take();
+                egui::menu::bar(ui, |ui| {
+                    // Display the native 22x22 artwork without scaling; the menu
+                    // retains its existing compact header layout.
+                    ui.add(egui::Image::new((menu_icon.id(), egui::vec2(22.0, 22.0))));
+                    ui.add_space(4.0);
+                    ui.menu_button("File", |ui| {
+                        for (label, action, enabled) in [
+                            ("New Project    Ctrl+N", "new", true),
+                            ("Open Project    Ctrl+O", "open", true),
+                        ] {
+                            if ui.add_enabled(enabled, egui::Button::new(label)).clicked() {
+                                command=Some(action);ui.close_menu();
+                            }
+                        }
+                        ui.menu_button("Open Recent Project", |ui| {
+                            if recent_projects.is_empty(){ui.add_enabled(false,egui::Label::new("No recent projects"));}
+                            for (index,path) in recent_projects.iter().enumerate(){
+                                let label=format!("{}  {}",index+1,path.file_name().and_then(|n|n.to_str()).unwrap_or("Project"));
+                                if ui.button(label).on_hover_text(path.display().to_string()).clicked(){
+                                    command=Some(match index {0=>"recent_0",1=>"recent_1",2=>"recent_2",3=>"recent_3",4=>"recent_4",5=>"recent_5",6=>"recent_6",_=>"recent_7"});
+                                    ui.close_menu();
+                                }
+                            }
+                        });
+                        for (label, action, enabled) in [
+                            ("Save Project    Ctrl+S", "save", true),
+                            ("Save Project As    Ctrl+Shift+S", "save_as", true),
+                            ("Close Project    Ctrl+C", "close", project_path.is_some()),
+                            ("Delete Project    Ctrl+Shift+D", "delete", project_path.is_some()),
+                            ("Export GLSL    Ctrl+X", "export_glsl", true),
+                            ("Exit    Ctrl+Q", "exit", true),
+                        ] {
+                            if ui.add_enabled(enabled, egui::Button::new(label)).clicked() {
+                                command = Some(action); ui.close_menu();
+                            }
+                        }
+                    });
+                    ui.menu_button("Edit", |ui| {
+                        for (label, action, enabled) in [
+                            ("Remove Orphan Modules", "remove_orphans", !graph.orphan_ids().is_empty()),
+                            ("Undo Remove", "undo_remove", !orphan_undo.is_empty()),
+                            ("Redo Remove", "redo_remove", !orphan_redo.is_empty()),
+                            ("Optimize Routing", "optimize", true),
+                            ("Undo Routing", "undo_routing", !routing_undo.is_empty()),
+                            ("Redo Routing", "redo_routing", !routing_redo.is_empty()),
+                            ("Center Graph", "center", true),
+                            ("Clear Graph", "clear", true),
+                        ] {
+                            if ui.add_enabled(enabled, egui::Button::new(label)).clicked() {
+                                command = Some(action); ui.close_menu();
+                            }
+                        }
+                    });
+                    ui.menu_button("View", |ui| {
+                        for (label, action) in [
+                            ("Zoom In    Ctrl++", "zoom_in"),
+                            ("Zoom Out    Ctrl+-", "zoom_out"),
+                            ("Reset Zoom (100%)    Ctrl+0", "zoom_reset"),
+                            ("Zoom to Fit    Ctrl+Shift+F", "zoom_fit"),
+                        ] {
+                            if ui.button(label).clicked() {
+                                command = Some(action); ui.close_menu();
+                            }
+                        }
+                    });
+                });
+                // While the confirmation is open, do not accept a second command.
+                if unsaved_action.is_some(){command=None;}
+                // Only graph-replacing or closing operations need the unsaved-work guard.
+                // Compare persisted graph data, not revision counters (which also change
+                // for transient operations and do not reliably represent file changes).
+                if let Some(action)=command {
+                    let destructive=matches!(action,"new"|"open"|"close"|"exit"|"clear") || action.starts_with("recent_");
+                    let approved=*discard_approved==Some(action);
+                    if approved {*discard_approved=None;}
+                    if destructive && !approved && serde_json::json!(crate::maker::graph_to_wire(graph))!=*saved_graph_snapshot {
+                        *unsaved_action=Some(action);
+                        command=None;
+                    }
+                }
+                match command {
+                    Some("new") | Some("close")=>{
+                        let closing=command==Some("close");
+                        let revision=graph.revision;*graph=Graph::blank();graph.revision=revision.wrapping_add(1);
+                        *preview_active=!closing;
+                        *project_name="Untitled".into();*project_path=None;*project_dialog=None;
+                        *selected=None;*parameter_popup=None;*pending=None;*dragging_wire=None;
+                        routes.clear();routing_undo.clear();routing_redo.clear();orphan_undo.clear();orphan_redo.clear();*orphan_restore_pending=false;
+                        candidates.clear();*candidate_epoch=candidate_epoch.wrapping_add(1);candidate_jobs.clear();*connection_search=None;
+                        *candidate_base=None;candidate_undo.clear();*candidate_selected=None;
+                        *pending_zoom_to_fit=true;*status=if closing {"Project closed".into()} else {"New project created".into()};
+                        *saved_graph_snapshot=serde_json::json!(crate::maker::graph_to_wire(graph));
+                    }
+                    Some("open")=>*project_dialog=Some(MakerProjectBrowser::open(false,None,"Untitled")),
+                    Some(action) if action.starts_with("recent_")=>{
+                        if let Some(index)=action.strip_prefix("recent_").and_then(|n|n.parse::<usize>().ok()){
+                            if let Some(path)=recent_projects.get(index).cloned(){
+                                match maker_load_project(&path){
+                                    Ok(mut loaded)=>{
+                                        loaded.revision=graph.revision.wrapping_add(1);
+                                        *graph=loaded;
+                                        *preview_active=true;
+                                        *selected=None;*parameter_popup=None;*pending=None;*dragging_wire=None;
+                                        routes.clear();routing_undo.clear();routing_redo.clear();orphan_undo.clear();orphan_redo.clear();*orphan_restore_pending=false;
+                                        candidates.clear();*candidate_epoch=candidate_epoch.wrapping_add(1);
+                                        candidate_jobs.clear();*connection_search=None;*candidate_base=None;
+                                        candidate_undo.clear();*candidate_selected=None;
+                                        pinpoint_next.clear();*pinpoint_target=None;*pinpoint_pulse=None;
+                                        *pending_zoom_to_fit=true;
+                                        *project_name=path.file_stem().and_then(|s|s.to_str()).unwrap_or("Untitled").to_owned();
+                                        *project_path=Some(path.clone());*project_dialog=None;
+                                        *saved_graph_snapshot=serde_json::json!(crate::maker::graph_to_wire(graph));
+                                        *status=format!("Opened project {}",path.display());
+                                        match maker_record_recent_project(&path){
+                                            Ok(updated)=>*recent_projects=updated,
+                                            Err(e)=>*status=format!("Opened project {}, but recent-project history could not be saved: {e}",path.display()),
+                                        }
+                                    }
+                                    Err(e)=>*status=format!("Unable to open recent project {}: {e}",path.display()),
+                                }
+                            }
+                        }
+                    }
+                    Some("save_as")=>*project_dialog=Some(MakerProjectBrowser::open(true,None,project_name)),
+                    Some("save")=>{
+                        if let Some(path)=project_path.clone(){
+                            match maker_save_project(graph,&path){
+                                Ok(())=>{
+                                    *saved_graph_snapshot=serde_json::json!(crate::maker::graph_to_wire(graph));
+                                    *status=format!("Saved project {}",path.display());
+                                    if let Some(action)=after_save_action.take(){*pending_menu_command=Some(action);}
+                                },
+                                Err(e)=>{*after_save_action=None;*status=format!("Save failed: {e}")},
+                            }
+                        }else{*project_dialog=Some(MakerProjectBrowser::open(true,None,project_name));}
+                    }
+                    Some("export_glsl")=>{
+                        let default_dir=std::env::var_os("HOME")
+                            .map(|home|std::path::PathBuf::from(home).join(".config/screenshaver/maker/exports"))
+                            .unwrap_or_else(||std::path::PathBuf::from("."));
+                        let filename=format!("{}.glsl",project_name.trim_end_matches(".smprj"));
+                        *glsl_export_dialog=Some((default_dir.to_string_lossy().into_owned(),filename,false));
+                    }
+                    Some("delete")=>*delete_project_confirm=true,
+                    Some("exit")=>*open=false,
+                    Some("clear")=>{
+                        let revision=graph.revision;*graph=Graph::blank();graph.revision=revision.wrapping_add(1);
+                        *selected=None;*parameter_popup=None;*pending=None;*dragging_wire=None;
+                        routes.clear();routing_undo.clear();routing_redo.clear();orphan_undo.clear();orphan_redo.clear();*orphan_restore_pending=false;
+                        candidates.clear();*candidate_epoch=candidate_epoch.wrapping_add(1);candidate_jobs.clear();*connection_search=None;
+                        *candidate_base=None;candidate_undo.clear();*candidate_selected=None;
+                        *status="Graph cleared; Output Color retained".into();
+                    }
+                    Some("remove_orphans")=>{
+                        let previous=graph.clone();
+                        let removed=graph.remove_orphans();
+                        if !removed.is_empty(){
+                            orphan_undo.push(previous);
+                            if orphan_undo.len()>32{orphan_undo.remove(0);}
+                            if selected.is_some_and(|id|removed.contains(&id)){*selected=None;}
+                            if parameter_popup.is_some_and(|id|removed.contains(&id)){*parameter_popup=None;}
+                            *pending=None;*dragging_wire=None;
+                            routes.clear();routing_undo.clear();routing_redo.clear();
+                            // Keep existing thumbnails and their discovery snapshot. The most
+                            // recent undo entry is the exact pre-removal graph for reactivation.
+                            *orphan_restore_pending=true;
+                            *candidate_epoch=candidate_epoch.wrapping_add(1);candidate_jobs.clear();*connection_search=None;
+                            *candidate_selected=None;
+                            *status=format!("Removed {} orphan module{}; thumbnails retained (click to restore)",removed.len(),if removed.len()==1{""}else{"s"});
+                        }
+                        orphan_redo.clear();
+                    }
+                    Some("undo_remove")=>{
+                        let before=graph.clone();
+                        if let Some(mut previous)=orphan_undo.pop(){
+                            previous.revision=graph.revision.wrapping_add(1);
+                            *graph=previous;
+                            routes.clear();routing_undo.clear();routing_redo.clear();
+                            *orphan_restore_pending=false;
+                            *candidate_epoch=candidate_epoch.wrapping_add(1);candidate_jobs.clear();*connection_search=None;
+                            *candidate_selected=None;
+                            *pending=None;*dragging_wire=None;
+                            *status="Restored removed orphan modules; thumbnails retained".into();
+                        }
+                        orphan_redo.push(before);
+                    }
+                    Some("redo_remove")=>{
+                        if let Some(mut next)=orphan_redo.pop(){
+                            orphan_undo.push(graph.clone());next.revision=graph.revision.wrapping_add(1);*graph=next;
+                            routes.clear();routing_undo.clear();routing_redo.clear();
+                            *orphan_restore_pending=false;*candidate_epoch=candidate_epoch.wrapping_add(1);
+                            candidate_jobs.clear();*connection_search=None;*candidate_selected=None;
+                            *pending=None;*dragging_wire=None;*status="Reapplied orphan removal".into();
+                        }
+                    }
+                    Some("optimize")=>optimize_requested=true,
+                    Some("center")=>fit_requested=true,
+                    Some("zoom_fit")=>*pending_zoom_to_fit=true,
+                    Some("zoom_in")=>*pending_zoom=Some(*canvas_zoom*1.2),
+                    Some("zoom_out")=>*pending_zoom=Some(*canvas_zoom/1.2),
+                    Some("zoom_reset")=>*pending_zoom=Some(1.0),
+                    Some("undo_routing")=>{
+                        if let Some((previous,old_routes))=routing_undo.pop(){
+                            routing_redo.push((graph.clone(),routes.clone()));
+                            *graph=previous;*routes=old_routes;graph.revision+=1;
+                            *status="Restored previous routing layout".into();
+                        }
+                    }
+                    Some("redo_routing")=>{
+                        if let Some((next,next_routes))=routing_redo.pop(){
+                            routing_undo.push((graph.clone(),routes.clone()));
+                            *graph=next;*routes=next_routes;graph.revision+=1;
+                            *status="Reapplied routing layout".into();
+                        }
+                    }
+                    _=>{}
+                }
+            });
             egui::SidePanel::right("maker_inspector").resizable(true).default_width(260.0).min_width(200.0).show(ctx,|ui|{
                 ui.heading("Inspector");ui.separator();
                 ui.horizontal(|ui|{
@@ -1693,6 +2325,9 @@ impl MakerUi {
                         *candidate_base=Some(graph.clone());
                         *connection_search=None;*candidate_evaluated=0;*candidate_glsl_capable=0;*candidate_rejections=0;*candidate_uniform=0;*candidate_glsl_errors=0;*candidate_render_errors=0;
                         if *candidate_mode==2 {
+                            if let Err(error)=maker_save_discovery_settings(*min_wire_connections,*max_wire_connections,*max_enumerations,*max_candidates){
+                                eprintln!("[MAKER STATE] Unable to save last discovery settings: {error}");
+                            }
                             maker_discovery::set_production_wire_limit(*max_wire_connections);
                             *connection_search=ConnectionSearch::new(graph,*max_enumerations,*min_wire_connections,*max_wire_connections);
                             *candidate_notice="Canonical discovery (CPU only); compatible checkpoint resumes automatically...".into();
@@ -1901,6 +2536,8 @@ impl MakerUi {
                 ui.separator();ui.label("Graph status");
                 match graph.validate(){Ok(())=>{ui.small("Typed connections valid; no cycles");},Err(e)=>{ui.colored_label(egui::Color32::LIGHT_RED,e);}}
             });
+            // Keep the preview panel allocated at its existing height even when
+            // no project is open. Only its shader rendering is disabled.
             // Explicitly own the preview height. A default_height() hint alone is
             // not sufficient: egui may restore a previously cached panel size.
             // The saved value changes only when the divider is dragged.
@@ -1937,9 +2574,24 @@ impl MakerUi {
                             maximum_preview_height,
                         );
                     }
+                    // Persist only when the user releases the resize divider;
+                    // never rewrite state.json on every rendered frame.
+                    if divider_response.drag_stopped() {
+                        if let Err(error)=maker_save_preview_height(*desired_height) {
+                            eprintln!("[MAKER STATE] Could not save preview height: {error}");
+                        }
+                    }
                     ui.strong("Live Shader Preview");
-                    ui.small("Graph-generated GLSL 330 core · preview retains last valid program on errors");
-                    *preview_rect = ui.available_rect_before_wrap();
+                    if *preview_active {
+                        ui.small("Graph-generated GLSL 330 core · preview retains last valid program on errors");
+                    }
+                    // The renderer must not draw into the reserved, blank panel
+                    // after Close Project. Its geometry remains unchanged.
+                    *preview_rect = if *preview_active {
+                        ui.available_rect_before_wrap()
+                    } else {
+                        egui::Rect::NOTHING
+                    };
                 });
             egui::CentralPanel::default().frame(egui::Frame::default().fill(egui::Color32::from_rgba_unmultiplied(12,16,25,228))).show(ctx,|ui|{
                 ui.heading("Node Graph");ui.small("Drag from output to input to wire · click-to-connect also works · drag node headers to move");ui.separator();
@@ -2895,6 +3547,10 @@ fn maker_category_color(category: &str) -> egui::Color32 {
 }
 
 fn node_header_color(module:&Module)->egui::Color32 {
+    // The terminal Output Color node uses a neutral dark-gray header.
+    if module.id == "screenshaver.output.color" {
+        return egui::Color32::from_rgb(65, 70, 76);
+    }
     let category = maker_library::get().categories.get(&module.id)
         .map(String::as_str).unwrap_or("Other");
     maker_category_color(category)
