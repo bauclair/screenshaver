@@ -1,10 +1,10 @@
 //! Data-only Maker module definitions. Trust is assigned by the loader, never JSON.
 use serde_json::Value;
 
-#[derive(Clone,Debug,PartialEq,Eq)]
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub enum Trust { Official, Community }
 #[derive(Clone,Debug)]
-pub struct Port { pub id:String, pub name:String, pub ty:String, pub default:String }
+pub struct Port { pub id:String, pub name:String, pub ty:String, pub default:String, pub semantic_role:String }
 #[derive(Clone,Debug)]
 pub struct Parameter { pub id:String, pub name:String, pub ty:String, pub default:Value, pub min:f32, pub max:f32, pub options:Vec<String> }
 #[derive(Clone,Debug)]
@@ -20,7 +20,9 @@ fn ports(v:&Value,key:&str)->Result<Vec<Port>,String>{
     list.iter().map(|p|{
         let ty=required(p,"type")?.to_string();
         if !matches!(ty.as_str(),"float"|"vec2"|"vec3"){return Err(format!("Unsupported port type: {ty}"))}
-        Ok(Port{id:required(p,"id")?.into(),name:required(p,"name")?.into(),ty,default:p.get("default").and_then(Value::as_str).unwrap_or("").into()})
+        let semantic_role=p.get("semantic_role").and_then(Value::as_str).unwrap_or("");
+        if !matches!(semantic_role,""|"uv"|"position2d"|"offset2d"|"direction2d"|"position3d"|"direction3d"|"normal3d"|"color"|"distance"|"time"|"angle"|"mask"|"intensity"|"curvature"|"occlusion") {return Err(format!("Unsupported semantic_role: {semantic_role}"))}
+        Ok(Port{id:required(p,"id")?.into(),name:required(p,"name")?.into(),ty,default:p.get("default").and_then(Value::as_str).unwrap_or("").into(),semantic_role:semantic_role.into()})
     }).collect()
 }
 impl Module {

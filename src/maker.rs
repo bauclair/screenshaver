@@ -462,11 +462,11 @@ pub fn run()->Result<(),String>{
                     size:(ui.preview_rect().width().max(1.0) as i32,
                           ui.preview_rect().height().max(1.0) as i32),
                     time:start.elapsed().as_secs_f32()})
+            } else if let Some(job)=ui.next_candidate_job(){
+                Some(WorkerRequest::Candidate{epoch,job})
             } else if let Some((index,graph))=ui.next_motion_job(){
                 Some(WorkerRequest::Motion{epoch,index,graph})
-            } else {
-                ui.next_candidate_job().map(|job|WorkerRequest::Candidate{epoch,job})
-            };
+            } else {None};
             if let Some(request)=request {
                 match worker_tx.try_send(request){
                     Ok(())=>worker_busy=true,

@@ -84,7 +84,28 @@ impl Library {
     result
  }
  fn register(&mut self,path:&str,src:&str,trust:Trust){
-    match Module::parse(src,trust){Ok(module)=>{
+    match Module::parse(src,trust){Ok(mut module)=>{
+        // Assign conservative roles to official ports without altering JSON source
+        // or catalog fingerprints. Explicit semantic_role always takes precedence.
+        if trust==Trust::Official {
+            for port in module.inputs.iter_mut().chain(module.outputs.iter_mut()) {
+                if port.semantic_role.is_empty() {
+                    port.semantic_role=match (port.ty.as_str(),port.id.as_str()) {
+                        ("vec2","uv")=>"uv", ("vec2","position"|"polar"|"path")=>"position2d",
+                        ("vec2","offset"|"camera_offset")=>"offset2d",
+                        ("vec2","vector"|"rotated")=>"direction2d",
+                        ("vec3","color"|"mapped"|"base"|"albedo"|"background"|"edge_color"|"fog_color"|"light_color"|"rim_color"|"light")=>"color",
+                        ("vec3","normal"|"plane_normal")=>"normal3d",
+                        ("vec3","direction"|"light_direction"|"view_direction"|"incident")=>"direction3d",
+                        ("vec3","position"|"origin"|"center"|"plane_point"|"light_position"|"cell")=>"position3d",
+                        ("float","time")=>"time", ("float","distance")=>"distance",
+                        ("float","curvature")=>"curvature", ("float","occlusion"|"ao")=>"occlusion",
+                        ("float","mask"|"alpha")=>"mask", ("float","intensity"|"glow"|"pulse")=>"intensity",
+                        ("float","angle")=>"angle", _=>"",
+                    }.to_owned();
+                }
+            }
+        }
         if self.modules.contains_key(&module.id){self.errors.push(format!("{path}: duplicate module ID '{}'",module.id));}
         else{
             let category=path.replace('\\',"/");

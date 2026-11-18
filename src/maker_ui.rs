@@ -64,7 +64,9 @@ fn candidate_score(candidate:&Candidate, sort:u8)->f32 {
         5=>0.0,
         6=>candidate.motion.unwrap_or(-1.0),
         7=>candidate.connections.len() as f32,
-        _=>candidate.visual.interest,
+        _=>candidate.visual.interest * (if candidate.connection_candidate {
+            match candidate.motion {Some(m) if m<0.003=>0.20,Some(m)=>0.75+0.25*(m*20.0).min(1.0),None=>0.65}
+        } else {1.0}),
     }
 }
 
@@ -340,6 +342,34 @@ fn connection_key(graph:&Graph)->Vec<(NodeId,usize,NodeId,usize)> {
     let mut key:Vec<_>=graph.connections.iter().map(|c|(c.from,c.from_port,c.to,c.to_port)).collect();
     key.sort_unstable();key
 }
+// Semantic quality is a downstream ranking preference, NOT a graph validity rule.
+// No work is added to the canonical-parent traversal or its checkpoint cursors.
+fn semantic_pair_penalty(from:&str,to:&str)->u32 {
+    if from==to && !from.is_empty() {return 0}
+    if from.is_empty() || to.is_empty() {return 2}
+    // Coordinate transforms and mask/intensity conversions are useful artistic connections.
+    if matches!((from,to),("uv","position2d")|("position2d","uv")
+        |("offset2d","position2d")|("position2d","offset2d")
+        |("direction2d","position2d")|("position2d","direction2d")
+        |("position3d","direction3d")|("direction3d","position3d")
+        |("mask","intensity")|("intensity","mask")
+        |("distance","curvature")|("curvature","distance")
+        |("occlusion","mask")|("mask","occlusion")) {return 1}
+    // Normal/color and position/color mismatches are especially likely to be unproductive.
+    if (from=="color" && matches!(to,"normal3d"|"position3d"|"direction3d"))
+        || (to=="color" && matches!(from,"normal3d"|"position3d"|"direction3d")) {return 5}
+    3
+}
+fn graph_semantic_penalty(graph:&Graph)->u32 {
+    graph.connections.iter().fold(0u32,|score,c| {
+        let Some(source)=graph.node(c.from) else {return score};
+        let Some(target)=graph.node(c.to) else {return score};
+        let Some(from)=source.definition().outputs.get(c.from_port) else {return score};
+        let Some(to)=target.definition().inputs.get(c.to_port) else {return score};
+        score.saturating_add(semantic_pair_penalty(&from.semantic_role,&to.semantic_role))
+    })
+}
+
 // Stable, connection-count-neutral priority for GPU admission. The hash
 // uses connection identities, never the number of connections or a complexity
 // score. It makes selection reproducible across runs and worker counts.
@@ -355,6 +385,42 @@ fn discovery_priority(graph:&Graph)->u64 {
     // Avalanche to remove ordering patterns from low hash bits.
     h^=h>>30;h=h.wrapping_mul(0xbf58476d1ce4e5b9);
     h^=h>>27;h=h.wrapping_mul(0x94d049bb133111eb);h^(h>>31)
+}
+
+// Downstream-only graph diversity: compare complete typed edge identities.
+// Never used by the canonical enumerator or its checkpoint cursor.
+fn shared_connection_count(a:&[(NodeId,usize,NodeId,usize)],b:&[(NodeId,usize,NodeId,usize)])->usize {
+    let (mut i,mut j,mut shared)=(0,0,0);
+    while i<a.len() && j<b.len() {
+        match a[i].cmp(&b[j]) {
+            std::cmp::Ordering::Less=>i+=1,
+            std::cmp::Ordering::Greater=>j+=1,
+            std::cmp::Ordering::Equal=>{shared+=1;i+=1;j+=1;}
+        }
+    }
+    shared
+}
+
+// Pick from a bounded, semantically ranked shortlist. A repeated edge costs
+// two penalty units; semantic compatibility remains a preference, not a rule.
+fn select_diverse_gpu_indices(graphs:&[Graph],ranked:&[(u32,u64,usize)],limit:usize)->Vec<usize>{
+    const DIVERSITY_POOL:usize=1024;
+    let pool=&ranked[..ranked.len().min(DIVERSITY_POOL)];
+    let keys:Vec<_>=pool.iter().map(|(_,_,i)|connection_key(&graphs[*i])).collect();
+    let mut chosen=Vec::<usize>::new();
+    let mut used=vec![false;pool.len()];
+    for _ in 0..limit.min(pool.len()) {
+        let mut best:Option<(u32,u64,usize,usize)>=None;
+        for (position,&(semantic,hash,index)) in pool.iter().enumerate(){
+            if used[position]{continue}
+            let overlap=chosen.iter().map(|&selected|shared_connection_count(&keys[position],&keys[selected])).max().unwrap_or(0);
+            let penalty=semantic.saturating_add((overlap as u32).saturating_mul(2));
+            let candidate=(penalty,hash,index,position);
+            if best.is_none_or(|previous|candidate<previous){best=Some(candidate);}
+        }
+        if let Some((_,_,_,position))=best {used[position]=true;chosen.push(position);}
+    }
+    chosen.into_iter().map(|position|pool[position].2).collect()
 }
 
 // Deterministic reservoir admission: every output-connected graph encountered
@@ -434,7 +500,7 @@ struct ConnectionSearch {
     seen:std::collections::HashSet<Vec<(NodeId,usize,NodeId,usize)>>,
     raw:Vec<Graph>,
     qualified:Vec<Graph>,
-    scores:Vec<(u64,usize)>,
+    scores:Vec<(u32,u64,usize)>,
     raw_seen:u64,
     selected_jobs:Vec<CandidateJob>,
     gpu_started:bool,
@@ -494,7 +560,7 @@ impl ConnectionSearch {
                     self.transition(DiscoveryStage::Enumerate,input,output);
                     return;
                 }
-                match maker_discovery::ProductionEnumeration::open(base) {
+                match maker_discovery::ProductionEnumeration::open(base,self.min_wire_connections,self.max_wire_connections) {
                     Ok((canonical,resumed))=>{
                         self.enumeration_start=canonical.examined();
                         eprintln!("[MAKER DISCOVERY] canonical enumeration {} from state={} digest={:016x}",
@@ -624,15 +690,15 @@ impl ConnectionSearch {
             DiscoveryStage::Qualify=>{
                 let end=(self.cursor+CPU_STAGE_BATCH).min(self.raw.len());
                 let scores=parallel_map(&self.raw[self.cursor..end],self.workers,|graph| {
-                    (discovery_priority(graph),graph_source_cost(graph),graph_compile_cost(graph))
+                    (graph_semantic_penalty(graph),discovery_priority(graph),graph_source_cost(graph),graph_compile_cost(graph))
                 });
-                for (i,(score,source_cost,runtime_cost)) in scores.into_iter().enumerate(){
+                for (i,(semantic_penalty,score,source_cost,runtime_cost)) in scores.into_iter().enumerate(){
                     self.min_source_cost=self.min_source_cost.min(source_cost);
                     self.max_source_cost=self.max_source_cost.max(source_cost);
                     self.min_runtime_cost=self.min_runtime_cost.min(runtime_cost);
                     self.max_runtime_cost=self.max_runtime_cost.max(runtime_cost);
                     if candidate_admission(&self.raw[self.cursor+i]).is_ok() {
-                        self.scores.push((score,self.cursor+i));
+                        self.scores.push((semantic_penalty,score,self.cursor+i));
                     } else {self.deferred_complexity+=1;}
                 }
                 self.cursor=end;
@@ -641,19 +707,24 @@ impl ConnectionSearch {
                         self.scores.len(),self.deferred_complexity,MAX_COMPILE_COST,MAX_ESTIMATED_RUNTIME_WORK,
                         if self.min_source_cost==u64::MAX {0}else{self.min_source_cost},self.max_source_cost,
                         if self.min_runtime_cost==u64::MAX {0}else{self.min_runtime_cost},self.max_runtime_cost);
-                    // No connection-count, structural-diversity, or cost ranking.
-                    // Resource estimates are admission guards only. A stable hash
-                    // selects 32 from the complete eligible reservoir.
-                    self.scores.sort_unstable_by(|a,b|a.0.cmp(&b.0).then_with(||a.1.cmp(&b.1)));
-                    let selected=self.scores.len().min(MAX_CONNECTION_GPU_JOBS);
+                    // Preserve the semantic score and hash ordering as a deterministic
+                    // shortlist, then select distinct graph structures for GPU work.
+                    self.scores.sort_unstable_by(|a,b|a.0.cmp(&b.0).then_with(||a.1.cmp(&b.1)).then_with(||a.2.cmp(&b.2)));
+                    let chosen=select_diverse_gpu_indices(&self.raw,&self.scores,MAX_CONNECTION_GPU_JOBS);
+                    let selected=chosen.len();
                     let mut counts=std::collections::BTreeMap::<usize,usize>::new();
-                    for &(_,index) in self.scores.iter().take(selected){
+                    let mut overlap_sum=0usize;
+                    let selected_keys:Vec<_>=chosen.iter().map(|&i|connection_key(&self.raw[i])).collect();
+                    for (position,&index) in chosen.iter().enumerate(){
                         *counts.entry(self.raw[index].connections.len()).or_default()+=1;
+                        if position>0 {overlap_sum+=selected_keys[..position].iter()
+                            .map(|key|shared_connection_count(key,&selected_keys[position])).max().unwrap_or(0);}
                     }
-                    eprintln!("[MAKER DISCOVERY SAMPLE] output_connected={} reservoir={} admissible={} gpu_selected={} selected_wire_counts={:?} (diagnostic only)",
-                        self.raw_seen,self.raw.len(),self.scores.len(),selected,counts);
+                    eprintln!("[MAKER DISCOVERY SAMPLE] output_connected={} reservoir={} admissible={} gpu_selected={} selected_wire_counts={:?} max_prior_overlap_mean={:.2}",
+                        self.raw_seen,self.raw.len(),self.scores.len(),selected,counts,
+                        overlap_sum as f32/(selected.saturating_sub(1).max(1) as f32));
                     // Reverse push order because next_candidate_job() pops from the end.
-                    for &(_,index) in self.scores.iter().take(selected).rev(){
+                    for &index in chosen.iter().rev(){
                         let graph=self.raw[index].clone();
                         self.selected_jobs.push(CandidateJob{graph:graph.clone(),name:format!("Connections: {} wires",graph.connections.len()),
                             source_revision,connection_candidate:true});
@@ -874,6 +945,13 @@ impl MakerUi {
     pub fn receive_candidate(&mut self,job:CandidateJob,rgba:Vec<u8>,width:usize,height:usize){
         if self.candidate_base.as_ref().is_none_or(|g|g.revision!=job.source_revision){return}
         let visual=visual_metrics(&rgba,width,height);
+        if job.connection_candidate && (visual.contrast<0.018 || visual.entropy<0.055 || visual.interest<0.045) {
+            self.candidate_rejections+=1;
+            self.candidate_uniform+=1;
+            eprintln!("[MAKER VISUAL REJECT] {} contrast={:.4} entropy={:.4} interest={:.4}",
+                job.name,visual.contrast,visual.entropy,visual.interest);
+            return;
+        }
         let parameters=job.graph.nodes.iter().map(|n|(n.id,n.parameters.clone())).collect();
         let modules=job.graph.nodes.iter().map(|n|(n.id,n.module_id.clone())).collect();
         // Parameter discovery retains its existing first-500 behavior.
@@ -944,13 +1022,15 @@ impl MakerUi {
         if index<self.candidates.len() {self.analysis=Some(analysis);}
     }
 
-    /// Lazily reconstruct one retained candidate per frame for GPU motion analysis.
-    /// None means there is no pending work, including when another sort is selected.
+    /// Reconstruct one retained candidate for GPU motion qualification.
+    /// Connection candidates are measured regardless of the selected sort.
     pub fn next_motion_job(&self)->Option<(usize,Graph)> {
-        if self.candidate_sort!=6 {return None}
         let base=self.candidate_base.as_ref()?;
         for (index,candidate) in self.candidates.iter().enumerate() {
-            if candidate.motion.is_some() || candidate.motion_failed {continue}
+            if candidate.motion.is_some() || candidate.motion_failed || candidate.dismissed {continue}
+            // Connection candidates are qualified automatically; parameter
+            // candidates retain their historical on-demand motion behavior.
+            if !candidate.connection_candidate && self.candidate_sort!=6 {continue}
             let mut graph=base.clone();
             if candidate.connection_candidate {
                 graph.connections.clear();
@@ -973,7 +1053,13 @@ impl MakerUi {
     pub fn receive_motion_score(&mut self,index:usize,result:Result<f32,String>){
         if let Some(candidate)=self.candidates.get_mut(index){
             match result {
-                Ok(score)=>candidate.motion=Some(score.clamp(0.0,1.0)),
+                Ok(score)=>{
+                    candidate.motion=Some(score.clamp(0.0,1.0));
+                    if candidate.connection_candidate {
+                        eprintln!("[MAKER TEMPORAL QUALIFY] {} motion={:.5} status={}",
+                            candidate.name,score,if score<0.003 {"static"} else {"animated"});
+                    }
+                },
                 Err(error)=>{candidate.motion_failed=true;eprintln!("[MAKER MOTION] {}: {}",candidate.name,error);}
             }
         }
@@ -1163,8 +1249,8 @@ impl MakerUi {
         let output=self.context.run(input,|ctx|{
             if *reset_enumeration_confirm {
                 egui::Window::new("Reset Enumeration?").collapsible(false).resizable(false).show(ctx,|ui|{
-                    ui.label(format!("Reset enumeration for maximum {} wire connections?", *max_wire_connections));
-                    ui.label("Only the checkpoint for this wire limit will be discarded.");
+                    ui.label(format!("Reset enumeration for {}–{} wire connections?", *min_wire_connections,*max_wire_connections));
+                    ui.label("Only the checkpoint for this wire range will be discarded.");
                     ui.label("Saved projects, exported shaders and module definitions will not be deleted.");
                     ui.horizontal(|ui|{
                         if ui.button("Cancel").clicked(){*reset_enumeration_confirm=false;}
@@ -1184,8 +1270,8 @@ impl MakerUi {
                             *candidate_render_errors=0;
                             *analysis_request=None;
                             *analysis=None;
-                            match maker_discovery::ProductionEnumeration::reset_checkpoint_for_limit(*max_wire_connections){
-                                Ok(())=>*candidate_notice=format!("Enumeration reset for maximum {} wire connections. Click Start Discovery to begin again; other checkpoints and thumbnails are preserved.", *max_wire_connections),
+                            match maker_discovery::ProductionEnumeration::reset_checkpoint_for_range(*min_wire_connections,*max_wire_connections){
+                                Ok(())=>*candidate_notice=format!("Enumeration reset for {}–{} wire connections. Click Start Discovery to begin again; other checkpoints and thumbnails are preserved.", *min_wire_connections,*max_wire_connections),
                                 Err(error)=>*candidate_notice=format!("Enumeration reset failed: {error}"),
                             }
                             *reset_enumeration_confirm=false;
@@ -1595,7 +1681,7 @@ impl MakerUi {
                             ui.selectable_value(candidate_sort,3,"Spatial Entropy");
                             ui.selectable_value(candidate_sort,4,"Color Vibrancy");
                             ui.selectable_value(candidate_sort,5,"Discovery Order");
-                            ui.selectable_value(candidate_sort,6,"Motion Activity (lazy)");
+                            ui.selectable_value(candidate_sort,6,"Motion Activity");
                             ui.selectable_value(candidate_sort,7,"Wire Connections (most first)");
                         });
                     if *candidate_sort==6 {
@@ -1621,7 +1707,7 @@ impl MakerUi {
                         }
                     }
                     if *candidate_mode==2 {
-                        if ui.button("Reset Enumeration").on_hover_text("Reset only the checkpoint for the selected maximum wire count. Other wire limits and retained thumbnails are preserved.").clicked(){
+                        if ui.button("Reset Enumeration").on_hover_text("Reset only the checkpoint for the selected minimum/maximum wire range. Other ranges and retained thumbnails are preserved.").clicked(){
                             *reset_enumeration_confirm=true;
                         }
                     }
@@ -1706,13 +1792,20 @@ impl MakerUi {
                         for index in display_order {
                             let candidate=&mut candidates[index];
                             if candidate.dismissed || candidate.connection_candidate!=(*candidate_mode==2){continue}
+                            ui.push_id(("maker_candidate_card", index), |ui| {
                             ui.group(|ui|{
                                 // Allocate the image and its hit target together in the
                                 // scroll area's own coordinate space. Painting through the
                                 // same response rect prevents scroll-dependent vertical drift.
                                 let thumbnail_size=egui::vec2(ui.available_width().min(240.0),135.0);
-                                let (thumbnail_rect,thumbnail_response)=ui.allocate_exact_size(
-                                    thumbnail_size,egui::Sense::click());
+                                // Keep layout allocation separate from the uniquely identified
+                                // click response. Candidate arrival and asynchronous motion scores
+                                // can change card order; positional auto-IDs would otherwise be
+                                // reused for a different candidate on subsequent frames.
+                                let (thumbnail_rect,_layout_response)=ui.allocate_exact_size(
+                                    thumbnail_size,egui::Sense::hover());
+                                let thumbnail_response=ui.interact(
+                                    thumbnail_rect,ui.id().with("thumbnail_click"),egui::Sense::click());
                                 ui.painter().image(candidate.texture.id(),thumbnail_rect,
                                     egui::Rect::from_min_max(egui::Pos2::ZERO,egui::pos2(1.0,1.0)),
                                     egui::Color32::WHITE);
@@ -1758,6 +1851,14 @@ impl MakerUi {
                                     }
                                 }
                                 ui.small(&candidate.name);
+                                if candidate.connection_candidate && *candidate_sort!=6 {
+                                    ui.small(match candidate.motion {
+                                        Some(score) if score<0.003=>"Temporal: static / near-static".to_owned(),
+                                        Some(score)=>format!("Temporal: animated ({:.1}%)",score*100.0),
+                                        None if candidate.motion_failed=>"Temporal: unavailable".to_owned(),
+                                        None=>"Temporal: pending".to_owned(),
+                                    });
+                                }
                                 if *candidate_sort==6 {
                                     ui.small(match candidate.motion {
                                         Some(score)=>format!("Motion activity: {:.1}%",score*100.0),
@@ -1782,6 +1883,7 @@ impl MakerUi {
                                     if ui.small_button("Save GLSL").clicked(){*pending_glsl_export=Some((index,true));}
                                 });
                             });
+                            }); // Stable candidate-specific egui ID scope.
                         }
                     });
                 } else if let Some(id)=*selected{

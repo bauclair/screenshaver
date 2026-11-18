@@ -192,18 +192,22 @@ fn parent_threshold(g:&Graph,output:NodeId)->Option<(Edge,HashSet<NodeId>)>{
 struct Frame {graph:Graph, choices:Vec<Edge>, next:usize, threshold:Option<(Edge,HashSet<NodeId>)>}
 struct Explorer {
     base:Graph, output:NodeId, feasibility:ConnectionFeasibility,
-    frames:Vec<Frame>, depth_limit:usize, max_depth:usize, seed:u64, examined:u64, valid:u64, rejected_parent:u64,
+    frames:Vec<Frame>, depth_limit:usize, min_depth:usize, max_depth:usize, seed:u64, examined:u64, valid:u64, rejected_parent:u64,
     reference_checks:u64, reference_mismatches:u64, reference_enabled:bool, prefilter_enabled:bool, prefiltered:u64, traversal_digest:u64,
 }
 impl Explorer {
     fn new(base:Graph,seed:u64,reference_enabled:bool,prefilter_enabled:bool)->Result<Self,String>{
+        Self::new_with_min(base,seed,reference_enabled,prefilter_enabled,1)
+    }
+    fn new_with_min(base:Graph,seed:u64,reference_enabled:bool,prefilter_enabled:bool,min_depth:usize)->Result<Self,String>{
         let output=base.nodes.iter().find(|n|n.definition().terminal).ok_or("Missing output node")?.id;
         let feasibility=ConnectionFeasibility::build(&base,output);
         let mut root=base.clone();root.connections.clear();
         let choices=candidates(&root,output,&feasibility,seed);
         let cap=wire_limit();
         let max_depth=if cap==0 {feasibility.sources.len()} else {feasibility.sources.len().min(cap)};
-        Ok(Self{base,output,feasibility,frames:vec![Frame{graph:root,choices,next:0,threshold:None}],depth_limit:1,max_depth,seed,examined:0,valid:0,rejected_parent:0,reference_checks:0,reference_mismatches:0,reference_enabled,prefilter_enabled,prefiltered:0,traversal_digest:0x6a09e667f3bcc909})
+        if min_depth==0 || min_depth>max_depth {return Err(format!("Invalid minimum wire depth {min_depth} for maximum {max_depth}"));}
+        Ok(Self{base,output,feasibility,frames:vec![Frame{graph:root,choices,next:0,threshold:None}],depth_limit:min_depth,min_depth,max_depth,seed,examined:0,valid:0,rejected_parent:0,reference_checks:0,reference_mismatches:0,reference_enabled,prefilter_enabled,prefiltered:0,traversal_digest:0x6a09e667f3bcc909})
     }
     fn step(&mut self)->Result<Option<Vec<Edge>>,String>{
         loop {
@@ -280,7 +284,7 @@ impl Explorer {
     fn checkpoint_at(&self,scale:usize,path:&std::path::Path)->Result<usize,String>{
         let tmp=path.with_extension("tmp");
         let frames:Vec<_>=self.frames.iter().map(|f|serde_json::json!({"edges":graph_edges(&f.graph),"next":f.next})).collect();
-        let bytes=serde_json::to_vec(&serde_json::json!({"version":13,"wire_limit":wire_limit(),"depth_limit":self.depth_limit,"scale":scale,"seed":self.seed,
+        let bytes=serde_json::to_vec(&serde_json::json!({"version":14,"wire_limit":wire_limit(),"min_wire_limit":self.min_depth,"depth_limit":self.depth_limit,"scale":scale,"seed":self.seed,
             "catalog":catalog_fingerprint(&self.base),"examined":self.examined,"valid":self.valid,
             "rejected_parent":self.rejected_parent,"traversal_digest":self.traversal_digest,"prefiltered":self.prefiltered,"prefilter_enabled":self.prefilter_enabled,"reference_checks":self.reference_checks,
             "reference_mismatches":self.reference_mismatches,"frames":frames})).map_err(|e|e.to_string())?;
@@ -289,19 +293,19 @@ impl Explorer {
         Ok(bytes.len())
     }
     fn restore(base:Graph,scale:usize,seed:u64,reference_enabled:bool,prefilter_enabled:bool)->Result<Self,String>{
-        Self::restore_at(base,scale,seed,reference_enabled,prefilter_enabled,&checkpoint_path())
+        Self::restore_at(base,scale,seed,reference_enabled,prefilter_enabled,1,&checkpoint_path())
     }
-    fn restore_at(base:Graph,scale:usize,seed:u64,reference_enabled:bool,prefilter_enabled:bool,path:&std::path::Path)->Result<Self,String>{
+    fn restore_at(base:Graph,scale:usize,seed:u64,reference_enabled:bool,prefilter_enabled:bool,min_depth:usize,path:&std::path::Path)->Result<Self,String>{
         let bytes=std::fs::read(path).map_err(|e|e.to_string())?;
         let v:serde_json::Value=serde_json::from_slice(&bytes).map_err(|e|e.to_string())?;
-        if v["version"].as_u64()!=Some(13)||v["wire_limit"].as_u64()!=Some(wire_limit() as u64)||v["scale"].as_u64()!=Some(scale as u64)
+        if v["version"].as_u64()!=Some(14)||v["wire_limit"].as_u64()!=Some(wire_limit() as u64)||v["min_wire_limit"].as_u64()!=Some(min_depth as u64)||v["scale"].as_u64()!=Some(scale as u64)
             ||v["seed"].as_u64()!=Some(seed)||v["catalog"].as_u64()!=Some(catalog_fingerprint(&base))
             ||v["prefilter_enabled"].as_bool()!=Some(prefilter_enabled){
             return Err("Checkpoint version, catalog, scale or seed mismatch".into())
         }
-        let mut result=Self::new(base,seed,reference_enabled,prefilter_enabled)?;
+        let mut result=Self::new_with_min(base,seed,reference_enabled,prefilter_enabled,min_depth)?;
         result.depth_limit=v["depth_limit"].as_u64().ok_or("Missing depth limit")? as usize;
-        if result.depth_limit==0 || result.depth_limit>result.max_depth {return Err("Checkpoint depth limit out of bounds".into())}
+        if result.depth_limit<result.min_depth || result.depth_limit>result.max_depth {return Err("Checkpoint depth limit out of bounds".into())}
         result.frames.clear();
         for item in v["frames"].as_array().ok_or("Missing frames")? {
             let mut g=result.base.clone();g.connections.clear();
@@ -336,24 +340,29 @@ fn catalog_fingerprint(g:&Graph)->u64{
     // the catalog fingerprint even when its module ID is unchanged.
     mix(hash ^ maker_library::get().catalog_fingerprint)
 }
-fn checkpoint_path()->PathBuf{std::env::temp_dir().join("screenshaver-maker-discovery-canonical-v13.json")}
+fn checkpoint_path()->PathBuf{std::env::temp_dir().join("screenshaver-maker-discovery-canonical-v14.json")}
 
 // Production adapter: the qualified traversal remains the single implementation.
 // Its checkpoint is intentionally separate from the /tmp test harness.
 pub(super) struct ProductionEnumeration { explorer:Explorer, path:PathBuf }
 impl ProductionEnumeration {
-    fn path()->Result<PathBuf,String>{
+    fn path(min_wires:usize,max_wires:usize)->Result<PathBuf,String>{
         let home=std::env::var_os("HOME").ok_or("HOME is not set")?;
-        Ok(PathBuf::from(home).join(format!(".config/screenshaver/maker/discovery-canonical-v13-maxwires-{}.json",wire_limit())))
+        Ok(PathBuf::from(home).join(format!(".config/screenshaver/maker/discovery-canonical-v14-minwires-{min_wires}-maxwires-{max_wires}.json")))
     }
-    pub(super) fn reset_checkpoint_for_limit(limit:usize)->Result<(),String>{
-        if !(3..=25).contains(&limit) {return Err(format!("Invalid maximum wire count: {limit}"));}
-        let home=std::env::var_os("HOME").ok_or("HOME is not set")?;
-        let path=PathBuf::from(home).join(format!(".config/screenshaver/maker/discovery-canonical-v13-maxwires-{limit}.json"));
+    pub(super) fn reset_checkpoint_for_range(min_wires:usize,max_wires:usize)->Result<(),String>{
+        if !(2..=25).contains(&min_wires) || !(3..=25).contains(&max_wires) || min_wires>max_wires {
+            return Err(format!("Invalid wire range: {min_wires}..={max_wires}"));
+        }
+        let path=Self::path(min_wires,max_wires)?;
         match std::fs::remove_file(path){Ok(())=>Ok(()),Err(e) if e.kind()==std::io::ErrorKind::NotFound=>Ok(()),Err(e)=>Err(e.to_string())}
     }
-    pub(super) fn open(base:Graph)->Result<(Self,bool),String>{
-        let path=Self::path()?;
+    pub(super) fn open(base:Graph,min_wires:usize,max_wires:usize)->Result<(Self,bool),String>{
+        if !(2..=25).contains(&min_wires) || !(3..=25).contains(&max_wires) || min_wires>max_wires {
+            return Err(format!("Invalid wire range: {min_wires}..={max_wires}"));
+        }
+        if wire_limit()!=max_wires {return Err("Production wire limit differs from selected maximum".into());}
+        let path=Self::path(min_wires,max_wires)?;
         let seed=seed();
         // Inspect only the catalog identity before restoring. Other mismatches,
         // malformed JSON, unreadable files, and corrupt traversal frames remain
@@ -370,14 +379,14 @@ impl ProductionEnumeration {
                 // Only the selected wire-limit checkpoint will be overwritten on
                 // the next save. Other wire-limit checkpoints remain untouched.
                 catalog_changed=true;
-                eprintln!("[MAKER DISCOVERY] module catalog changed; starting fresh enumeration for max_wires={}",wire_limit());
+                eprintln!("[MAKER DISCOVERY] module catalog changed; starting fresh enumeration for min_wires={} max_wires={}",min_wires,max_wires);
             } else {
                 resumed=true;
             }
         }
-        let explorer=if catalog_changed || !resumed {Explorer::new(base,seed,false,true)?}
-            else {Explorer::restore_at(base,1,seed,false,true,&path)?};
-        Ok((Self{explorer,path},resumed))
+        let explorer=if catalog_changed || !resumed {Explorer::new_with_min(base,seed,false,true,min_wires)?}
+            else {Explorer::restore_at(base,1,seed,false,true,min_wires,&path)?};
+        Ok((Self{explorer,path},resumed && !catalog_changed))
     }
     pub(super) fn next_graph(&mut self)->Result<Option<Graph>,String>{
         let Some(edges)=self.explorer.step()? else {return Ok(None)};
