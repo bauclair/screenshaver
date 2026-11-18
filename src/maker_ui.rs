@@ -724,6 +724,10 @@ pub struct MakerUi {
     pending_zoom: Option<f32>,
     pending_zoom_to_fit: bool,
     canvas_rect: egui::Rect,
+    pinpoint_next: HashMap<String, NodeId>,
+    pinpoint_target: Option<NodeId>,
+    pinpoint_pulse: Option<(NodeId, Instant)>,
+    pinpoint_boxes: BTreeMap<NodeId, Box2>,
     workspace_min: [f32;2],
     workspace_max: [f32;2],
     pixels_per_point: f32,
@@ -767,7 +771,7 @@ impl MakerUi {
             modifiers:egui::Modifiers::default(),start:Instant::now(),graph,selected,parameter_popup:None,pending_source:None,dragging_wire:None,
             status:"Click an output port, then a compatible input port".into(),open:true,
             preview_rect:egui::Rect::from_min_size(egui::pos2(210.0,600.0),egui::vec2(950.0,210.0)),
-            preview_height:None,routes:Routes::new(),canvas_pan:egui::Vec2::ZERO,canvas_zoom:1.0,pending_zoom:None,pending_zoom_to_fit:false,canvas_rect:egui::Rect::NOTHING,workspace_min:[-1000.0,-1000.0],workspace_max:[2000.0,2000.0],pixels_per_point:1.0,routing_undo:Vec::new(),routing_redo:Vec::new(),candidate_mode:0,candidate_sort:0,max_wire_connections:5,max_enumerations:DEFAULT_MAX_ENUMERATIONS,max_candidates:DEFAULT_MAX_CANDIDATES,
+            preview_height:None,routes:Routes::new(),canvas_pan:egui::Vec2::ZERO,canvas_zoom:1.0,pending_zoom:None,pending_zoom_to_fit:false,canvas_rect:egui::Rect::NOTHING,pinpoint_next:HashMap::new(),pinpoint_target:None,pinpoint_pulse:None,pinpoint_boxes:BTreeMap::new(),workspace_min:[-1000.0,-1000.0],workspace_max:[2000.0,2000.0],pixels_per_point:1.0,routing_undo:Vec::new(),routing_redo:Vec::new(),candidate_mode:0,candidate_sort:0,max_wire_connections:5,max_enumerations:DEFAULT_MAX_ENUMERATIONS,max_candidates:DEFAULT_MAX_CANDIDATES,
             candidates:Vec::new(),candidate_jobs:Vec::new(),candidate_epoch:0,candidate_base:None,
             candidate_selected:None,candidate_undo:Vec::new(),orphan_undo:Vec::new(),orphan_restore_pending:false,candidate_notice:String::new(),library_expanded:HashMap::new(),connection_search:None,reset_enumeration_confirm:false,candidate_evaluated:0,candidate_glsl_capable:0,candidate_rejections:0,candidate_uniform:0,candidate_glsl_errors:0,candidate_render_errors:0,analysis_request:None,analysis:None,pending_clipboard:None,pending_glsl_export:None})
     }
@@ -1046,6 +1050,10 @@ impl MakerUi {
         let pending_zoom=&mut self.pending_zoom;
         let pending_zoom_to_fit=&mut self.pending_zoom_to_fit;
         let canvas_rect=&mut self.canvas_rect;
+        let pinpoint_next=&mut self.pinpoint_next;
+        let pinpoint_target=&mut self.pinpoint_target;
+        let pinpoint_pulse=&mut self.pinpoint_pulse;
+        let pinpoint_boxes=&mut self.pinpoint_boxes;
         let pointer_position=self.pointer;
         let workspace_min=&mut self.workspace_min;
         let workspace_max=&mut self.workspace_max;
@@ -1219,7 +1227,8 @@ impl MakerUi {
                     + 24.0 // Button horizontal padding.
             };
             // Category indentation, panel margins and a little breathing room.
-            let library_dock_width = library_button_width + 48.0;
+            let pinpoint_column_width = 25.0_f32;
+            let library_dock_width = library_button_width + pinpoint_column_width + 48.0;
             egui::SidePanel::left("maker_library")
                 .resizable(false)
                 .default_width(library_dock_width)
@@ -1256,6 +1265,13 @@ impl MakerUi {
                     }
                 });
                 ui.small("Add nodes to the graph:");
+                // Keep the category list scrollable within the library panel.
+                // Without a ScrollArea, lower categories can be clipped and
+                // their buttons cannot receive pointer input.
+                egui::ScrollArea::vertical()
+                    .id_source("maker_library_categories_scroll")
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
                 // Group by the actual directory of each .smmod definition.
                 // Sort categories and visible module names independently.
                 let library=maker_library::get();
@@ -1316,26 +1332,71 @@ impl MakerUi {
                     if header_response.clicked(){*expanded=!*expanded;}
                     if *expanded {ui.indent(("maker_library_category",category.as_str()),|ui|{
                         for module in modules.iter().copied(){
-                    // Reuse the node-header palette so the library and graph stay in sync.
-                    let add_response = ui.add_sized(
-                        [library_button_width, ui.spacing().interact_size.y],
-                        egui::Button::new("")
-                            .fill(node_header_color(module)),
-                    )
-                        .on_hover_ui(|ui| {
+                    // Each category owns its own aligned pinpoint column. The
+                    // indicator is interactive only when this type is in the graph.
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = 2.0;
+                        let occurrences: Vec<NodeId> = graph.nodes.iter()
+                            .filter(|node| node.module_id == module.id)
+                            .map(|node| node.id).collect();
+                        if occurrences.is_empty() {
+                            ui.allocate_exact_size(
+                                egui::vec2(pinpoint_column_width, ui.spacing().interact_size.y),
+                                egui::Sense::hover());
+                        } else {
+                            // Draw the pinpoint indicator ourselves instead of relying on
+                            // emoji fonts, whose glyph colors vary by platform/theme.
+                            let (indicator_rect, check) = ui.allocate_exact_size(
+                                egui::vec2(pinpoint_column_width, ui.spacing().interact_size.y),
+                                egui::Sense::click(),
+                            );
+                            let check = check.on_hover_text(format!(
+                                "Locate {} in graph ({} instance{})",
+                                module.name, occurrences.len(), if occurrences.len()==1 {""} else {"s"}
+                            ));
+                            let side = 16.0_f32.min(indicator_rect.width()).min(indicator_rect.height());
+                            let square = egui::Rect::from_center_size(
+                                indicator_rect.center(), egui::vec2(side, side),
+                            );
+                            let green = if check.hovered() {
+                                egui::Color32::from_rgb(34, 185, 68)
+                            } else {
+                                egui::Color32::from_rgb(24, 155, 52)
+                            };
+                            ui.painter().rect_filled(square, 3.0, green);
+                            let p = |x: f32, y: f32| {
+                                square.min + egui::vec2(x * side, y * side)
+                            };
+                            let stroke = egui::Stroke::new(2.0, egui::Color32::WHITE);
+                            ui.painter().line_segment([p(0.22, 0.52), p(0.43, 0.73)], stroke);
+                            ui.painter().line_segment([p(0.43, 0.73), p(0.80, 0.29)], stroke);
+                            if check.clicked() {
+                                let previous = pinpoint_next.get(&module.id).copied();
+                                let target = previous.and_then(|id| occurrences.iter().copied().find(|next| *next > id))
+                                    .unwrap_or(occurrences[0]);
+                                pinpoint_next.insert(module.id.clone(), target);
+                                *pinpoint_target = Some(target);
+                                *pinpoint_pulse = Some((target, Instant::now()));
+                                *selected = Some(target);
+                                *status = format!("Located {} #{} ({} instance{})",
+                                    module.name, target, occurrences.len(), if occurrences.len()==1 {""} else {"s"});
+                            }
+                        }
+                        // Reuse the node-header palette so library and graph match.
+                        let add_response = ui.add_sized(
+                            [library_button_width, ui.spacing().interact_size.y],
+                            egui::Button::new("").fill(node_header_color(module)),
+                        ).on_hover_ui(|ui| {
                             ui.set_max_width(350.0);
                             module_library_tooltip(ui, module);
                         });
-                    // Paint the caption at a fixed left inset. egui::Button does not
-                    // expose a text-alignment method in this egui version; keeping
-                    // the actual Button preserves native hover, focus and clicks.
-                    ui.painter().text(
-                        add_response.rect.left_center() + egui::vec2(8.0, 0.0),
-                        egui::Align2::LEFT_CENTER,
-                        format!("+ {}", module.name),
-                        egui::TextStyle::Button.resolve(ui.style()),
-                        egui::Color32::WHITE,
-                    );
+                        ui.painter().text(
+                            add_response.rect.left_center() + egui::vec2(8.0, 0.0),
+                            egui::Align2::LEFT_CENTER,
+                            format!("+ {}", module.name),
+                            egui::TextStyle::Button.resolve(ui.style()),
+                            egui::Color32::WHITE,
+                        );
                     if add_response.clicked(){
                         let count=graph.nodes.len();
                         match graph.add(&module.id,[80.0+(count%3) as f32*45.0,180.0+(count%4) as f32*42.0]){
@@ -1343,9 +1404,11 @@ impl MakerUi {
                             Err(e)=>*status=e,
                         }
                     }
+                    }); // module row
                         }
                     });}
                 }
+                    }); // category scroll area
                 ui.separator();ui.small("Drag from an output port to a compatible input, or click output then input. Outputs support fan-out; each input has one source.");
                 if let Some((id,port))=*pending{ui.label(format!("Source: node #{id}, port {port}"));if ui.button("Cancel connection").clicked(){*pending=None;*dragging_wire=None;}}
             });
@@ -1633,6 +1696,23 @@ impl MakerUi {
                     egui::pos2((available.max.x-15.0).max(available.min.x+1.0),
                                (available.max.y-15.0).max(available.min.y+1.0)));
                 *canvas_rect=canvas;
+                // Pan in graph coordinates so the chosen instance is centered
+                // independently of the current zoom. Use its last measured frame
+                // when available, otherwise a standard node-size estimate.
+                if let Some(target) = pinpoint_target.take() {
+                    if let Some(node) = graph.node(target) {
+                        // Center from persistent graph-space coordinates, never
+                        // from an Area rectangle measured at an earlier zoom.
+                        // A node may be entirely offscreen when pinpointed.
+                        let rows = node.definition().inputs.len().max(node.definition().outputs.len());
+                        let node_height = 110.0_f32.max(55.0 + 25.0 * rows as f32);
+                        let center = egui::vec2(
+                            node.pos[0] + 93.0,
+                            node.pos[1] + node_height * 0.5,
+                        );
+                        *canvas_pan = canvas.size()*0.5-center* *canvas_zoom;
+                    }
+                }
                 if let Some(requested)=pending_zoom.take() {
                     let next=requested.clamp(0.4,2.0);
                     if (next-*canvas_zoom).abs()>0.0001 {
@@ -1859,8 +1939,34 @@ impl MakerUi {
                                 }
                             });
                         });
+                    if let Some((pulse_id, started)) = pinpoint_pulse.as_ref() {
+                        if *pulse_id == id {
+                            let elapsed = started.elapsed().as_secs_f32();
+                            if elapsed < 0.72 {
+                                // Three bright 120 ms flashes, each followed by 120 ms off.
+                                if (elapsed / 0.12).floor() as u32 % 2 == 0 {
+                                    let painter = ctx.layer_painter(egui::LayerId::new(
+                                        egui::Order::Foreground, egui::Id::new("maker_pinpoint_pulse")));
+                                    let border = area.response.rect.expand(2.0);
+                                    let stroke = egui::Stroke::new(3.0,
+                                        egui::Color32::from_rgb(0x39,0xff,0x14));
+                                    painter.line_segment([border.left_top(),border.right_top()],stroke);
+                                    painter.line_segment([border.right_top(),border.right_bottom()],stroke);
+                                    painter.line_segment([border.right_bottom(),border.left_bottom()],stroke);
+                                    painter.line_segment([border.left_bottom(),border.left_top()],stroke);
+                                }
+                                ctx.request_repaint();
+                            }
+                        }
+                    }
                     module_boxes.insert(id,Box2{min:[(area.response.rect.min.x-origin.x)/ *canvas_zoom,(area.response.rect.min.y-origin.y)/ *canvas_zoom],
                         max:[(area.response.rect.max.x-origin.x)/ *canvas_zoom,(area.response.rect.max.y-origin.y)/ *canvas_zoom]});
+                    pinpoint_boxes.insert(id, Box2 {
+                        min: [(area.response.rect.min.x-origin.x)/ *canvas_zoom,
+                              (area.response.rect.min.y-origin.y)/ *canvas_zoom],
+                        max: [(area.response.rect.max.x-origin.x)/ *canvas_zoom,
+                              (area.response.rect.max.y-origin.y)/ *canvas_zoom],
+                    });
                     // Use the measured outer module rectangle as the single
                     // authoritative left/right sidewall for connector centers.
                     // Port-row rects are inset by egui Frame margins; using their
