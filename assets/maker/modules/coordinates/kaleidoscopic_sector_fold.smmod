@@ -7,7 +7,7 @@
   "header_color": "#287C9B",
   "description": "Reflects a 2D coordinate into a configurable angular wedge using polar geometry.",
   "uses": "Kaleidoscopic patterns, radial motifs, symmetric coordinate domains.",
-  "notes": "Original implementation of a general polar mirror-fold technique. No source-specific deformation or startup fade.",
+  "notes": "General polar mirror-fold technique with configurable sector count.",
   "inputs": [
     {
       "id": "position",

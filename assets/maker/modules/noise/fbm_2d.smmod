@@ -8,7 +8,7 @@
   "header_color": "#5B789C",
   "description": "Normalized multi-octave value noise with integer lattice hashing.",
   "uses": "Clouds, turbulence, procedural fields.",
-  "notes": "Replaces the source-matched Abstraction hash. Uses independently chosen integer mixing, standard smooth interpolation and weighted octave accumulation.",
+  "notes": "Uses integer mixing, smooth interpolation, and weighted octave accumulation.",
   "inputs": [
     {
       "id": "position",

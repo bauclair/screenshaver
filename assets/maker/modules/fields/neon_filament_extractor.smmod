@@ -8,7 +8,7 @@
   "header_color": "#5A78A8",
   "description": "Extracts thin bright filaments from a scalar field.",
   "uses": "Neon contours, plasma highlights and light streams.",
-  "notes": "Original line formula uses sharpness 2 and concentration 6; output remains scalar for palette and multiplication.",
+  "notes": "Sharpness 2 and concentration 6 are baseline settings; output remains scalar for palette and multiplication.",
   "inputs": [
     {
       "id": "field",

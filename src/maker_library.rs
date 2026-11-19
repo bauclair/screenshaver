@@ -9,6 +9,11 @@ impl Library {
  fn load()->Self{
     let mut result=Self{modules:BTreeMap::new(),categories:BTreeMap::new(),errors:Vec::new(),catalog_fingerprint:0xcbf29ce484222325};
     let official=[
+      ("test/reference_signal.smmod",include_str!("../assets/maker/modules/test/reference_signal.smmod")),
+      ("test/reference_color.smmod",include_str!("../assets/maker/modules/test/reference_color.smmod")),
+      ("test/reference_distance.smmod",include_str!("../assets/maker/modules/test/reference_distance.smmod")),
+      ("test/scalar_display.smmod",include_str!("../assets/maker/modules/test/scalar_display.smmod")),
+      ("test/vector_display.smmod",include_str!("../assets/maker/modules/test/vector_display.smmod")),
       ("coordinates/uv_coordinates.smmod",include_str!("../assets/maker/modules/coordinates/uv_coordinates.smmod")),
       ("coordinates/spherical_direction.smmod",include_str!("../assets/maker/modules/coordinates/spherical_direction.smmod")),
       ("coordinates/log_polar_mapping.smmod",include_str!("../assets/maker/modules/coordinates/log_polar_mapping.smmod")),

@@ -8,7 +8,7 @@
   "header_color": "#8165A6",
   "description": "Independent layered triangular-wave signal for inexpensive faceted 3D patterns.",
   "uses": "Angular rocky displacement, inexpensive geometric roughness.",
-  "notes": "Replaces nested triangle-wave expression attributed to Abstract Corridor. This is deterministic periodic geometry rather than stochastic noise.",
+  "notes": "Deterministic periodic geometry rather than stochastic noise.",
   "inputs": [
     {
       "id": "position",

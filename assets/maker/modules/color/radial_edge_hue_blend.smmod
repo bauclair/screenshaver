@@ -7,7 +7,7 @@
   "header_color": "#A27660",
   "description": "Blends a base RGB color toward an independently chosen edge RGB color using radial distance.",
   "uses": "Colored borders, radial chroma gradients, glowing procedural compositions.",
-  "notes": "Uses standard radial smoothstep interpolation. No channel-swapping formula or startup fade from the source shader.",
+  "notes": "Uses radial smoothstep interpolation for a continuous edge-to-center blend.",
   "inputs": [
     {
       "id": "color",

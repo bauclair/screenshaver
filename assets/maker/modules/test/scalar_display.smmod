@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.test.scalar_display",
+  "name": "Scalar Display",
+  "category": "Test",
+  "created_by": "Screenshaver",
+  "header_color": "#537D89",
+  "description": "Fixed-scale scalar-to-RGB diagnostic visualization.",
+  "uses": "Display raw, signed or contour-like scalar values.",
+  "notes": "Raw mode does not normalize; final Output Color clamp may clip values. Signed mode uses dark center, blue negative, orange positive. Contours are periodic, not an absolute amplitude measurement.",
+  "inputs": [
+    {
+      "id": "value",
+      "name": "Value",
+      "type": "float"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "color",
+      "name": "Color",
+      "type": "vec3",
+      "semantic_role": "color"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "mode",
+      "name": "Display Mode",
+      "type": "choice",
+      "default": 0,
+      "min": 0,
+      "max": 2,
+      "options": [
+        "Raw Grayscale",
+        "Signed Blue/Orange",
+        "Contours"
+      ]
+    },
+    {
+      "id": "scale",
+      "name": "Scale",
+      "type": "float",
+      "default": 1,
+      "min": 0.01,
+      "max": 10
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "float",
+      "default": 0,
+      "min": -10,
+      "max": 10
+    }
+  ],
+  "helpers": "vec3 maker_test_scalar_display(float v,float mode,float scale,float center){float x=(v-center)*scale;if(mode<0.5)return vec3(x);if(mode<1.5)return x<0.0?vec3(0.05,0.18,0.65)*min(-x,1.0):vec3(0.95,0.48,0.07)*min(x,1.0);return vec3(0.5+0.5*cos(6.283185307179586*x));}",
+  "glsl": "maker_test_scalar_display({value},{mode},{scale},{center})",
+  "terminal": false
+}

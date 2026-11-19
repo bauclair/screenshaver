@@ -7,7 +7,7 @@
   "header_color": "#688B82",
   "description": "Rotates a 2D vector by an angle in radians.",
   "uses": "Spatial transformation and animated patterns.",
-  "notes": "Adapted from Morphing Abstract by Frostbyte, CC BY-NC-SA 4.0.",
+  "notes": "Standard planar rotation using sine and cosine; angle is in radians.",
   "inputs": [
     {
       "id": "vector",
@@ -30,7 +30,7 @@
     }
   ],
   "parameters": [],
-  "helpers": "vec2 maker_rotate_2d(vec2 v,float angle){float s=sin(angle),c=cos(angle);return mat2(c,-s,s,c)*v;}",
+  "helpers": "vec2 maker_rotate_2d(vec2 v, float angle) {\n    float c = cos(angle);\n    float s = sin(angle);\n    return vec2(c * v.x - s * v.y, s * v.x + c * v.y);\n}",
   "glsl": "maker_rotate_2d({vector},{angle})",
   "terminal": false
 }

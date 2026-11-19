@@ -7,7 +7,7 @@
   "header_color": "#7C72B3",
   "description": "Smooth cosine oscillation between minimum and minimum plus range, with phase measured in degrees.",
   "uses": "Periodic modulation of shader parameters and scalar fields.",
-  "notes": "Preserves 70s Melt cosRange degree-based semantics. Negative range reverses the output interval.",
+  "notes": "Phase is measured in degrees. Negative range reverses the output interval.",
   "inputs": [],
   "outputs": [
     {

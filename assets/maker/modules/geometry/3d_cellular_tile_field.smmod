@@ -6,9 +6,9 @@
   "name": "3D Cellular Tile Field",
   "category": "Geometry",
   "header_color": "#557C9C",
-  "description": "Four sequentially rotated repeated 3D tile metrics with second-order boundary extraction.",
+  "description": "Repeated three-dimensional cells with a controllable boundary response.",
   "uses": "Abstract faceted surfaces and cellular masks.",
-  "notes": "Derived from Abstract Plane.glsl. No external texture dependency.",
+  "notes": "Uses centered repeated coordinates and the distance to the nearest cell boundary; gain controls output intensity.",
   "inputs": [
     {
       "id": "position",
@@ -42,6 +42,6 @@
       "max": 8
     }
   ],
-  "helpers": "float maker_ap_metric(vec3 p){return dot(abs(fract(p)-0.5),vec3(0.5));}float maker_ap_cell(vec3 p,float tileScale,float gain){p/=max(tileScale,0.0001);float a=maker_ap_metric(p-vec3(.81,.62,.53));p.xy=vec2(p.y-p.x,p.y+p.x)*.7071;float b=maker_ap_metric(p-vec3(.39,.2,.11));p.yz=vec2(p.z-p.y,p.z+p.y)*.7071;float c=maker_ap_metric(p-vec3(.62,.24,.06));p.xz=vec2(p.z-p.x,p.z+p.x)*.7071;float d=maker_ap_metric(p-vec3(.2,.82,.64));vec4 v=vec4(min(a,c),min(b,d),min(max(a,b),max(c,d)),max(min(a,c),min(b,d)));return (min(v.z,v.w)-min(v.x,v.y))*gain;}",
-  "glsl": "maker_ap_cell({position},{tile_scale},{gain})"
+  "helpers": "float maker_cellular_tile(vec3 p, float tileScale, float gain) {\n    vec3 q = fract(p / max(tileScale, 0.001)) - vec3(0.5);\n    vec3 toEdge = vec3(0.5) - abs(q);\n    float edgeDistance = min(toEdge.x, min(toEdge.y, toEdge.z));\n    return clamp(1.0 - 2.0 * edgeDistance, 0.0, 1.0) * gain;\n}",
+  "glsl": "maker_cellular_tile({position},{tile_scale},{gain})"
 }

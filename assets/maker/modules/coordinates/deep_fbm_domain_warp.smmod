@@ -8,7 +8,7 @@
   "header_color": "#287C9B",
   "description": "Two-stage 2D domain distortion using independent integer-hash value noise.",
   "uses": "Swirling liquid patterns, warped fields.",
-  "notes": "Replaces source-specific Abstraction hash, offsets, frequency schedule and helper code. Same interface, different warp character.",
+  "notes": "Uses integer-hash value noise with two stages of coordinate distortion.",
   "inputs": [
     {
       "id": "position",

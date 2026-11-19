@@ -7,7 +7,7 @@
   "header_color": "#B46A35",
   "description": "Generates three phase-shifted sinusoidal color channels from a 2D position.",
   "uses": "Psychedelic color patterns and coordinate-driven palettes.",
-  "notes": "Independent phase-wheel design. Channel values are in [0,1] before brightness scaling; differs from the original 70s Melt blue channel.",
+  "notes": "Phase-wheel color design. Channel values are in [0,1] before brightness scaling.",
   "inputs": [
     {
       "id": "position",

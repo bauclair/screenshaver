@@ -8,7 +8,7 @@
   "header_color": "#557C9C",
   "description": "Approximate signed distance to an axis-aligned regular octahedron.",
   "uses": "Reusable signed-distance geometry and procedural field composition.",
-  "notes": "Uses the elementary L1 implicit surface |x|+|y|+|z|=size and its normalized plane distance, rather than the source-matched exact piecewise SDF. Conservative raymarch stepping may be needed near vertices.",
+  "notes": "Uses the L1 implicit surface |x|+|y|+|z|=size and its normalized plane distance. Conservative raymarch stepping may be needed near vertices.",
   "inputs": [
     {
       "id": "position",

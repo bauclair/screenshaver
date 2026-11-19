@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.test.reference_distance",
+  "name": "Reference Distance Field",
+  "category": "Test",
+  "created_by": "Screenshaver",
+  "header_color": "#537D89",
+  "description": "Calibrated sphere, plane, or box signed-distance source.",
+  "uses": "Supply known 3D geometry to traversal and ray-march modules.",
+  "notes": "Unconnected position displays a 2D cross-section at z=0. Callable ray-march evaluation substitutes its own 3D sample position. Sphere and box are centered at z=Z Offset; plane is z=Z Offset.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "default": "vec3(maker_uv,0.0)",
+      "semantic_role": "position3d"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "distance",
+      "name": "Distance",
+      "type": "float",
+      "semantic_role": "distance"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "shape",
+      "name": "Shape",
+      "type": "choice",
+      "default": 0,
+      "min": 0,
+      "max": 2,
+      "options": [
+        "Sphere",
+        "Plane",
+        "Box"
+      ]
+    },
+    {
+      "id": "size",
+      "name": "Size",
+      "type": "float",
+      "default": 0.65,
+      "min": 0.05,
+      "max": 3
+    },
+    {
+      "id": "z_offset",
+      "name": "Z Offset",
+      "type": "float",
+      "default": 2,
+      "min": -5,
+      "max": 5
+    }
+  ],
+  "helpers": "float maker_test_distance(vec3 p,float shape,float size,float z_offset){p.z-=z_offset;if(shape<0.5)return length(p)-size;if(shape<1.5)return p.z;vec3 q=abs(p)-vec3(size);return length(max(q,vec3(0.0)))+min(max(q.x,max(q.y,q.z)),0.0);}",
+  "glsl": "maker_test_distance({position},{shape},{size},{z_offset})",
+  "terminal": false
+}

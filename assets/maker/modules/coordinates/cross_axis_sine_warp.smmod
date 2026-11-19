@@ -5,9 +5,9 @@
   "category": "Coordinates",
   "created_by": "Screenshaver",
   "header_color": "#287C9B",
-  "description": "Bounded cross-coupled sine displacement with rotating phase, without the original 70s Melt recurrence.",
+  "description": "Bounded cross-coupled sine displacement with rotating phase.",
   "uses": "Liquid patterns, coupled sine distortions, animated UV warps.",
-  "notes": "Reimplemented using fixed-amplitude averaged waves and phase rotation. The x/y boost parameters now represent constant translations, not the original oscillating boosts. Bounded to 12 steps for GPU cost.",
+  "notes": "Uses fixed-amplitude averaged waves and phase rotation. The x/y boost parameters represent constant translations. Bounded to 12 steps for GPU cost.",
   "inputs": [
     {
       "id": "position",

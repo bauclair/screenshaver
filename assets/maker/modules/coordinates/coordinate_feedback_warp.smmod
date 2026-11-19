@@ -7,7 +7,7 @@
   "header_color": "#287C9B",
   "description": "Bounded, iterative 3D coordinate deformation using independently specified axis rotations and smooth periodic displacement.",
   "uses": "Warp positions for procedural noise, geometry, and animated fields.",
-  "notes": "Replaces the source-derived 24K feedback equations with a different iterative coordinate map. Same ports and parameters; visual output intentionally differs.",
+  "notes": "Iterative coordinate mapping with bounded periodic displacement.",
   "inputs": [
     {
       "id": "position",

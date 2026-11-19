@@ -6,9 +6,9 @@
   "name": "SDF Box",
   "category": "Geometry",
   "header_color": "#557C9C",
-  "description": "Box field using the original Blue shader\u2019s inexpensive box metric.",
+  "description": "Axis-aligned box field using the maximum signed axis offset.",
   "uses": "Reusable signed-distance geometry and procedural field composition.",
-  "notes": "Position is evaluated at the active ray-march sample. No texture dependency.",
+  "notes": "Fast box field with planar-distance behavior near corners; not an exact Euclidean signed distance outside the box. Position is evaluated at the active sample.",
   "inputs": [
     {
       "id": "position",
@@ -51,5 +51,5 @@
     }
   ],
   "helpers": "",
-  "glsl": "max(max(abs({position}).x-{size_x},abs({position}).y-{size_y}),abs({position}).z-{size_z})"
+  "glsl": "max(max(abs({position}.x)-{size_x}, abs({position}.y)-{size_y}), abs({position}.z)-{size_z})"
 }

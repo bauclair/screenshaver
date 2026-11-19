@@ -8,7 +8,7 @@
   "header_color": "#477D9A",
   "description": "Blend a scene color toward fog color by linear near/far depth.",
   "uses": "Depth fade for raymarched scenes.",
-  "notes": "Derived from Abstract Plane.glsl. No external texture dependency.",
+  "notes": "Near and far define the linear depth interval; density scales the interpolation factor, clamped to [0,1].",
   "inputs": [
     {
       "id": "color",

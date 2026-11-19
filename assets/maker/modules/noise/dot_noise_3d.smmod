@@ -7,7 +7,7 @@
   "header_color": "#6D729A",
   "description": "Smooth 3D lattice value noise from independently chosen integer-coordinate hashing.",
   "uses": "Reusable scalar field detail and procedural modulation.",
-  "notes": "Replaces the credited Xor dot-noise algorithm entirely. Retains scalar 3D noise interface but intentionally changes visual behavior.",
+  "notes": "Uses integer-coordinate hashing and smooth 3D lattice interpolation.",
   "inputs": [
     {
       "id": "position",

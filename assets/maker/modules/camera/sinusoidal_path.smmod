@@ -6,9 +6,9 @@
   "name": "Sinusoidal Path",
   "category": "Camera",
   "header_color": "#4A829B",
-  "description": "XY offset along a longitudinal Z coordinate; based on the Abstract Corridor path function.",
+  "description": "Longitudinal path offset formed from two periodic oscillations.",
   "uses": "Curving tunnel centerlines and camera positions.",
-  "notes": "Output is a vec2 offset. Feed the same path function into tunnel and camera logic. The source expression is sin(z/24)*cos(z/12)*12.",
+  "notes": "Returns a vec2 offset. Period controls are positive divisors; both oscillations use the supplied Z coordinate.",
   "inputs": [
     {
       "id": "z",

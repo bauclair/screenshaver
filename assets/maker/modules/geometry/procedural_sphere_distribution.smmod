@@ -8,7 +8,7 @@
   "header_color": "#557C9C",
   "description": "Deterministic jittered sphere center for an integer 3D grid cell.",
   "uses": "Independent placement of repeated procedural spheres.",
-  "notes": "Original hash and cell jitter design, not the source shader\u2019s placement or constants. Cell is floored; output is the sphere center in world units.",
+  "notes": "Cell is floored; output is the sphere center in world units. Uses deterministic hash-based cell jitter.",
   "inputs": [
     {
       "id": "cell",

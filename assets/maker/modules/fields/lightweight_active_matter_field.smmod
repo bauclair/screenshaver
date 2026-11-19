@@ -7,7 +7,7 @@
   "header_color": "#5A78A8",
   "description": "Bounded animated 2D harmonic field with a small number of inexpensive coupled wave layers.",
   "uses": "Liquid-like procedural textures, luminous interference patterns and animated color signals.",
-  "notes": "Independently designed 2D harmonic accumulation, not a copy or simplification of the source kal_march raymarcher. One evaluation, no startup fade. Defaults: 8 outer and 3 inner iterations; hard caps: 12 and 4. Output is a scalar, not a full volumetric render.",
+  "notes": "2D harmonic accumulation with one evaluation and no startup fade. Defaults: 8 outer and 3 inner iterations; hard caps: 12 and 4. Output is a scalar, not a full ray-marched scene.",
   "inputs": [
     {
       "id": "position",

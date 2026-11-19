@@ -2,7 +2,7 @@
   "schema_version": 1,
   "created_by": "Screenshaver",
   "uses": "Organic textures, masks, and procedural variation.",
-  "notes": "Replaces common sine-dot hash constants with unsigned integer mixing. GLSL 330+ required.",
+  "notes": "Uses unsigned integer mixing. GLSL 330+ required.",
   "inputs": [
     {
       "id": "uv",

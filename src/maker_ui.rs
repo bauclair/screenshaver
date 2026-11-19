@@ -413,6 +413,7 @@ pub(crate) fn graph_source_cost(graph:&Graph)->u64 {
 // Single admission policy used by both CPU discovery and the isolated GPU worker.
 // These estimates are conservative screening heuristics, not proof of GPU safety.
 pub(crate) fn candidate_admission(graph:&Graph)->Result<(),String> {
+    if graph.output_reachable_ids().iter().any(|id| graph.node(*id).is_some_and(|n| n.definition().category.eq_ignore_ascii_case("Test"))) { return Err("Test modules are excluded from shader candidate enumeration".into()); }
     let source_cost=graph_source_cost(graph);
     if source_cost>MAX_COMPILE_COST {
         return Err(format!("Source complexity deferred: estimated cost {source_cost} exceeds {MAX_COMPILE_COST}"));
@@ -433,6 +434,7 @@ fn graph_preflight(graph:&Graph, _output:NodeId)->Result<(),String> {
 const MAX_GRAPH_FRONTIER: usize = 4_096;
 const MAX_PENDING_RENDER_JOBS: usize = 96;
 fn candidate_graphs(graph:&Graph)->Vec<(String,Graph)> {
+    if graph.nodes.iter().any(|n| n.definition().category.eq_ignore_ascii_case("Test")) { return Vec::new(); }
     const MAX_CANDIDATES:usize=1_000;
     // Deterministic mixed-radix enumeration. Each numeric slider has exactly
     // three sample positions: minimum, arithmetic midpoint, maximum.
@@ -748,7 +750,13 @@ struct ConnectionSearch {
 impl ConnectionSearch {
     fn new(graph:&Graph,max_enumerations:usize,min_wire_connections:usize,max_wire_connections:usize)->Option<Self>{
         let output=graph.nodes.iter().find(|n|n.definition().terminal)?.id;
-        let mut base=graph.clone();base.connections.clear();base.revision=graph.revision.wrapping_add(1);
+        let mut base=graph.clone();
+        let test_ids:std::collections::HashSet<NodeId>=base.nodes.iter()
+            .filter(|n|n.definition().category.eq_ignore_ascii_case("Test"))
+            .map(|n|n.id).collect();
+        base.nodes.retain(|n|!test_ids.contains(&n.id));
+        base.connections.retain(|c|!test_ids.contains(&c.from)&&!test_ids.contains(&c.to));
+        base.connections.clear();base.revision=graph.revision.wrapping_add(1);
         let queues=std::array::from_fn(|_|std::collections::VecDeque::new());
         Some(Self{feasibility:None,base:Some(base),queues,canonical:None,legacy:std::env::var("SCREENSHAVER_MAKER_DISCOVERY_LEGACY").ok().as_deref()==Some("1"),enumeration_start:0,max_enumerations,min_wire_connections,max_wire_connections,discovery_error:None,seen:Default::default(),raw:Vec::new(),qualified:Vec::new(),scores:Vec::new(),raw_seen:0,selected_jobs:Vec::new(),gpu_started:false,output,
             examined:0,generated:0,incomplete:0,duplicates:0,turn:0,stage:DiscoveryStage::Feasibility,
@@ -1565,11 +1573,11 @@ impl MakerUi {
             egui::ColorImage::from_rgba_unmultiplied([22,22], &MAKER_MENU_ICON_RGBA),
             egui::TextureOptions::LINEAR,
         );
-        Ok(Self{inactive_tabs:Vec::new(),close_all_running:false,active_tab:0,project_tab_scroll_x:0.0,project_open:false,next_tab_epoch:1,context,painter,events:Vec::new(),pointer:egui::Pos2::ZERO,
+        Ok(Self{inactive_tabs:Vec::new(),close_all_running:false,active_tab:0,project_tab_scroll_x:0.0,project_open:true,next_tab_epoch:1,context,painter,events:Vec::new(),pointer:egui::Pos2::ZERO,
             modifiers:egui::Modifiers::default(),start:Instant::now(),graph,project_name:"Untitled".into(),thumbnail_workspace:false,thumbnail_hash:None,project_dialog:None,glsl_export_dialog:None,project_path:None,recent_projects,saved_graph_snapshot,unsaved_action:None,after_save_action:None,discard_approved:None,selected,parameter_popup:None,pending_source:None,dragging_wire:None,
             status:"Click an output port, then a compatible input port".into(),menu_icon,open:true,
             preview_rect:egui::Rect::from_min_size(egui::pos2(210.0,600.0),egui::vec2(950.0,210.0)),
-            preview_height:maker_saved_preview_height(),preview_active:false,routes:Routes::new(),canvas_pan:egui::Vec2::ZERO,canvas_zoom:1.0,pending_zoom:None,pending_zoom_to_fit:false,pending_menu_command:None,canvas_rect:egui::Rect::NOTHING,pinpoint_next:HashMap::new(),pinpoint_target:None,pinpoint_pulse:None,pinpoint_boxes:BTreeMap::new(),workspace_min:[-1000.0,-1000.0],workspace_max:[2000.0,2000.0],routing_undo:Vec::new(),routing_redo:Vec::new(),candidate_mode:0,candidate_sort:0,max_wire_connections:saved_max_wires,min_wire_connections:saved_min_wires,max_enumerations:saved_max_enumerations,max_candidates:saved_max_candidates,
+            preview_height:maker_saved_preview_height(),preview_active:true,routes:Routes::new(),canvas_pan:egui::Vec2::ZERO,canvas_zoom:1.0,pending_zoom:None,pending_zoom_to_fit:false,pending_menu_command:None,canvas_rect:egui::Rect::NOTHING,pinpoint_next:HashMap::new(),pinpoint_target:None,pinpoint_pulse:None,pinpoint_boxes:BTreeMap::new(),workspace_min:[-1000.0,-1000.0],workspace_max:[2000.0,2000.0],routing_undo:Vec::new(),routing_redo:Vec::new(),candidate_mode:0,candidate_sort:0,max_wire_connections:saved_max_wires,min_wire_connections:saved_min_wires,max_enumerations:saved_max_enumerations,max_candidates:saved_max_candidates,
             candidates:Vec::new(),candidate_jobs:Vec::new(),candidate_epoch:0,candidate_base:None,
             candidate_selected:None,candidate_undo:Vec::new(),orphan_undo:Vec::new(),orphan_redo:Vec::new(),delete_project_confirm:false,orphan_restore_pending:false,candidate_notice:String::new(),library_expanded:HashMap::new(),connection_search:None,reset_enumeration_confirm:false,candidate_evaluated:0,candidate_glsl_capable:0,candidate_rejections:0,candidate_uniform:0,candidate_glsl_errors:0,candidate_render_errors:0,analysis_request:None,analysis:None,pending_clipboard:None,pending_clipboard_is_glsl:false,pending_glsl_export:None})
     }
@@ -3274,9 +3282,41 @@ impl MakerUi {
                                     egui::vec2(node_width, header_height), egui::Sense::click_and_drag(),
                                 );
                                 ui.painter().rect_filled(header_rect, 3.0, header_color);
-                                ui.painter().text(header_rect.left_center()+egui::vec2(7.0* *canvas_zoom,0.0),
-                                    egui::Align2::LEFT_CENTER,title,egui::TextStyle::Button.resolve(ui.style()),egui::Color32::WHITE);
-                                let header_response=header_response.on_hover_text("Drag title bar to move the module");
+                                // Measure the rendered text, not the character count: glyph widths
+                                // and graph zoom both affect whether the title fits the fixed header.
+                                let title_font=egui::TextStyle::Button.resolve(ui.style());
+                                let title_left_padding=7.0 * *canvas_zoom;
+                                let title_right_padding=7.0 * *canvas_zoom;
+                                let available_title_width=(header_rect.width()
+                                    -title_left_padding-title_right_padding).max(0.0);
+                                let measure_title=|text:&str| {
+                                    ui.painter().layout_no_wrap(
+                                        text.to_owned(),title_font.clone(),egui::Color32::WHITE,
+                                    ).size().x
+                                };
+                                let display_title=if measure_title(&title)<=available_title_width {
+                                    title.clone()
+                                } else {
+                                    let suffix="...";
+                                    let mut shortened=suffix.to_owned();
+                                    // Iterate on UTF-8 character boundaries; never split a glyph's bytes.
+                                    if measure_title(suffix)<=available_title_width {
+                                        for end in title.char_indices().map(|(i,_)|i).skip(1)
+                                            .chain(std::iter::once(title.len())) {
+                                            let candidate=format!("{}{}",&title[..end],suffix);
+                                            if measure_title(&candidate)>available_title_width {break;}
+                                            shortened=candidate;
+                                        }
+                                    }
+                                    shortened
+                                };
+                                ui.painter().text(header_rect.left_center()
+                                        +egui::vec2(title_left_padding,0.0),
+                                    egui::Align2::LEFT_CENTER,display_title,title_font,
+                                    egui::Color32::WHITE);
+                                let header_response=header_response.on_hover_text(
+                                    format!("{}\nDrag title bar to move the module",title)
+                                );
                                 if header_response.clicked() {
                                     *selected=Some(id);
                                     if *parameter_popup==Some(id) { *parameter_popup=None; }
@@ -4097,6 +4137,7 @@ fn maker_category_color(category: &str) -> egui::Color32 {
         "math" => [16, 143, 204],
         "noise" => [118, 54, 153],
         "output" => [190, 45, 31],
+        "test" => [83, 125, 137],
         "other" => [83, 91, 99],
         // Unrecognized categories have a stable fallback until assigned a color.
         _ => [83, 91, 99],

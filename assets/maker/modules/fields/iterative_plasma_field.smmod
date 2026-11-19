@@ -7,7 +7,7 @@
   "header_color": "#5A78A8",
   "description": "Scalar plasma field from a bounded sequence of rotated, phase-shifted periodic waves.",
   "uses": "Animated plasma, gold-like swirls, turbulent color fields.",
-  "notes": "Replaces the original 24K-specific state and equations with a new iterative harmonic field. Same inputs and parameters; output is not pixel-equivalent.",
+  "notes": "Bounded iterative harmonic field with adjustable parameters.",
   "inputs": [
     {
       "id": "position",
