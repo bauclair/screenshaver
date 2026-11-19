@@ -500,7 +500,7 @@ pub fn run()->Result<(),String>{
         }
         maker_timing("preview",diagnostic_frame,preview_started);
         let ui_started=Instant::now();
-        if !ui.frame(dw,dh,scale,preview.error.as_deref()){break}
+        if !ui.frame(dw,dh,ww,wh,scale,preview.error.as_deref()){break}
         maker_timing("ui-frame",diagnostic_frame,ui_started);
         if let Some((source,save))=ui.take_glsl_export(){
             if save {

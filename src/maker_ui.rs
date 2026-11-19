@@ -1271,7 +1271,6 @@ pub struct MakerUi {
     pinpoint_boxes: BTreeMap<NodeId, Box2>,
     workspace_min: [f32;2],
     workspace_max: [f32;2],
-    pixels_per_point: f32,
     routing_undo: Vec<(Graph,Routes)>,
     routing_redo: Vec<(Graph,Routes)>,
     candidate_mode: u8,
@@ -1570,7 +1569,7 @@ impl MakerUi {
             modifiers:egui::Modifiers::default(),start:Instant::now(),graph,project_name:"Untitled".into(),thumbnail_workspace:false,thumbnail_hash:None,project_dialog:None,glsl_export_dialog:None,project_path:None,recent_projects,saved_graph_snapshot,unsaved_action:None,after_save_action:None,discard_approved:None,selected,parameter_popup:None,pending_source:None,dragging_wire:None,
             status:"Click an output port, then a compatible input port".into(),menu_icon,open:true,
             preview_rect:egui::Rect::from_min_size(egui::pos2(210.0,600.0),egui::vec2(950.0,210.0)),
-            preview_height:maker_saved_preview_height(),preview_active:false,routes:Routes::new(),canvas_pan:egui::Vec2::ZERO,canvas_zoom:1.0,pending_zoom:None,pending_zoom_to_fit:false,pending_menu_command:None,canvas_rect:egui::Rect::NOTHING,pinpoint_next:HashMap::new(),pinpoint_target:None,pinpoint_pulse:None,pinpoint_boxes:BTreeMap::new(),workspace_min:[-1000.0,-1000.0],workspace_max:[2000.0,2000.0],pixels_per_point:1.0,routing_undo:Vec::new(),routing_redo:Vec::new(),candidate_mode:0,candidate_sort:0,max_wire_connections:saved_max_wires,min_wire_connections:saved_min_wires,max_enumerations:saved_max_enumerations,max_candidates:saved_max_candidates,
+            preview_height:maker_saved_preview_height(),preview_active:false,routes:Routes::new(),canvas_pan:egui::Vec2::ZERO,canvas_zoom:1.0,pending_zoom:None,pending_zoom_to_fit:false,pending_menu_command:None,canvas_rect:egui::Rect::NOTHING,pinpoint_next:HashMap::new(),pinpoint_target:None,pinpoint_pulse:None,pinpoint_boxes:BTreeMap::new(),workspace_min:[-1000.0,-1000.0],workspace_max:[2000.0,2000.0],routing_undo:Vec::new(),routing_redo:Vec::new(),candidate_mode:0,candidate_sort:0,max_wire_connections:saved_max_wires,min_wire_connections:saved_min_wires,max_enumerations:saved_max_enumerations,max_candidates:saved_max_candidates,
             candidates:Vec::new(),candidate_jobs:Vec::new(),candidate_epoch:0,candidate_base:None,
             candidate_selected:None,candidate_undo:Vec::new(),orphan_undo:Vec::new(),orphan_redo:Vec::new(),delete_project_confirm:false,orphan_restore_pending:false,candidate_notice:String::new(),library_expanded:HashMap::new(),connection_search:None,reset_enumeration_confirm:false,candidate_evaluated:0,candidate_glsl_capable:0,candidate_rejections:0,candidate_uniform:0,candidate_glsl_errors:0,candidate_render_errors:0,analysis_request:None,analysis:None,pending_clipboard:None,pending_clipboard_is_glsl:false,pending_glsl_export:None})
     }
@@ -1741,9 +1740,12 @@ impl MakerUi {
     pub fn preview_rect(&self)->egui::Rect{self.preview_rect}
     pub fn preview_active(&self)->bool{self.preview_active}
     pub fn handle_event(&mut self, event: &Event) {
+        // SDL mouse x/y are window-space logical coordinates, already in egui points.
+        // Dividing by the drawable/window pixel ratio offsets hit testing on HiDPI.
+
         match event {
             Event::MouseMotion { x, y, .. } => {
-                let next=egui::pos2(*x as f32/self.pixels_per_point,*y as f32/self.pixels_per_point);
+                let next=egui::pos2(*x as f32,*y as f32);
                 self.pointer = next;
                 self.events.push(egui::Event::PointerMoved(self.pointer));
             }
@@ -1752,7 +1754,7 @@ impl MakerUi {
                 let button = match mouse_btn { MouseButton::Left => egui::PointerButton::Primary,
                     MouseButton::Right => egui::PointerButton::Secondary,
                     MouseButton::Middle => egui::PointerButton::Middle, _ => return };
-                self.pointer = egui::pos2(*x as f32/self.pixels_per_point, *y as f32/self.pixels_per_point);
+                self.pointer = egui::pos2(*x as f32, *y as f32);
                 // Mango owns the middle mouse button. The graph navigates via
                 // scrollbars and node-drag edge auto-pan, not mouse-button panning.
                 if *mouse_btn == MouseButton::Middle { return; }
@@ -1828,7 +1830,7 @@ impl MakerUi {
             _ => {}
         }
     }
-    pub fn frame(&mut self,dw:u32,dh:u32,scale:f32,compile_error:Option<&str>)->bool{
+    pub fn frame(&mut self,dw:u32,dh:u32,ww:u32,wh:u32,scale:f32,compile_error:Option<&str>)->bool{
         // CPU-only exploration is incremental. OpenGL thumbnails remain on the caller's GL thread.
         if let Some(search)=self.connection_search.as_mut(){
             if let Some(base)=self.candidate_base.as_ref(){
@@ -1861,9 +1863,11 @@ impl MakerUi {
             }
         }
         let scale=scale.max(0.1);
-        self.pixels_per_point=scale;
         let mut input=egui::RawInput::default();
-        input.screen_rect=Some(egui::Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(dw as f32/scale,dh as f32/scale)));
+        // SDL reports mouse positions in WINDOW coordinates. egui points use the
+        // same coordinate space; pixels_per_point only scales rasterization.
+        // Do not derive the logical viewport from drawable pixels.
+        input.screen_rect=Some(egui::Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(ww as f32,wh as f32)));
         input.viewports.insert(egui::ViewportId::ROOT,egui::ViewportInfo{native_pixels_per_point:Some(scale),..Default::default()});
         input.time=Some(self.start.elapsed().as_secs_f64());input.modifiers=self.modifiers;
         input.events=std::mem::take(&mut self.events);
@@ -2458,7 +2462,21 @@ impl MakerUi {
                     .inner_margin(egui::Margin::symmetric(8, 3)))
                 .show(ctx, |ui| {
                 let mut command = pending_menu_command.take();
-                egui::menu::bar(ui, |ui| {
+                // Menu controls must not share the Background hit-test order
+                // with graph Areas. A node positioned mostly outside the canvas
+                // can otherwise overlap the header's interaction region even
+                // though its painted body is clipped to the canvas.
+                //
+                // Render only the compact menu bar in a Foreground Area. Do NOT
+                // promote the entire TopBottomPanel: doing so paints its panel
+                // background over the graph and dims node bodies.
+                let menu_origin = ui.cursor().min;
+                let menu_area = egui::Area::new(egui::Id::new("maker_header_menu_interaction"))
+                    .order(egui::Order::Foreground)
+                    .movable(false)
+                    .fixed_pos(menu_origin)
+                    .show(ctx, |menu_ui| {
+                egui::menu::bar(menu_ui, |ui| {
                     // Display the native 22x22 artwork without scaling; the menu
                     // retains its existing compact header layout.
                     ui.add(egui::Image::new((menu_icon.id(), egui::vec2(22.0, 22.0))));
@@ -2526,6 +2544,11 @@ impl MakerUi {
                         }
                     });
                 });
+                });
+                // Keep the original header layout: the foreground menu is
+                // independently rendered, so reserve its measured height in
+                // the panel before laying out the project tabs beneath it.
+                ui.allocate_space(egui::vec2(ui.available_width(), menu_area.response.rect.height()));
                 ui.separator();
                 ui.horizontal(|ui| {
                     // Keyboard focus belongs to the project rail, not the graph or text editors.
@@ -3216,7 +3239,7 @@ impl MakerUi {
                     let pos = node.pos;
                     let expanded = node.expanded;
                     let area=egui::Area::new(egui::Id::new(("maker_node",id)))
-                        .order(egui::Order::Background).movable(false)
+                        .order(egui::Order::Middle).movable(false)
                         // Graph nodes may travel beyond the viewport when scrolling.
                         // Area's default screen constraint otherwise pins offscreen
                         // rows to the upper screen edge, stacking them together.
@@ -3814,14 +3837,11 @@ impl MakerUi {
                     workspace_min[1],workspace_max[1]);
                 ui.allocate_rect(available,egui::Sense::hover());
             });
-            // Keep the header above graph node Areas in the SAME Background
-            // order as egui panels. Previously nodes were Middle-order Areas:
-            // moving a Background-order header to the top of Middle order
-            // cannot fix pointer interception across different orders.
-            // Graph Areas remain clipped to the canvas and non-interactable
-            // whenever the pointer is outside the canvas.
-            ctx.move_to_top(egui::LayerId::new(
-                egui::Order::Background, egui::Id::new("maker_header")));
+            // Node Areas use Middle order so their painted bodies are above the
+            // Background CentralPanel. They are non-interactable whenever the
+            // pointer is outside the graph canvas, including the header region.
+            // Do not reorder the header or node layers after widget interaction:
+            // that changes paint order without updating already-computed responses.
             // Module-attached editor is a foreground Area, not a Popup. Its
             // lifetime is independent of nested color-picker popups.
             // The contents are only interactive while the editor is open.
