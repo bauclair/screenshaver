@@ -289,8 +289,6 @@ struct Candidate {
     visual: VisualMetrics,
     motion: Option<f32>,
     motion_failed: bool,
-    dismissed: bool,
-    favorite: bool,
     connection_candidate: bool,
 }
 #[derive(Clone)]
@@ -588,6 +586,27 @@ fn discovery_priority(graph:&Graph)->u64 {
     // Avalanche to remove ordering patterns from low hash bits.
     h^=h>>30;h=h.wrapping_mul(0xbf58476d1ce4e5b9);
     h^=h>>27;h=h.wrapping_mul(0x94d049bb133111eb);h^(h>>31)
+}
+
+// Stable composition fingerprint for temporary candidate project names. This is
+// deliberately separate from discovery_priority: discovery ranking must not change.
+// The fingerprint excludes editor positions, expansion flags and revision counters.
+fn candidate_composition_fingerprint(graph:&Graph)->String {
+    let mut nodes:Vec<_>=graph.nodes.iter().map(|n|{
+        (n.id,n.module_id.as_str(),&n.parameters)
+    }).collect();
+    nodes.sort_by_key(|n|n.0);
+    let mut edges:Vec<_>=graph.connections.iter().map(|c|{
+        (c.from,c.from_port,c.to,c.to_port)
+    }).collect();
+    edges.sort_unstable();
+    let payload=serde_json::to_vec(&(nodes,edges)).unwrap_or_default();
+    let mut hash=0xcbf29ce484222325u64;
+    for byte in payload {hash=(hash^(byte as u64)).wrapping_mul(0x100000001b3);}
+    // 64-bit avalanche, identical to the existing discovery priority finalizer.
+    hash^=hash>>30;hash=hash.wrapping_mul(0xbf58476d1ce4e5b9);
+    hash^=hash>>27;hash=hash.wrapping_mul(0x94d049bb133111eb);
+    format!("{:016X}",hash^(hash>>31))
 }
 
 // Downstream-only graph diversity: compare complete typed edge identities.
@@ -1085,7 +1104,131 @@ fn maker_browser_entries(directory:&std::path::Path)->Result<Vec<(String,bool)>,
     Ok(entries)
 }
 
+
+// A tab owns its entire editable workspace, including discovery and undo history.
+// Inactive tabs retain their GPU thumbnail texture handles and canonical DFS checkpoints.
+struct MakerProjectTab {
+    graph: Graph,
+    project_name: String,
+    thumbnail_workspace: bool,
+    thumbnail_hash: Option<String>,
+    project_path: Option<std::path::PathBuf>,
+    saved_graph_snapshot: serde_json::Value,
+    selected: Option<NodeId>,
+    parameter_popup: Option<NodeId>,
+    pending_source: Option<(NodeId, usize)>,
+    dragging_wire: Option<(NodeId, usize)>,
+    preview_active: bool,
+    routes: Routes,
+    canvas_pan: egui::Vec2,
+    canvas_zoom: f32,
+    pending_zoom: Option<f32>,
+    pending_zoom_to_fit: bool,
+    pinpoint_next: HashMap<String, NodeId>,
+    pinpoint_target: Option<NodeId>,
+    pinpoint_pulse: Option<(NodeId, Instant)>,
+    pinpoint_boxes: BTreeMap<NodeId, Box2>,
+    workspace_min: [f32;2],
+    workspace_max: [f32;2],
+    routing_undo: Vec<(Graph,Routes)>,
+    routing_redo: Vec<(Graph,Routes)>,
+    candidate_mode: u8,
+    candidate_sort: u8,
+    max_wire_connections: usize,
+    min_wire_connections: usize,
+    max_enumerations: usize,
+    max_candidates: usize,
+    candidates: Vec<Candidate>,
+    candidate_jobs: Vec<CandidateJob>,
+    candidate_epoch: u64,
+    candidate_base: Option<Graph>,
+    candidate_selected: Option<usize>,
+    candidate_undo: Vec<Graph>,
+    orphan_undo: Vec<Graph>,
+    orphan_redo: Vec<Graph>,
+    orphan_restore_pending: bool,
+    candidate_notice: String,
+    connection_search: Option<ConnectionSearch>,
+    reset_enumeration_confirm: bool,
+    candidate_evaluated: usize,
+    candidate_glsl_capable: usize,
+    candidate_rejections: usize,
+    candidate_uniform: usize,
+    candidate_glsl_errors: usize,
+    candidate_render_errors: usize,
+    analysis_request: Option<usize>,
+    analysis: Option<CandidateAnalysis>,
+    pending_glsl_export: Option<(usize,bool)>,
+
+}
+impl MakerProjectTab {
+    fn blank(epoch:u64)->Self {
+        let graph=Graph::blank();
+        let saved_graph_snapshot=serde_json::json!(crate::maker::graph_to_wire(&graph));
+        let (min_wire_connections,max_wire_connections,max_enumerations,max_candidates)=maker_last_discovery_settings();
+        Self {
+            graph: graph,
+            project_name: "Untitled".into(),
+            thumbnail_workspace: false,
+            thumbnail_hash: None,
+            project_path: None,
+            saved_graph_snapshot: saved_graph_snapshot,
+            selected: None,
+            parameter_popup: None,
+            pending_source: None,
+            dragging_wire: None,
+            preview_active: true,
+            routes: Routes::new(),
+            canvas_pan: egui::Vec2::ZERO,
+            canvas_zoom: 1.0,
+            pending_zoom: None,
+            pending_zoom_to_fit: true,
+            pinpoint_next: HashMap::new(),
+            pinpoint_target: None,
+            pinpoint_pulse: None,
+            pinpoint_boxes: BTreeMap::new(),
+            workspace_min: [-1000.0,-1000.0],
+            workspace_max: [2000.0,2000.0],
+            routing_undo: Vec::new(),
+            routing_redo: Vec::new(),
+            candidate_mode: 0,
+            candidate_sort: 0,
+            max_wire_connections: max_wire_connections,
+            min_wire_connections: min_wire_connections,
+            max_enumerations: max_enumerations,
+            max_candidates: max_candidates,
+            candidates: Vec::new(),
+            candidate_jobs: Vec::new(),
+            candidate_epoch: epoch,
+            candidate_base: None,
+            candidate_selected: None,
+            candidate_undo: Vec::new(),
+            orphan_undo: Vec::new(),
+            orphan_redo: Vec::new(),
+            orphan_restore_pending: false,
+            candidate_notice: String::new(),
+            connection_search: None,
+            reset_enumeration_confirm: false,
+            candidate_evaluated: 0,
+            candidate_glsl_capable: 0,
+            candidate_rejections: 0,
+            candidate_uniform: 0,
+            candidate_glsl_errors: 0,
+            candidate_render_errors: 0,
+            analysis_request: None,
+            analysis: None,
+            pending_glsl_export: None,
+        }
+    }
+}
+
 pub struct MakerUi {
+    inactive_tabs: Vec<MakerProjectTab>,
+    close_all_running: bool,
+    active_tab: usize,
+    project_tab_scroll_x: f32,
+    project_open: bool,
+    next_tab_epoch: u64,
     context: egui::Context,
     painter: egui_glow::Painter,
     events: Vec<egui::Event>,
@@ -1094,6 +1237,8 @@ pub struct MakerUi {
     start: Instant,
     graph: Graph,
     project_name: String,
+    thumbnail_workspace: bool,
+    thumbnail_hash: Option<String>,
     project_dialog: Option<MakerProjectBrowser>,
     glsl_export_dialog: Option<(String,String,bool)>,
     project_path: Option<std::path::PathBuf>,
@@ -1158,10 +1303,256 @@ pub struct MakerUi {
     analysis_request: Option<usize>,
     analysis: Option<CandidateAnalysis>,
     pending_clipboard: Option<String>,
+    pending_clipboard_is_glsl: bool,
     pending_glsl_export: Option<(usize,bool)>,
 
 }
 impl MakerUi {
+    // The active workspace is stored directly in MakerUi for compatibility with the
+    // existing graph/editor code; every inactive workspace is parked in its tab.
+    fn exchange_tab(&mut self, tab:&mut MakerProjectTab) {
+        std::mem::swap(&mut self.graph, &mut tab.graph);
+        std::mem::swap(&mut self.project_name, &mut tab.project_name);
+        std::mem::swap(&mut self.thumbnail_workspace, &mut tab.thumbnail_workspace);
+        std::mem::swap(&mut self.thumbnail_hash, &mut tab.thumbnail_hash);
+        std::mem::swap(&mut self.project_path, &mut tab.project_path);
+        std::mem::swap(&mut self.saved_graph_snapshot, &mut tab.saved_graph_snapshot);
+        std::mem::swap(&mut self.selected, &mut tab.selected);
+        std::mem::swap(&mut self.parameter_popup, &mut tab.parameter_popup);
+        std::mem::swap(&mut self.pending_source, &mut tab.pending_source);
+        std::mem::swap(&mut self.dragging_wire, &mut tab.dragging_wire);
+        std::mem::swap(&mut self.preview_active, &mut tab.preview_active);
+        std::mem::swap(&mut self.routes, &mut tab.routes);
+        std::mem::swap(&mut self.canvas_pan, &mut tab.canvas_pan);
+        std::mem::swap(&mut self.canvas_zoom, &mut tab.canvas_zoom);
+        std::mem::swap(&mut self.pending_zoom, &mut tab.pending_zoom);
+        std::mem::swap(&mut self.pending_zoom_to_fit, &mut tab.pending_zoom_to_fit);
+        std::mem::swap(&mut self.pinpoint_next, &mut tab.pinpoint_next);
+        std::mem::swap(&mut self.pinpoint_target, &mut tab.pinpoint_target);
+        std::mem::swap(&mut self.pinpoint_pulse, &mut tab.pinpoint_pulse);
+        std::mem::swap(&mut self.pinpoint_boxes, &mut tab.pinpoint_boxes);
+        std::mem::swap(&mut self.workspace_min, &mut tab.workspace_min);
+        std::mem::swap(&mut self.workspace_max, &mut tab.workspace_max);
+        std::mem::swap(&mut self.routing_undo, &mut tab.routing_undo);
+        std::mem::swap(&mut self.routing_redo, &mut tab.routing_redo);
+        std::mem::swap(&mut self.candidate_mode, &mut tab.candidate_mode);
+        std::mem::swap(&mut self.candidate_sort, &mut tab.candidate_sort);
+        std::mem::swap(&mut self.max_wire_connections, &mut tab.max_wire_connections);
+        std::mem::swap(&mut self.min_wire_connections, &mut tab.min_wire_connections);
+        std::mem::swap(&mut self.max_enumerations, &mut tab.max_enumerations);
+        std::mem::swap(&mut self.max_candidates, &mut tab.max_candidates);
+        std::mem::swap(&mut self.candidates, &mut tab.candidates);
+        std::mem::swap(&mut self.candidate_jobs, &mut tab.candidate_jobs);
+        std::mem::swap(&mut self.candidate_epoch, &mut tab.candidate_epoch);
+        std::mem::swap(&mut self.candidate_base, &mut tab.candidate_base);
+        std::mem::swap(&mut self.candidate_selected, &mut tab.candidate_selected);
+        std::mem::swap(&mut self.candidate_undo, &mut tab.candidate_undo);
+        std::mem::swap(&mut self.orphan_undo, &mut tab.orphan_undo);
+        std::mem::swap(&mut self.orphan_redo, &mut tab.orphan_redo);
+        std::mem::swap(&mut self.orphan_restore_pending, &mut tab.orphan_restore_pending);
+        std::mem::swap(&mut self.candidate_notice, &mut tab.candidate_notice);
+        std::mem::swap(&mut self.connection_search, &mut tab.connection_search);
+        std::mem::swap(&mut self.reset_enumeration_confirm, &mut tab.reset_enumeration_confirm);
+        std::mem::swap(&mut self.candidate_evaluated, &mut tab.candidate_evaluated);
+        std::mem::swap(&mut self.candidate_glsl_capable, &mut tab.candidate_glsl_capable);
+        std::mem::swap(&mut self.candidate_rejections, &mut tab.candidate_rejections);
+        std::mem::swap(&mut self.candidate_uniform, &mut tab.candidate_uniform);
+        std::mem::swap(&mut self.candidate_glsl_errors, &mut tab.candidate_glsl_errors);
+        std::mem::swap(&mut self.candidate_render_errors, &mut tab.candidate_render_errors);
+        std::mem::swap(&mut self.analysis_request, &mut tab.analysis_request);
+        std::mem::swap(&mut self.analysis, &mut tab.analysis);
+        std::mem::swap(&mut self.pending_glsl_export, &mut tab.pending_glsl_export);
+    }
+    fn switch_project_tab(&mut self, target:usize) {
+        // inactive_tabs contains every tab EXCEPT the active one, in display order.
+        // The last tab is a real tab, never a sentinel for creating a new one.
+        if !self.project_open || target==self.active_tab || target>self.inactive_tabs.len(){return;}
+        let old=self.active_tab;
+        let target_slot=if target<old {target} else {target-1};
+        let mut selected=self.inactive_tabs.remove(target_slot);
+        let mut parked=MakerProjectTab::blank(0);
+        self.exchange_tab(&mut parked);
+        self.exchange_tab(&mut selected);
+        // Removing a tab before the former active tab shifts its slot left.
+        // Reinsert at the former active tab's position in the reduced list.
+        let parked_slot=if target<old {old-1} else {old};
+        self.inactive_tabs.insert(parked_slot,parked);
+        self.active_tab=target;
+        self.project_dialog=None;
+        self.unsaved_action=None;
+        self.after_save_action=None;
+        self.discard_approved=None;
+        self.pending_menu_command=None;
+        self.preview_rect=egui::Rect::NOTHING;
+        self.context.request_repaint();
+    }
+    // Move a newly saved Thumbnail into the ordinary tab sequence without
+    // reloading its graph or renderer. The active project remains active.
+    fn move_saved_thumbnail_to_end(&mut self) {
+        if !self.project_open || self.active_tab == self.inactive_tabs.len() { return; }
+        let old = self.active_tab;
+        let mut active = MakerProjectTab::blank(0);
+        self.exchange_tab(&mut active);
+        self.inactive_tabs.insert(old, active);
+        let mut selected = self.inactive_tabs.remove(old);
+        self.exchange_tab(&mut selected);
+        self.active_tab = self.inactive_tabs.len();
+        self.context.request_repaint();
+    }
+    fn create_project_tab(&mut self){
+        // The startup/last-closed workspace is not a project and must not be parked.
+        if self.project_open {
+            let mut parked=MakerProjectTab::blank(0);
+            self.exchange_tab(&mut parked);
+            self.inactive_tabs.insert(self.active_tab,parked);
+        }
+        let mut fresh=MakerProjectTab::blank(self.next_tab_epoch<<32);
+        self.next_tab_epoch=self.next_tab_epoch.wrapping_add(1);
+        self.exchange_tab(&mut fresh);
+        self.active_tab=self.inactive_tabs.len();
+        self.project_open=true;
+        self.project_dialog=None;
+        self.unsaved_action=None;
+        self.after_save_action=None;
+        self.discard_approved=None;
+        self.pending_menu_command=None;
+        self.status="New project tab created".into();
+        self.context.request_repaint();
+    }
+    // Only one unsaved Thumbnail workspace exists. Discovery results are copied
+    // from the source project when opening it, so browsing remains possible
+    // after switching tabs without mutating the source graph.
+    fn show_candidate_thumbnail(&mut self, mut candidate_graph: Graph) {
+        let hash = candidate_composition_fingerprint(&candidate_graph);
+        let source_candidates = self.candidates.clone();
+        let source_base = self.candidate_base.clone();
+        let source_mode = self.candidate_mode;
+        let source_sort = self.candidate_sort;
+        let source_notice = self.candidate_notice.clone();
+        let source_epoch = self.candidate_epoch;
+        if !self.project_open || !self.thumbnail_workspace {
+            if let Some(index) = self.inactive_tabs.iter().position(|tab|tab.thumbnail_workspace) {
+                self.switch_project_tab(if index < self.active_tab {index} else {index+1});
+            } else {
+                self.create_project_tab();
+            }
+        }
+        // An existing Thumbnail retains its own candidate browser. When the
+        // click originated elsewhere, refresh the browser from that source.
+        if source_epoch != self.candidate_epoch {
+            self.candidates = source_candidates;
+            self.candidate_base = source_base;
+            self.candidate_mode = source_mode;
+            self.candidate_sort = source_sort;
+            self.candidate_notice = source_notice;
+            self.candidate_selected = None;
+            self.candidate_jobs.clear();
+            self.connection_search = None;
+        }
+        // The live Preview caches its GL program by graph revision. Candidate
+        // graphs often carry the same revision, so deriving the next revision
+        // from the incoming candidate can leave the previous shader running.
+        // Advance from the graph currently shown instead.
+        candidate_graph.revision = self.graph.revision.wrapping_add(1);
+        self.graph = candidate_graph;
+        self.project_name = "Thumbnail".into();
+        self.thumbnail_workspace = true;
+        self.thumbnail_hash = Some(hash);
+        self.project_path = None;
+        self.selected = None;
+        self.parameter_popup = None;
+        self.pending_source = None;
+        self.dragging_wire = None;
+        self.routes.clear();
+        self.routing_undo.clear();
+        self.routing_redo.clear();
+        self.candidate_undo.clear();
+        self.canvas_pan = egui::Vec2::ZERO;
+        self.canvas_zoom = 1.0;
+        self.pending_zoom_to_fit = true;
+        self.preview_active = true;
+        self.preview_rect = egui::Rect::NOTHING;
+        self.status = "Thumbnail loaded; click another candidate to replace it, or save to keep it".into();
+        self.context.request_repaint();
+    }
+    fn advance_close_all(&mut self) {
+        if !self.close_all_running { return; }
+        if !self.project_open {
+            self.close_all_running = false;
+            self.status = "All projects closed".into();
+            return;
+        }
+        if self.unsaved_action.is_some() || self.project_dialog.is_some()
+            || self.after_save_action.is_some() { return; }
+        if self.discard_approved == Some("close_all") {
+            self.discard_approved = None;
+            self.close_active_project_tab();
+            return;
+        }
+        let dirty = serde_json::json!(crate::maker::graph_to_wire(&self.graph))
+            != self.saved_graph_snapshot;
+        if dirty && !self.thumbnail_workspace {
+            self.unsaved_action = Some("close_all");
+        } else {
+            self.close_active_project_tab();
+        }
+    }
+    fn close_active_project_tab(&mut self){
+        if !self.project_open {return;}
+        if self.inactive_tabs.is_empty(){
+            let mut empty=MakerProjectTab::blank(self.next_tab_epoch<<32);
+            self.next_tab_epoch=self.next_tab_epoch.wrapping_add(1);
+            self.exchange_tab(&mut empty);
+            self.project_open=false;
+            self.active_tab=0;
+            self.preview_active=false;
+            self.status="No project open".into();
+        }else{
+            let old=self.active_tab;
+            let next=if old>0 {old-1} else {0};
+            let slot=if old>0 {old-1} else {0};
+            let mut tab=self.inactive_tabs.remove(slot);
+            self.exchange_tab(&mut tab);
+            self.active_tab=next;
+            self.status="Project closed".into();
+        }
+        self.project_dialog=None;
+        self.unsaved_action=None;
+        self.after_save_action=None;
+        self.discard_approved=None;
+        self.pending_menu_command=None;
+        self.context.request_repaint();
+    }
+    fn open_project_in_tab(&mut self,path:std::path::PathBuf,mut graph:Graph){
+        if self.project_open && self.project_path.as_ref()==Some(&path){return;}
+        if let Some(index)=self.inactive_tabs.iter().position(|t|t.project_path.as_ref()==Some(&path)){
+            let target=if index<self.active_tab {index} else {index+1};
+            self.switch_project_tab(target);
+            return;
+        }
+        self.create_project_tab();
+        graph.revision=graph.revision.wrapping_add(1);
+        self.graph=graph;
+        self.project_name=path.file_stem().and_then(|s|s.to_str()).unwrap_or("Untitled").into();
+        self.project_path=Some(path);
+        self.saved_graph_snapshot=serde_json::json!(crate::maker::graph_to_wire(&self.graph));
+        self.preview_active=true;
+        self.status=format!("Opened project {}",self.project_name);
+    }
+    pub fn with_candidate_epoch<R>(&mut self,epoch:u64,f:impl FnOnce(&mut Self)->R)->Option<R>{
+        if self.candidate_epoch==epoch {return Some(f(self));}
+        let index=self.inactive_tabs.iter().position(|t|t.candidate_epoch==epoch)?;
+        let mut tab=self.inactive_tabs.remove(index);
+        self.exchange_tab(&mut tab);
+        let result=f(self);
+        self.exchange_tab(&mut tab);
+        self.inactive_tabs.insert(index,tab);
+        Some(result)
+    }
+    pub fn contains_candidate_epoch(&self,epoch:u64)->bool{
+        self.candidate_epoch==epoch || self.inactive_tabs.iter().any(|t|t.candidate_epoch==epoch)
+    }
+
     pub fn new(video:&sdl2::VideoSubsystem)->Result<Self,String>{
         let gl=unsafe{glow::Context::from_loader_function(|s|video.gl_get_proc_address(s) as *const _)};
         let painter=egui_glow::Painter::new(Arc::new(gl),"",None,false).map_err(|e|e.to_string())?;
@@ -1175,13 +1566,13 @@ impl MakerUi {
             egui::ColorImage::from_rgba_unmultiplied([22,22], &MAKER_MENU_ICON_RGBA),
             egui::TextureOptions::LINEAR,
         );
-        Ok(Self{context,painter,events:Vec::new(),pointer:egui::Pos2::ZERO,
-            modifiers:egui::Modifiers::default(),start:Instant::now(),graph,project_name:"Untitled".into(),project_dialog:None,glsl_export_dialog:None,project_path:None,recent_projects,saved_graph_snapshot,unsaved_action:None,after_save_action:None,discard_approved:None,selected,parameter_popup:None,pending_source:None,dragging_wire:None,
+        Ok(Self{inactive_tabs:Vec::new(),close_all_running:false,active_tab:0,project_tab_scroll_x:0.0,project_open:false,next_tab_epoch:1,context,painter,events:Vec::new(),pointer:egui::Pos2::ZERO,
+            modifiers:egui::Modifiers::default(),start:Instant::now(),graph,project_name:"Untitled".into(),thumbnail_workspace:false,thumbnail_hash:None,project_dialog:None,glsl_export_dialog:None,project_path:None,recent_projects,saved_graph_snapshot,unsaved_action:None,after_save_action:None,discard_approved:None,selected,parameter_popup:None,pending_source:None,dragging_wire:None,
             status:"Click an output port, then a compatible input port".into(),menu_icon,open:true,
             preview_rect:egui::Rect::from_min_size(egui::pos2(210.0,600.0),egui::vec2(950.0,210.0)),
-            preview_height:maker_saved_preview_height(),preview_active:true,routes:Routes::new(),canvas_pan:egui::Vec2::ZERO,canvas_zoom:1.0,pending_zoom:None,pending_zoom_to_fit:false,pending_menu_command:None,canvas_rect:egui::Rect::NOTHING,pinpoint_next:HashMap::new(),pinpoint_target:None,pinpoint_pulse:None,pinpoint_boxes:BTreeMap::new(),workspace_min:[-1000.0,-1000.0],workspace_max:[2000.0,2000.0],pixels_per_point:1.0,routing_undo:Vec::new(),routing_redo:Vec::new(),candidate_mode:0,candidate_sort:0,max_wire_connections:saved_max_wires,min_wire_connections:saved_min_wires,max_enumerations:saved_max_enumerations,max_candidates:saved_max_candidates,
+            preview_height:maker_saved_preview_height(),preview_active:false,routes:Routes::new(),canvas_pan:egui::Vec2::ZERO,canvas_zoom:1.0,pending_zoom:None,pending_zoom_to_fit:false,pending_menu_command:None,canvas_rect:egui::Rect::NOTHING,pinpoint_next:HashMap::new(),pinpoint_target:None,pinpoint_pulse:None,pinpoint_boxes:BTreeMap::new(),workspace_min:[-1000.0,-1000.0],workspace_max:[2000.0,2000.0],pixels_per_point:1.0,routing_undo:Vec::new(),routing_redo:Vec::new(),candidate_mode:0,candidate_sort:0,max_wire_connections:saved_max_wires,min_wire_connections:saved_min_wires,max_enumerations:saved_max_enumerations,max_candidates:saved_max_candidates,
             candidates:Vec::new(),candidate_jobs:Vec::new(),candidate_epoch:0,candidate_base:None,
-            candidate_selected:None,candidate_undo:Vec::new(),orphan_undo:Vec::new(),orphan_redo:Vec::new(),delete_project_confirm:false,orphan_restore_pending:false,candidate_notice:String::new(),library_expanded:HashMap::new(),connection_search:None,reset_enumeration_confirm:false,candidate_evaluated:0,candidate_glsl_capable:0,candidate_rejections:0,candidate_uniform:0,candidate_glsl_errors:0,candidate_render_errors:0,analysis_request:None,analysis:None,pending_clipboard:None,pending_glsl_export:None})
+            candidate_selected:None,candidate_undo:Vec::new(),orphan_undo:Vec::new(),orphan_redo:Vec::new(),delete_project_confirm:false,orphan_restore_pending:false,candidate_notice:String::new(),library_expanded:HashMap::new(),connection_search:None,reset_enumeration_confirm:false,candidate_evaluated:0,candidate_glsl_capable:0,candidate_rejections:0,candidate_uniform:0,candidate_glsl_errors:0,candidate_render_errors:0,analysis_request:None,analysis:None,pending_clipboard:None,pending_clipboard_is_glsl:false,pending_glsl_export:None})
     }
     /// Returns the exact candidate reconstruction, independent of the currently applied graph.
     /// The boolean requests saving to disk rather than copying to the clipboard.
@@ -1199,7 +1590,15 @@ impl MakerUi {
     pub fn glsl_export_result(&mut self,message:String){self.candidate_notice=message;}
     pub fn take_clipboard_request(&mut self)->Option<String>{self.pending_clipboard.take()}
     pub fn clipboard_result(&mut self,result:Result<(),String>){
-        self.candidate_notice=match result {Ok(())=>"Analysis report copied to system clipboard".into(),Err(e)=>format!("Clipboard copy failed: {e}")};
+        let is_glsl=std::mem::take(&mut self.pending_clipboard_is_glsl);
+        let message=match (is_glsl,result) {
+            (true,Ok(()))=>"Active project GLSL copied to system clipboard".to_owned(),
+            (true,Err(e))=>format!("GLSL clipboard export failed: {e}"),
+            (false,Ok(()))=>"Analysis report copied to system clipboard".to_owned(),
+            (false,Err(e))=>format!("Clipboard copy failed: {e}"),
+        };
+        self.status=message.clone();
+        self.candidate_notice=message;
     }
     pub fn graph(&self)->&Graph{&self.graph}
     pub fn candidate_epoch(&self)->u64 {self.candidate_epoch}
@@ -1228,7 +1627,7 @@ impl MakerUi {
         let candidate=Candidate{name:job.name,parameters,modules,connections:job.graph.connections.clone(),
             texture:self.context.load_texture(format!("maker_candidate_{}",self.candidate_evaluated),
                 egui::ColorImage::from_rgba_unmultiplied([width,height],&rgba),egui::TextureOptions::LINEAR),
-            visual,motion:None,motion_failed:false,dismissed:false,favorite:false,connection_candidate:job.connection_candidate};
+            visual,motion:None,motion_failed:false,connection_candidate:job.connection_candidate};
         if self.candidates.len()<CANDIDATES_RETAINED {self.candidates.push(candidate);return}
         if !job.connection_candidate {return}
         // A compact, normalized descriptor gives diversity a role without adding
@@ -1236,7 +1635,7 @@ impl MakerUi {
         let mut closest=None;
         let mut lowest=None;
         for (index,existing) in self.candidates.iter().enumerate(){
-            if !existing.connection_candidate || existing.favorite || self.candidate_selected==Some(index){continue}
+            if !existing.connection_candidate || self.candidate_selected==Some(index){continue}
             let value=existing.visual.interest;
             if lowest.is_none_or(|(_,score)|value<score){lowest=Some((index,value));}
             // Compare inexpensive perceptual metrics for already retained entries.
@@ -1296,7 +1695,7 @@ impl MakerUi {
     pub fn next_motion_job(&self)->Option<(usize,Graph)> {
         let base=self.candidate_base.as_ref()?;
         for (index,candidate) in self.candidates.iter().enumerate() {
-            if candidate.motion.is_some() || candidate.motion_failed || candidate.dismissed {continue}
+            if candidate.motion.is_some() || candidate.motion_failed {continue}
             // Connection candidates are qualified automatically; parameter
             // candidates retain their historical on-demand motion behavior.
             if !candidate.connection_candidate && self.candidate_sort!=6 {continue}
@@ -1406,8 +1805,10 @@ impl MakerUi {
                         Keycode::O if !self.modifiers.shift => self.pending_menu_command=Some("open"),
                         Keycode::S if self.modifiers.shift => self.pending_menu_command=Some("save_as"),
                         Keycode::S => self.pending_menu_command=Some("save"),
-                        Keycode::C if !self.modifiers.shift => self.pending_menu_command=Some("close"),
-                        Keycode::X if !self.modifiers.shift => self.pending_menu_command=Some("export_glsl"),
+                        Keycode::C if self.modifiers.shift => self.pending_menu_command=Some("close_all"),
+                        Keycode::C => self.pending_menu_command=Some("close"),
+                        Keycode::X if self.modifiers.shift => self.pending_menu_command=Some("export_glsl_clipboard"),
+                        Keycode::X => self.pending_menu_command=Some("export_glsl"),
                         Keycode::D if self.modifiers.shift => self.pending_menu_command=Some("delete"),
                         Keycode::Q if !self.modifiers.shift => self.pending_menu_command=Some("exit"),
                         _=>{}
@@ -1467,13 +1868,36 @@ impl MakerUi {
         input.time=Some(self.start.elapsed().as_secs_f64());input.modifiers=self.modifiers;
         input.events=std::mem::take(&mut self.events);
         let old_parameters:Vec<_>=self.graph.nodes.iter().map(|n|(n.id,n.parameters.clone())).collect();
+        let tab_labels:Vec<String> = (0..if self.project_open {self.inactive_tabs.len()+1} else {0}).map(|i| {
+            if i==self.active_tab {self.project_name.clone()}
+            else {let slot=if i<self.active_tab{i}else{i-1};self.inactive_tabs[slot].project_name.clone()}
+        }).collect();
+        let thumbnail_tab_index = if self.project_open && self.thumbnail_workspace {
+            Some(self.active_tab)
+        } else {
+            self.inactive_tabs.iter().position(|tab| tab.thumbnail_workspace)
+                .map(|index| if index < self.active_tab {index} else {index+1})
+        };
+        let active_tab_index=self.active_tab;
+        let project_tab_scroll_x=&mut self.project_tab_scroll_x;
+        let has_active_project=self.project_open;
+        let mut saved_thumbnail_this_frame=false;
+        let mut requested_tab=None;
+        let mut requested_new_tab=false;
+        let mut requested_start_close_all=false;
+        let mut requested_candidate_tab:Option<Graph>=None;
+        let mut requested_close_tab=false;
+        let mut requested_open_project:Option<(std::path::PathBuf,Graph)>=None;
         let project_name=&mut self.project_name;
+        let thumbnail_workspace=&mut self.thumbnail_workspace;
+        let thumbnail_hash=&mut self.thumbnail_hash;
         let project_dialog=&mut self.project_dialog;
         let glsl_export_dialog=&mut self.glsl_export_dialog;
         let project_path=&mut self.project_path;
         let recent_projects=&mut self.recent_projects;
         let saved_graph_snapshot=&mut self.saved_graph_snapshot;
         let unsaved_action=&mut self.unsaved_action;
+        let close_all_running=&mut self.close_all_running;
         let after_save_action=&mut self.after_save_action;
         let discard_approved=&mut self.discard_approved;
         let graph=&mut self.graph;
@@ -1523,6 +1947,7 @@ impl MakerUi {
         let analysis_request=&mut self.analysis_request;
         let analysis=&mut self.analysis;
         let pending_clipboard=&mut self.pending_clipboard;
+        let pending_clipboard_is_glsl=&mut self.pending_clipboard_is_glsl;
         let pending_glsl_export=&mut self.pending_glsl_export;
         let candidate_uniform=&mut self.candidate_uniform;
         let candidate_glsl_errors=&mut self.candidate_glsl_errors;
@@ -1663,36 +2088,29 @@ impl MakerUi {
                 let did_complete=completed.is_some();
                 if let Some((path,loaded))=completed {
                     let was_open=loaded.is_some();
-                    if let Some(mut loaded)=loaded {
-                        loaded.revision=graph.revision.wrapping_add(1);
-                        *graph=loaded;
-                        *preview_active=true;
-                        *selected=None;*parameter_popup=None;*pending=None;*dragging_wire=None;
-                        routes.clear();routing_undo.clear();routing_redo.clear();orphan_undo.clear();orphan_redo.clear();*orphan_restore_pending=false;
-                        candidates.clear();*candidate_epoch=candidate_epoch.wrapping_add(1);
-                        candidate_jobs.clear();*connection_search=None;*candidate_base=None;
-                        candidate_undo.clear();*candidate_selected=None;
-                        pinpoint_next.clear();*pinpoint_target=None;*pinpoint_pulse=None;
-                        *pending_zoom_to_fit=true;
-                        *saved_graph_snapshot=serde_json::json!(crate::maker::graph_to_wire(graph));
-                        *status=format!("Opened project {}",path.display());
+                    if let Some(loaded)=loaded {
+                        requested_open_project=Some((path.clone(),loaded));
+                        *status=format!("Opening project {}",path.display());
                     }else{
                         *saved_graph_snapshot=serde_json::json!(crate::maker::graph_to_wire(graph));
+                        if *thumbnail_workspace { saved_thumbnail_this_frame=true; }
+                        *thumbnail_workspace=false;
+                        *thumbnail_hash=None;
                         *status=format!("Saved project {}",path.display());
                         if let Some(action)=after_save_action.take(){*pending_menu_command=Some(action);}
                     }
-                    *project_name=path.file_stem().and_then(|s|s.to_str()).unwrap_or("Untitled").to_owned();
+                    if !was_open {*project_name=path.file_stem().and_then(|s|s.to_str()).unwrap_or("Untitled").to_owned();}
                     if was_open {
                         match maker_record_recent_project(&path){
                             Ok(updated)=>*recent_projects=updated,
                             Err(e)=>*status=format!("Opened project {}, but recent-project history could not be saved: {e}",path.display()),
                         }
                     }
-                    *project_path=Some(path);
+                    if !was_open {*project_path=Some(path);}
                     close=true;
                 }
                 if close{
-                    if !did_complete { *after_save_action=None; }
+                    if !did_complete { if *after_save_action==Some("close_all") {*close_all_running=false;} *after_save_action=None; }
                     *project_dialog=None;
                 }
             }
@@ -1735,6 +2153,9 @@ impl MakerUi {
                     ui.label(format!("{}.smprj",project_name));ui.separator();
                     ui.label("Batch 07 · field traversal + anchored parameter editor");ui.separator();
                     ui.label(format!("{} nodes / {} connections",graph.nodes.len(),graph.connections.len()));ui.separator();
+                    ui.monospace(format!("Zoom: {:.0}%", *canvas_zoom * 100.0))
+                        .on_hover_text("Current Node Graph viewport zoom (100% = actual graph scale)");
+                    ui.separator();
                     // Graph coordinates use logical graph pixels: they are stable
                     // across viewport zoom and SDL display scaling. The cursor
                     // is reported only while it is inside the graph canvas.
@@ -1954,22 +2375,28 @@ impl MakerUi {
                                 *unsaved_action=None;
                                 *after_save_action=Some(action);
                                 if project_path.is_some(){*pending_menu_command=Some("save");}
-                                else {*project_dialog=Some(MakerProjectBrowser::open(true,None,project_name));}
+                                else {*project_dialog=Some(MakerProjectBrowser::open(true,None,thumbnail_hash.as_deref().unwrap_or(project_name)));}
                             }
                             if ui.button("Discard").clicked(){
                                 *unsaved_action=None;
-                                *pending_menu_command=Some(action);
+                                // Close All owns its own sequential state machine.
+                                // Do not requeue it through the File command handler:
+                                // that handler consumes discard_approved before
+                                // advance_close_all() can close this project.
+                                if action != "close_all" {
+                                    *pending_menu_command=Some(action);
+                                }
                                 // One-shot bypass: the graph remains dirty until the
                                 // chosen action actually completes.
                                 *discard_approved=Some(action);
                             }
-                            if ui.button("Cancel").clicked(){*unsaved_action=None;}
+                            if ui.button("Cancel").clicked(){*unsaved_action=None; if action=="close_all" {*close_all_running=false;} }
                         });
                     });
             }
             if let Some((directory,filename,confirm_overwrite))=glsl_export_dialog.as_mut(){
                 let mut close_export=false;
-                egui::Window::new("Export GLSL")
+                egui::Window::new("Export GLSL File")
                     .id(egui::Id::new("maker_export_glsl"))
                     .collapsible(false).resizable(false).default_width(440.0)
                     .anchor(egui::Align2::CENTER_CENTER,egui::Vec2::ZERO)
@@ -2058,9 +2485,11 @@ impl MakerUi {
                         for (label, action, enabled) in [
                             ("Save Project    Ctrl+S", "save", true),
                             ("Save Project As    Ctrl+Shift+S", "save_as", true),
-                            ("Close Project    Ctrl+C", "close", project_path.is_some()),
+                            ("Close Project    Ctrl+C", "close", has_active_project),
+                            ("Close All Projects    Ctrl+Shift+C", "close_all", has_active_project),
                             ("Delete Project    Ctrl+Shift+D", "delete", project_path.is_some()),
-                            ("Export GLSL    Ctrl+X", "export_glsl", true),
+                            ("Export GLSL File    Ctrl+X", "export_glsl", true),
+                            ("Export GLSL Code    Ctrl+Shift+X", "export_glsl_clipboard", true),
                             ("Exit    Ctrl+Q", "exit", true),
                         ] {
                             if ui.add_enabled(enabled, egui::Button::new(label)).clicked() {
@@ -2097,56 +2526,117 @@ impl MakerUi {
                         }
                     });
                 });
+                ui.separator();
+                ui.horizontal(|ui| {
+                    // Keyboard focus belongs to the project rail, not the graph or text editors.
+                    // Clicking a tab opts into Left/Right navigation until focus moves elsewhere.
+                    let rail_focus_id = ui.make_persistent_id("maker_project_tab_keyboard_focus");
+                    let rail_focused = ui.memory(|memory| memory.has_focus(rail_focus_id));
+                    if rail_focused && has_active_project && requested_tab.is_none() {
+                        let direction = ui.input(|input| {
+                            if input.key_pressed(egui::Key::ArrowLeft) { -1_i32 }
+                            else if input.key_pressed(egui::Key::ArrowRight) { 1_i32 }
+                            else { 0_i32 }
+                        });
+                        if direction != 0 {
+                            let next = if direction < 0 {
+                                active_tab_index.checked_sub(1)
+                            } else if active_tab_index + 1 < tab_labels.len() {
+                                Some(active_tab_index + 1)
+                            } else { None };
+                            if let Some(index) = next {
+                                // A grayed-out Thumbnail is not part of tab_labels.
+                                requested_tab = Some(index);
+                            }
+                        }
+                    }
+                    // Fixed left-hand slot: never participates in horizontal scrolling.
+                    if let Some(index) = thumbnail_tab_index {
+                        if ui.selectable_label(index == active_tab_index, "Thumbnail").clicked() {
+                            requested_tab = Some(index);
+                            ui.memory_mut(|memory| memory.request_focus(rail_focus_id));
+                        }
+                    } else {
+                        ui.add_enabled(false, egui::SelectableLabel::new(false, "Thumbnail"));
+                    }
+                    ui.separator();
+                    // The scroll area clips the ordinary tabs but never paints a scrollbar
+                    // over their labels. Arrow buttons navigate the same scroll offset.
+                    let rail_width = (ui.available_width() - 78.0).max(48.0);
+                    let step = 140.0_f32;
+                    let left = ui.add_enabled(*project_tab_scroll_x > 0.5, egui::Button::new("◀"))
+                        .on_hover_text("Scroll project tabs left");
+                    if left.clicked() {
+                        *project_tab_scroll_x = (*project_tab_scroll_x - step).max(0.0);
+                    }
+                    let mut max_scroll = 0.0_f32;
+                    ui.allocate_ui_with_layout(
+                        egui::vec2(rail_width, ui.spacing().interact_size.y),
+                        egui::Layout::left_to_right(egui::Align::Center),
+                        |ui| {
+                            let output = egui::ScrollArea::horizontal()
+                                .id_source("maker_project_tab_scroll")
+                                .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
+                                .horizontal_scroll_offset(*project_tab_scroll_x)
+                                .auto_shrink([false, false])
+                                .show(ui, |ui| {
+                                    ui.horizontal(|ui| {
+                                        for (index, label) in tab_labels.iter().enumerate() {
+                                            if Some(index) == thumbnail_tab_index { continue; }
+                                            let title = if label.is_empty() { "Untitled" } else { label.as_str() };
+                                            let response = ui.selectable_label(index == active_tab_index, title);
+                                            if response.clicked() {
+                                                requested_tab = Some(index);
+                                                ui.memory_mut(|memory| memory.request_focus(rail_focus_id));
+                                            }
+                                            if index == active_tab_index && !ui.clip_rect().contains_rect(response.rect) {
+                                                response.scroll_to_me(Some(egui::Align::Center));
+                                            }
+                                        }
+                                        if !has_active_project { ui.label("No project open"); }
+                                    });
+                                });
+                            max_scroll = (output.content_size.x - output.inner_rect.width()).max(0.0);
+                            *project_tab_scroll_x = output.state.offset.x.clamp(0.0, max_scroll);
+                        },
+                    );
+                    if ui.add_enabled(*project_tab_scroll_x < max_scroll - 0.5, egui::Button::new("▶"))
+                        .on_hover_text("Scroll project tabs right").clicked() {
+                        *project_tab_scroll_x = (*project_tab_scroll_x + step).min(max_scroll);
+                    }
+                    if ui.small_button("+").on_hover_text("New Project Tab").clicked() {
+                        requested_new_tab = true;
+                    }
+                });
                 // While the confirmation is open, do not accept a second command.
                 if unsaved_action.is_some(){command=None;}
                 // Only graph-replacing or closing operations need the unsaved-work guard.
                 // Compare persisted graph data, not revision counters (which also change
                 // for transient operations and do not reliably represent file changes).
                 if let Some(action)=command {
-                    let destructive=matches!(action,"new"|"open"|"close"|"exit"|"clear") || action.starts_with("recent_");
+                    let destructive=matches!(action,"close"|"exit"|"clear") || action.starts_with("recent_");
                     let approved=*discard_approved==Some(action);
                     if approved {*discard_approved=None;}
-                    if destructive && !approved && serde_json::json!(crate::maker::graph_to_wire(graph))!=*saved_graph_snapshot {
+                    if destructive && !approved && !*thumbnail_workspace && serde_json::json!(crate::maker::graph_to_wire(graph))!=*saved_graph_snapshot {
                         *unsaved_action=Some(action);
                         command=None;
                     }
                 }
                 match command {
-                    Some("new") | Some("close")=>{
-                        let closing=command==Some("close");
-                        let revision=graph.revision;*graph=Graph::blank();graph.revision=revision.wrapping_add(1);
-                        *preview_active=!closing;
-                        *project_name="Untitled".into();*project_path=None;*project_dialog=None;
-                        *selected=None;*parameter_popup=None;*pending=None;*dragging_wire=None;
-                        routes.clear();routing_undo.clear();routing_redo.clear();orphan_undo.clear();orphan_redo.clear();*orphan_restore_pending=false;
-                        candidates.clear();*candidate_epoch=candidate_epoch.wrapping_add(1);candidate_jobs.clear();*connection_search=None;
-                        *candidate_base=None;candidate_undo.clear();*candidate_selected=None;
-                        *pending_zoom_to_fit=true;*status=if closing {"Project closed".into()} else {"New project created".into()};
-                        *saved_graph_snapshot=serde_json::json!(crate::maker::graph_to_wire(graph));
-                    }
+                    Some("new")=>{requested_new_tab=true;}
+                    Some("close_all")=>{requested_start_close_all=true;}
+                    Some("close")=>{requested_close_tab=true;}
                     Some("open")=>*project_dialog=Some(MakerProjectBrowser::open(false,None,"Untitled")),
                     Some(action) if action.starts_with("recent_")=>{
                         if let Some(index)=action.strip_prefix("recent_").and_then(|n|n.parse::<usize>().ok()){
                             if let Some(path)=recent_projects.get(index).cloned(){
                                 match maker_load_project(&path){
-                                    Ok(mut loaded)=>{
-                                        loaded.revision=graph.revision.wrapping_add(1);
-                                        *graph=loaded;
-                                        *preview_active=true;
-                                        *selected=None;*parameter_popup=None;*pending=None;*dragging_wire=None;
-                                        routes.clear();routing_undo.clear();routing_redo.clear();orphan_undo.clear();orphan_redo.clear();*orphan_restore_pending=false;
-                                        candidates.clear();*candidate_epoch=candidate_epoch.wrapping_add(1);
-                                        candidate_jobs.clear();*connection_search=None;*candidate_base=None;
-                                        candidate_undo.clear();*candidate_selected=None;
-                                        pinpoint_next.clear();*pinpoint_target=None;*pinpoint_pulse=None;
-                                        *pending_zoom_to_fit=true;
-                                        *project_name=path.file_stem().and_then(|s|s.to_str()).unwrap_or("Untitled").to_owned();
-                                        *project_path=Some(path.clone());*project_dialog=None;
-                                        *saved_graph_snapshot=serde_json::json!(crate::maker::graph_to_wire(graph));
-                                        *status=format!("Opened project {}",path.display());
+                                    Ok(loaded)=>{
+                                        requested_open_project=Some((path.clone(),loaded));
+                                        *status=format!("Opening recent project {}",path.display());
                                         match maker_record_recent_project(&path){
                                             Ok(updated)=>*recent_projects=updated,
-                                            Err(e)=>*status=format!("Opened project {}, but recent-project history could not be saved: {e}",path.display()),
+                                            Err(e)=>*status=format!("Opened project, but recent history update failed: {e}"),
                                         }
                                     }
                                     Err(e)=>*status=format!("Unable to open recent project {}: {e}",path.display()),
@@ -2154,18 +2644,30 @@ impl MakerUi {
                             }
                         }
                     }
-                    Some("save_as")=>*project_dialog=Some(MakerProjectBrowser::open(true,None,project_name)),
+                    Some("save_as")=>*project_dialog=Some(MakerProjectBrowser::open(true,None,thumbnail_hash.as_deref().unwrap_or(project_name))),
                     Some("save")=>{
                         if let Some(path)=project_path.clone(){
                             match maker_save_project(graph,&path){
                                 Ok(())=>{
                                     *saved_graph_snapshot=serde_json::json!(crate::maker::graph_to_wire(graph));
+                                    *thumbnail_workspace=false;
+                                    *thumbnail_hash=None;
                                     *status=format!("Saved project {}",path.display());
                                     if let Some(action)=after_save_action.take(){*pending_menu_command=Some(action);}
                                 },
-                                Err(e)=>{*after_save_action=None;*status=format!("Save failed: {e}")},
+                                Err(e)=>{if *after_save_action==Some("close_all") {*close_all_running=false;} *after_save_action=None;*status=format!("Save failed: {e}")},
                             }
-                        }else{*project_dialog=Some(MakerProjectBrowser::open(true,None,project_name));}
+                        }else{*project_dialog=Some(MakerProjectBrowser::open(true,None,thumbnail_hash.as_deref().unwrap_or(project_name)));}
+                    }
+                    Some("export_glsl_clipboard")=>{
+                        match crate::maker_compiler::fragment_source(graph) {
+                            Ok(source)=>{
+                                *pending_clipboard=Some(source);
+                                *pending_clipboard_is_glsl=true;
+                                *status="Copying active project GLSL to clipboard".into();
+                            }
+                            Err(e)=>*status=format!("GLSL generation failed: {e}"),
+                        }
                     }
                     Some("export_glsl")=>{
                         let default_dir=std::env::var_os("HOME")
@@ -2402,12 +2904,10 @@ impl MakerUi {
                             .text(format!("Evaluated: {} · rejected: {} · retained: {}",*candidate_evaluated,*candidate_rejections,candidates.len())));
                         ui.small(format!("GLSL-capable: {} / {} · rejected: {} uniform · {} GLSL · {} render",*candidate_glsl_capable,*max_candidates,*candidate_uniform,*candidate_glsl_errors,*candidate_render_errors));
                     }
-                    if ui.add_enabled(!candidate_undo.is_empty(),egui::Button::new("Undo candidate selection")).clicked(){
-                        if let Some(mut previous)=candidate_undo.pop(){previous.revision=graph.revision+1;*graph=previous;*candidate_selected=None;}
-                    }
                     if !candidate_notice.is_empty(){ui.small(candidate_notice.as_str());}
-                    ui.label(format!("{} visible · {} pending",candidates.iter().filter(|c|!c.dismissed && c.connection_candidate==(*candidate_mode==2)).count(),candidate_jobs.len()));
-                    if ui.button("Restore dismissed").clicked(){for c in candidates.iter_mut(){c.dismissed=false;}}
+                    ui.label(format!("{} visible · {} pending",
+                        candidates.iter().filter(|c|c.connection_candidate==(*candidate_mode==2)).count(),
+                        candidate_jobs.len()));
                     if let Some(report)=analysis.as_ref(){
                         ui.separator();ui.strong(format!("Analysis: {}",report.name));
                         let report_text=report.lines.join("\n");
@@ -2426,7 +2926,7 @@ impl MakerUi {
                         }
                         for index in display_order {
                             let candidate=&mut candidates[index];
-                            if candidate.dismissed || candidate.connection_candidate!=(*candidate_mode==2){continue}
+                            if candidate.connection_candidate!=(*candidate_mode==2){continue}
                             ui.push_id(("maker_candidate_card", index), |ui| {
                             ui.group(|ui|{
                                 // Allocate the image and its hit target together in the
@@ -2456,34 +2956,34 @@ impl MakerUi {
                                         ui.painter().line_segment([r.left_bottom(),r.left_top()],egui::Stroke::new(1.0,border));
                                     }
                                 }
-                                if thumbnail_response.clicked(){
-                                    let previous=graph.clone();
-                                    // Apply atomically: if the candidate cannot be applied, the
-                                    // cleaned graph remains unchanged. Never restore a stale graph
-                                    // after an unrelated edit has already changed its revision.
-                                    let restoring=*orphan_restore_pending;
-                                    let mut proposed=if restoring {
-                                        orphan_undo.last().cloned().unwrap_or_else(||graph.clone())
-                                    } else {graph.clone()};
-                                    let applied=if candidate.connection_candidate {
-                                        match candidate_base.as_ref() {
-                                            Some(base)=>apply_connection_candidate(&mut proposed,candidate,base),
-                                            None=>Err("Discovery snapshot missing".into()),
+                                // Single-click loads the candidate into the one reusable
+                                // Thumbnail tab. Do not modify the source project in-place.
+                                if thumbnail_response.clicked() {
+                                    *candidate_selected=Some(index);
+                                    if let Some(base)=candidate_base.as_ref() {
+                                        let mut proposed=base.clone();
+                                        let result=if candidate.connection_candidate {
+                                            proposed.connections.clear();
+                                            let mut result=Ok(());
+                                            for c in &candidate.connections {
+                                                if let Err(error)=proposed.connect(c.from,c.from_port,c.to,c.to_port) {
+                                                    result=Err(error);break;
+                                                }
+                                            }
+                                            result
+                                        } else {
+                                            for node in &mut proposed.nodes {
+                                                if let Some(parameters)=candidate.parameters.get(&node.id) {
+                                                    node.parameters=parameters.clone();
+                                                }
+                                            }
+                                            Ok(())
+                                        };
+                                        match result {
+                                            Ok(())=>requested_candidate_tab=Some(proposed),
+                                            Err(error)=>*status=format!("Cannot open thumbnail: {error}"),
                                         }
-                                    } else {apply_candidate(&mut proposed,candidate)};
-                                    match applied {
-                                        Ok(())=>{
-                                            proposed.revision=graph.revision.wrapping_add(1);
-                                            *graph=proposed;
-                                            candidate_undo.push(previous);
-                                            routes.clear();routing_undo.clear();routing_redo.clear();
-                                            *pending=None;*dragging_wire=None;
-                                            if restoring {*orphan_restore_pending=false;orphan_undo.pop();}
-                                            *candidate_selected=Some(index);
-                                            *status=if restoring {format!("Restored pre-removal graph and applied {}",candidate.name)} else {format!("Applied {}",candidate.name)};
-                                        },
-                                        Err(e)=>*status=e,
-                                    }
+                                    } else {*status="Discovery snapshot missing".into();}
                                 }
                                 ui.small(&candidate.name);
                                 if candidate.connection_candidate && *candidate_sort!=6 {
@@ -2508,14 +3008,7 @@ impl MakerUi {
                                     },candidate_score(candidate,*candidate_sort)*100.0));
                                 }
                                 ui.horizontal(|ui|{
-                                    if ui.small_button(if candidate.favorite{"★ Saved"}else{"☆ Favorite"}).clicked(){candidate.favorite=!candidate.favorite;}
                                     if ui.small_button("Analyze").clicked(){*analysis_request=Some(index);*analysis=None;}
-                                    if ui.small_button("Dismiss").clicked(){candidate.dismissed=true;}
-                                });
-                                // Second row deliberately avoids widening the Inspector dock.
-                                ui.horizontal(|ui|{
-                                    if ui.small_button("Copy GLSL").clicked(){*pending_glsl_export=Some((index,false));}
-                                    if ui.small_button("Save GLSL").clicked(){*pending_glsl_export=Some((index,true));}
                                 });
                             });
                             }); // Stable candidate-specific egui ID scope.
@@ -2531,7 +3024,10 @@ impl MakerUi {
                             
                         }
                     }
-                    if ui.button("Delete selected node").clicked(){match graph.remove(id){Ok(())=>{*selected=None;*pending=None;*status=format!("Deleted node #{id}")},Err(e)=>*status=e}}
+                    // The required Output Color terminal cannot be removed.
+                    if graph.node(id).is_some_and(|node| !node.definition().terminal) {
+                        if ui.button("Remove selected module").clicked(){match graph.remove(id){Ok(())=>{*selected=None;*pending=None;*status=format!("Removed module #{id}")},Err(e)=>*status=e}}
+                    }
                 }else{ui.label("Select a node to edit its parameters.");}
                 ui.separator();ui.label("Graph status");
                 match graph.validate(){Ok(())=>{ui.small("Typed connections valid; no cycles");},Err(e)=>{ui.colored_label(egui::Color32::LIGHT_RED,e);}}
@@ -2711,6 +3207,7 @@ impl MakerUi {
                 let mut module_boxes:BTreeMap<NodeId,Box2>=BTreeMap::new();
                 let mut active_node_drag=false;
                 let ids:Vec<NodeId>=graph.nodes.iter().map(|n|n.id).collect();
+                let mut context_remove_node: Option<NodeId> = None;
                 for id in ids{
                     // Copy the immutable node fields before entering the UI closure.
                     // The closure also needs mutable access to the graph.
@@ -2719,7 +3216,7 @@ impl MakerUi {
                     let pos = node.pos;
                     let expanded = node.expanded;
                     let area=egui::Area::new(egui::Id::new(("maker_node",id)))
-                        .order(egui::Order::Middle).movable(false)
+                        .order(egui::Order::Background).movable(false)
                         // Graph nodes may travel beyond the viewport when scrolling.
                         // Area's default screen constraint otherwise pins offscreen
                         // rows to the upper screen edge, stacking them together.
@@ -2844,6 +3341,17 @@ impl MakerUi {
                                 }
                             });
                         });
+                    // The module's context menu is separate from its drag, port,
+                    // and parameter interactions. Defer mutation until all nodes
+                    // have been rendered so iteration and connector layout remain valid.
+                    if !module.terminal {
+                        area.response.context_menu(|ui| {
+                            if ui.button("Remove Module").clicked() {
+                                context_remove_node = Some(id);
+                                ui.close_menu();
+                            }
+                        });
+                    }
                     if let Some((pulse_id, started)) = pinpoint_pulse.as_ref() {
                         if *pulse_id == id {
                             let elapsed = started.elapsed().as_secs_f32();
@@ -2900,6 +3408,18 @@ impl MakerUi {
                     // child controls and wiring ports retain their own interactions.
                     if area.response.clicked() && *parameter_popup == Some(id) {
                         *parameter_popup = None;
+                    }
+                }
+                if let Some(id) = context_remove_node {
+                    match graph.remove(id) {
+                        Ok(()) => {
+                            if *selected == Some(id) { *selected = None; }
+                            if *parameter_popup == Some(id) { *parameter_popup = None; }
+                            *pending = None;
+                            *dragging_wire = None;
+                            *status = format!("Removed module #{id}");
+                        }
+                        Err(error) => *status = error,
                     }
                 }
                 // Resolve a wire drop after collecting all port rectangles. This also
@@ -3154,6 +3674,7 @@ impl MakerUi {
                 // This foreground Area is paint-only (no allocated interactive widgets),
                 // so the original port hit rectangles remain responsible for wiring.
                 // The parameter editor is created after this pass and remains above it.
+                if project_dialog.is_none() {
                 egui::Area::new(egui::Id::new("maker_connector_overlay"))
                     .order(egui::Order::Foreground)
                     .fixed_pos(canvas.min)
@@ -3186,6 +3707,7 @@ impl MakerUi {
                             }
                         }
                     });
+                }
                 // Edge-triggered auto-pan during an actual node-header drag.
                 // Move the viewport and the dragged node by equal screen-space
                 // amounts: the node stays under the pointer without jumping.
@@ -3292,6 +3814,14 @@ impl MakerUi {
                     workspace_min[1],workspace_max[1]);
                 ui.allocate_rect(available,egui::Sense::hover());
             });
+            // Keep the header above graph node Areas in the SAME Background
+            // order as egui panels. Previously nodes were Middle-order Areas:
+            // moving a Background-order header to the top of Middle order
+            // cannot fix pointer interception across different orders.
+            // Graph Areas remain clipped to the canvas and non-interactable
+            // whenever the pointer is outside the canvas.
+            ctx.move_to_top(egui::LayerId::new(
+                egui::Order::Background, egui::Id::new("maker_header")));
             // Module-attached editor is a foreground Area, not a Popup. Its
             // lifetime is independent of nested color-picker popups.
             // The contents are only interactive while the editor is open.
@@ -3366,6 +3896,14 @@ impl MakerUi {
         if graph.nodes.iter().any(|n|old_parameters.iter().find(|(id,_)|*id==n.id).is_some_and(|(_,p)|*p!=n.parameters)){graph.revision+=1;}
         let shapes=self.context.tessellate(output.shapes,output.pixels_per_point);
         self.painter.paint_and_update_textures([dw,dh],output.pixels_per_point,&shapes,&output.textures_delta);
+        if saved_thumbnail_this_frame { self.move_saved_thumbnail_to_end(); }
+        if requested_start_close_all {self.close_all_running=true;}
+        if let Some(graph)=requested_candidate_tab {self.show_candidate_thumbnail(graph);}
+        else if requested_close_tab {self.close_active_project_tab();}
+        else if let Some((path,graph))=requested_open_project {self.open_project_in_tab(path,graph);}
+        else if requested_new_tab {self.create_project_tab();}
+        else if let Some(index)=requested_tab {self.switch_project_tab(index);}
+        self.advance_close_all();
         self.open
     }
     pub fn destroy(&mut self){self.painter.destroy();}

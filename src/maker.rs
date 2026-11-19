@@ -387,7 +387,7 @@ pub fn run()->Result<(),String>{
                     }
                     match reply {
                         WorkerReply::Candidate{epoch,job,result}=>{
-                            if epoch==ui.candidate_epoch() {
+                            ui.with_candidate_epoch(epoch, |ui| {
                                 match result {
                                     Ok(Some(pixels))=>{ui.candidate_glsl_capable();ui.receive_candidate(job,pixels,192,108)},
                                     Ok(None)=>{ui.candidate_glsl_capable();ui.candidate_rejected_uniform()},
@@ -400,13 +400,13 @@ pub fn run()->Result<(),String>{
                                         ui.candidate_rejected_render();
                                     }
                                 }
-                            }
+                            });
                         }
                         WorkerReply::Motion{epoch,index,result}=>{
-                            if epoch==ui.candidate_epoch(){ui.receive_motion_score(index,result)}
+                            ui.with_candidate_epoch(epoch,|ui|ui.receive_motion_score(index,result));
                         }
                         WorkerReply::Analysis{epoch,index,result}=>{
-                            if epoch==ui.candidate_epoch(){ui.receive_analysis(index,result)}
+                            ui.with_candidate_epoch(epoch,|ui|ui.receive_analysis(index,result));
                         }
                         WorkerReply::Interrupted{request,error}=>{
                             eprintln!("[MAKER WORKER] request interrupted; quarantining request: {error}");
@@ -414,9 +414,9 @@ pub fn run()->Result<(),String>{
                             {
                                 eprintln!("[MAKER WORKER] abandoning interrupted request without replay");
                                 match request {
-                                    WorkerRequest::Candidate{epoch,..} if epoch==ui.candidate_epoch()=>ui.candidate_rejected_render(),
-                                    WorkerRequest::Motion{epoch,index,..} if epoch==ui.candidate_epoch()=>ui.receive_motion_score(index,Err("Worker resource limit or timeout exceeded".into())),
-                                    WorkerRequest::Analysis{epoch,index,name,..} if epoch==ui.candidate_epoch()=>ui.receive_analysis(index,CandidateAnalysis{name,lines:vec!["Worker resource limit or timeout exceeded".into()]}),
+                                    WorkerRequest::Candidate{epoch,..}=>{ui.with_candidate_epoch(epoch,|ui|ui.candidate_rejected_render());},
+                                    WorkerRequest::Motion{epoch,index,..}=>{ui.with_candidate_epoch(epoch,|ui|ui.receive_motion_score(index,Err("Worker resource limit or timeout exceeded".into())));},
+                                    WorkerRequest::Analysis{epoch,index,name,..}=>{ui.with_candidate_epoch(epoch,|ui|ui.receive_analysis(index,CandidateAnalysis{name,lines:vec!["Worker resource limit or timeout exceeded".into()]}));},
                                     _=>{}
                                 }
                             }
@@ -454,7 +454,7 @@ pub fn run()->Result<(),String>{
             let epoch=ui.candidate_epoch();
             if retry_request.as_ref().is_some_and(|r|match r {
                 WorkerRequest::Candidate{epoch:e,..}|WorkerRequest::Motion{epoch:e,..}|
-                WorkerRequest::Analysis{epoch:e,..}=>*e!=epoch
+                WorkerRequest::Analysis{epoch:e,..}=>!ui.contains_candidate_epoch(*e)
             }) { retry_request=None; }
             let request=if let Some(retry)=retry_request.take(){Some(retry)}
             else if let Some((index,graph,name))=ui.next_analysis_job(){
