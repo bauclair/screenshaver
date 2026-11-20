@@ -3360,7 +3360,7 @@ impl MakerUi {
                                         input_ports.insert((id,row), center);
                                         input_hit_rects.insert((id,row), hit);
                                         let color = port_color(ty);
-                                        // Connector disk is drawn once in the foreground at the measured outer sidewall.
+                                        // Connector disk is painted on this node's own layer after its frame.
                                         ui.painter().text(center + egui::vec2(11.0* *canvas_zoom, 0.0), egui::Align2::LEFT_CENTER,
                                             name, egui::TextStyle::Small.resolve(ui.style()), ui.visuals().text_color());
                                         let response = response.on_hover_text(port_hint(graph,id,row,*pending,*dragging_wire));
@@ -3383,7 +3383,7 @@ impl MakerUi {
                                         let hit = egui::Rect::from_center_size(center, egui::vec2(22.0* *canvas_zoom, 22.0* *canvas_zoom));
                                         let response = ui.interact(hit, ui.id().with((id, "output", row)), egui::Sense::click_and_drag());
                                         output_ports.insert((id,row),center);
-                                        // Connector disk is drawn once in the foreground at the measured outer sidewall.
+                                        // Connector disk is painted on this node's own layer after its frame.
                                         ui.painter().text(center - egui::vec2(11.0* *canvas_zoom,0.0), egui::Align2::RIGHT_CENTER,
                                             name, egui::TextStyle::Small.resolve(ui.style()),ui.visuals().text_color());
                                         let response = response.on_hover_text(format!(
@@ -3403,6 +3403,29 @@ impl MakerUi {
                                     }
                                 }
                             });
+                            // Paint connectors on their owning node's Middle layer.
+                            // Later/topmost node Areas therefore occlude connectors
+                            // belonging to nodes behind them.
+                            for (&(owner, row), &center) in &input_ports {
+                                if owner != id { continue; }
+                                if let Some(port) = module.inputs.get(row) {
+                                    ui.painter().circle_filled(center, 5.0, port_color(&port.ty));
+                                }
+                            }
+                            for (&(owner, row), &center) in &output_ports {
+                                if owner != id { continue; }
+                                if let Some(port) = module.outputs.get(row) {
+                                    ui.painter().circle_filled(center, 5.0, port_color(&port.ty));
+                                }
+                            }
+                            if let Some((from, from_port)) = (*dragging_wire).or(*pending) {
+                                for (&(owner, to_port), &center) in &input_ports {
+                                    if owner != id { continue; }
+                                    let compatible = graph.check_connection(from, from_port, id, to_port).is_ok();
+                                    let color = if compatible { egui::Color32::GREEN } else { egui::Color32::RED };
+                                    ui.painter().circle_stroke(center, 10.0, egui::Stroke::new(1.5, color));
+                                }
+                            }
                         });
                     // The module's context menu is separate from its drag, port,
                     // and parameter interactions. Defer mutation until all nodes
@@ -3732,44 +3755,6 @@ impl MakerUi {
                             egui::Stroke::new(2.5, egui::Color32::from_rgb(255, 196, 92)),
                         ));
                     }
-                }
-                // Draw connector indicators after all node windows and connection lines.
-                // This foreground Area is paint-only (no allocated interactive widgets),
-                // so the original port hit rectangles remain responsible for wiring.
-                // The parameter editor is created after this pass and remains above it.
-                if project_dialog.is_none() {
-                egui::Area::new(egui::Id::new("maker_connector_overlay"))
-                    .order(egui::Order::Foreground)
-                    .fixed_pos(canvas.min)
-                    .interactable(false)
-                    .show(ctx, |overlay_ui| {
-                        overlay_ui.set_clip_rect(overlay_ui.clip_rect().intersect(canvas));
-                        let overlay = overlay_ui.painter();
-                        // Repaint the actual connector disks in the foreground so
-                        // their protruding halves are never covered by node frames.
-                        for (&(id, row), &center) in &input_ports {
-                            if let Some(node) = graph.node(id) {
-                                if let Some(port) = node.definition().inputs.get(row) {
-                                    overlay.circle_filled(center, 5.0, port_color(&port.ty));
-                                }
-                            }
-                        }
-                        for (&(id, row), &center) in &output_ports {
-                            if let Some(node) = graph.node(id) {
-                                if let Some(port) = node.definition().outputs.get(row) {
-                                    overlay.circle_filled(center, 5.0, port_color(&port.ty));
-                                }
-                            }
-                        }
-                        // Green/red availability rings share the same foreground pass.
-                        if let Some((from, from_port)) = (*dragging_wire).or(*pending) {
-                            for (&(to, to_port), &center) in &input_ports {
-                                let compatible = graph.check_connection(from, from_port, to, to_port).is_ok();
-                                let color = if compatible { egui::Color32::GREEN } else { egui::Color32::RED };
-                                overlay.circle_stroke(center, 10.0, egui::Stroke::new(1.5, color));
-                            }
-                        }
-                    });
                 }
                 // Edge-triggered auto-pan during an actual node-header drag.
                 // Move the viewport and the dragged node by equal screen-space
