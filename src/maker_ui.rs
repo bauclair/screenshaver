@@ -3315,7 +3315,7 @@ impl MakerUi {
                                     egui::Align2::LEFT_CENTER,display_title,title_font,
                                     egui::Color32::WHITE);
                                 let header_response=header_response.on_hover_text(
-                                    format!("{}\nDrag title bar to move the module",title)
+                                    format!("{}\nCreated by: {}\nDrag title bar to move the module",title,module.created_by)
                                 );
                                 if header_response.clicked() {
                                     *selected=Some(id);
@@ -3940,7 +3940,11 @@ impl MakerUi {
                                         .max_height((visible_height - 64.0).max(24.0))
                                         .show(ui, |ui| {
                                             if *parameter_popup == Some(id) {
-                                                if let Some(node) = graph.node_mut(id) { edit_parameters(ui, node); }
+                                                let exploration = graph.connections.iter().any(|c| {
+                                                    (c.from == id && graph.node(c.to).is_some_and(|n| n.module_id == "screenshaver.test.universal_test")) ||
+                                                    (c.to == id && graph.node(c.from).is_some_and(|n| n.module_id == "screenshaver.test.universal_test"))
+                                                }) && graph.node(id).is_some_and(|n| n.module_id != "screenshaver.test.universal_test");
+                                                if let Some(node) = graph.node_mut(id) { edit_parameters(ui, node, exploration); }
                                             }
                                         });
                                 });
@@ -3968,9 +3972,10 @@ impl MakerUi {
     }
     pub fn destroy(&mut self){self.painter.destroy();}
 }
-fn edit_parameters(ui:&mut egui::Ui,node:&mut crate::maker_graph::Node){
+fn edit_parameters(ui:&mut egui::Ui,node:&mut crate::maker_graph::Node,exploration:bool){
     let module=node.definition();
     if module.parameters.is_empty(){ui.small(module.description.as_str());}
+    if exploration {ui.small("Test exploration: expanded numeric range (3×), Shift for fine adjustment.");}
     for p in &module.parameters {
         let Some(value)=node.parameters.get_mut(&p.id) else {continue};
         match p.ty.as_str(){
@@ -3991,6 +3996,9 @@ fn edit_parameters(ui:&mut egui::Ui,node:&mut crate::maker_graph::Node){
                 // Match Control Center's draw_fine_slider: one authoritative
                 // pointer-driven value calculation, with Shift = 10x finer.
                 let previous=value.as_f64().unwrap_or(0.0) as f32;
+                let span=(p.max-p.min).max(0.0);
+                let low=if exploration && p.min<0.0 {p.min-span} else {p.min};
+                let high=if exploration {p.max+2.0*span} else {p.max};
                 ui.label(&p.name);
                 let desired_size=egui::vec2(ui.available_width().max(80.0),ui.spacing().interact_size.y);
                 let (rect,response)=ui.allocate_exact_size(desired_size,egui::Sense::click_and_drag());
@@ -4015,20 +4023,20 @@ fn edit_parameters(ui:&mut egui::Ui,node:&mut crate::maker_graph::Node){
                             }
                             let sensitivity=if shift {0.1} else {1.0};
                             next=(anchor+(pos.x-anchor_x)/rect.width().max(1.0)
-                                *(p.max-p.min)*sensitivity).clamp(p.min,p.max);
+                                *(high-low)*sensitivity).clamp(low,high);
                             ui.ctx().data_mut(|d|d.insert_temp(state_id,(anchor,anchor_x,was_shift)));
                         }
                     }
                 } else if response.clicked() {
                     if let Some(pos)=pointer {
                         let fraction=((pos.x-rect.left())/rect.width().max(1.0)).clamp(0.0,1.0);
-                        next=p.min+fraction*(p.max-p.min);
+                        next=low+fraction*(high-low);
                     }
                 } else {
                     ui.ctx().data_mut(|d|d.remove::<(f32,f32,bool)>(state_id));
                 }
                 if (next-previous).abs()>f32::EPSILON {*value=serde_json::json!(next);}
-                let fraction=((next-p.min)/(p.max-p.min).max(f32::EPSILON)).clamp(0.0,1.0);
+                let fraction=((next-low)/(high-low).max(f32::EPSILON)).clamp(0.0,1.0);
                 let visuals=if response.dragged(){&ui.visuals().widgets.active}
                     else if response.hovered(){&ui.visuals().widgets.hovered}
                     else {&ui.visuals().widgets.inactive};

@@ -109,6 +109,7 @@ impl Graph {
   if from==to{return Err("A node cannot connect to itself".into())}
   let a=self.node(from).ok_or("Source node missing")?.definition();let b=self.node(to).ok_or("Target node missing")?.definition();
   let ap=a.outputs.get(from_port).ok_or("Source port missing")?;let bp=b.inputs.get(to_port).ok_or("Target port missing")?;
+  if a.id=="screenshaver.test.universal_test" && ap.id=="preview_color" && !b.terminal {return Err("Preview Color connects only to Output Color".into())}
   if ap.ty!=bp.ty{return Err(format!("{} output '{}' ({}) cannot connect to {} input '{}' ({}): incompatible types",a.name,ap.name,ap.ty,b.name,bp.name,bp.ty))}
   if self.reaches(to,from,&mut HashSet::new()){return Err("Connection would create a circular dependency".into())}
   Ok(())
@@ -128,6 +129,7 @@ impl Graph {
   for c in &self.connections{
    let a=self.node(c.from).ok_or("Dangling source")?.definition();let b=self.node(c.to).ok_or("Dangling target")?.definition();
    let at=a.outputs.get(c.from_port).ok_or("Bad output port")?;let bt=b.inputs.get(c.to_port).ok_or("Bad input port")?;
+   if a.id=="screenshaver.test.universal_test" && at.id=="preview_color" && !b.terminal{return Err("Preview Color connects only to Output Color".into())}
    if at.ty!=bt.ty{return Err("Invalid connection types".into())}
    if !dest.insert((c.to,c.to_port)){return Err("Multiple sources for an input".into())}
   }

@@ -1,11 +1,24 @@
 //! Graph-to-GLSL compiler. Module code comes from validated JSON definitions.
 use crate::maker_graph::{Graph,NodeId};
 use std::collections::{HashMap,HashSet};
+/// Restrict untrusted module metadata to a single safe GLSL comment line.
+fn attribution_text(value:&str)->String{
+ let normalized=value.replace("*/", "* /");
+ normalized.chars().map(|ch|if ch.is_control(){' '}else{ch}).collect()
+}
 pub fn fragment_source(graph:&Graph)->Result<String,String>{
  graph.validate_renderable()?;
  let reachable=graph.output_reachable_ids();
  let out=graph.nodes.iter().find(|n|n.definition().terminal).ok_or("Missing output")?;
- let mut src=String::from("#version 330 core\nout vec4 fragColor;\nuniform vec2 u_resolution;\nuniform float u_time;\n");
+ // Keep #version first; include each contributing module instance and the terminal.
+ let mut src=String::from("#version 330 core\n/*\n * Created using Screenshaver Maker\n * Maker modules used to create this shader:\n");
+ for node in graph.nodes.iter().filter(|node|reachable.contains(&node.id)) {
+  let module=node.definition();
+  let name=attribution_text(&module.name);
+  let creator=attribution_text(&module.created_by);
+  src.push_str(&format!(" * {name} — Created by: {creator}\n"));
+ }
+ src.push_str(" */\nout vec4 fragColor;\nuniform vec2 u_resolution;\nuniform float u_time;\n");
  let mut emitted=HashSet::new();let mut helpers=HashSet::new();
   // Uniforms precede helpers because callable traversal functions read node parameters.
   for n in graph.nodes.iter().filter(|n|reachable.contains(&n.id)){for p in &n.definition().parameters{
@@ -223,6 +236,24 @@ fn substitute(template:&str,bindings:&std::collections::HashMap<String,String>)-
  }
  Ok(result)
 }
+// Select the first connected diagnostic input in a fixed priority order.
+// No calibration parameters or runtime switching are required.
+fn universal_preview_expression(graph:&Graph,id:NodeId)->String {
+ for port in [3usize,2,1,0,4] {
+  if graph.input_connection(id,port).is_some() {
+   let c=graph.input_connection(id,port).expect("connected diagnostic input");
+   let value=format!("v{}_p{}",c.from,c.from_port);
+   return match port {
+    3 => value,
+    2 => format!("clamp(0.5+0.5*({value}),0.0,1.0)"),
+    1 => format!("clamp(vec3(0.5+0.5*({value}),0.5),0.0,1.0)"),
+    0 => format!("vec3(clamp({value},0.0,1.0))"),
+    _ => format!("maker_universal_signed({value})"),
+   };
+  }
+ }
+ "maker_universal_color(maker_uv)".into()
+}
 fn emit(graph:&Graph,id:NodeId,emitted:&mut HashSet<NodeId>,src:&mut String)->Result<(),String>{
  if emitted.contains(&id){return Ok(())}
  let node=graph.node(id).ok_or("Missing upstream node")?;let m=node.definition();
@@ -246,7 +277,7 @@ fn emit(graph:&Graph,id:NodeId,emitted:&mut HashSet<NodeId>,src:&mut String)->Re
   emitted.insert(id);return Ok(());
  }
  for (port,output) in m.outputs.iter().enumerate(){
-  let expression=if m.id=="screenshaver.fields.traversal" && graph.input_connection(id,0).is_some(){format!("maker_traverse_connected_{}({},{},{},{},{})",id,vars["position"],vars["depth"],vars["density"],vars["speed"],vars["mode"])}else{substitute(&m.glsl_outputs[port],&vars)?};
+  let expression=if m.id=="screenshaver.test.universal_test" && output.id=="preview_color" { universal_preview_expression(graph,id) } else if m.id=="screenshaver.fields.traversal" && graph.input_connection(id,0).is_some(){format!("maker_traverse_connected_{}({},{},{},{},{})",id,vars["position"],vars["depth"],vars["density"],vars["speed"],vars["mode"])}else{substitute(&m.glsl_outputs[port],&vars)?};
   src.push_str(&format!("  {} v{}_p{}={};\n",output.ty,id,port,expression));
  }
  emitted.insert(id);Ok(())

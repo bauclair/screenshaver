@@ -9,6 +9,7 @@ impl Library {
  fn load()->Self{
     let mut result=Self{modules:BTreeMap::new(),categories:BTreeMap::new(),errors:Vec::new(),catalog_fingerprint:0xcbf29ce484222325};
     let official=[
+      ("test/universal_test.smmod",include_str!("../assets/maker/modules/test/universal_test.smmod")),
       ("test/reference_signal.smmod",include_str!("../assets/maker/modules/test/reference_signal.smmod")),
       ("test/reference_color.smmod",include_str!("../assets/maker/modules/test/reference_color.smmod")),
       ("test/reference_distance.smmod",include_str!("../assets/maker/modules/test/reference_distance.smmod")),

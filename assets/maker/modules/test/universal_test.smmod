@@ -1,0 +1,94 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.test.universal_test",
+  "name": "Universal Test",
+  "category": "Test",
+  "created_by": "Screenshaver",
+  "header_color": "#537D89",
+  "description": "Parameter-free fixed reference source and diagnostic result display. Use separate source and display instances to avoid graph cycles.",
+  "uses": "Connect fixed typed references to the target; connect target outputs to the matching result inputs on a second Universal Test; connect its Preview Color output to Output Color. Adjust only the target.",
+  "notes": "No controls. Scalar reference is a stationary 0..1 sine across X; UV and position are fixed screen coordinates; color is a fixed RGB gradient; distance is a sphere SDF. Preview prioritizes connected Color, Vector 3D, Vector 2D, Scalar, Distance in that order. When no result input is connected, Preview Color displays the reference pattern. Signed vectors are mapped to RGB around 0.5; distance uses signed blue/orange. Graph cycles are prohibited; use two instances.",
+  "inputs": [
+    {
+      "id": "scalar",
+      "name": "Scalar Result",
+      "type": "float",
+      "default": "0.0"
+    },
+    {
+      "id": "vector2",
+      "name": "Vector 2D Result",
+      "type": "vec2",
+      "default": "vec2(0.0)"
+    },
+    {
+      "id": "vector3",
+      "name": "Vector 3D Result",
+      "type": "vec3",
+      "default": "vec3(0.0)"
+    },
+    {
+      "id": "color",
+      "name": "Color Result",
+      "type": "vec3",
+      "default": "vec3(0.0)",
+      "semantic_role": "color"
+    },
+    {
+      "id": "distance",
+      "name": "Distance Result",
+      "type": "float",
+      "default": "0.0",
+      "semantic_role": "distance"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "scalar_ref",
+      "name": "Scalar Reference",
+      "type": "float",
+      "semantic_role": "intensity"
+    },
+    {
+      "id": "uv_ref",
+      "name": "UV Reference",
+      "type": "vec2",
+      "semantic_role": "uv"
+    },
+    {
+      "id": "position_ref",
+      "name": "3D Position Reference",
+      "type": "vec3",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "color_ref",
+      "name": "Color Reference",
+      "type": "vec3",
+      "semantic_role": "color"
+    },
+    {
+      "id": "distance_ref",
+      "name": "Distance Reference",
+      "type": "float",
+      "semantic_role": "distance"
+    },
+    {
+      "id": "preview_color",
+      "name": "Preview Color \u2192 Output Color",
+      "type": "vec3",
+      "semantic_role": "color"
+    }
+  ],
+  "parameters": [],
+  "helpers": "float maker_universal_scalar(vec2 uv){return 0.5+0.5*sin(uv.x*12.566370614359172);}\nvec3 maker_universal_color(vec2 uv){return vec3(clamp(uv.x+0.5,0.0,1.0),clamp(uv.y+0.5,0.0,1.0),maker_universal_scalar(uv));}\nvec3 maker_universal_signed(float v){return v<0.0?vec3(0.05,0.18,0.65)*clamp(-v,0.0,1.0):vec3(0.95,0.48,0.07)*clamp(v,0.0,1.0);}",
+  "glsl_outputs": {
+    "scalar_ref": "maker_universal_scalar(maker_uv)",
+    "uv_ref": "maker_uv",
+    "position_ref": "vec3(maker_uv,0.0)",
+    "color_ref": "maker_universal_color(maker_uv)",
+    "distance_ref": "length(vec3(maker_uv,0.0)-vec3(0.0,0.0,1.0))-0.65",
+    "preview_color": "maker_universal_color(maker_uv)"
+  },
+  "terminal": false
+}
