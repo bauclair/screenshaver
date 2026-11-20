@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "created_by": "Screenshaver",
+  "terminal": false,
+  "id": "screenshaver.coordinates.organic_coordinate_mutation_3d",
+  "name": "Organic Coordinate Mutation 3D",
+  "category": "Coordinates",
+  "header_color": "#627FC2",
+  "description": "Warps a 3D position using coupled, time-varying trigonometric displacements.",
+  "uses": "Organic deformation of implicit surfaces, lattices and procedural volumes.",
+  "notes": "Independent coordinate-domain deformation; does not reproduce Biomine source expressions. Input and output remain 3D positions.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "semantic_role": "position3d",
+      "default": "vec3(maker_uv,0.0)"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "mutated",
+      "name": "Mutated Position",
+      "type": "vec3",
+      "semantic_role": "position3d"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "strength",
+      "name": "Strength",
+      "type": "float",
+      "default": 0.25,
+      "min": 0,
+      "max": 2
+    },
+    {
+      "id": "frequency",
+      "name": "Frequency",
+      "type": "float",
+      "default": 3,
+      "min": 0.1,
+      "max": 20
+    },
+    {
+      "id": "speed",
+      "name": "Animation Speed",
+      "type": "float",
+      "default": 0.3,
+      "min": -5,
+      "max": 5
+    },
+    {
+      "id": "phase",
+      "name": "Phase",
+      "type": "float",
+      "default": 0,
+      "min": -6.283,
+      "max": 6.283
+    }
+  ],
+  "helpers": "vec3 maker_bio_mutate(vec3 p,float strength,float frequency,float speed,float phase){\n vec3 q=p*max(frequency,0.001);float t=u_time*speed+phase;\n vec3 w=vec3(sin(q.y+0.61*q.z+t),sin(q.z-0.73*q.x+0.8*t),sin(q.x+0.47*q.y-0.6*t));\n return p+strength*w;\n}",
+  "glsl": "maker_bio_mutate({position},{strength},{frequency},{speed},{phase})"
+}

@@ -1,0 +1,73 @@
+{
+  "schema_version": 1,
+  "created_by": "Screenshaver",
+  "terminal": false,
+  "id": "screenshaver.geometry.gyroid_surface_field_3d",
+  "name": "Gyroid Surface Field 3D",
+  "category": "Geometry",
+  "header_color": "#557C9C",
+  "description": "Evaluates a periodic gyroid implicit field and an adjustable shell response.",
+  "uses": "Porous lattices, biomorphic surfaces, tunnels and periodic geometry.",
+  "notes": "Independent standard trigonometric implicit surface. Field is not a signed-distance estimate; use appropriate distance bounds when ray marching. Biomine credits third-party techniques and has no identified license.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "semantic_role": "position3d",
+      "default": "vec3(maker_uv,0.0)"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "field",
+      "name": "Implicit Field",
+      "type": "float"
+    },
+    {
+      "id": "shell",
+      "name": "Shell Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "frequency",
+      "name": "Frequency",
+      "type": "float",
+      "default": 3,
+      "min": 0.1,
+      "max": 20
+    },
+    {
+      "id": "level",
+      "name": "Iso Level",
+      "type": "float",
+      "default": 0,
+      "min": -2,
+      "max": 2
+    },
+    {
+      "id": "thickness",
+      "name": "Shell Thickness",
+      "type": "float",
+      "default": 0.2,
+      "min": 0.001,
+      "max": 2
+    },
+    {
+      "id": "speed",
+      "name": "Animation Speed",
+      "type": "float",
+      "default": 0,
+      "min": -5,
+      "max": 5
+    }
+  ],
+  "helpers": "float maker_bio_gyroid(vec3 p,float freq,float level,float speed){\n vec3 q=p*max(freq,0.001)+vec3(0.0,0.0,u_time*speed);\n return (sin(q.x)*cos(q.y)+sin(q.y)*cos(q.z)+sin(q.z)*cos(q.x))/1.5-level;\n}\nfloat maker_bio_gyroid_shell(vec3 p,float freq,float level,float thickness,float speed){\n float f=abs(maker_bio_gyroid(p,freq,level,speed));\n float t=max(thickness,0.001);\n return 1.0-smoothstep(t*0.5,t,f);\n}",
+  "glsl_outputs": {
+    "field": "maker_bio_gyroid({position},{frequency},{level},{speed})",
+    "shell": "maker_bio_gyroid_shell({position},{frequency},{level},{thickness},{speed})"
+  }
+}

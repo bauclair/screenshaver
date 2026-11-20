@@ -1,0 +1,73 @@
+{
+  "schema_version": 1,
+  "created_by": "Screenshaver",
+  "terminal": false,
+  "id": "screenshaver.fields.second_order_cellular_field_3d",
+  "name": "Second-Order Cellular Field 3D",
+  "category": "Fields",
+  "header_color": "#348F8B",
+  "description": "Computes nearest and second-nearest 3D feature distances from a deterministic jittered cubic lattice.",
+  "uses": "Cell interiors, borders, bevel-like patterns, mineral and organic surface detail.",
+  "notes": "Independent F1/F2 lattice-neighbor search, distinct from existing 3D Cellular Tile Field (which measures cubic tile edges). A procedural alternative inspired by general cellular mathematics, not a copy of Biomine cellular expressions.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "semantic_role": "position3d",
+      "default": "vec3(maker_uv,0.0)"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "nearest",
+      "name": "Nearest Distance",
+      "type": "float",
+      "semantic_role": "distance"
+    },
+    {
+      "id": "second",
+      "name": "Second Distance",
+      "type": "float",
+      "semantic_role": "distance"
+    },
+    {
+      "id": "boundary",
+      "name": "Boundary Difference",
+      "type": "float",
+      "semantic_role": "mask"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "scale",
+      "name": "Cell Density",
+      "type": "float",
+      "default": 4,
+      "min": 0.1,
+      "max": 20
+    },
+    {
+      "id": "jitter",
+      "name": "Site Jitter",
+      "type": "float",
+      "default": 0.65,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "edge_width",
+      "name": "Boundary Width",
+      "type": "float",
+      "default": 0.2,
+      "min": 0.001,
+      "max": 1
+    }
+  ],
+  "helpers": "vec3 maker_bio_site(vec3 cell){\n return fract(sin(vec3(dot(cell,vec3(127.1,311.7,74.7)),dot(cell,vec3(269.5,183.3,246.1)),dot(cell,vec3(113.5,271.9,124.6))))*43758.5453);\n}\nvec2 maker_bio_cell_f12(vec3 p,float scale,float jitter){\n vec3 q=p*max(scale,0.001);vec3 cell=floor(q);vec3 f=fract(q);\n float first=1e8;float second=1e8;\n for(int z=-1;z<=1;z++)for(int y=-1;y<=1;y++)for(int x=-1;x<=1;x++){\n  vec3 o=vec3(float(x),float(y),float(z));\n  vec3 site=o+vec3(0.5)+max(0.0,min(jitter,1.0))*(maker_bio_site(cell+o)-vec3(0.5));\n  float d=length(site-f);\n  if(d<first){second=first;first=d;}else if(d<second){second=d;}\n }\n return vec2(first,second);\n}\nfloat maker_bio_cell_border(vec3 p,float scale,float jitter,float edgeWidth){\n vec2 f=maker_bio_cell_f12(p,scale,jitter);\n return 1.0-smoothstep(0.0,max(edgeWidth,0.001),f.y-f.x);\n}",
+  "glsl_outputs": {
+    "nearest": "maker_bio_cell_f12({position},{scale},{jitter}).x",
+    "second": "maker_bio_cell_f12({position},{scale},{jitter}).y",
+    "boundary": "maker_bio_cell_border({position},{scale},{jitter},{edge_width})"
+  }
+}

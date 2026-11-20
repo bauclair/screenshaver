@@ -1,0 +1,81 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.iterative_spiral_field",
+  "name": "Iterative Spiral Field",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "header_color": "#348F8B",
+  "description": "Accumulates bounded harmonic rings over iteratively rotated and scaled 2D coordinates.",
+  "uses": "Abstract spiral textures, animated radial interference and iterative fields.",
+  "notes": "Independent bounded polar harmonic accumulation; does not reproduce Aurora_xL iteration expressions. Source Aurora_xL credits Old Salt for xLights optimization and conversion and cites GLSL Sandbox e#58544.0; license not established.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "position2d"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "field",
+      "name": "Spiral Field",
+      "type": "float",
+      "semantic_role": "intensity"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "iterations",
+      "name": "Iterations",
+      "type": "float",
+      "default": 12,
+      "min": 1,
+      "max": 32
+    },
+    {
+      "id": "rotation",
+      "name": "Rotation Per Step",
+      "type": "float",
+      "default": 0.45,
+      "min": -3.14159,
+      "max": 3.14159
+    },
+    {
+      "id": "radial_scale",
+      "name": "Radial Scale",
+      "type": "float",
+      "default": 1.12,
+      "min": 0.5,
+      "max": 2
+    },
+    {
+      "id": "frequency",
+      "name": "Wave Frequency",
+      "type": "float",
+      "default": 4,
+      "min": 0.1,
+      "max": 20
+    },
+    {
+      "id": "decay",
+      "name": "Accumulation Decay",
+      "type": "float",
+      "default": 0.85,
+      "min": 0.1,
+      "max": 1
+    },
+    {
+      "id": "speed",
+      "name": "Animation Speed",
+      "type": "float",
+      "default": 0.25,
+      "min": -5,
+      "max": 5
+    }
+  ],
+  "helpers": "float maker_aurora_spiral(vec2 p,float iterations,float rotation,float radial_scale,float frequency,float decay,float speed){int count=int(clamp(floor(iterations+0.5),1.0,32.0));float radius=length(p);float angle=atan(p.y,p.x);float sum=0.0;float total=0.0;float weight=1.0;float scale=1.0;float shrink=clamp(decay,0.1,1.0);float step_scale=clamp(radial_scale,0.5,2.0);for(int i=0;i<32;i++){if(i>=count)break;float a=angle+float(i)*rotation;float r=radius*scale;float wave=0.5+0.5*cos(6.28318530718*frequency*r+2.0*sin(a*3.0+u_time*speed));sum+=weight*wave;total+=weight;weight*=shrink;scale*=step_scale;}return clamp(sum/max(total,0.00001),0.0,1.0);}",
+  "glsl": "maker_aurora_spiral({position},{iterations},{rotation},{radial_scale},{frequency},{decay},{speed})",
+  "terminal": false
+}

@@ -1,0 +1,98 @@
+{
+  "schema_version": 1,
+  "created_by": "Screenshaver",
+  "terminal": false,
+  "id": "screenshaver.coordinates.sinusoidal_tunnel_path_3d",
+  "name": "Sinusoidal Tunnel Path 3D",
+  "category": "Coordinates",
+  "header_color": "#627FC2",
+  "description": "Bends 3D positions along an independently configurable two-axis sinusoidal centerline.",
+  "uses": "Curved procedural tunnels, winding volumetric structures and camera-path coordinate offsets.",
+  "notes": "Independent implementation of a general sinusoidal path technique. The warped position subtracts the path offset; the path offset output can be added to camera or object positions. No textures or channel inputs required.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "semantic_role": "position3d",
+      "default": "vec3(maker_uv,0.0)"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "warped",
+      "name": "Warped Position",
+      "type": "vec3",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "offset",
+      "name": "Path Offset",
+      "type": "vec2",
+      "semantic_role": "offset2d"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "horizontal_amplitude",
+      "name": "Horizontal Amplitude",
+      "type": "float",
+      "default": 2.5,
+      "min": -12,
+      "max": 12
+    },
+    {
+      "id": "vertical_amplitude",
+      "name": "Vertical Amplitude",
+      "type": "float",
+      "default": 1.8,
+      "min": -12,
+      "max": 12
+    },
+    {
+      "id": "horizontal_frequency",
+      "name": "Horizontal Frequency",
+      "type": "float",
+      "default": 0.11,
+      "min": 0,
+      "max": 3
+    },
+    {
+      "id": "vertical_frequency",
+      "name": "Vertical Frequency",
+      "type": "float",
+      "default": 0.14,
+      "min": 0,
+      "max": 3
+    },
+    {
+      "id": "horizontal_phase",
+      "name": "Horizontal Phase",
+      "type": "float",
+      "default": 0,
+      "min": -6.283,
+      "max": 6.283
+    },
+    {
+      "id": "vertical_phase",
+      "name": "Vertical Phase",
+      "type": "float",
+      "default": 1.5708,
+      "min": -6.283,
+      "max": 6.283
+    },
+    {
+      "id": "speed",
+      "name": "Animation Speed",
+      "type": "float",
+      "default": 0,
+      "min": -5,
+      "max": 5
+    }
+  ],
+  "helpers": "vec2 maker_sinusoidal_tunnel_offset(vec3 p,float ax,float ay,float fx,float fy,float phx,float phy,float speed){\n float t=u_time*speed;\n return vec2(ax*sin(p.z*fx+phx+t),ay*sin(p.z*fy+phy+t));\n}\nvec3 maker_sinusoidal_tunnel_warp(vec3 p,float ax,float ay,float fx,float fy,float phx,float phy,float speed){\n vec2 d=maker_sinusoidal_tunnel_offset(p,ax,ay,fx,fy,phx,phy,speed);\n return vec3(p.xy-d,p.z);\n}",
+  "glsl_outputs": {
+    "warped": "maker_sinusoidal_tunnel_warp({position},{horizontal_amplitude},{vertical_amplitude},{horizontal_frequency},{vertical_frequency},{horizontal_phase},{vertical_phase},{speed})",
+    "offset": "maker_sinusoidal_tunnel_offset({position},{horizontal_amplitude},{vertical_amplitude},{horizontal_frequency},{vertical_frequency},{horizontal_phase},{vertical_phase},{speed})"
+  }
+}

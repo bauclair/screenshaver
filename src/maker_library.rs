@@ -18,6 +18,8 @@ impl Library {
       ("coordinates/uv_coordinates.smmod",include_str!("../assets/maker/modules/coordinates/uv_coordinates.smmod")),
       ("coordinates/spherical_direction.smmod",include_str!("../assets/maker/modules/coordinates/spherical_direction.smmod")),
       ("coordinates/log_polar_mapping.smmod",include_str!("../assets/maker/modules/coordinates/log_polar_mapping.smmod")),
+      ("fields/sinusoidal_ribbon_field.smmod",include_str!("../assets/maker/modules/fields/sinusoidal_ribbon_field.smmod")),
+      ("fields/iterative_spiral_field.smmod",include_str!("../assets/maker/modules/fields/iterative_spiral_field.smmod")),
       ("fields/iterative_radial_field.smmod",include_str!("../assets/maker/modules/fields/iterative_radial_field.smmod")),
       ("noise/value_noise_2d.smmod",include_str!("../assets/maker/modules/noise/value_noise_2d.smmod")),
       ("math/multiply.smmod",include_str!("../assets/maker/modules/math/multiply.smmod")),
@@ -96,6 +98,13 @@ impl Library {
       ("coordinates/multi_scale_flow_warp.smmod",include_str!("../assets/maker/modules/coordinates/multi_scale_flow_warp.smmod")),
       ("coordinates/tunnel_wall_uv_mapping.smmod",include_str!("../assets/maker/modules/coordinates/tunnel_wall_uv_mapping.smmod")),
       ("lighting/lattice_crossing_highlight.smmod",include_str!("../assets/maker/modules/lighting/lattice_crossing_highlight.smmod")),
+      ("geometry/gyroid_surface_field_3d.smmod",include_str!("../assets/maker/modules/geometry/gyroid_surface_field_3d.smmod")),
+      ("fields/second_order_cellular_field_3d.smmod",include_str!("../assets/maker/modules/fields/second_order_cellular_field_3d.smmod")),
+      ("coordinates/organic_coordinate_mutation_3d.smmod",include_str!("../assets/maker/modules/coordinates/organic_coordinate_mutation_3d.smmod")),
+      ("coordinates/sinusoidal_tunnel_path_3d.smmod",include_str!("../assets/maker/modules/coordinates/sinusoidal_tunnel_path_3d.smmod")),
+      ("coordinates/iterative_inversion_fold_3d.smmod",include_str!("../assets/maker/modules/coordinates/iterative_inversion_fold_3d.smmod")),
+      ("fields/fractal_orbit_variation_field.smmod",include_str!("../assets/maker/modules/fields/fractal_orbit_variation_field.smmod")),
+      ("coordinates/periodic_mirror_tile_3d.smmod",include_str!("../assets/maker/modules/coordinates/periodic_mirror_tile_3d.smmod")),
     ];
     for (path,src) in official {result.register(path,src,Trust::Official)}
     if let Some(home)=std::env::var_os("HOME"){

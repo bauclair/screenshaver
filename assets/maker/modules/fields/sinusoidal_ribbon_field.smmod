@@ -1,0 +1,81 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.sinusoidal_ribbon_field",
+  "name": "Sinusoidal Ribbon Field",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "header_color": "#348F8B",
+  "description": "Generates a soft ribbon around an animated sinusoidal centerline in 2D.",
+  "uses": "Animated wave ribbons, light trails and procedural band masks.",
+  "notes": "Original independent implementation of a general sinusoidal distance-to-curve mask; no GLSL expressions copied from Aurora_xL.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "position2d"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "mask",
+      "name": "Ribbon Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "amplitude",
+      "name": "Amplitude",
+      "type": "float",
+      "default": 0.24,
+      "min": 0,
+      "max": 2
+    },
+    {
+      "id": "frequency",
+      "name": "Frequency",
+      "type": "float",
+      "default": 2,
+      "min": 0.1,
+      "max": 20
+    },
+    {
+      "id": "width",
+      "name": "Ribbon Half Width",
+      "type": "float",
+      "default": 0.065,
+      "min": 0.001,
+      "max": 1
+    },
+    {
+      "id": "softness",
+      "name": "Edge Softness",
+      "type": "float",
+      "default": 0.045,
+      "min": 0.001,
+      "max": 1
+    },
+    {
+      "id": "speed",
+      "name": "Animation Speed",
+      "type": "float",
+      "default": 0.35,
+      "min": -5,
+      "max": 5
+    },
+    {
+      "id": "phase",
+      "name": "Phase",
+      "type": "float",
+      "default": 0,
+      "min": -6.2832,
+      "max": 6.2832
+    }
+  ],
+  "helpers": "float maker_aurora_ribbon(vec2 p,float amp,float freq,float width,float softness,float speed,float phase){float center=amp*sin(6.28318530718*freq*p.x+phase+u_time*speed);float delta=abs(p.y-center);float inner=max(width,0.00001);float outer=inner+max(softness,0.00001);return 1.0-smoothstep(inner,outer,delta);}",
+  "glsl": "maker_aurora_ribbon({position},{amplitude},{frequency},{width},{softness},{speed},{phase})",
+  "terminal": false
+}
