@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.animation.easing_curve",
+  "name": "Easing Curve",
+  "category": "Animation",
+  "created_by": "Screenshaver",
+  "description": "Remaps a normalized scalar through selectable easing curves.",
+  "uses": "Smooth parameter transitions, controlled acceleration, and motion shaping.",
+  "notes": "Input is clamped to 0..1. Modes: linear, smoothstep, smootherstep, ease-in quadratic, ease-out quadratic, ease-in-out quadratic.",
+  "header_color": "#B477C7",
+  "inputs": [
+    {
+      "id": "progress",
+      "name": "Progress",
+      "type": "float",
+      "default": "maker_uv.x"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "eased",
+      "name": "Eased Value",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "mode",
+      "name": "Curve",
+      "type": "choice",
+      "default": 2,
+      "min": 0,
+      "max": 5,
+      "options": [
+        "Linear",
+        "Smoothstep",
+        "Smootherstep",
+        "Ease In Quad",
+        "Ease Out Quad",
+        "Ease In Out Quad"
+      ]
+    }
+  ],
+  "helpers": "float maker_anim_ease(float x,float mode){\n x=clamp(x,0.0,1.0);\n if(mode<0.5)return x;\n if(mode<1.5)return x*x*(3.0-2.0*x);\n if(mode<2.5)return x*x*x*(x*(x*6.0-15.0)+10.0);\n if(mode<3.5)return x*x;\n if(mode<4.5)return x*(2.0-x);\n return x<0.5?2.0*x*x:1.0-2.0*(1.0-x)*(1.0-x);\n}",
+  "terminal": false,
+  "glsl": "maker_anim_ease({progress},{mode})"
+}

@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.compositing.masked_color_blend",
+  "name": "Masked Color Blend",
+  "category": "Compositing",
+  "created_by": "Screenshaver",
+  "description": "Mixes two RGB colors using a scalar mask and adjustable influence.",
+  "uses": "Layering independently generated colors, masked transitions, and color composition.",
+  "notes": "The mask and influence are clamped to 0..1. No texture sampling is performed.",
+  "header_color": "#429F91",
+  "inputs": [
+    {
+      "id": "color_a",
+      "name": "Color A",
+      "type": "vec3",
+      "default": "vec3(0.1,0.2,0.8)",
+      "semantic_role": "color"
+    },
+    {
+      "id": "color_b",
+      "name": "Color B",
+      "type": "vec3",
+      "default": "vec3(1.0,0.3,0.1)",
+      "semantic_role": "color"
+    },
+    {
+      "id": "mask",
+      "name": "Mask",
+      "type": "float",
+      "default": "maker_uv.x",
+      "semantic_role": "mask"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "color",
+      "name": "Blended Color",
+      "type": "vec3",
+      "default": "color"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "influence",
+      "name": "Mask Influence",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 1
+    }
+  ],
+  "helpers": "",
+  "terminal": false,
+  "glsl": "mix({color_a},{color_b},clamp({mask}*{influence},0.0,1.0))"
+}

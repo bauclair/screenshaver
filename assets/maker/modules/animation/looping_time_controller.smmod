@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.animation.looping_time_controller",
+  "name": "Looping Time Controller",
+  "category": "Animation",
+  "created_by": "Screenshaver",
+  "description": "Converts continuous time to a stable repeating cycle.",
+  "uses": "Looped procedural animation, synchronization, and cycle-based sequencing.",
+  "notes": "Duration is in seconds and is clamped away from zero. Cycle Time is expressed in seconds; Progress ranges from 0 to 1.",
+  "header_color": "#B477C7",
+  "inputs": [
+    {
+      "id": "time",
+      "name": "Time",
+      "type": "float",
+      "default": "u_time",
+      "semantic_role": "time"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "cycle_time",
+      "name": "Cycle Time",
+      "type": "float",
+      "default": "time"
+    },
+    {
+      "id": "progress",
+      "name": "Cycle Progress",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "duration",
+      "name": "Duration",
+      "type": "float",
+      "default": 4,
+      "min": 0.01,
+      "max": 120
+    },
+    {
+      "id": "speed",
+      "name": "Playback Speed",
+      "type": "float",
+      "default": 1,
+      "min": -8,
+      "max": 8
+    },
+    {
+      "id": "offset",
+      "name": "Time Offset",
+      "type": "float",
+      "default": 0,
+      "min": -120,
+      "max": 120
+    }
+  ],
+  "helpers": "",
+  "terminal": false,
+  "glsl_outputs": {
+    "cycle_time": "fract((({time}*{speed})+{offset})/max({duration},0.001))*max({duration},0.001)",
+    "progress": "fract((({time}*{speed})+{offset})/max({duration},0.001))"
+  }
+}

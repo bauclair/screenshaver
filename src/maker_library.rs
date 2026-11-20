@@ -10,11 +10,6 @@ impl Library {
     let mut result=Self{modules:BTreeMap::new(),categories:BTreeMap::new(),errors:Vec::new(),catalog_fingerprint:0xcbf29ce484222325};
     let official=[
       ("test/universal_test.smmod",include_str!("../assets/maker/modules/test/universal_test.smmod")),
-      ("test/reference_signal.smmod",include_str!("../assets/maker/modules/test/reference_signal.smmod")),
-      ("test/reference_color.smmod",include_str!("../assets/maker/modules/test/reference_color.smmod")),
-      ("test/reference_distance.smmod",include_str!("../assets/maker/modules/test/reference_distance.smmod")),
-      ("test/scalar_display.smmod",include_str!("../assets/maker/modules/test/scalar_display.smmod")),
-      ("test/vector_display.smmod",include_str!("../assets/maker/modules/test/vector_display.smmod")),
       ("coordinates/uv_coordinates.smmod",include_str!("../assets/maker/modules/coordinates/uv_coordinates.smmod")),
       ("coordinates/spherical_direction.smmod",include_str!("../assets/maker/modules/coordinates/spherical_direction.smmod")),
       ("coordinates/log_polar_mapping.smmod",include_str!("../assets/maker/modules/coordinates/log_polar_mapping.smmod")),
@@ -44,7 +39,6 @@ impl Library {
       ("fields/sdf_raymarch.smmod",include_str!("../assets/maker/modules/fields/sdf_raymarch.smmod")),
       ("lighting/directional_light.smmod",include_str!("../assets/maker/modules/lighting/directional_light.smmod")),
       ("lighting/fresnel_rim.smmod",include_str!("../assets/maker/modules/lighting/fresnel_rim.smmod")),
-      ("color/contour_shading.smmod",include_str!("../assets/maker/modules/color/contour_shading.smmod")),
       ("lighting/ambient_occlusion_shading.smmod",include_str!("../assets/maker/modules/lighting/ambient_occlusion_shading.smmod")),
       ("lighting/curvature_shading.smmod",include_str!("../assets/maker/modules/lighting/curvature_shading.smmod")),
       ("lighting/ray_glow.smmod",include_str!("../assets/maker/modules/lighting/ray_glow.smmod")),
@@ -105,6 +99,12 @@ impl Library {
       ("coordinates/iterative_inversion_fold_3d.smmod",include_str!("../assets/maker/modules/coordinates/iterative_inversion_fold_3d.smmod")),
       ("fields/fractal_orbit_variation_field.smmod",include_str!("../assets/maker/modules/fields/fractal_orbit_variation_field.smmod")),
       ("coordinates/periodic_mirror_tile_3d.smmod",include_str!("../assets/maker/modules/coordinates/periodic_mirror_tile_3d.smmod")),
+      ("animation/ping_pong_oscillator.smmod",include_str!("../assets/maker/modules/animation/ping_pong_oscillator.smmod")),
+      ("animation/looping_time_controller.smmod",include_str!("../assets/maker/modules/animation/looping_time_controller.smmod")),
+      ("animation/easing_curve.smmod",include_str!("../assets/maker/modules/animation/easing_curve.smmod")),
+      ("compositing/masked_color_blend.smmod",include_str!("../assets/maker/modules/compositing/masked_color_blend.smmod")),
+      ("compositing/screen_color_blend.smmod",include_str!("../assets/maker/modules/compositing/screen_color_blend.smmod")),
+      ("compositing/scalar_field_compositor.smmod",include_str!("../assets/maker/modules/compositing/scalar_field_compositor.smmod")),
     ];
     for (path,src) in official {result.register(path,src,Trust::Official)}
     if let Some(home)=std::env::var_os("HOME"){

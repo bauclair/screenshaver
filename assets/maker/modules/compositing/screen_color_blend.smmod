@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.compositing.screen_color_blend",
+  "name": "Screen Color Blend",
+  "category": "Compositing",
+  "created_by": "Screenshaver",
+  "description": "Combines RGB colors using the screen blend operation.",
+  "uses": "Luminous color layering and bright overlapping effects.",
+  "notes": "Color channels are clamped to 0..1 before screening; the resulting color is clamped to 0..1. Strength blends between A and the screened result.",
+  "header_color": "#429F91",
+  "inputs": [
+    {
+      "id": "color_a",
+      "name": "Color A",
+      "type": "vec3",
+      "default": "vec3(0.1,0.2,0.8)",
+      "semantic_role": "color"
+    },
+    {
+      "id": "color_b",
+      "name": "Color B",
+      "type": "vec3",
+      "default": "vec3(0.9,0.4,0.1)",
+      "semantic_role": "color"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "color",
+      "name": "Screened Color",
+      "type": "vec3",
+      "default": "color"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "strength",
+      "name": "Blend Strength",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 1
+    }
+  ],
+  "helpers": "",
+  "terminal": false,
+  "glsl": "mix(clamp({color_a},0.0,1.0),vec3(1.0)-(vec3(1.0)-clamp({color_a},0.0,1.0))*(vec3(1.0)-clamp({color_b},0.0,1.0)),clamp({strength},0.0,1.0))"
+}

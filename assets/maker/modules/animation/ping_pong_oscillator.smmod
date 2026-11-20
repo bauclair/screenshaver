@@ -1,0 +1,80 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.animation.ping_pong_oscillator",
+  "name": "Ping-Pong Oscillator",
+  "category": "Animation",
+  "created_by": "Screenshaver",
+  "description": "Linearly oscillates between two limits, with an optional smooth turnaround.",
+  "uses": "Back-and-forth motion, parameter modulation, and looping intensity changes.",
+  "notes": "Time input is in seconds. Frequency is complete round trips per second. Smoothness 0 gives a triangular wave; 1 gives eased reversals.",
+  "header_color": "#B477C7",
+  "inputs": [
+    {
+      "id": "time",
+      "name": "Time",
+      "type": "float",
+      "default": "u_time",
+      "semantic_role": "time"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "value",
+      "name": "Value",
+      "type": "float"
+    },
+    {
+      "id": "phase",
+      "name": "Normalized Phase",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "minimum",
+      "name": "Minimum",
+      "type": "float",
+      "default": 0,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "maximum",
+      "name": "Maximum",
+      "type": "float",
+      "default": 1,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "frequency",
+      "name": "Frequency",
+      "type": "float",
+      "default": 0.5,
+      "min": 0,
+      "max": 20
+    },
+    {
+      "id": "offset",
+      "name": "Phase Offset",
+      "type": "float",
+      "default": 0,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "smoothness",
+      "name": "Turnaround Smoothness",
+      "type": "float",
+      "default": 0,
+      "min": 0,
+      "max": 1
+    }
+  ],
+  "helpers": "float maker_anim_pingpong(float t,float lo,float hi,float frequency,float offset,float smoothness){\n float phase=fract(t*max(frequency,0.0)+offset);\n float triangle=1.0-abs(2.0*phase-1.0);\n float eased=triangle*triangle*(3.0-2.0*triangle);\n return mix(lo,hi,mix(triangle,eased,clamp(smoothness,0.0,1.0)));\n}",
+  "terminal": false,
+  "glsl_outputs": {
+    "value": "maker_anim_pingpong({time},{minimum},{maximum},{frequency},{offset},{smoothness})",
+    "phase": "fract({time}*max({frequency},0.0)+{offset})"
+  }
+}

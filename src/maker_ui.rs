@@ -1199,7 +1199,7 @@ impl MakerProjectTab {
             workspace_max: [2000.0,2000.0],
             routing_undo: Vec::new(),
             routing_redo: Vec::new(),
-            candidate_mode: 0,
+            candidate_mode: 2,
             candidate_sort: 0,
             max_wire_connections: max_wire_connections,
             min_wire_connections: min_wire_connections,
@@ -1577,7 +1577,7 @@ impl MakerUi {
             modifiers:egui::Modifiers::default(),start:Instant::now(),graph,project_name:"Untitled".into(),thumbnail_workspace:false,thumbnail_hash:None,project_dialog:None,glsl_export_dialog:None,project_path:None,recent_projects,saved_graph_snapshot,unsaved_action:None,after_save_action:None,discard_approved:None,selected,parameter_popup:None,pending_source:None,dragging_wire:None,
             status:"Click an output port, then a compatible input port".into(),menu_icon,open:true,
             preview_rect:egui::Rect::from_min_size(egui::pos2(210.0,600.0),egui::vec2(950.0,210.0)),
-            preview_height:maker_saved_preview_height(),preview_active:true,routes:Routes::new(),canvas_pan:egui::Vec2::ZERO,canvas_zoom:1.0,pending_zoom:None,pending_zoom_to_fit:false,pending_menu_command:None,canvas_rect:egui::Rect::NOTHING,pinpoint_next:HashMap::new(),pinpoint_target:None,pinpoint_pulse:None,pinpoint_boxes:BTreeMap::new(),workspace_min:[-1000.0,-1000.0],workspace_max:[2000.0,2000.0],routing_undo:Vec::new(),routing_redo:Vec::new(),candidate_mode:0,candidate_sort:0,max_wire_connections:saved_max_wires,min_wire_connections:saved_min_wires,max_enumerations:saved_max_enumerations,max_candidates:saved_max_candidates,
+            preview_height:maker_saved_preview_height(),preview_active:true,routes:Routes::new(),canvas_pan:egui::Vec2::ZERO,canvas_zoom:1.0,pending_zoom:None,pending_zoom_to_fit:false,pending_menu_command:None,canvas_rect:egui::Rect::NOTHING,pinpoint_next:HashMap::new(),pinpoint_target:None,pinpoint_pulse:None,pinpoint_boxes:BTreeMap::new(),workspace_min:[-1000.0,-1000.0],workspace_max:[2000.0,2000.0],routing_undo:Vec::new(),routing_redo:Vec::new(),candidate_mode:2,candidate_sort:0,max_wire_connections:saved_max_wires,min_wire_connections:saved_min_wires,max_enumerations:saved_max_enumerations,max_candidates:saved_max_candidates,
             candidates:Vec::new(),candidate_jobs:Vec::new(),candidate_epoch:0,candidate_base:None,
             candidate_selected:None,candidate_undo:Vec::new(),orphan_undo:Vec::new(),orphan_redo:Vec::new(),delete_project_confirm:false,orphan_restore_pending:false,candidate_notice:String::new(),library_expanded:HashMap::new(),connection_search:None,reset_enumeration_confirm:false,candidate_evaluated:0,candidate_glsl_capable:0,candidate_rejections:0,candidate_uniform:0,candidate_glsl_errors:0,candidate_render_errors:0,analysis_request:None,analysis:None,pending_clipboard:None,pending_clipboard_is_glsl:false,pending_glsl_export:None})
     }
@@ -2198,9 +2198,18 @@ impl MakerUi {
                 ui.heading("Screenshaver Maker");
                 ui.label(egui::RichText::new("Module Library").heading());
                 ui.separator();
-                if ui.button("+ Add All").on_hover_text("Add one instance of every nonterminal module without connecting wires").clicked(){
+                ui.horizontal(|ui|{
+                    ui.small(format!("{} modules", maker_library::get().modules.len()));
+                    // Bulk addition excludes Universal Test and never duplicates modules
+                    // already represented in the graph. Availability follows graph state.
                     let modules:Vec<String>=maker_library::get().modules.values()
-                        .filter(|m|!m.terminal).map(|m|m.id.clone()).collect();
+                        .filter(|m|!m.terminal && m.id!="screenshaver.test.universal_test")
+                        .filter(|m|!graph.nodes.iter().any(|n|n.module_id==m.id))
+                        .map(|m|m.id.clone()).collect();
+                    let can_add_all=!modules.is_empty();
+                    if ui.add_enabled(can_add_all,egui::Button::new("+ Add All Modules"))
+                        .on_hover_text("Add missing modules (excluding Universal Test) without connecting wires")
+                        .clicked(){
                     let mut added=0usize;
                     for module_id in modules {
                         let index=graph.nodes.len().saturating_sub(1);
@@ -2213,7 +2222,8 @@ impl MakerUi {
                     candidates.clear();*candidate_epoch=candidate_epoch.wrapping_add(1);candidate_jobs.clear();*connection_search=None;*candidate_base=None;
                     candidate_undo.clear();*candidate_selected=None;candidate_notice.clear();
                     *status=format!("Added {added} modules without connections");
-                }
+                    }
+                });
                 ui.horizontal(|ui|{
                     if ui.small_button("Expand All").clicked(){
                         for category in maker_library::get().categories.values(){
@@ -2785,9 +2795,9 @@ impl MakerUi {
             egui::SidePanel::right("maker_inspector").resizable(true).default_width(260.0).min_width(200.0).show(ctx,|ui|{
                 ui.heading("Inspector");ui.separator();
                 ui.horizontal(|ui|{
-                    ui.selectable_value(candidate_mode,0,"Properties");
-                    ui.selectable_value(candidate_mode,1,"Parameters");
                     ui.selectable_value(candidate_mode,2,"Connections");
+                    ui.selectable_value(candidate_mode,1,"Parameters");
+                    ui.selectable_value(candidate_mode,0,"Properties");
                 });
                 ui.separator();
                 if *candidate_mode != 0 {
@@ -3121,7 +3131,7 @@ impl MakerUi {
                     };
                 });
             egui::CentralPanel::default().frame(egui::Frame::default().fill(egui::Color32::from_rgba_unmultiplied(12,16,25,228))).show(ctx,|ui|{
-                ui.heading("Node Graph");ui.small("Drag from output to input to wire · click-to-connect also works · drag node headers to move");ui.separator();
+                ui.strong("Node Graph");ui.small("Drag from output to input to wire · click-to-connect also works · drag node headers to move");ui.separator();
                 let available=ui.available_rect_before_wrap();
                 // Reserve the bottom and right strips for graph navigation.
                 let canvas=egui::Rect::from_min_max(available.min,
@@ -3315,7 +3325,7 @@ impl MakerUi {
                                     egui::Align2::LEFT_CENTER,display_title,title_font,
                                     egui::Color32::WHITE);
                                 let header_response=header_response.on_hover_text(
-                                    format!("{}\nCreated by: {}\nDrag title bar to move the module",title,module.created_by)
+                                    format!("{}\nCreated by: {}{}\nDrag title bar to move the module",title,module.created_by,module.attributed_to.iter().map(|name|format!("\nAttributed to: {name}")).collect::<String>())
                                 );
                                 if header_response.clicked() {
                                     *selected=Some(id);
@@ -4121,6 +4131,8 @@ fn port_hint(graph: &Graph, to: NodeId, to_port: usize,
 /// These colors are used by category headers, library buttons and graph node titles.
 fn maker_category_color(category: &str) -> egui::Color32 {
     let rgb = match category.to_ascii_lowercase().as_str() {
+        "animation" => [153, 57, 102],
+        "compositing" => [95, 78, 186],
         "camera" => [0, 119, 133],
         "color" => [207, 45, 157],
         "coordinates" => [35, 91, 177],
@@ -4163,6 +4175,7 @@ fn module_library_tooltip(ui:&mut egui::Ui,module:&Module){
     ui.strong("Typical uses");ui.label(&module.uses);
     ui.strong("Behavioral notes");ui.label(&module.notes);
     ui.separator();ui.label(format!("Created by: {}",module.created_by));
+    for name in &module.attributed_to {ui.label(format!("Attributed to: {name}"));}
     if module.trust==Trust::Community{
         ui.colored_label(egui::Color32::YELLOW,"This is a third-party module, not provided by Screenshaver.");
     }else{ui.small("Official Screenshaver Library");}

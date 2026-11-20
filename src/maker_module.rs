@@ -9,7 +9,7 @@ pub struct Port { pub id:String, pub name:String, pub ty:String, pub default:Str
 pub struct Parameter { pub id:String, pub name:String, pub ty:String, pub default:Value, pub min:f32, pub max:f32, pub options:Vec<String> }
 #[derive(Clone,Debug)]
 pub struct Module {
-    pub id:String, pub name:String, pub category:String, pub created_by:String,
+    pub id:String, pub name:String, pub category:String, pub created_by:String, pub attributed_to:Vec<String>,
     pub description:String, pub uses:String, pub notes:String, pub header_color:[u8;3],
     pub inputs:Vec<Port>, pub outputs:Vec<Port>, pub parameters:Vec<Parameter>,
     pub glsl:String, pub glsl_outputs:Vec<String>, pub helpers:String, pub terminal:bool, pub trust:Trust,
@@ -73,6 +73,19 @@ impl Module {
     if src.len()>131072{return Err("Module definition exceeds 128 KiB".into())}
     if glsl_outputs.iter().chain(std::iter::once(&glsl)).any(|s|s.contains("#version")||s.contains("#include")||s.contains("void main")) {return Err("GLSL module may not redefine shader entry point".into())}
     Ok(Self{id,name:required(&v,"name")?.into(),category:required(&v,"category")?.into(),created_by:required(&v,"created_by")?.into(),
+        attributed_to:match v.get("attributed_to") {
+            None | Some(Value::Null) => Vec::new(),
+            // Accept earlier multiline definitions for backward compatibility.
+            Some(Value::String(text)) => text.lines().map(str::trim).filter(|s|!s.is_empty()).map(str::to_owned).collect(),
+            Some(Value::Array(entries)) => entries.iter().map(|entry| {
+                let name=entry.as_str().ok_or("Field 'attributed_to' must contain only strings")?;
+                if name.trim().is_empty() || name.contains('\n') || name.contains('\r') {
+                    return Err("Each 'attributed_to' entry must be a nonempty single line".into());
+                }
+                Ok(name.to_owned())
+            }).collect::<Result<Vec<_>,String>>()?,
+            Some(_) => return Err("Field 'attributed_to' must be an array of strings".into()),
+        },
         description:required(&v,"description")?.into(),uses:required(&v,"uses")?.into(),notes:match v.get("notes") {
             None | Some(Value::Null) => String::new(),
             Some(Value::String(text)) => text.clone(),
