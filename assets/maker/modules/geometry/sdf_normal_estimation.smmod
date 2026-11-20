@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "created_by": "Screenshaver",
+  "terminal": false,
+  "id": "screenshaver.geometry.sdf_normal_estimation",
+  "name": "SDF Normal Estimation",
+  "category": "Geometry",
+  "header_color": "#557C9C",
+  "description": "Estimate a surface normal by sampling a connected three-dimensional callable distance field at six offset positions.",
+  "uses": "Connect a callable SDF field; supply the surface position to estimate its normal.",
+  "notes": "Finite-difference central gradient. A callable connection is required; no field is evaluated until the consumer samples it.",
+  "inputs": [
+    {
+      "id": "field",
+      "name": "Field 3D",
+      "type": "field3d"
+    },
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "default": "vec3(0.0)",
+      "semantic_role": "position3d"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "normal",
+      "name": "Normal",
+      "type": "vec3"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "epsilon",
+      "name": "Epsilon",
+      "type": "float",
+      "default": 0.003,
+      "min": 0.0001,
+      "max": 0.1
+    }
+  ],
+  "helpers": "",
+  "glsl": "normalize(vec3({field}({position}+vec3({epsilon},0.0,0.0))-{field}({position}-vec3({epsilon},0.0,0.0)),{field}({position}+vec3(0.0,{epsilon},0.0))-{field}({position}-vec3(0.0,{epsilon},0.0)),{field}({position}+vec3(0.0,0.0,{epsilon}))-{field}({position}-vec3(0.0,0.0,{epsilon}))))"
+}

@@ -81,7 +81,19 @@ vec3 maker_rotate_3d(vec3 p,float xy,float yz,float xz){
     _=>{}
    }
   }
-  src.push_str(&callable.source());
+   // Ordinary field inputs carry function references, never sampled scalar values.
+   for n in graph.nodes.iter().filter(|n|reachable.contains(&n.id)) {
+    for (port,input) in n.definition().inputs.iter().enumerate() {
+     if input.ty=="field2d"||input.ty=="field3d" {
+      let c=graph.input_connection(n.id,port).ok_or_else(||format!("{} requires {}",n.definition().name,input.name))?;
+      let source=graph.node(c.from).ok_or("Missing callable source")?;
+      let (scalar,dimension)=source.callable_spec().ok_or("Callable source is not position-dependent")?;
+      if dimension!=input.ty || c.from_port!=source.definition().outputs.len(){return Err("Callable field dimension or output mismatch".into())}
+      callable.require(c.from,scalar,"float")?;
+     }
+    }
+   }
+   src.push_str(&callable.source());
   // A connected scalar field becomes a position-dependent callable evaluation.
   // Unlike a precomputed scalar seed, this expression is evaluated inside each ray step.
   for n in graph.nodes.iter().filter(|n|reachable.contains(&n.id)){
@@ -258,10 +270,14 @@ fn emit(graph:&Graph,id:NodeId,emitted:&mut HashSet<NodeId>,src:&mut String)->Re
  if emitted.contains(&id){return Ok(())}
  let node=graph.node(id).ok_or("Missing upstream node")?;let m=node.definition();
  if m.terminal{return Err("Output cannot be an upstream source".into())}
- for port in 0..m.inputs.len(){if let Some(c)=graph.input_connection(id,port){emit(graph,c.from,emitted,src)?}}
+ for port in 0..m.inputs.len(){if m.inputs[port].ty.starts_with("field"){continue}if let Some(c)=graph.input_connection(id,port){emit(graph,c.from,emitted,src)?}}
  let mut vars=std::collections::HashMap::new();
  for (port,p) in m.inputs.iter().enumerate(){
-  let expression=graph.input_connection(id,port).map(|c|format!("v{}_p{}",c.from,c.from_port)).unwrap_or_else(||p.default.clone());
+  let expression=if p.ty.starts_with("field") {
+    let c=graph.input_connection(id,port).ok_or_else(||format!("{} requires callable input {}",m.name,p.name))?;
+    if p.ty=="field2d" {format!("maker_field2d_{}_{}",c.from,c.from_port)}
+    else {format!("maker_callable_{}_{}",c.from,graph.node(c.from).and_then(|n|n.callable_spec()).ok_or("Invalid callable source")?.0)}
+   } else {graph.input_connection(id,port).map(|c|format!("v{}_p{}",c.from,c.from_port)).unwrap_or_else(||p.default.clone())};
   if expression.is_empty(){return Err(format!("Missing input default for {}:{}",m.id,p.id))}
   vars.insert(p.id.clone(),expression);
  }
@@ -327,7 +343,9 @@ impl<'a> CallableGenerator<'a> {
      let c=self.graph.input_connection(id,index).ok_or_else(||format!("{} requires a connected field",m.name))?;
      self.require(c.from,c.from_port,&input.ty)?;
      format!("{}({domain_position})",Self::name(c.from,c.from_port))
-    }else if input.id=="position" && input.ty=="vec3" && self.graph.input_connection(id,index).is_none(){position.to_owned()}
+    }else if input.semantic_role=="position3d" && input.ty=="vec3" && self.graph.input_connection(id,index).is_none(){position.to_owned()}
+    else if (input.semantic_role=="position2d"||input.semantic_role=="uv") && input.ty=="vec2" && self.graph.input_connection(id,index).is_none(){format!("({position}).xy")}
+    else if input.id=="position" && input.ty=="vec3" && self.graph.input_connection(id,index).is_none(){position.to_owned()}
     else if m.id=="screenshaver.color.angular_wave_background" && input.id=="direction" && self.graph.input_connection(id,index).is_none(){position.to_owned()}
     else if m.id=="screenshaver.camera.sinusoidal_path" && input.id=="z" && self.graph.input_connection(id,index).is_none(){format!("({position}).z")}
     else if let Some(c)=self.graph.input_connection(id,index){
@@ -346,6 +364,11 @@ impl<'a> CallableGenerator<'a> {
   self.signatures.push(format!("{ty} {name}(vec3 maker_position);\n"));
   self.definitions.push(format!("{ty} {name}(vec3 maker_position){{vec2 maker_uv=maker_position.xy;return {expression};}}\n"));
   self.generated.insert((id,port));
+  if self.graph.node(id).is_some_and(|n|n.callable_exposed && n.callable_spec()==Some((port,"field2d"))) {
+   let wrapper=format!("maker_field2d_{id}_{}",m.outputs.len());
+   self.signatures.push(format!("float {wrapper}(vec2 p);\n"));
+   self.definitions.push(format!("float {wrapper}(vec2 p){{return {name}(vec3(p,0.0));}}\n"));
+  }
   Ok(())
  }
  fn source(&self)->String{

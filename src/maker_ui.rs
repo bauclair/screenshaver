@@ -3165,7 +3165,7 @@ impl MakerUi {
                         // Center from persistent graph-space coordinates, never
                         // from an Area rectangle measured at an earlier zoom.
                         // A node may be entirely offscreen when pinpointed.
-                        let rows = node.definition().inputs.len().max(node.definition().outputs.len());
+                        let rows = node.port_rows();
                         let node_height = 110.0_f32.max(55.0 + 25.0 * rows as f32);
                         let center = egui::vec2(
                             node.pos[0] + 93.0,
@@ -3195,7 +3195,7 @@ impl MakerUi {
                         let mut right=f32::NEG_INFINITY;
                         let mut bottom=f32::NEG_INFINITY;
                         for n in &graph.nodes {
-                            let rows=n.definition().inputs.len().max(n.definition().outputs.len());
+                            let rows=n.port_rows();
                             let width=186.0_f32;
                             let height=110.0_f32.max(55.0+25.0*rows as f32);
                             left=left.min(n.pos[0]);top=top.min(n.pos[1]);
@@ -3232,7 +3232,7 @@ impl MakerUi {
                     let mut right=f32::NEG_INFINITY;
                     let mut bottom=f32::NEG_INFINITY;
                     for n in &graph.nodes {
-                        let rows=n.definition().inputs.len().max(n.definition().outputs.len());
+                        let rows=n.port_rows();
                         // Compact module's measured frame includes egui margins.
                         let width=186.0_f32;
                         let height=(110.0_f32).max(55.0+25.0*rows as f32);
@@ -3300,7 +3300,7 @@ impl MakerUi {
                             egui::Frame::window(ui.style()).show(ui,|ui|{
                                 // Fixed standard width and height; only port count may grow height.
                                 let node_width = 170.0 * *canvas_zoom;
-                                let rows = module.inputs.len().max(module.outputs.len());
+                                let rows = graph.node(id).map(|n|n.port_rows()).unwrap_or(0);
                                 let port_height = rows as f32 * 25.0 * *canvas_zoom;
                                 let header_height = 27.0 * *canvas_zoom;
                                 ui.set_min_width(node_width);
@@ -3357,7 +3357,7 @@ impl MakerUi {
                                 }
                                 // All editable values live exclusively in the attached editor.
                                 // The compact node exposes only a Parameters link.
-                                if !module.parameters.is_empty() {
+                                if !module.parameters.is_empty() || graph.node(id).and_then(|n|n.callable_spec()).is_some() {
                                     let response = ui.small_button("⚙ Parameters ↗")
                                         .on_hover_text("Open parameter editor");
                                     if response.clicked() {
@@ -3373,7 +3373,8 @@ impl MakerUi {
                                 // Ports occupy the vertical left/right edges of the node.
                                 // They remain visible when the node is collapsed.
                                 let inputs = &module.inputs;
-                                let outputs = &module.outputs;
+                                let outputs:Vec<crate::maker_module::Port>=(0..graph.node(id).map(|n|n.output_count()).unwrap_or(0))
+                                    .filter_map(|index|graph.node(id).and_then(|n|n.output_port(index))).collect();
                                 let rows = inputs.len().max(outputs.len());
                                 let port_color = port_color;
                                 // Port rows share the compact module body width.
@@ -3388,7 +3389,7 @@ impl MakerUi {
                                         let response = ui.interact(hit, ui.id().with((id, "input", row)), egui::Sense::click_and_drag());
                                         input_ports.insert((id,row), center);
                                         input_hit_rects.insert((id,row), hit);
-                                        let color = port_color(ty);
+                                        let _color = port_color(ty);
                                         // Connector disk is painted on this node's own layer after its frame.
                                         ui.painter().text(center + egui::vec2(11.0* *canvas_zoom, 0.0), egui::Align2::LEFT_CENTER,
                                             name, egui::TextStyle::Small.resolve(ui.style()), ui.visuals().text_color());
@@ -3432,29 +3433,8 @@ impl MakerUi {
                                     }
                                 }
                             });
-                            // Paint connectors on their owning node's Middle layer.
-                            // Later/topmost node Areas therefore occlude connectors
-                            // belonging to nodes behind them.
-                            for (&(owner, row), &center) in &input_ports {
-                                if owner != id { continue; }
-                                if let Some(port) = module.inputs.get(row) {
-                                    ui.painter().circle_filled(center, 5.0, port_color(&port.ty));
-                                }
-                            }
-                            for (&(owner, row), &center) in &output_ports {
-                                if owner != id { continue; }
-                                if let Some(port) = module.outputs.get(row) {
-                                    ui.painter().circle_filled(center, 5.0, port_color(&port.ty));
-                                }
-                            }
-                            if let Some((from, from_port)) = (*dragging_wire).or(*pending) {
-                                for (&(owner, to_port), &center) in &input_ports {
-                                    if owner != id { continue; }
-                                    let compatible = graph.check_connection(from, from_port, id, to_port).is_ok();
-                                    let color = if compatible { egui::Color32::GREEN } else { egui::Color32::RED };
-                                    ui.painter().circle_stroke(center, 10.0, egui::Stroke::new(1.5, color));
-                                }
-                            }
+                            // Connector discs are painted after the Area has been measured,
+                            // at its actual outer sidewalls (not the inset Frame body).
                         });
                     // The module's context menu is separate from its drag, port,
                     // and parameter interactions. Defer mutation until all nodes
@@ -3511,6 +3491,33 @@ impl MakerUi {
                         if port_node == id {
                             if let Some(center) = input_ports.get(&(port_node, port_row)) {
                                 *hit = egui::Rect::from_center_size(*center, egui::vec2(22.0* *canvas_zoom, 22.0* *canvas_zoom));
+                            }
+                        }
+                    }
+                    // Draw on the node's own layer so later Areas still occlude
+                    // earlier nodes. The disc center straddles the actual border.
+                    let disc_painter=ctx.layer_painter(area.response.layer_id);
+                    for (&(owner,row),&center) in &input_ports {
+                        if owner==id {
+                            if let Some(port)=module.inputs.get(row) {
+                                disc_painter.circle_filled(center,5.0* *canvas_zoom,port_color(&port.ty));
+                            }
+                        }
+                    }
+                    for (&(owner,row),&center) in &output_ports {
+                        if owner==id {
+                            if let Some(port)=graph.node(id).and_then(|n|n.output_port(row)) {
+                                disc_painter.circle_filled(center,5.0* *canvas_zoom,port_color(&port.ty));
+                            }
+                        }
+                    }
+                    if let Some((from,from_port))=(*dragging_wire).or(*pending) {
+                        for (&(owner,to_port),&center) in &input_ports {
+                            if owner==id {
+                                let compatible=graph.check_connection(from,from_port,id,to_port).is_ok();
+                                disc_painter.circle_stroke(center,10.0* *canvas_zoom,
+                                    egui::Stroke::new(1.5* *canvas_zoom,
+                                        if compatible {egui::Color32::GREEN}else{egui::Color32::RED}));
                             }
                         }
                     }
@@ -3659,7 +3666,7 @@ impl MakerUi {
                         let mut bounds_min=[f32::INFINITY;2];
                         let mut bounds_max=[f32::NEG_INFINITY;2];
                         for node in &graph.nodes {
-                            let rows=node.definition().inputs.len().max(node.definition().outputs.len());
+                            let rows=node.port_rows();
                             let size=[186.0,110.0_f32.max(55.0+25.0*rows as f32)];
                             for axis in 0..2 {
                                 bounds_min[axis]=bounds_min[axis].min(node.pos[axis]);
@@ -3762,8 +3769,8 @@ impl MakerUi {
                 let wire_paths: Vec<(Vec<egui::Pos2>,egui::Color32)> = graph.connections.iter().filter_map(|c| {
                     let a=*output_ports.get(&(c.from,c.from_port))?;
                     let b=*input_ports.get(&(c.to,c.to_port))?;
-                    let ty=graph.node(c.from)?.definition().outputs.get(c.from_port)?.ty.as_str();
-                    let color=port_color(ty);
+                    let ty=graph.node(c.from)?.output_port(c.from_port)?.ty;
+                    let color=port_color(&ty);
                     // Never draw a fallback path that could cross a module or
                     // appear to connect anywhere other than its actual port.
                     let path:Vec<egui::Pos2>=routes.get(&maker_routing::key(c))?
@@ -3822,7 +3829,7 @@ impl MakerUi {
                 // Bounds are monotonic: ordinary scrolling must not grow them.
                 const WORKSPACE_CLEARANCE: f32 = 64.0;
                 for node in &graph.nodes {
-                    let rows=node.definition().inputs.len().max(node.definition().outputs.len());
+                    let rows=node.port_rows();
                     let height=110.0_f32.max(55.0+25.0*rows as f32);
                     workspace_min[0]=workspace_min[0].min(node.pos[0]-WORKSPACE_CLEARANCE);
                     workspace_min[1]=workspace_min[1].min(node.pos[1]-WORKSPACE_CLEARANCE);
@@ -3845,7 +3852,7 @@ impl MakerUi {
                 let view_size=[canvas.width()/ *canvas_zoom,canvas.height()/ *canvas_zoom];
                 if active_node_drag {
                     for node in &graph.nodes {
-                        let rows=node.definition().inputs.len().max(node.definition().outputs.len());
+                        let rows=node.port_rows();
                         let height=110.0_f32.max(55.0+25.0*rows as f32);
                         workspace_min[0]=workspace_min[0].min(node.pos[0]-48.0);
                         workspace_min[1]=workspace_min[1].min(node.pos[1]-48.0);
@@ -3959,6 +3966,25 @@ impl MakerUi {
                                                     (c.to == id && graph.node(c.from).is_some_and(|n| n.module_id == "screenshaver.test.universal_test"))
                                                 }) && graph.node(id).is_some_and(|n| n.module_id != "screenshaver.test.universal_test");
                                                 if let Some(node) = graph.node_mut(id) { edit_parameters(ui, node, exploration); }
+                                                if let Some((_,dimension))=graph.node(id).and_then(|n|n.callable_spec()) {
+                                                    ui.add_space(8.0);
+                                                    ui.separator();
+                                                    ui.strong("Callable Fields");
+                                                    let exposed=graph.node(id).is_some_and(|n|n.callable_exposed);
+                                                    let mut requested=exposed;
+                                                    if ui.checkbox(&mut requested,"Expose as Callable Field")
+                                                        .on_hover_text(format!("Expose a {} output on this module",dimension))
+                                                        .changed() {
+                                                        match graph.set_callable_exposed(id,requested) {
+                                                            Ok(())=>{
+                                                                routes.clear();
+                                                                *status=if requested {"Callable field exposed".into()} else {"Callable field hidden".into()};
+                                                            },
+                                                            Err(e)=>*status=e,
+                                                        }
+                                                    }
+                                                    ui.small(format!("Output type: {}",dimension));
+                                                }
                                             }
                                         });
                                 });
@@ -4079,6 +4105,7 @@ fn port_color(ty:&str)->egui::Color32{
         "float"=>egui::Color32::from_rgb(104,195,237),
         "vec2"=>egui::Color32::from_rgb(123,207,152),
         "vec3"=>egui::Color32::from_rgb(229,173,96),
+        "field2d"|"field3d"=>egui::Color32::from_rgb(224,64,251),
         _=>egui::Color32::GRAY,
     }
 }

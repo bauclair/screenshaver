@@ -4,11 +4,35 @@ use serde_json::Value;
 use crate::maker_library;
 pub type NodeId=u64;
 #[derive(Clone,Debug)]
-pub struct Node {pub id:NodeId,pub module_id:String,pub pos:[f32;2],pub expanded:bool,pub parameters:HashMap<String,Value>}
+pub struct Node {pub id:NodeId,pub module_id:String,pub pos:[f32;2],pub expanded:bool,pub callable_exposed:bool,pub parameters:HashMap<String,Value>}
+impl Node {
+  /// First scalar output that can be sampled at a declared position input.
+  pub fn callable_spec(&self)->Option<(usize,&'static str)> {
+   let m=self.definition();
+   if m.terminal || m.inputs.iter().any(|p|p.ty.starts_with("field")){return None}
+   let dimension=if m.inputs.iter().any(|p|p.ty=="vec3" && (p.semantic_role=="position3d"||p.id=="position")) {"field3d"}
+    else if m.inputs.iter().any(|p|p.ty=="vec2" && (p.semantic_role=="position2d"||p.semantic_role=="uv"||p.id=="uv")) {"field2d"}
+    else {return None};
+   m.outputs.iter().position(|p|p.ty=="float").map(|index|(index,dimension))
+  }
+  pub fn output_port(&self,index:usize)->Option<crate::maker_module::Port>{
+   let m=self.definition();
+   if let Some(p)=m.outputs.get(index){return Some(p.clone())}
+   if index==m.outputs.len() && self.callable_exposed {
+    return self.callable_spec().map(|(_,ty)|crate::maker_module::Port{
+     id:"callable_field".into(),name:if ty=="field2d"{"Field 2D"}else{"Field 3D"}.into(),
+     ty:ty.into(),default:String::new(),semantic_role:String::new()});
+   }
+   None
+  }
+  pub fn output_count(&self)->usize{self.definition().outputs.len()+usize::from(self.callable_exposed&&self.callable_spec().is_some())}
+  pub fn input_port(&self,index:usize)->Option<crate::maker_module::Port>{self.definition().inputs.get(index).cloned()}
+  pub fn port_rows(&self)->usize{self.definition().inputs.len().max(self.output_count())}
+}
 impl Node {
  fn new(id:NodeId,module_id:&str,pos:[f32;2])->Result<Self,String>{
   let m=maker_library::get().module(module_id).ok_or_else(||format!("Unknown module: {module_id}"))?;
-  Ok(Self{id,module_id:module_id.into(),pos,expanded:true,parameters:m.parameters.iter().map(|p|(p.id.clone(),p.default.clone())).collect()})
+  Ok(Self{id,module_id:module_id.into(),pos,expanded:true,callable_exposed:false,parameters:m.parameters.iter().map(|p|(p.id.clone(),p.default.clone())).collect()})
  }
  pub fn definition(&self)->&'static crate::maker_module::Module{maker_library::get().module(&self.module_id).expect("Registered node module")}
 }
@@ -103,12 +127,24 @@ impl Graph {
   if n.definition().terminal{return Err("Output Color is required".into())}
   self.nodes.retain(|n|n.id!=id);self.connections.retain(|c|c.from!=id&&c.to!=id);self.revision+=1;Ok(())
  }
- pub fn input_connection(&self,id:NodeId,port:usize)->Option<Connection>{self.connections.iter().copied().find(|c|c.to==id&&c.to_port==port)}
+  pub fn set_callable_exposed(&mut self,id:NodeId,exposed:bool)->Result<(),String>{
+   let node=self.node(id).ok_or("Node missing")?;
+   if exposed && node.callable_spec().is_none(){return Err("Node has no eligible scalar position field".into())}
+   if !exposed && node.callable_exposed {
+    let port=node.definition().outputs.len();
+    self.connections.retain(|c|!(c.from==id&&c.from_port==port));
+   }
+   let node=self.node_mut(id).ok_or("Node missing")?;
+   if node.callable_exposed!=exposed{node.callable_exposed=exposed;self.revision=self.revision.wrapping_add(1);}
+   Ok(())
+  }
+  pub fn input_connection(&self,id:NodeId,port:usize)->Option<Connection>{self.connections.iter().copied().find(|c|c.to==id&&c.to_port==port)}
  pub fn disconnect_input(&mut self,id:NodeId,port:usize){let n=self.connections.len();self.connections.retain(|c|!(c.to==id&&c.to_port==port));if n!=self.connections.len(){self.revision+=1}}
  pub fn check_connection(&self,from:NodeId,from_port:usize,to:NodeId,to_port:usize)->Result<(),String>{
   if from==to{return Err("A node cannot connect to itself".into())}
-  let a=self.node(from).ok_or("Source node missing")?.definition();let b=self.node(to).ok_or("Target node missing")?.definition();
-  let ap=a.outputs.get(from_port).ok_or("Source port missing")?;let bp=b.inputs.get(to_port).ok_or("Target port missing")?;
+  let source=self.node(from).ok_or("Source node missing")?;let target=self.node(to).ok_or("Target node missing")?;
+   let a=source.definition();let b=target.definition();
+   let ap=source.output_port(from_port).ok_or("Source port missing")?;let bp=target.input_port(to_port).ok_or("Target port missing")?;
   if a.id=="screenshaver.test.universal_test" && ap.id=="preview_color" && !b.terminal {return Err("Preview Color connects only to Output Color".into())}
   if ap.ty!=bp.ty{return Err(format!("{} output '{}' ({}) cannot connect to {} input '{}' ({}): incompatible types",a.name,ap.name,ap.ty,b.name,bp.name,bp.ty))}
   if self.reaches(to,from,&mut HashSet::new()){return Err("Connection would create a circular dependency".into())}
@@ -127,8 +163,9 @@ impl Graph {
   if self.nodes.iter().filter(|n|n.definition().terminal).count()!=1{return Err("Exactly one output terminal required".into())}
   let mut dest=HashSet::new();
   for c in &self.connections{
-   let a=self.node(c.from).ok_or("Dangling source")?.definition();let b=self.node(c.to).ok_or("Dangling target")?.definition();
-   let at=a.outputs.get(c.from_port).ok_or("Bad output port")?;let bt=b.inputs.get(c.to_port).ok_or("Bad input port")?;
+   let source=self.node(c.from).ok_or("Dangling source")?;let target=self.node(c.to).ok_or("Dangling target")?;
+    let a=source.definition();let b=target.definition();
+    let at=source.output_port(c.from_port).ok_or("Bad output port")?;let bt=target.input_port(c.to_port).ok_or("Bad input port")?;
    if a.id=="screenshaver.test.universal_test" && at.id=="preview_color" && !b.terminal{return Err("Preview Color connects only to Output Color".into())}
    if at.ty!=bt.ty{return Err("Invalid connection types".into())}
    if !dest.insert((c.to,c.to_port)){return Err("Multiple sources for an input".into())}

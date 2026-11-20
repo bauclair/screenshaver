@@ -19,7 +19,7 @@ fn ports(v:&Value,key:&str)->Result<Vec<Port>,String>{
     let list=v.get(key).and_then(Value::as_array).ok_or_else(||format!("Missing {key} array"))?;
     list.iter().map(|p|{
         let ty=required(p,"type")?.to_string();
-        if !matches!(ty.as_str(),"float"|"vec2"|"vec3"){return Err(format!("Unsupported port type: {ty}"))}
+        if !matches!(ty.as_str(),"float"|"vec2"|"vec3"|"field2d"|"field3d"){return Err(format!("Unsupported port type: {ty}"))}
         let semantic_role=p.get("semantic_role").and_then(Value::as_str).unwrap_or("");
         if !matches!(semantic_role,""|"uv"|"position2d"|"offset2d"|"direction2d"|"position3d"|"direction3d"|"normal3d"|"color"|"distance"|"time"|"angle"|"mask"|"intensity"|"curvature"|"occlusion") {return Err(format!("Unsupported semantic_role: {semantic_role}"))}
         Ok(Port{id:required(p,"id")?.into(),name:required(p,"name")?.into(),ty,default:p.get("default").and_then(Value::as_str).unwrap_or("").into(),semantic_role:semantic_role.into()})
@@ -36,6 +36,7 @@ impl Module {
     if color.len()!=7||!color.starts_with('#'){return Err("header_color must be #RRGGBB".into())}
     let rgb=|i|u8::from_str_radix(&color[i..i+2],16).map_err(|_|"Invalid header_color".to_string());
     let inputs=ports(&v,"inputs")?;let outputs=ports(&v,"outputs")?;
+     if outputs.iter().any(|p|p.ty.starts_with("field")){return Err("Callable outputs are exposed by Maker, not declared in module JSON".into())}
     let valid_ident=|s:&str|{let mut chars=s.chars();chars.next().is_some_and(|c|c.is_ascii_alphabetic()||c=='_')&&chars.all(|c|c.is_ascii_alphanumeric()||c=='_')};
     if inputs.iter().chain(outputs.iter()).any(|p|!valid_ident(&p.id)){return Err("Invalid port identifier".into())}
     let mut parameters=Vec::new();

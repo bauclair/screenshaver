@@ -105,7 +105,10 @@ impl Library {
       ("compositing/masked_color_blend.smmod",include_str!("../assets/maker/modules/compositing/masked_color_blend.smmod")),
       ("compositing/screen_color_blend.smmod",include_str!("../assets/maker/modules/compositing/screen_color_blend.smmod")),
       ("compositing/scalar_field_compositor.smmod",include_str!("../assets/maker/modules/compositing/scalar_field_compositor.smmod")),
-    ];
+      ("coordinates/staggered_grid_coordinates_2d.smmod",include_str!("../assets/maker/modules/coordinates/staggered_grid_coordinates_2d.smmod")),
+      ("fields/randomized_bokeh_disc_field.smmod",include_str!("../assets/maker/modules/fields/randomized_bokeh_disc_field.smmod")),
+      ("geometry/sdf_normal_estimation.smmod",include_str!("../assets/maker/modules/geometry/sdf_normal_estimation.smmod")),
+      ];
     for (path,src) in official {result.register(path,src,Trust::Official)}
     if let Some(home)=std::env::var_os("HOME"){
         let directory=Path::new(&home).join(".config/screenshaver/maker/modules");

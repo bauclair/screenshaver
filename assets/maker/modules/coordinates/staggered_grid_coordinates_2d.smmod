@@ -1,0 +1,67 @@
+{
+  "schema_version": 1,
+  "created_by": "Screenshaver",
+  "terminal": false,
+  "attributed_to": [],
+  "id": "screenshaver.coordinates.staggered_grid_coordinates_2d",
+  "name": "Staggered Grid Coordinates 2D",
+  "category": "Coordinates",
+  "header_color": "#627FC2",
+  "description": "Maps a 2D position into local coordinates and integer cell indices of a row-staggered grid.",
+  "uses": "Offset-row dot arrangements, repeating motifs, procedural bokeh layouts and staggered tiling.",
+  "notes": "Rows are offset by a fraction of cell width. Cell Coordinates are the unshifted integer column and row indices after staggering. This is an independent implementation of a common offset-row lattice technique.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "semantic_role": "position2d",
+      "default": "maker_uv"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "local",
+      "name": "Local Position",
+      "type": "vec2",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "cell",
+      "name": "Cell Coordinates",
+      "type": "vec2",
+      "semantic_role": "position2d"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "cell_width",
+      "name": "Cell Width",
+      "type": "float",
+      "default": 0.25,
+      "min": 0.005,
+      "max": 5
+    },
+    {
+      "id": "cell_height",
+      "name": "Cell Height",
+      "type": "float",
+      "default": 0.25,
+      "min": 0.005,
+      "max": 5
+    },
+    {
+      "id": "row_offset",
+      "name": "Alternate Row Offset",
+      "type": "float",
+      "default": 0.5,
+      "min": -1,
+      "max": 1
+    }
+  ],
+  "helpers": "vec2 maker_bokeh_grid_cell(vec2 p,vec2 size,float offset){\n vec2 s=max(abs(size),vec2(0.0001));\n float row=floor(p.y/s.y+0.5);\n float shift=mod(row,2.0)*offset*s.x;\n return vec2(floor((p.x-shift)/s.x+0.5),row);\n}\nvec2 maker_bokeh_grid_local(vec2 p,vec2 size,float offset){\n vec2 s=max(abs(size),vec2(0.0001));\n vec2 cell=maker_bokeh_grid_cell(p,s,offset);\n float shift=mod(cell.y,2.0)*offset*s.x;\n return p-vec2(cell.x*s.x+shift,cell.y*s.y);\n}",
+  "glsl_outputs": {
+    "local": "maker_bokeh_grid_local({position},vec2({cell_width},{cell_height}),{row_offset})",
+    "cell": "maker_bokeh_grid_cell({position},vec2({cell_width},{cell_height}),{row_offset})"
+  }
+}
