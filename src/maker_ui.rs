@@ -1299,6 +1299,7 @@ pub struct MakerUi {
     orphan_restore_pending: bool,
     candidate_notice: String,
     library_expanded: HashMap<String,bool>,
+    library_search: String,
     connection_search: Option<ConnectionSearch>,
     reset_enumeration_confirm:bool,
     candidate_evaluated: usize,
@@ -1579,7 +1580,7 @@ impl MakerUi {
             preview_rect:egui::Rect::from_min_size(egui::pos2(210.0,600.0),egui::vec2(950.0,210.0)),
             preview_height:maker_saved_preview_height(),preview_active:true,routes:Routes::new(),canvas_pan:egui::Vec2::ZERO,canvas_zoom:1.0,pending_zoom:None,pending_zoom_to_fit:false,pending_menu_command:None,canvas_rect:egui::Rect::NOTHING,pinpoint_next:HashMap::new(),pinpoint_target:None,pinpoint_pulse:None,pinpoint_boxes:BTreeMap::new(),workspace_min:[-1000.0,-1000.0],workspace_max:[2000.0,2000.0],routing_undo:Vec::new(),routing_redo:Vec::new(),candidate_mode:2,candidate_sort:0,max_wire_connections:saved_max_wires,min_wire_connections:saved_min_wires,max_enumerations:saved_max_enumerations,max_candidates:saved_max_candidates,
             candidates:Vec::new(),candidate_jobs:Vec::new(),candidate_epoch:0,candidate_base:None,
-            candidate_selected:None,candidate_undo:Vec::new(),orphan_undo:Vec::new(),orphan_redo:Vec::new(),delete_project_confirm:false,orphan_restore_pending:false,candidate_notice:String::new(),library_expanded:HashMap::new(),connection_search:None,reset_enumeration_confirm:false,candidate_evaluated:0,candidate_glsl_capable:0,candidate_rejections:0,candidate_uniform:0,candidate_glsl_errors:0,candidate_render_errors:0,analysis_request:None,analysis:None,pending_clipboard:None,pending_clipboard_is_glsl:false,pending_glsl_export:None})
+            candidate_selected:None,candidate_undo:Vec::new(),orphan_undo:Vec::new(),orphan_redo:Vec::new(),delete_project_confirm:false,orphan_restore_pending:false,candidate_notice:String::new(),library_expanded:HashMap::new(),library_search:String::new(),connection_search:None,reset_enumeration_confirm:false,candidate_evaluated:0,candidate_glsl_capable:0,candidate_rejections:0,candidate_uniform:0,candidate_glsl_errors:0,candidate_render_errors:0,analysis_request:None,analysis:None,pending_clipboard:None,pending_clipboard_is_glsl:false,pending_glsl_export:None})
     }
     /// Returns the exact candidate reconstruction, independent of the currently applied graph.
     /// The boolean requests saving to disk rather than copying to the clipboard.
@@ -1970,6 +1971,7 @@ impl MakerUi {
         let candidate_evaluated=&mut self.candidate_evaluated;
         let candidate_rejections=&mut self.candidate_rejections;
         let library_expanded=&mut self.library_expanded;
+        let library_search=&mut self.library_search;
         let mut optimize_requested=false;
         let mut fit_requested=false;
         let mut editor_anchor: Option<(NodeId, egui::Pos2)> = None;
@@ -2224,6 +2226,20 @@ impl MakerUi {
                     *status=format!("Added {added} modules without connections");
                     }
                 });
+                // Search is a temporary view: category expansion state is never changed
+                // by entering, editing, or clearing the query.
+                ui.horizontal(|ui| {
+                    let available = (ui.available_width() - 24.0).max(80.0);
+                    ui.add_sized([available, ui.spacing().interact_size.y],
+                        egui::TextEdit::singleline(library_search).hint_text("Search modules..."));
+                    if ui.add_enabled(!library_search.is_empty(), egui::Button::new("✕"))
+                        .on_hover_text("Clear search").clicked() {
+                        library_search.clear();
+                    }
+                });
+                let search_term=library_search.trim().to_lowercase();
+                let searching=!search_term.is_empty();
+                ui.add_enabled_ui(!searching, |ui| {
                 ui.horizontal(|ui|{
                     if ui.small_button("Expand All").clicked(){
                         for category in maker_library::get().categories.values(){
@@ -2236,6 +2252,7 @@ impl MakerUi {
                         }
                     }
                 });
+                }); // Preserve expansion settings while search is active.
                 ui.small("Add nodes to the graph:");
                 // Keep the category list scrollable within the library panel.
                 // Without a ScrollArea, lower categories can be clipped and
@@ -2249,6 +2266,7 @@ impl MakerUi {
                 let library=maker_library::get();
                 let mut grouped:BTreeMap<String,Vec<&Module>>=BTreeMap::new();
                 for module in library.modules.values(){
+                    if searching && !module.name.to_lowercase().contains(&search_term) {continue}
                     if module.terminal && graph.nodes.iter().any(|n|n.definition().terminal){continue}
                     let category=library.categories.get(&module.id).map(String::as_str).unwrap_or("Other");
                     grouped.entry(category.to_owned()).or_default().push(module);
@@ -2283,10 +2301,11 @@ impl MakerUi {
                             let mut chars=part.chars();
                             match chars.next(){Some(first)=>format!("{}{}",first.to_uppercase(),chars.as_str()),None=>String::new()}
                         }).collect::<Vec<_>>().join(" ");
-                    let expanded=library_expanded.entry(category.clone()).or_insert(false);
+                    let stored_expanded=library_expanded.entry(category.clone()).or_insert(false);
+                    let expanded=searching || *stored_expanded;
                     // The category header and its module buttons share one palette entry.
                     let category_color = maker_category_color(category);
-                    let header_text = format!("{} {}", if *expanded {"▼"} else {"▶"}, display);
+                    let header_text = format!("{} {}", if expanded {"▼"} else {"▶"}, display);
                     // Use an empty native button and paint its caption at a fixed left inset.
                     // This avoids egui's default centered Button text alignment while
                     // preserving the uniform header width and native button interaction.
@@ -2301,8 +2320,8 @@ impl MakerUi {
                         egui::TextStyle::Button.resolve(ui.style()),
                         egui::Color32::WHITE,
                     );
-                    if header_response.clicked(){*expanded=!*expanded;}
-                    if *expanded {ui.indent(("maker_library_category",category.as_str()),|ui|{
+                    if header_response.clicked() && !searching {*stored_expanded=!*stored_expanded;}
+                    if expanded {ui.indent(("maker_library_category",category.as_str()),|ui|{
                         for module in modules.iter().copied(){
                     // Each category owns its own aligned pinpoint column. The
                     // indicator is interactive only when this type is in the graph.
