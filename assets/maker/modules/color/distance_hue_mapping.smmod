@@ -1,0 +1,64 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.color.distance_hue_mapping",
+  "name": "Distance Hue Mapping",
+  "category": "Color",
+  "created_by": "Screenshaver",
+  "header_color": "#A26D9C",
+  "description": "Maps a scalar distance to cyclic hue with optional logarithmic compression and time animation.",
+  "uses": "Depth-colored geometry, animated rainbow bands, and scalar-field color mapping when connected to Smooth HSV Color.",
+  "notes": "Distance is clamped to nonnegative values before optional logarithmic compression. Hue is a unit-cycle scalar; the output is not RGB. Time is supplied by Maker's u_time uniform.",
+  "inputs": [
+    {
+      "id": "distance",
+      "name": "Distance",
+      "type": "float",
+      "default": "length(maker_uv)",
+      "semantic_role": "distance"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "hue",
+      "name": "Hue",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "hue_scale",
+      "name": "Hue Scale",
+      "type": "float",
+      "default": 0.2,
+      "min": -4.0,
+      "max": 4.0
+    },
+    {
+      "id": "hue_offset",
+      "name": "Hue Offset",
+      "type": "float",
+      "default": 0.0,
+      "min": -2.0,
+      "max": 2.0
+    },
+    {
+      "id": "speed",
+      "name": "Animation Speed",
+      "type": "float",
+      "default": 0.1,
+      "min": -4.0,
+      "max": 4.0
+    },
+    {
+      "id": "compression",
+      "name": "Log Compression",
+      "type": "float",
+      "default": 1.0,
+      "min": 0.0,
+      "max": 10.0
+    }
+  ],
+  "helpers": "float maker_distance_hue_mapping(float distance,float scale,float offset,float speed,float compression){\n    float d=max(distance,0.0);\n    float c=max(compression,0.0);\n    float mapped=c<0.0001?d:log(1.0+c*d)/c;\n    return fract(mapped*scale+offset+u_time*speed);\n}",
+  "glsl": "maker_distance_hue_mapping({distance},{hue_scale},{hue_offset},{speed},{compression})",
+  "terminal": false
+}

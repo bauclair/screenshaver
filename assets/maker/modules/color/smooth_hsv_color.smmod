@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.color.smooth_hsv_color",
+  "name": "Smooth HSV Color",
+  "category": "Color",
+  "created_by": "Screenshaver",
+  "header_color": "#A26D9C",
+  "description": "Converts hue, saturation and brightness into RGB with smoothly interpolated hue transitions.",
+  "uses": "Procedural rainbow palettes, color cycling, and coloring scalar fields through a hue-mapping module.",
+  "notes": "Independent HSV conversion based on standard sector interpolation and cubic smoothing. Hue wraps every 1.0; saturation and value are clamped to [0,1].",
+  "inputs": [
+    {
+      "id": "hue",
+      "name": "Hue",
+      "type": "float",
+      "default": "maker_uv.x"
+    },
+    {
+      "id": "saturation",
+      "name": "Saturation",
+      "type": "float",
+      "default": "1.0"
+    },
+    {
+      "id": "value",
+      "name": "Value",
+      "type": "float",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "color",
+      "name": "Color",
+      "type": "vec3",
+      "semantic_role": "color"
+    }
+  ],
+  "parameters": [],
+  "helpers": "vec3 maker_smooth_hsv_color(float hue,float saturation,float value){\n    float h=fract(hue)*6.0;\n    vec3 phase=mod(vec3(h,h+4.0,h+2.0),6.0);\n    vec3 rgb=clamp(2.0-abs(phase-3.0),0.0,1.0);\n    rgb=rgb*rgb*(3.0-2.0*rgb);\n    return clamp(value,0.0,1.0)*mix(vec3(1.0),rgb,clamp(saturation,0.0,1.0));\n}",
+  "glsl": "maker_smooth_hsv_color({hue},{saturation},{value})",
+  "terminal": false
+}
