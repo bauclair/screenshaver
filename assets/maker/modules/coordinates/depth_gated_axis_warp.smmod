@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.depth_gated_axis_warp",
+  "name": "Depth-Gated Axis Warp",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "header_color": "#5488A4",
+  "description": "Animates a 3D position with smooth lateral waves that fade in after a configurable depth threshold.",
+  "uses": "Bending repeated geometry, tunnel structures, and depth-layered procedural fields without altering the underlying geometry module.",
+  "notes": "Independent implementation of generic sinusoidal coordinate displacement and smooth depth gating. Depth is measured along the incoming position's Z axis. The warp preserves Z and returns a transformed position; it does not produce a distance field.",
+  "inputs": [
+    {"id":"position","name":"Position","type":"vec3","default":"vec3(maker_uv,0.0)","semantic_role":"position3d"}
+  ],
+  "outputs": [
+    {"id":"position","name":"Warped Position","type":"vec3","semantic_role":"position3d"}
+  ],
+  "parameters": [
+    {"id":"x_amplitude","name":"X Amplitude","type":"float","default":0.35,"min":0.0,"max":2.0},
+    {"id":"y_amplitude","name":"Y Amplitude","type":"float","default":0.35,"min":0.0,"max":2.0},
+    {"id":"frequency","name":"Depth Frequency","type":"float","default":1.4,"min":0.1,"max":10.0},
+    {"id":"speed","name":"Speed","type":"float","default":0.7,"min":-4.0,"max":4.0},
+    {"id":"start_depth","name":"Start Depth","type":"float","default":0.0,"min":-10.0,"max":10.0},
+    {"id":"fade_depth","name":"Fade Distance","type":"float","default":1.0,"min":0.01,"max":10.0},
+    {"id":"phase_offset","name":"Axis Phase Offset","type":"float","default":1.57,"min":-6.28,"max":6.28}
+  ],
+  "helpers": "vec3 maker_depth_gated_axis_warp(vec3 p,float ax,float ay,float freq,float speed,float start,float fade,float phase){\n    float depth=p.z-start;\n    float gate=smoothstep(0.0,max(fade,0.001),depth);\n    float theta=depth*freq+u_time*speed;\n    vec2 shift=vec2(sin(theta),sin(theta+phase))*vec2(ax,ay)*gate;\n    return vec3(p.xy+shift,p.z);\n}",
+  "glsl": "maker_depth_gated_axis_warp({position},{x_amplitude},{y_amplitude},{frequency},{speed},{start_depth},{fade_depth},{phase_offset})",
+  "terminal": false
+}

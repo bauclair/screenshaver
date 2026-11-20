@@ -58,6 +58,7 @@ impl Library {
       ("coordinates/coordinate_feedback_warp.smmod",include_str!("../assets/maker/modules/coordinates/coordinate_feedback_warp.smmod")),
       ("color/weighted_rgb_colorizer.smmod",include_str!("../assets/maker/modules/color/weighted_rgb_colorizer.smmod")),
       ("coordinates/cross_axis_sine_warp.smmod",include_str!("../assets/maker/modules/coordinates/cross_axis_sine_warp.smmod")),
+      ("coordinates/depth_gated_axis_warp.smmod",include_str!("../assets/maker/modules/coordinates/depth_gated_axis_warp.smmod")),
       ("math/cosine_range_oscillator.smmod",include_str!("../assets/maker/modules/math/cosine_range_oscillator.smmod")),
       ("color/procedural_sine_rgb.smmod",include_str!("../assets/maker/modules/color/procedural_sine_rgb.smmod")),
       ("fields/vignette_mask.smmod",include_str!("../assets/maker/modules/fields/vignette_mask.smmod")),
