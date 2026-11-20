@@ -1,0 +1,87 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.lighting.lattice_crossing_highlight",
+  "name": "Lattice Crossing Highlight",
+  "category": "Lighting",
+  "created_by": "Screenshaver",
+  "header_color": "#CBA64C",
+  "description": "Extracts intersection cores and soft crossing halos from two independent scalar masks.",
+  "uses": "Highlights crossings of lattice lines, ribbons, rings and other overlapping masks.",
+  "notes": "Feed core masks into Mask A and Mask B; optionally feed their softer glow masks into Glow A and Glow B. Both outputs are scalar intensities, not RGB colors.",
+  "inputs": [
+    {
+      "id": "mask_a",
+      "name": "Mask A",
+      "type": "float",
+      "default": "0.0",
+      "semantic_role": "mask"
+    },
+    {
+      "id": "mask_b",
+      "name": "Mask B",
+      "type": "float",
+      "default": "0.0",
+      "semantic_role": "mask"
+    },
+    {
+      "id": "glow_a",
+      "name": "Glow A",
+      "type": "float",
+      "default": "0.0",
+      "semantic_role": "intensity"
+    },
+    {
+      "id": "glow_b",
+      "name": "Glow B",
+      "type": "float",
+      "default": "0.0",
+      "semantic_role": "intensity"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "crossing",
+      "name": "Crossing Core",
+      "type": "float",
+      "semantic_role": "intensity"
+    },
+    {
+      "id": "halo",
+      "name": "Crossing Halo",
+      "type": "float",
+      "semantic_role": "intensity"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "core_gain",
+      "name": "Core Gain",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 8
+    },
+    {
+      "id": "halo_gain",
+      "name": "Halo Gain",
+      "type": "float",
+      "default": 0.5,
+      "min": 0,
+      "max": 8
+    },
+    {
+      "id": "contrast",
+      "name": "Intersection Contrast",
+      "type": "float",
+      "default": 1,
+      "min": 0.1,
+      "max": 5
+    }
+  ],
+  "helpers": "",
+  "terminal": false,
+  "glsl_outputs": {
+    "crossing": "pow(clamp({mask_a},0.0,1.0)*clamp({mask_b},0.0,1.0),{contrast})*{core_gain}",
+    "halo": "pow(clamp({glow_a},0.0,1.0)*clamp({glow_b},0.0,1.0),{contrast})*{halo_gain}"
+  }
+}

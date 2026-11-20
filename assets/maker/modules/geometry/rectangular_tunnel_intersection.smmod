@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.geometry.rectangular_tunnel_intersection",
+  "name": "Rectangular Tunnel Intersection",
+  "category": "Geometry",
+  "created_by": "Screenshaver",
+  "header_color": "#7D82B8",
+  "description": "Analytically intersects a ray with the four infinite side walls of a rectangular tunnel aligned with Z.",
+  "uses": "Perspective tunnel geometry, wall-space effects and depth-based lighting without iterative ray marching.",
+  "notes": "Ray Direction should be normalized for world-unit distance. Misses return distance 1000000, hit position at origin and Hit Mask 0. Wall ID: 0 floor, 1 ceiling, 2 left, 3 right; -1 miss. Only forward intersections are considered.",
+  "inputs": [
+    {
+      "id": "origin",
+      "name": "Ray Origin",
+      "type": "vec3",
+      "default": "vec3(0.0)",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "direction",
+      "name": "Ray Direction",
+      "type": "vec3",
+      "default": "normalize(vec3(maker_uv,1.35))",
+      "semantic_role": "direction3d"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "hit_position",
+      "name": "Hit Position",
+      "type": "vec3",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "distance",
+      "name": "Distance",
+      "type": "float",
+      "semantic_role": "distance"
+    },
+    {
+      "id": "wall_id",
+      "name": "Wall ID",
+      "type": "float"
+    },
+    {
+      "id": "hit_mask",
+      "name": "Hit Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "half_width",
+      "name": "Half Width",
+      "type": "float",
+      "default": 1.35,
+      "min": 0.01,
+      "max": 20
+    },
+    {
+      "id": "half_height",
+      "name": "Half Height",
+      "type": "float",
+      "default": 0.82,
+      "min": 0.01,
+      "max": 20
+    }
+  ],
+  "helpers": "vec4 maker_tunnel_hit(vec3 ro,vec3 rd,float hw,float hh){\n float best=1000000.0;float wall=-1.0;float eps=0.00001;\n float w=max(hw,0.00001),h=max(hh,0.00001);\n if(rd.y< -eps){float t=(-h-ro.y)/rd.y;vec3 p=ro+rd*t;if(t>eps&&t<best&&abs(p.x)<=w+eps){best=t;wall=0.0;}}\n if(rd.y> eps){float t=( h-ro.y)/rd.y;vec3 p=ro+rd*t;if(t>eps&&t<best&&abs(p.x)<=w+eps){best=t;wall=1.0;}}\n if(rd.x< -eps){float t=(-w-ro.x)/rd.x;vec3 p=ro+rd*t;if(t>eps&&t<best&&abs(p.y)<=h+eps){best=t;wall=2.0;}}\n if(rd.x> eps){float t=( w-ro.x)/rd.x;vec3 p=ro+rd*t;if(t>eps&&t<best&&abs(p.y)<=h+eps){best=t;wall=3.0;}}\n return vec4(best,wall,wall>=0.0?1.0:0.0,0.0);\n}\nvec3 maker_tunnel_hit_position(vec3 ro,vec3 rd,float hw,float hh){vec4 h=maker_tunnel_hit(ro,rd,hw,hh);return h.z>0.5?ro+rd*h.x:ro;}",
+  "terminal": false,
+  "glsl_outputs": {
+    "hit_position": "maker_tunnel_hit_position({origin},{direction},{half_width},{half_height})",
+    "distance": "maker_tunnel_hit({origin},{direction},{half_width},{half_height}).x",
+    "wall_id": "maker_tunnel_hit({origin},{direction},{half_width},{half_height}).y",
+    "hit_mask": "maker_tunnel_hit({origin},{direction},{half_width},{half_height}).z"
+  }
+}

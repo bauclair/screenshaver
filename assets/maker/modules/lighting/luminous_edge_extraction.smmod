@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.lighting.luminous_edge_extraction",
+  "name": "Luminous Edge Extraction",
+  "category": "Lighting",
+  "created_by": "Screenshaver",
+  "header_color": "#D7A052",
+  "description": "Extracts a smooth highlight band around the transition of a scalar mask using screen-space derivatives.",
+  "uses": "Glowing shape boundaries, anti-aliased contour accents and luminous ornaments.",
+  "notes": "Uses fwidth; intended for fragment shading, not geometric distance fields. Thresholds should be ordered; the implementation guards against reversed settings.",
+  "inputs": [
+    {
+      "id": "mask",
+      "name": "Source Mask",
+      "type": "float",
+      "default": "0.0",
+      "semantic_role": "mask"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "edge",
+      "name": "Edge Highlight",
+      "type": "float",
+      "semantic_role": "intensity"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "lower",
+      "name": "Lower Threshold",
+      "type": "float",
+      "default": 0.1,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "upper",
+      "name": "Upper Threshold",
+      "type": "float",
+      "default": 0.78,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "width",
+      "name": "Width Multiplier",
+      "type": "float",
+      "default": 2,
+      "min": 0.1,
+      "max": 12
+    },
+    {
+      "id": "minimum",
+      "name": "Minimum Width",
+      "type": "float",
+      "default": 0.0025,
+      "min": 1e-05,
+      "max": 0.1
+    }
+  ],
+  "helpers": "float maker_luminous_edge(float v,float lower,float upper,float width,float minwidth){\n float lo=min(lower,upper),hi=max(lower,upper);float fw=max(fwidth(v),max(minwidth,0.000001))*max(width,0.001);\n return smoothstep(lo,lo+fw,v)*(1.0-smoothstep(hi,hi+fw,v));\n}",
+  "terminal": false,
+  "glsl": "maker_luminous_edge({mask},{lower},{upper},{width},{minimum})"
+}

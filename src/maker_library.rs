@@ -24,6 +24,11 @@ impl Library {
       ("color/cosine_palette.smmod",include_str!("../assets/maker/modules/color/cosine_palette.smmod")),
       ("color/smooth_hsv_color.smmod",include_str!("../assets/maker/modules/color/smooth_hsv_color.smmod")),
       ("color/distance_hue_mapping.smmod",include_str!("../assets/maker/modules/color/distance_hue_mapping.smmod")),
+      ("coordinates/kaleidoscopic_sector_fold.smmod",include_str!("../assets/maker/modules/coordinates/kaleidoscopic_sector_fold.smmod")),
+      ("coordinates/radial_vortex_warp.smmod",include_str!("../assets/maker/modules/coordinates/radial_vortex_warp.smmod")),
+      ("fields/procedural_lattice_lines.smmod",include_str!("../assets/maker/modules/fields/procedural_lattice_lines.smmod")),
+      ("fields/soft_interference_field.smmod",include_str!("../assets/maker/modules/fields/soft_interference_field.smmod")),
+      ("color/primary_spectrum_palette.smmod",include_str!("../assets/maker/modules/color/primary_spectrum_palette.smmod")),
       ("output/output_color.smmod",include_str!("../assets/maker/modules/output/output_color.smmod")),
       ("fields/morphing_field.smmod",include_str!("../assets/maker/modules/fields/morphing_field.smmod")),
       ("fields/field_traversal.smmod",include_str!("../assets/maker/modules/fields/field_traversal.smmod")),
@@ -84,6 +89,13 @@ impl Library {
       ("noise/triangular_lattice_field.smmod",include_str!("../assets/maker/modules/noise/triangular_lattice_field.smmod")),
       ("geometry/triangle_edge_mask.smmod",include_str!("../assets/maker/modules/geometry/triangle_edge_mask.smmod")),
       ("math/periodic_pulse_gate.smmod",include_str!("../assets/maker/modules/math/periodic_pulse_gate.smmod")),
+      ("fields/scalar_ribbon_mask.smmod",include_str!("../assets/maker/modules/fields/scalar_ribbon_mask.smmod")),
+      ("fields/soft_shape_mask_2d.smmod",include_str!("../assets/maker/modules/fields/soft_shape_mask_2d.smmod")),
+      ("lighting/luminous_edge_extraction.smmod",include_str!("../assets/maker/modules/lighting/luminous_edge_extraction.smmod")),
+      ("geometry/rectangular_tunnel_intersection.smmod",include_str!("../assets/maker/modules/geometry/rectangular_tunnel_intersection.smmod")),
+      ("coordinates/multi_scale_flow_warp.smmod",include_str!("../assets/maker/modules/coordinates/multi_scale_flow_warp.smmod")),
+      ("coordinates/tunnel_wall_uv_mapping.smmod",include_str!("../assets/maker/modules/coordinates/tunnel_wall_uv_mapping.smmod")),
+      ("lighting/lattice_crossing_highlight.smmod",include_str!("../assets/maker/modules/lighting/lattice_crossing_highlight.smmod")),
     ];
     for (path,src) in official {result.register(path,src,Trust::Official)}
     if let Some(home)=std::env::var_os("HOME"){

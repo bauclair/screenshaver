@@ -1,0 +1,95 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.soft_shape_mask_2d",
+  "name": "Soft Shape Mask 2D",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "header_color": "#4B9A86",
+  "description": "Generates soft disks, rings, diamonds, rectangles and elliptical petals from 2D coordinates.",
+  "uses": "Soft shape layering, kaleidoscopic ornaments, geometric masks and procedural patterns.",
+  "notes": "Shape index: 0 Disk, 1 Ring, 2 Diamond, 3 Box, 4 Petal. Position and Center are in the same coordinate space. Angle is in radians; Size X/Y control box and petal proportions.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec2",
+      "default": "vec2(0.0)",
+      "semantic_role": "position2d"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "mask",
+      "name": "Shape Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "shape",
+      "name": "Shape",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Disk",
+        "Ring",
+        "Diamond",
+        "Box",
+        "Petal"
+      ],
+      "min": 0,
+      "max": 4
+    },
+    {
+      "id": "radius",
+      "name": "Radius",
+      "type": "float",
+      "default": 0.45,
+      "min": 0.001,
+      "max": 4
+    },
+    {
+      "id": "softness",
+      "name": "Softness",
+      "type": "float",
+      "default": 0.06,
+      "min": 0.001,
+      "max": 1
+    },
+    {
+      "id": "size_x",
+      "name": "Size X",
+      "type": "float",
+      "default": 0.6,
+      "min": 0.001,
+      "max": 4
+    },
+    {
+      "id": "size_y",
+      "name": "Size Y",
+      "type": "float",
+      "default": 0.35,
+      "min": 0.001,
+      "max": 4
+    },
+    {
+      "id": "angle",
+      "name": "Rotation",
+      "type": "float",
+      "default": 0,
+      "min": -6.2832,
+      "max": 6.2832
+    }
+  ],
+  "helpers": "float maker_soft_shape_2d(vec2 p,vec2 center,float shape,float radius,float softness,float sx,float sy,float angle){\n vec2 q=p-center;float ca=cos(angle),sa=sin(angle);q=mat2(ca,-sa,sa,ca)*q;\n float r=max(radius,0.00001),s=max(softness,0.00001);float d=0.0;\n if(shape<0.5){d=length(q)-r;}\n else if(shape<1.5){d=abs(length(q)-r)-s*0.5;return 1.0-smoothstep(-s*0.25,s*0.5,d);}\n else if(shape<2.5){d=(abs(q.x)+abs(q.y)-r)*0.70710678;}\n else if(shape<3.5){vec2 b=abs(q)-vec2(max(sx,0.00001),max(sy,0.00001));d=length(max(b,vec2(0.0)))+min(max(b.x,b.y),0.0);}\n else {vec2 e=q/vec2(max(sx,0.00001),max(sy,0.00001));d=(length(e)-1.0)*min(sx,sy);}\n return 1.0-smoothstep(-s,s,d);\n}",
+  "terminal": false,
+  "glsl": "maker_soft_shape_2d({position},{center},{shape},{radius},{softness},{size_x},{size_y},{angle})"
+}

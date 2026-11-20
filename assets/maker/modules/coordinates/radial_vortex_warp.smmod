@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.radial_vortex_warp",
+  "name": "Radial Vortex Warp",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "header_color": "#5287B8",
+  "description": "Rotates each point by a radius-dependent angle, creating smooth spiral and vortex distortion.",
+  "uses": "Whirlpool shapes, curved procedural stripes and fluid-looking coordinate distortions.",
+  "notes": "Falloff controls how quickly the twist weakens away from the center. Core Radius prevents a singularity. Spin Speed rotates the entire coordinate frame.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "position2d"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "warped",
+      "name": "Warped Position",
+      "type": "vec2",
+      "semantic_role": "position2d"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "strength",
+      "name": "Curl Strength",
+      "type": "float",
+      "default": 2.75,
+      "min": -12,
+      "max": 12
+    },
+    {
+      "id": "falloff",
+      "name": "Radial Falloff",
+      "type": "float",
+      "default": 1.75,
+      "min": 0,
+      "max": 12
+    },
+    {
+      "id": "core",
+      "name": "Core Radius",
+      "type": "float",
+      "default": 0.58,
+      "min": 0.02,
+      "max": 5
+    },
+    {
+      "id": "spin",
+      "name": "Spin Speed",
+      "type": "float",
+      "default": 0,
+      "min": -4,
+      "max": 4
+    }
+  ],
+  "helpers": "vec2 maker_radial_vortex_warp(vec2 p,float strength,float falloff,float core,float spin){\n float radius=length(p);\n float twist=strength/(max(core,0.0001)+max(falloff,0.0)*radius)+u_time*spin;\n float c=cos(twist),s=sin(twist);\n return vec2(c*p.x-s*p.y,s*p.x+c*p.y);\n}",
+  "terminal": false,
+  "glsl": "maker_radial_vortex_warp({position},{strength},{falloff},{core},{spin})"
+}

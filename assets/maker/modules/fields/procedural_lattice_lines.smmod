@@ -1,0 +1,82 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.procedural_lattice_lines",
+  "name": "Procedural Lattice Lines",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "header_color": "#4B9A86",
+  "description": "Creates repeating oriented line cores and a separate Gaussian glow field.",
+  "uses": "Grids, diamond lattices, neon linework and intersections formed by combining two instances.",
+  "notes": "The two outputs are scalar masks, not RGB. Angle is in radians. Width and Glow Radius are measured in coordinate units.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "position2d"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "core",
+      "name": "Line Core",
+      "type": "float",
+      "semantic_role": "mask"
+    },
+    {
+      "id": "glow",
+      "name": "Line Glow",
+      "type": "float",
+      "semantic_role": "intensity"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "spacing",
+      "name": "Line Spacing",
+      "type": "float",
+      "default": 0.245,
+      "min": 0.02,
+      "max": 4
+    },
+    {
+      "id": "width",
+      "name": "Core Width",
+      "type": "float",
+      "default": 0.0105,
+      "min": 0.0005,
+      "max": 0.3
+    },
+    {
+      "id": "radius",
+      "name": "Glow Radius",
+      "type": "float",
+      "default": 0.04,
+      "min": 0.002,
+      "max": 1
+    },
+    {
+      "id": "angle",
+      "name": "Orientation",
+      "type": "float",
+      "default": 0,
+      "min": -6.2832,
+      "max": 6.2832
+    },
+    {
+      "id": "speed",
+      "name": "Travel Speed",
+      "type": "float",
+      "default": 0,
+      "min": -4,
+      "max": 4
+    }
+  ],
+  "helpers": "float maker_lattice_distance(vec2 p,float spacing,float angle,float speed){\n float c=cos(angle),s=sin(angle);\n float coordinate=dot(p,vec2(c,s))+u_time*speed;\n float gap=max(spacing,0.0001);\n return abs(fract(coordinate/gap+0.5)-0.5)*gap;\n}\nfloat maker_lattice_core(float d,float width){\n float w=max(width,0.00001);\n return 1.0-smoothstep(w,w*2.8,d);\n}\nfloat maker_lattice_glow(float d,float radius){\n float r=max(radius,0.00001);\n return exp(-(d*d)/(r*r));\n}",
+  "terminal": false,
+  "glsl_outputs": {
+    "core": "maker_lattice_core(maker_lattice_distance({position},{spacing},{angle},{speed}),{width})",
+    "glow": "maker_lattice_glow(maker_lattice_distance({position},{spacing},{angle},{speed}),{radius})"
+  }
+}

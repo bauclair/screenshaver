@@ -1,0 +1,81 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.multi_scale_flow_warp",
+  "name": "Multi-Scale Flow Warp",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "header_color": "#438FBC",
+  "description": "Applies two successive smooth cross-axis sinusoidal distortions to a 2D position.",
+  "uses": "Liquid motion, animated domain deformation, soft plasma and melted patterns.",
+  "notes": "Inspired by the broad and secondary flow stages of the original Screenshaver Swirlpool shader. Unlike Radial Vortex Warp, this module does not apply radial rotation.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "position2d"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "warped",
+      "name": "Warped Position",
+      "type": "vec2",
+      "semantic_role": "position2d"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "primary_strength",
+      "name": "Primary Strength",
+      "type": "float",
+      "default": 0.25,
+      "min": 0,
+      "max": 3
+    },
+    {
+      "id": "secondary_strength",
+      "name": "Secondary Strength",
+      "type": "float",
+      "default": 0.15,
+      "min": 0,
+      "max": 3
+    },
+    {
+      "id": "frequency",
+      "name": "Spatial Frequency",
+      "type": "float",
+      "default": 1.5,
+      "min": 0.05,
+      "max": 12
+    },
+    {
+      "id": "detail_ratio",
+      "name": "Secondary Frequency Ratio",
+      "type": "float",
+      "default": 1.65,
+      "min": 0.25,
+      "max": 5
+    },
+    {
+      "id": "speed",
+      "name": "Animation Speed",
+      "type": "float",
+      "default": 0.3,
+      "min": -4,
+      "max": 4
+    },
+    {
+      "id": "phase",
+      "name": "Phase",
+      "type": "float",
+      "default": 0,
+      "min": -6.283,
+      "max": 6.283
+    }
+  ],
+  "helpers": "vec2 maker_multiscale_flow(vec2 p,float a,float b,float f,float ratio,float speed,float phase,float t){\n float w=max(abs(f),0.0001);\n vec2 q=p;\n q.x+=a*(0.72*sin(p.y*w+t*speed+phase)+0.28*sin((p.x+p.y)*w*0.73-t*speed*0.62+phase));\n q.y+=a*(0.72*sin(p.x*w-t*speed*0.86-phase)+0.28*cos((p.x-p.y)*w*0.81+t*speed*0.55));\n vec2 r=q;\n r.x+=b*sin(q.y*w*ratio+t*speed*0.78+phase);\n r.y+=b*cos(q.x*w*ratio-t*speed*0.72-phase);\n return r;\n}",
+  "terminal": false,
+  "glsl": "maker_multiscale_flow({position},{primary_strength},{secondary_strength},{frequency},{detail_ratio},{speed},{phase},u_time)"
+}

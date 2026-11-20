@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.tunnel_wall_uv_mapping",
+  "name": "Tunnel Wall UV Mapping",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "header_color": "#438FBC",
+  "description": "Maps a rectangular tunnel wall hit to consistent world-scale 2D texture coordinates.",
+  "uses": "Wall-aligned procedural patterns and future texture sampling when paired with Rectangular Tunnel Intersection.",
+  "notes": "Wall ID convention: 0 floor, 1 ceiling, 2 left, 3 right. Connect Hit Position and Wall ID from Rectangular Tunnel Intersection. Misses should be masked using its Hit Mask. UV coordinates are unbounded; wrap or sample as desired.",
+  "inputs": [
+    {
+      "id": "hit_position",
+      "name": "Hit Position",
+      "type": "vec3",
+      "default": "vec3(0.0)",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "wall_id",
+      "name": "Wall ID",
+      "type": "float",
+      "default": "0.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "uv",
+      "name": "Wall UV",
+      "type": "vec2",
+      "semantic_role": "uv"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "scale",
+      "name": "Texture Scale",
+      "type": "float",
+      "default": 1,
+      "min": 0.01,
+      "max": 20
+    },
+    {
+      "id": "travel",
+      "name": "Longitudinal Offset",
+      "type": "float",
+      "default": 0,
+      "min": -100,
+      "max": 100
+    },
+    {
+      "id": "offset_u",
+      "name": "U Offset",
+      "type": "float",
+      "default": 0,
+      "min": -20,
+      "max": 20
+    },
+    {
+      "id": "offset_v",
+      "name": "V Offset",
+      "type": "float",
+      "default": 0,
+      "min": -20,
+      "max": 20
+    }
+  ],
+  "helpers": "vec2 maker_tunnel_wall_uv(vec3 p,float wall,float scale,float travel,vec2 offset){\n float z=p.z+travel;vec2 uv;\n if(wall<0.5)uv=vec2(p.x,z);\n else if(wall<1.5)uv=vec2(p.x,-z);\n else if(wall<2.5)uv=vec2(z,p.y);\n else uv=vec2(-z,p.y);\n return uv*scale+offset;\n}",
+  "terminal": false,
+  "glsl": "maker_tunnel_wall_uv({hit_position},{wall_id},{scale},{travel},vec2({offset_u},{offset_v}))"
+}

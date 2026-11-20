@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.scalar_ribbon_mask",
+  "name": "Scalar Ribbon Mask",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "header_color": "#4B9A86",
+  "description": "Converts a scalar field into a soft ribbon around a selected center.",
+  "uses": "Contour bands, plasma veils, isolines and soft threshold regions.",
+  "notes": "Width is full band radius. Inner Softness controls the flat interior fraction; values are clamped to maintain smoothstep ordering.",
+  "inputs": [
+    {
+      "id": "field",
+      "name": "Field",
+      "type": "float",
+      "default": "0.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "mask",
+      "name": "Ribbon Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "float",
+      "default": 0,
+      "min": -4,
+      "max": 4
+    },
+    {
+      "id": "width",
+      "name": "Band Width",
+      "type": "float",
+      "default": 0.3,
+      "min": 0.001,
+      "max": 4
+    },
+    {
+      "id": "inner",
+      "name": "Inner Fraction",
+      "type": "float",
+      "default": 0.38,
+      "min": 0,
+      "max": 0.99
+    }
+  ],
+  "helpers": "float maker_scalar_ribbon(float f,float c,float w,float inner){float r=max(w,0.00001);float a=clamp(inner,0.0,0.99)*r;return 1.0-smoothstep(a,r,abs(f-c));}",
+  "terminal": false,
+  "glsl": "maker_scalar_ribbon({field},{center},{width},{inner})"
+}

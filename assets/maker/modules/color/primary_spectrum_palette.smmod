@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.color.primary_spectrum_palette",
+  "name": "Primary Spectrum Palette",
+  "category": "Color",
+  "created_by": "Screenshaver",
+  "header_color": "#A26D9C",
+  "description": "Cycles smoothly through the Screenshaver red, yellow, green, blue and violet palette.",
+  "uses": "Colorizing procedural fields, rainbow gradients and animated spectral lighting.",
+  "notes": "The phase wraps every 1.0. Five colors are interpolated smoothly with a cubic easing curve.",
+  "inputs": [
+    {
+      "id": "phase",
+      "name": "Phase",
+      "type": "float",
+      "default": "maker_uv.x"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "color",
+      "name": "Color",
+      "type": "vec3",
+      "semantic_role": "color"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "scale",
+      "name": "Phase Scale",
+      "type": "float",
+      "default": 1,
+      "min": -8,
+      "max": 8
+    },
+    {
+      "id": "offset",
+      "name": "Phase Offset",
+      "type": "float",
+      "default": 0,
+      "min": -2,
+      "max": 2
+    },
+    {
+      "id": "speed",
+      "name": "Animation Speed",
+      "type": "float",
+      "default": 0,
+      "min": -4,
+      "max": 4
+    }
+  ],
+  "helpers": "vec3 maker_primary_spectrum_palette(float phase,float scale,float offset,float speed){\n float x=fract(phase*scale+offset+u_time*speed)*5.0;\n float i=floor(x);\n float f=fract(x);f=f*f*(3.0-2.0*f);\n vec3 a=vec3(1.0,0.015,0.015);\n vec3 b=vec3(1.0,0.92,0.01);\n vec3 c=vec3(0.01,1.0,0.035);\n vec3 d=vec3(0.01,0.16,1.0);\n vec3 e=vec3(0.72,0.01,1.0);\n if(i<1.0)return mix(a,b,f);\n if(i<2.0)return mix(b,c,f);\n if(i<3.0)return mix(c,d,f);\n if(i<4.0)return mix(d,e,f);\n return mix(e,a,f);\n}",
+  "terminal": false,
+  "glsl": "maker_primary_spectrum_palette({phase},{scale},{offset},{speed})"
+}

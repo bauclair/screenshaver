@@ -4,52 +4,62 @@
   "name": "Kaleidoscopic Sector Fold",
   "category": "Coordinates",
   "created_by": "Screenshaver",
-  "header_color": "#287C9B",
-  "description": "Reflects a 2D coordinate into a configurable angular wedge using polar geometry.",
-  "uses": "Kaleidoscopic patterns, radial motifs, symmetric coordinate domains.",
-  "notes": "General polar mirror-fold technique with configurable sector count.",
+  "header_color": "#5287B8",
+  "description": "Reflects a 2D position into a repeating angular wedge, producing exact radial mirror symmetry.",
+  "uses": "Kaleidoscopic domain mapping before procedural fields, masks and geometry.",
+  "notes": "Sectors are rounded to an integer from 2 to 32. Rotation animates the fold frame; scale applies after folding.",
   "inputs": [
     {
       "id": "position",
       "name": "Position",
       "type": "vec2",
-      "default": "maker_uv"
+      "default": "maker_uv",
+      "semantic_role": "position2d"
     }
   ],
   "outputs": [
     {
-      "id": "position",
-      "name": "Position",
-      "type": "vec2"
+      "id": "folded",
+      "name": "Folded Position",
+      "type": "vec2",
+      "semantic_role": "position2d"
     }
   ],
   "parameters": [
     {
-      "id": "segments",
+      "id": "sectors",
       "name": "Sectors",
       "type": "float",
-      "default": 6,
+      "default": 12,
       "min": 2,
-      "max": 24
+      "max": 32
     },
     {
-      "id": "angle",
-      "name": "Rotation (radians)",
+      "id": "rotation",
+      "name": "Rotation",
       "type": "float",
       "default": 0,
       "min": -6.2832,
       "max": 6.2832
     },
     {
-      "id": "radial_scale",
-      "name": "Radial Scale",
+      "id": "speed",
+      "name": "Rotation Speed",
+      "type": "float",
+      "default": 0,
+      "min": -4,
+      "max": 4
+    },
+    {
+      "id": "scale",
+      "name": "Scale",
       "type": "float",
       "default": 1,
       "min": 0.05,
       "max": 8
     }
   ],
-  "helpers": "vec2 maker_sector_fold(vec2 point,float sectors,float angle,float radialScale){float count=clamp(floor(sectors+0.5),2.0,24.0);float wedge=6.28318530718/count;float theta=atan(point.y,point.x)+angle;float phase=mod(theta,wedge);float folded=min(phase,wedge-phase);float radius=length(point)*max(radialScale,0.001);return radius*vec2(cos(folded),sin(folded));}",
-  "glsl": "maker_sector_fold({position},{segments},{angle},{radial_scale})",
-  "terminal": false
+  "helpers": "vec2 maker_kaleidoscopic_sector_fold(vec2 p,float sectors,float rotation,float speed,float scale){\n float n=clamp(floor(sectors+0.5),2.0,32.0);\n float sector=6.28318530718/n;\n float angle=atan(p.y,p.x)-rotation-u_time*speed;\n float folded=abs(mod(angle+0.5*sector,sector)-0.5*sector);\n return vec2(cos(folded),sin(folded))*length(p)*max(scale,0.0001);\n}",
+  "terminal": false,
+  "glsl": "maker_kaleidoscopic_sector_fold({position},{sectors},{rotation},{speed},{scale})"
 }
