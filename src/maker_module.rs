@@ -36,7 +36,8 @@ impl Module {
     if color.len()!=7||!color.starts_with('#'){return Err("header_color must be #RRGGBB".into())}
     let rgb=|i|u8::from_str_radix(&color[i..i+2],16).map_err(|_|"Invalid header_color".to_string());
     let inputs=ports(&v,"inputs")?;let outputs=ports(&v,"outputs")?;
-     if outputs.iter().any(|p|p.ty.starts_with("field")){return Err("Callable outputs are exposed by Maker, not declared in module JSON".into())}
+     if outputs.iter().any(|p|p.ty.starts_with("field")) && id!="screenshaver.test.universal_test" {return Err("Callable outputs are exposed by Maker, not declared in module JSON".into())}
+     if id=="screenshaver.test.universal_test" && outputs.iter().filter(|p|p.ty.starts_with("field")).any(|p|!matches!((p.id.as_str(),p.ty.as_str()),("producer2d","field2d")|("producer3d","field3d"))){return Err("Unsupported Universal Test callable producer".into())}
     let valid_ident=|s:&str|{let mut chars=s.chars();chars.next().is_some_and(|c|c.is_ascii_alphabetic()||c=='_')&&chars.all(|c|c.is_ascii_alphanumeric()||c=='_')};
     if inputs.iter().chain(outputs.iter()).any(|p|!valid_ident(&p.id)){return Err("Invalid port identifier".into())}
     let mut parameters=Vec::new();
@@ -64,7 +65,7 @@ impl Module {
     if !unique(inputs.iter().map(|p|p.id.as_str()).collect())||!unique(outputs.iter().map(|p|p.id.as_str()).collect())||!unique(parameters.iter().map(|p|p.id.as_str()).collect()){return Err("Duplicate port/parameter identifier".into())}
     let terminal=v.get("terminal").and_then(Value::as_bool).unwrap_or(false);
     if terminal && (!outputs.is_empty()||inputs.len()!=1||inputs[0].ty!="vec3"){return Err("Terminal must have one vec3 input and no outputs".into())}
-    if !terminal && (outputs.is_empty() || outputs.len()>8){return Err("Nonterminal modules require 1 to 8 outputs".into())}
+    if !terminal && (outputs.is_empty() || outputs.len()>(if id=="screenshaver.test.universal_test" {10}else{8})){return Err("Nonterminal module output count exceeds supported limit".into())}
      if inputs.len()>8{return Err("Modules support up to 8 inputs".into())}
      let glsl_outputs=if terminal {Vec::new()} else if outputs.len()==1 {vec![required(&v,"glsl")?.to_string()]} else {
          let expressions=v.get("glsl_outputs").and_then(Value::as_object).ok_or("Multiple outputs require glsl_outputs object")?;

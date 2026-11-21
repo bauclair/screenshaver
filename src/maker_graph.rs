@@ -4,7 +4,7 @@ use serde_json::Value;
 use crate::maker_library;
 pub type NodeId=u64;
 #[derive(Clone,Debug)]
-pub struct Node {pub id:NodeId,pub module_id:String,pub pos:[f32;2],pub expanded:bool,pub callable_exposed:bool,pub parameters:HashMap<String,Value>}
+pub struct Node {pub id:NodeId,pub module_id:String,pub pos:[f32;2],pub expanded:bool,pub parameters:HashMap<String,Value>}
 impl Node {
   /// First scalar output that can be sampled at a declared position input.
   pub fn callable_spec(&self)->Option<(usize,&'static str)> {
@@ -18,21 +18,22 @@ impl Node {
   pub fn output_port(&self,index:usize)->Option<crate::maker_module::Port>{
    let m=self.definition();
    if let Some(p)=m.outputs.get(index){return Some(p.clone())}
-   if index==m.outputs.len() && self.callable_exposed {
+   if index==m.outputs.len() {
     return self.callable_spec().map(|(_,ty)|crate::maker_module::Port{
      id:"callable_field".into(),name:if ty=="field2d"{"Field 2D"}else{"Field 3D"}.into(),
      ty:ty.into(),default:String::new(),semantic_role:String::new()});
    }
    None
   }
-  pub fn output_count(&self)->usize{self.definition().outputs.len()+usize::from(self.callable_exposed&&self.callable_spec().is_some())}
+  pub fn output_count(&self)->usize{self.definition().outputs.len()+usize::from(self.callable_spec().is_some())}
+  pub fn input_count(&self)->usize{self.definition().inputs.len()}
   pub fn input_port(&self,index:usize)->Option<crate::maker_module::Port>{self.definition().inputs.get(index).cloned()}
   pub fn port_rows(&self)->usize{self.definition().inputs.len().max(self.output_count())}
 }
 impl Node {
  fn new(id:NodeId,module_id:&str,pos:[f32;2])->Result<Self,String>{
   let m=maker_library::get().module(module_id).ok_or_else(||format!("Unknown module: {module_id}"))?;
-  Ok(Self{id,module_id:module_id.into(),pos,expanded:true,callable_exposed:false,parameters:m.parameters.iter().map(|p|(p.id.clone(),p.default.clone())).collect()})
+  Ok(Self{id,module_id:module_id.into(),pos,expanded:true,parameters:m.parameters.iter().map(|p|(p.id.clone(),p.default.clone())).collect()})
  }
  pub fn definition(&self)->&'static crate::maker_module::Module{maker_library::get().module(&self.module_id).expect("Registered node module")}
 }
@@ -127,17 +128,6 @@ impl Graph {
   if n.definition().terminal{return Err("Output Color is required".into())}
   self.nodes.retain(|n|n.id!=id);self.connections.retain(|c|c.from!=id&&c.to!=id);self.revision+=1;Ok(())
  }
-  pub fn set_callable_exposed(&mut self,id:NodeId,exposed:bool)->Result<(),String>{
-   let node=self.node(id).ok_or("Node missing")?;
-   if exposed && node.callable_spec().is_none(){return Err("Node has no eligible scalar position field".into())}
-   if !exposed && node.callable_exposed {
-    let port=node.definition().outputs.len();
-    self.connections.retain(|c|!(c.from==id&&c.from_port==port));
-   }
-   let node=self.node_mut(id).ok_or("Node missing")?;
-   if node.callable_exposed!=exposed{node.callable_exposed=exposed;self.revision=self.revision.wrapping_add(1);}
-   Ok(())
-  }
   pub fn input_connection(&self,id:NodeId,port:usize)->Option<Connection>{self.connections.iter().copied().find(|c|c.to==id&&c.to_port==port)}
  pub fn disconnect_input(&mut self,id:NodeId,port:usize){let n=self.connections.len();self.connections.retain(|c|!(c.to==id&&c.to_port==port));if n!=self.connections.len(){self.revision+=1}}
  pub fn check_connection(&self,from:NodeId,from_port:usize,to:NodeId,to_port:usize)->Result<(),String>{

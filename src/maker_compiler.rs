@@ -85,11 +85,20 @@ vec3 maker_rotate_3d(vec3 p,float xy,float yz,float xz){
    for n in graph.nodes.iter().filter(|n|reachable.contains(&n.id)) {
     for (port,input) in n.definition().inputs.iter().enumerate() {
      if input.ty=="field2d"||input.ty=="field3d" {
-      let c=graph.input_connection(n.id,port).ok_or_else(||format!("{} requires {}",n.definition().name,input.name))?;
+      let Some(c)=graph.input_connection(n.id,port) else {
+       if n.module_id=="screenshaver.test.universal_test" {continue}
+       return Err(format!("{} requires {}",n.definition().name,input.name));
+      };
       let source=graph.node(c.from).ok_or("Missing callable source")?;
-      let (scalar,dimension)=source.callable_spec().ok_or("Callable source is not position-dependent")?;
-      if dimension!=input.ty || c.from_port!=source.definition().outputs.len(){return Err("Callable field dimension or output mismatch".into())}
-      callable.require(c.from,scalar,"float")?;
+      let port=source.output_port(c.from_port).ok_or("Callable source port missing")?;
+      if port.ty!=input.ty{return Err("Callable field dimension or output mismatch".into())}
+      if source.module_id=="screenshaver.test.universal_test" && (port.id=="producer2d" || port.id=="producer3d") {
+       callable.require(c.from,c.from_port,&port.ty)?;
+      }else{
+       let (scalar,dimension)=source.callable_spec().ok_or("Callable source is not position-dependent")?;
+       if dimension!=input.ty || c.from_port!=source.definition().outputs.len(){return Err("Callable field dimension or output mismatch".into())}
+       callable.require(c.from,scalar,"float")?;
+      }
      }
     }
    }
@@ -251,11 +260,18 @@ fn substitute(template:&str,bindings:&std::collections::HashMap<String,String>)-
 // Select the first connected diagnostic input in a fixed priority order.
 // No calibration parameters or runtime switching are required.
 fn universal_preview_expression(graph:&Graph,id:NodeId)->String {
- for port in [3usize,2,1,0,4] {
+ for port in [6usize,5,3,2,1,0,4] {
   if graph.input_connection(id,port).is_some() {
    let c=graph.input_connection(id,port).expect("connected diagnostic input");
-   let value=format!("v{}_p{}",c.from,c.from_port);
+   let value=if port==5 || port==6 {
+    let function=if port==5 {format!("maker_field2d_{}_{}",c.from,c.from_port)}
+     else {format!("maker_callable_{}_{}",c.from,graph.node(c.from).and_then(|n|n.callable_spec()).map(|x|x.0).unwrap_or(c.from_port))};
+    let position=if port==5 {format!("vec2(u_n{id}_uv_x,u_n{id}_uv_y)")}
+     else {format!("vec3(u_n{id}_sample_x,u_n{id}_sample_y,u_n{id}_sample_z)")};
+    format!("{function}({position})")
+   } else {format!("v{}_p{}",c.from,c.from_port)};
    return match port {
+    5 | 6 => format!("maker_universal_signed({value})"),
     3 => value,
     2 => format!("clamp(0.5+0.5*({value}),0.0,1.0)"),
     1 => format!("clamp(vec3(0.5+0.5*({value}),0.5),0.0,1.0)"),
@@ -274,9 +290,15 @@ fn emit(graph:&Graph,id:NodeId,emitted:&mut HashSet<NodeId>,src:&mut String)->Re
  let mut vars=std::collections::HashMap::new();
  for (port,p) in m.inputs.iter().enumerate(){
   let expression=if p.ty.starts_with("field") {
-    let c=graph.input_connection(id,port).ok_or_else(||format!("{} requires callable input {}",m.name,p.name))?;
+    let Some(c)=graph.input_connection(id,port) else {
+     if m.id=="screenshaver.test.universal_test" {
+      vars.insert(p.id.clone(),p.default.clone());
+      continue;
+     }
+     return Err(format!("{} requires callable input {}",m.name,p.name));
+    };
     if p.ty=="field2d" {format!("maker_field2d_{}_{}",c.from,c.from_port)}
-    else {format!("maker_callable_{}_{}",c.from,graph.node(c.from).and_then(|n|n.callable_spec()).ok_or("Invalid callable source")?.0)}
+    else {format!("maker_callable_{}_{}",c.from,if graph.node(c.from).is_some_and(|n|n.module_id=="screenshaver.test.universal_test") {c.from_port} else {graph.node(c.from).and_then(|n|n.callable_spec()).ok_or("Invalid callable source")?.0})}
    } else {graph.input_connection(id,port).map(|c|format!("v{}_p{}",c.from,c.from_port)).unwrap_or_else(||p.default.clone())};
   if expression.is_empty(){return Err(format!("Missing input default for {}:{}",m.id,p.id))}
   vars.insert(p.id.clone(),expression);
@@ -293,6 +315,7 @@ fn emit(graph:&Graph,id:NodeId,emitted:&mut HashSet<NodeId>,src:&mut String)->Re
   emitted.insert(id);return Ok(());
  }
  for (port,output) in m.outputs.iter().enumerate(){
+  if output.ty.starts_with("field"){continue}
   let expression=if m.id=="screenshaver.test.universal_test" && output.id=="preview_color" { universal_preview_expression(graph,id) } else if m.id=="screenshaver.fields.traversal" && graph.input_connection(id,0).is_some(){format!("maker_traverse_connected_{}({},{},{},{},{})",id,vars["position"],vars["depth"],vars["density"],vars["speed"],vars["mode"])}else{substitute(&m.glsl_outputs[port],&vars)?};
   src.push_str(&format!("  {} v{}_p{}={};\n",output.ty,id,port,expression));
  }
@@ -323,6 +346,17 @@ impl<'a> CallableGenerator<'a> {
   let n=self.graph.node(id).ok_or("Callable source missing")?;
   let m=n.definition();
   let ty=m.outputs.get(port).ok_or("Callable output missing")?.ty.clone();
+  if m.id=="screenshaver.test.universal_test" && (ty=="field2d" || ty=="field3d") {
+   if ty!=expected{return Err(format!("Callable source requires {expected}, got {ty}"))}
+   if self.generated.insert((id,port)) {
+    let function=if ty=="field2d" {format!("maker_field2d_{id}_{port}")}else{Self::name(id,port)};
+    let arg=if ty=="field2d" {"vec2"}else{"vec3"};
+    let fallback=if ty=="field2d" {"maker_universal_field2d_fallback"}else{"maker_universal_field3d_fallback"};
+    self.signatures.push(format!("float {function}({arg} maker_position);\n"));
+    self.definitions.push(format!("float {function}({arg} maker_position){{return {fallback}(maker_position);}}\n"));
+   }
+   return Ok(())
+  }
   if ty!=expected{return Err(format!("Callable source requires {expected}, got {ty}"))}
   if self.generated.contains(&(id,port)){return Ok(())}
   if !self.active.insert((id,port)){return Err("Callable field cycle".into())}
@@ -364,7 +398,7 @@ impl<'a> CallableGenerator<'a> {
   self.signatures.push(format!("{ty} {name}(vec3 maker_position);\n"));
   self.definitions.push(format!("{ty} {name}(vec3 maker_position){{vec2 maker_uv=maker_position.xy;return {expression};}}\n"));
   self.generated.insert((id,port));
-  if self.graph.node(id).is_some_and(|n|n.callable_exposed && n.callable_spec()==Some((port,"field2d"))) {
+  if self.graph.node(id).is_some_and(|n|n.callable_spec()==Some((port,"field2d"))) {
    let wrapper=format!("maker_field2d_{id}_{}",m.outputs.len());
    self.signatures.push(format!("float {wrapper}(vec2 p);\n"));
    self.definitions.push(format!("float {wrapper}(vec2 p){{return {name}(vec3(p,0.0));}}\n"));

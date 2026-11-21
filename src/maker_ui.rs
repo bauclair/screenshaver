@@ -267,6 +267,7 @@ fn candidate_score(candidate:&Candidate, sort:u8)->f32 {
         5=>0.0,
         6=>candidate.motion.unwrap_or(-1.0),
         7=>candidate.connections.len() as f32,
+        8=>if candidate.uses_callable_field {1.0} else {0.0},
         _=>candidate.visual.interest * (if candidate.connection_candidate {
             match candidate.motion {Some(m) if m<0.003=>0.20,Some(m)=>0.75+0.25*(m*20.0).min(1.0),None=>0.65}
         } else {1.0}),
@@ -290,6 +291,7 @@ struct Candidate {
     motion: Option<f32>,
     motion_failed: bool,
     connection_candidate: bool,
+    uses_callable_field: bool,
 }
 #[derive(Clone)]
 pub struct CandidateJob {
@@ -358,7 +360,7 @@ pub(crate) fn graph_compile_cost(graph:&Graph)->u64 {
         };
         let kind=node.module_id.as_str();
         let mut inputs=Vec::new();
-        for port in 0..node.definition().inputs.len(){inputs.push(input(port,cache,visiting));}
+        for port in 0..node.input_count(){inputs.push(input(port,cache,visiting));}
         let total=inputs.iter().fold(0u64,|s,&v|s.saturating_add(v));
         // Ray marchers repeatedly sample their first input, including normal,
         // AO and curvature estimates. Optical marchers also resample background.
@@ -431,7 +433,6 @@ fn graph_preflight(graph:&Graph, _output:NodeId)->Result<(),String> {
 }
 
 // Bound graph snapshots independently in discovery.
-const MAX_GRAPH_FRONTIER: usize = 4_096;
 const MAX_PENDING_RENDER_JOBS: usize = 96;
 fn candidate_graphs(graph:&Graph)->Vec<(String,Graph)> {
     if graph.nodes.iter().any(|n| n.definition().category.eq_ignore_ascii_case("Test")) { return Vec::new(); }
@@ -567,8 +568,8 @@ fn graph_semantic_penalty(graph:&Graph)->u32 {
     graph.connections.iter().fold(0u32,|score,c| {
         let Some(source)=graph.node(c.from) else {return score};
         let Some(target)=graph.node(c.to) else {return score};
-        let Some(from)=source.definition().outputs.get(c.from_port) else {return score};
-        let Some(to)=target.definition().inputs.get(c.to_port) else {return score};
+        let Some(from)=source.output_port(c.from_port) else {return score};
+        let Some(to)=target.input_port(c.to_port) else {return score};
         score.saturating_add(semantic_pair_penalty(&from.semantic_role,&to.semantic_role))
     })
 }
@@ -647,6 +648,14 @@ fn select_diverse_gpu_indices(graphs:&[Graph],ranked:&[(u32,u64,usize)],limit:us
     chosen.into_iter().map(|position|pool[position].2).collect()
 }
 
+// A callable is counted only when a real graph edge uses a field-typed port.
+fn graph_has_callable_edge(graph:&Graph)->bool {
+    graph.connections.iter().any(|c| {
+        graph.node(c.from).and_then(|n|n.output_port(c.from_port))
+            .is_some_and(|p|p.ty=="field2d" || p.ty=="field3d")
+    })
+}
+
 // Deterministic reservoir admission: every output-connected graph encountered
 // has equal probability of occupying one of the bounded raw slots. This avoids
 // keeping only the first 12,000 states of a depth-first traversal.
@@ -676,11 +685,13 @@ impl ConnectionFeasibility {
             feasible_pairs:0,reachable_nodes:0,excluded_nodes:0};
         let mut typed=std::collections::BTreeMap::<(NodeId,usize),Vec<(NodeId,usize)>>::new();
         for target in &graph.nodes {
-            for (tp,input) in target.definition().inputs.iter().enumerate(){
+            for tp in 0..target.input_count(){
+                let Some(input)=target.input_port(tp) else {continue};
                 let mut sources=Vec::new();
                 for source in &graph.nodes {
                     if source.definition().terminal || source.id==target.id {continue}
-                    for (sp,out) in source.definition().outputs.iter().enumerate(){
+                    for sp in 0..source.output_count(){
+                        let Some(out)=source.output_port(sp) else {continue};
                         index.raw_pairs+=1;
                         if out.ty==input.ty {sources.push((source.id,sp));index.typed_pairs+=1;}
                     }
@@ -711,11 +722,8 @@ impl ConnectionFeasibility {
     }
 }
 struct ConnectionSearch {
-    feasibility:Option<ConnectionFeasibility>,
     base:Option<Graph>,
-    queues:[std::collections::VecDeque<Graph>;3],
     canonical:Option<maker_discovery::ProductionEnumeration>,
-    legacy:bool,
     enumeration_start:u64,
     max_enumerations:usize,
     min_wire_connections:usize,
@@ -723,6 +731,10 @@ struct ConnectionSearch {
     discovery_error:Option<String>,
     seen:std::collections::HashSet<Vec<(NodeId,usize,NodeId,usize)>>,
     raw:Vec<Graph>,
+    callable_raw:Vec<Graph>,
+    callable_seen:u64,
+    callable_qualified:usize,
+    callable_admissible:usize,
     qualified:Vec<Graph>,
     scores:Vec<(u32,u64,usize)>,
     raw_seen:u64,
@@ -733,7 +745,6 @@ struct ConnectionSearch {
     generated:usize,
     incomplete:usize,
     duplicates:usize,
-    turn:usize,
     stage:DiscoveryStage,
     cursor:usize,
     workers:usize,
@@ -757,13 +768,11 @@ impl ConnectionSearch {
         base.nodes.retain(|n|!test_ids.contains(&n.id));
         base.connections.retain(|c|!test_ids.contains(&c.from)&&!test_ids.contains(&c.to));
         base.connections.clear();base.revision=graph.revision.wrapping_add(1);
-        let queues=std::array::from_fn(|_|std::collections::VecDeque::new());
-        Some(Self{feasibility:None,base:Some(base),queues,canonical:None,legacy:std::env::var("SCREENSHAVER_MAKER_DISCOVERY_LEGACY").ok().as_deref()==Some("1"),enumeration_start:0,max_enumerations,min_wire_connections,max_wire_connections,discovery_error:None,seen:Default::default(),raw:Vec::new(),qualified:Vec::new(),scores:Vec::new(),raw_seen:0,selected_jobs:Vec::new(),gpu_started:false,output,
-            examined:0,generated:0,incomplete:0,duplicates:0,turn:0,stage:DiscoveryStage::Feasibility,
+        Some(Self{base:Some(base),canonical:None,enumeration_start:0,max_enumerations,min_wire_connections,max_wire_connections,discovery_error:None,seen:Default::default(),raw:Vec::new(),callable_raw:Vec::new(),callable_seen:0,callable_qualified:0,callable_admissible:0,qualified:Vec::new(),scores:Vec::new(),raw_seen:0,selected_jobs:Vec::new(),gpu_started:false,output,
+            examined:0,generated:0,incomplete:0,duplicates:0,stage:DiscoveryStage::Feasibility,
             cursor:0,workers:discovery_threads(),started:Instant::now(),cpu_started:discovery_cpu_seconds(),
             reports:Vec::new(),peak_rss_kib:discovery_rss_kib(),deferred_complexity:0,min_runtime_cost:u64::MAX,max_runtime_cost:0,min_source_cost:u64::MAX,max_source_cost:0})
     }
-    fn queued(&self)->usize{self.queues.iter().map(|q|q.len()).sum()}
     fn finished(&self)->bool{self.stage==DiscoveryStage::Ready}
     fn transition(&mut self,next:DiscoveryStage,input:usize,output:usize){
         self.peak_rss_kib=self.peak_rss_kib.max(discovery_rss_kib());
@@ -783,13 +792,6 @@ impl ConnectionSearch {
                 eprintln!("[MAKER FEASIBILITY] raw_pairs={} type_compatible={} feasible={} reachable_nodes={} excluded_nodes={}",
                     index.raw_pairs,index.typed_pairs,index.feasible_pairs,index.reachable_nodes,index.excluded_nodes);
                 let input=index.raw_pairs;let output=index.feasible_pairs;
-                self.feasibility=Some(index);
-                if self.legacy {
-                    eprintln!("[MAKER DISCOVERY] legacy queue fallback enabled by environment");
-                    self.queues[0].push_back(base);
-                    self.transition(DiscoveryStage::Enumerate,input,output);
-                    return;
-                }
                 match maker_discovery::ProductionEnumeration::open(base,self.min_wire_connections,self.max_wire_connections) {
                     Ok((canonical,resumed))=>{
                         self.enumeration_start=canonical.examined();
@@ -805,57 +807,6 @@ impl ConnectionSearch {
                 }
             }
             DiscoveryStage::Enumerate=>{
-                if self.legacy {
-
-                let deadline=Instant::now()+std::time::Duration::from_millis(8);
-                let mut batch=0;
-                const SCHEDULE:[usize;20]=[0,1,2,2,1,2,0,1,2,2,1,2,0,1,2,2,1,2,0,1];
-                while self.examined<self.max_enumerations && self.queued()>0
-                    && batch<128 && Instant::now()<deadline {
-                    batch+=1;
-                    let mut current=None;
-                    for _ in 0..SCHEDULE.len(){let bucket=SCHEDULE[self.turn%SCHEDULE.len()];self.turn+=1;
-                        if let Some(g)=self.queues[bucket].pop_front(){current=Some(g);break}}
-                    let Some(current)=current else {break};self.examined+=1;
-                    if !self.seen.insert(connection_key(&current)){self.duplicates+=1;continue}
-                    // Deliberately defer ALL structural validation to stage 2.
-                    if (self.min_wire_connections..=self.max_wire_connections).contains(&current.connections.len()) && current.input_connection(self.output,0).is_some() && self.raw.len()<MAX_RAW_GRAPHS {self.raw.push(current.clone());}
-                    let mut reachable=std::collections::HashSet::from([self.output]);let mut frontier=vec![self.output];
-                    while let Some(id)=frontier.pop(){for c in current.connections.iter().filter(|c|c.to==id){
-                        if reachable.insert(c.from){frontier.push(c.from)}}}
-                    let mut targets=Vec::new();
-                    for node in &current.nodes {if !reachable.contains(&node.id){continue}
-                        for port in 0..node.definition().inputs.len(){
-                            if current.input_connection(node.id,port).is_none(){targets.push((node.id,port));}}}
-                    let required=|id:NodeId,port:usize|current.input_required(id,port);
-                    targets.sort_by_key(|&(id,port)|(if id==self.output{0}else if required(id,port){1}else{2},std::cmp::Reverse(id),port));
-                    let has_required=targets.iter().any(|&(id,port)|required(id,port));
-                    if has_required && current.input_connection(self.output,0).is_some(){targets.retain(|&(id,port)|required(id,port));}
-                    else if targets.len()>3 {let offset=self.examined%targets.len();targets.rotate_left(offset);}
-                    for (to,to_port) in targets.into_iter().take(if has_required{1}else{3}){
-                        if let Some(sources)=self.feasibility.as_ref().and_then(|f|f.sources.get(&(to,to_port))){
-                            for &(from,from_port) in sources {
-                                if self.queued()>=MAX_GRAPH_FRONTIER{break}
-                                // Stage 0 handles static compatibility; this still checks
-                                // graph-dependent cycles before inserting the edge.
-                                if current.check_connection(from,from_port,to,to_port).is_err(){continue}
-                                let mut proposed=current.clone();
-                                if proposed.connect(from,from_port,to,to_port).is_ok(){
-                                    let depth=proposed.connections.len();let bucket=if depth<=3{0}else if depth<=7{1}else{2};
-                                    self.queues[bucket].push_back(proposed);
-                                }
-                            }
-                        }
-                    }
-                }
-                if self.examined>=self.max_enumerations || self.queued()==0 {
-                    let input=self.examined;let output=self.raw.len();
-                    self.queues.iter_mut().for_each(|q|q.clear());self.seen.clear();
-                    self.transition(DiscoveryStage::Validate,input,output);
-                }
-
-                    return;
-                }
                 let deadline=Instant::now()+std::time::Duration::from_millis(8);
                 let mut batch=0usize;
                 let mut exhausted=false;
@@ -878,6 +829,15 @@ impl ConnectionSearch {
                     // Preserve Stage 2's structural validation boundary.
                     if (self.min_wire_connections..=self.max_wire_connections).contains(&graph.connections.len()) && graph.input_connection(self.output,0).is_some() {
                         self.raw_seen+=1;
+                        if graph_has_callable_edge(&graph) {
+                            self.callable_seen+=1;
+                            // Dedicated reservoir prevents noncallable graphs from evicting every callable.
+                            const CALLABLE_RESERVOIR:usize=2_000;
+                            if let Some(slot)=reservoir_slot(self.callable_seen,CALLABLE_RESERVOIR) {
+                                if slot==self.callable_raw.len(){self.callable_raw.push(graph.clone());}
+                                else {self.callable_raw[slot]=graph.clone();}
+                            }
+                        }
                         if let Some(slot)=reservoir_slot(self.raw_seen,MAX_RAW_GRAPHS){
                             if slot==self.raw.len(){self.raw.push(graph)}
                             else {self.raw[slot]=graph}
@@ -892,6 +852,11 @@ impl ConnectionSearch {
                     }
                 }
                 if exhausted || self.examined>=self.max_enumerations {
+                    // Merge callable snapshots before validation, deduplicating in the normal stage.
+                    let callable_stored=self.callable_raw.len();
+                    self.raw.append(&mut self.callable_raw);
+                    eprintln!("[MAKER CALLABLE ENUMERATION] emitted={} output_connected={} callable_seen={} callable_stored={}",
+                        self.examined,self.raw_seen,self.callable_seen,callable_stored);
                     let input=self.examined;let output=self.raw.len();
                     self.canonical=None;
                     self.transition(DiscoveryStage::Validate,input,output);
@@ -901,7 +866,10 @@ impl ConnectionSearch {
                 let end=(self.cursor+CPU_STAGE_BATCH).min(self.raw.len());
                 let checks=parallel_map(&self.raw[self.cursor..end],self.workers,|g|graph_preflight(g,self.output).is_ok());
                 // Compact in place only at the end of the stage; preserve deterministic order.
-                for (i,valid) in checks.into_iter().enumerate(){if !valid{self.incomplete+=1;}else{self.qualified.push(self.raw[self.cursor+i].clone());}}
+                for (i,valid) in checks.into_iter().enumerate(){if !valid{self.incomplete+=1;}else{
+                    if graph_has_callable_edge(&self.raw[self.cursor+i]) {self.callable_qualified+=1;}
+                    self.qualified.push(self.raw[self.cursor+i].clone());
+                }}
                 self.cursor=end;
                 if end==self.raw.len(){let input=self.raw.len();let output=self.qualified.len();
                     self.raw.clear();self.transition(DiscoveryStage::Deduplicate,input,output);}
@@ -928,6 +896,7 @@ impl ConnectionSearch {
                     self.min_runtime_cost=self.min_runtime_cost.min(runtime_cost);
                     self.max_runtime_cost=self.max_runtime_cost.max(runtime_cost);
                     if candidate_admission(&self.raw[self.cursor+i]).is_ok() {
+                        if graph_has_callable_edge(&self.raw[self.cursor+i]) {self.callable_admissible+=1;}
                         self.scores.push((semantic_penalty,score,self.cursor+i));
                     } else {self.deferred_complexity+=1;}
                 }
@@ -940,7 +909,19 @@ impl ConnectionSearch {
                     // Preserve the semantic score and hash ordering as a deterministic
                     // shortlist, then select distinct graph structures for GPU work.
                     self.scores.sort_unstable_by(|a,b|a.0.cmp(&b.0).then_with(||a.1.cmp(&b.1)).then_with(||a.2.cmp(&b.2)));
-                    let chosen=select_diverse_gpu_indices(&self.raw,&self.scores,MAX_CONNECTION_GPU_JOBS);
+                    // Preserve the original GPU budget. Reserve up to eight slots for callable
+                    // graphs, selected from their own semantic-ranked pool rather than the global top 1024.
+                    let callable_ranked:Vec<_>=self.scores.iter().copied()
+                        .filter(|(_,_,i)|graph_has_callable_edge(&self.raw[*i])).collect();
+                    let mut chosen=select_diverse_gpu_indices(&self.raw,&callable_ranked,8);
+                    let regular=select_diverse_gpu_indices(&self.raw,&self.scores,MAX_CONNECTION_GPU_JOBS);
+                    for index in regular {
+                        if chosen.len()>=MAX_CONNECTION_GPU_JOBS {break;}
+                        if !chosen.contains(&index) {chosen.push(index);}
+                    }
+                    let callable_selected=chosen.iter().filter(|&&i|graph_has_callable_edge(&self.raw[i])).count();
+                    eprintln!("[MAKER CALLABLE PIPELINE] enumerated={} preflight_passed={} admission_passed={} gpu_selected={}",
+                        self.callable_seen,self.callable_qualified,self.callable_admissible,callable_selected);
                     let selected=chosen.len();
                     let mut counts=std::collections::BTreeMap::<usize,usize>::new();
                     let mut overlap_sum=0usize;
@@ -1628,6 +1609,13 @@ impl MakerUi {
                 job.name,visual.contrast,visual.entropy,visual.interest);
             return;
         }
+        // Mark only candidates with an actual callable-field wire, not merely
+        // modules that advertise an always-available callable output.
+        let uses_callable_field=job.graph.connections.iter().any(|connection| {
+            job.graph.node(connection.from)
+                .and_then(|node|node.output_port(connection.from_port))
+                .is_some_and(|port|matches!(port.ty.as_str(),"field2d"|"field3d"))
+        });
         let parameters=job.graph.nodes.iter().map(|n|(n.id,n.parameters.clone())).collect();
         let modules=job.graph.nodes.iter().map(|n|(n.id,n.module_id.clone())).collect();
         // Parameter discovery retains its existing first-500 behavior.
@@ -1635,7 +1623,7 @@ impl MakerUi {
         let candidate=Candidate{name:job.name,parameters,modules,connections:job.graph.connections.clone(),
             texture:self.context.load_texture(format!("maker_candidate_{}",self.candidate_evaluated),
                 egui::ColorImage::from_rgba_unmultiplied([width,height],&rgba),egui::TextureOptions::LINEAR),
-            visual,motion:None,motion_failed:false,connection_candidate:job.connection_candidate};
+            visual,motion:None,motion_failed:false,connection_candidate:job.connection_candidate,uses_callable_field};
         if self.candidates.len()<CANDIDATES_RETAINED {self.candidates.push(candidate);return}
         if !job.connection_candidate {return}
         // A compact, normalized descriptor gives diversity a role without adding
@@ -1860,7 +1848,7 @@ impl MakerUi {
                 } else if self.candidate_glsl_capable>=self.max_candidates {
                     self.candidate_notice=format!("GLSL target reached: {} / {} capable; {} thumbnails retained",self.candidate_glsl_capable,self.max_candidates,self.candidates.len());
                     eprintln!("[MAKER DISCOVERY TARGET] reached capable={} retained={}",self.candidate_glsl_capable,self.candidates.len());
-                } else if search.examined<search.max_enumerations && !search.legacy {
+                } else if search.examined<search.max_enumerations {
                     self.candidate_notice=format!("Canonical enumeration exhausted after {} GLSL-capable candidates",self.candidate_glsl_capable);
                     eprintln!("[MAKER DISCOVERY TARGET] exhausted capable={}",self.candidate_glsl_capable);
                 } else if search.generated==0 && search.examined==0 {
@@ -2866,7 +2854,7 @@ impl MakerUi {
                     egui::ComboBox::from_label("Sort thumbnails")
                         .selected_text(match *candidate_sort {
                             1=>"Visual Complexity",2=>"Perceptual Contrast",3=>"Spatial Entropy",
-                            4=>"Color Vibrancy",5=>"Discovery Order",6=>"Motion Activity",7=>"Wire Connections",_=>"Visual Interest",
+                            4=>"Color Vibrancy",5=>"Discovery Order",6=>"Motion Activity",7=>"Wire Connections",8=>"Callable Fields",_=>"Visual Interest",
                         })
                         .show_ui(ui,|ui|{
                             ui.selectable_value(candidate_sort,0,"Visual Interest");
@@ -2877,6 +2865,7 @@ impl MakerUi {
                             ui.selectable_value(candidate_sort,5,"Discovery Order");
                             ui.selectable_value(candidate_sort,6,"Motion Activity");
                             ui.selectable_value(candidate_sort,7,"Wire Connections (most first)");
+                            ui.selectable_value(candidate_sort,8,"Callable Fields");
                         });
                     if *candidate_sort==6 {
                         let scored=candidates.iter().filter(|c|c.motion.is_some() || c.motion_failed).count();
@@ -2919,10 +2908,8 @@ impl MakerUi {
                         // progress bar describes only this bounded CPU batch.
                         // The selected batch size is not the lifetime graph limit.
                         let batch_size=search.max_enumerations as u64;
-                        let total=if search.legacy {search.examined as u64}
-                            else {search.enumeration_start.saturating_add(search.examined as u64)};
-                        let batch_number=if search.legacy {1}
-                            else {search.enumeration_start / batch_size + 1};
+                        let total=search.enumeration_start.saturating_add(search.examined as u64);
+                        let batch_number=search.enumeration_start / batch_size + 1;
                         let batch_progress=(search.examined as u64).min(batch_size);
                         ui.label(format!("Total states examined: {}",total));
                         if let Some(enumerator)=search.canonical.as_ref(){
@@ -3045,7 +3032,16 @@ impl MakerUi {
                                         }
                                     } else {*status="Discovery snapshot missing".into();}
                                 }
-                                ui.small(&candidate.name);
+                                ui.horizontal(|ui| {
+                                    ui.spacing_mut().item_spacing.x=5.0;
+                                    ui.small(&candidate.name);
+                                    if candidate.uses_callable_field {
+                                        let (rect,_) = ui.allocate_exact_size(
+                                            egui::vec2(12.0,12.0),egui::Sense::hover());
+                                        ui.painter().circle_filled(rect.center(),5.0,
+                                            egui::Color32::from_rgb(224,64,251));
+                                    }
+                                });
                                 if candidate.connection_candidate && *candidate_sort!=6 {
                                     ui.small(match candidate.motion {
                                         Some(score) if score<0.003=>"Temporal: static / near-static".to_owned(),
@@ -3062,6 +3058,8 @@ impl MakerUi {
                                     });
                                 } else if *candidate_sort==7 {
                                     ui.small(format!("Wire connections: {}",candidate.connections.len()));
+                                } else if *candidate_sort==8 {
+                                    ui.small(if candidate.uses_callable_field {"Callable field: connected"} else {"Callable field: none"});
                                 } else if *candidate_sort!=5 {
                                     ui.small(format!("{}: {:.1}%",match *candidate_sort {
                                         1=>"Complexity",2=>"Contrast",3=>"Entropy",4=>"Vibrancy",_=>"Visual interest",
@@ -3196,7 +3194,7 @@ impl MakerUi {
                         let mut bottom=f32::NEG_INFINITY;
                         for n in &graph.nodes {
                             let rows=n.port_rows();
-                            let width=186.0_f32;
+                            let width=if n.module_id=="screenshaver.test.universal_test" {256.0_f32} else {186.0_f32};
                             let height=110.0_f32.max(55.0+25.0*rows as f32);
                             left=left.min(n.pos[0]);top=top.min(n.pos[1]);
                             right=right.max(n.pos[0]+width);
@@ -3234,7 +3232,7 @@ impl MakerUi {
                     for n in &graph.nodes {
                         let rows=n.port_rows();
                         // Compact module's measured frame includes egui margins.
-                        let width=186.0_f32;
+                        let width=if n.module_id=="screenshaver.test.universal_test" {256.0_f32} else {186.0_f32};
                         let height=(110.0_f32).max(55.0+25.0*rows as f32);
                         left=left.min(n.pos[0]);top=top.min(n.pos[1]);
                         right=right.max(n.pos[0]+width);
@@ -3297,10 +3295,10 @@ impl MakerUi {
                             style.spacing.item_spacing*=*canvas_zoom;
                             style.spacing.button_padding*=*canvas_zoom;
                             ui.set_style(style);
-                            egui::Frame::window(ui.style()).show(ui,|ui|{
+                            let frame_response=egui::Frame::window(ui.style()).show(ui,|ui|{
                                 // Fixed standard width and height; only port count may grow height.
-                                let node_width = 170.0 * *canvas_zoom;
-                                let rows = graph.node(id).map(|n|n.port_rows()).unwrap_or(0);
+                                let node_width = (if module.id=="screenshaver.test.universal_test" {240.0} else {170.0}) * *canvas_zoom;
+                                let rows = graph.node(id).map(|n|n.port_rows().max(n.definition().outputs.len()+usize::from(n.callable_spec().is_some()))).unwrap_or(0);
                                 let port_height = rows as f32 * 25.0 * *canvas_zoom;
                                 let header_height = 27.0 * *canvas_zoom;
                                 ui.set_min_width(node_width);
@@ -3357,7 +3355,7 @@ impl MakerUi {
                                 }
                                 // All editable values live exclusively in the attached editor.
                                 // The compact node exposes only a Parameters link.
-                                if !module.parameters.is_empty() || graph.node(id).and_then(|n|n.callable_spec()).is_some() {
+                                if !module.parameters.is_empty() {
                                     let response = ui.small_button("⚙ Parameters ↗")
                                         .on_hover_text("Open parameter editor");
                                     if response.clicked() {
@@ -3373,8 +3371,18 @@ impl MakerUi {
                                 // Ports occupy the vertical left/right edges of the node.
                                 // They remain visible when the node is collapsed.
                                 let inputs = &module.inputs;
-                                let outputs:Vec<crate::maker_module::Port>=(0..graph.node(id).map(|n|n.output_count()).unwrap_or(0))
+                                let mut outputs:Vec<crate::maker_module::Port>=(0..graph.node(id).map(|n|n.output_count()).unwrap_or(0))
                                     .filter_map(|index|graph.node(id).and_then(|n|n.output_port(index))).collect();
+                                // Callable outputs are permanent typed ports on eligible modules.
+                                // Display Universal Test's Preview Color last without changing
+                                // stable output indices in saved .smprj graph connections.
+                                let mut output_order:Vec<usize>=(0..outputs.len()).collect();
+                                if module.id=="screenshaver.test.universal_test" {
+                                    if let Some(preview_index)=outputs.iter().position(|p|p.id=="preview_color") {
+                                        output_order.retain(|&i|i!=preview_index);
+                                        output_order.push(preview_index);
+                                    }
+                                }
                                 let rows = inputs.len().max(outputs.len());
                                 let port_color = port_color;
                                 // Port rows share the compact module body width.
@@ -3407,34 +3415,33 @@ impl MakerUi {
                                             *selected = Some(id);
                                         }
                                     }
-                                    if let Some(port) = outputs.get(row) {
+                                    if let Some(&output_index) = output_order.get(row) {
+                                        let port=&outputs[output_index];
                                         let name=&port.name;let ty=port.ty.as_str();
                                         let center = egui::pos2(row_rect.right(), row_rect.center().y);
                                         let hit = egui::Rect::from_center_size(center, egui::vec2(22.0* *canvas_zoom, 22.0* *canvas_zoom));
-                                        let response = ui.interact(hit, ui.id().with((id, "output", row)), egui::Sense::click_and_drag());
-                                        output_ports.insert((id,row),center);
+                                        let response = ui.interact(hit, ui.id().with((id, "output", output_index)), egui::Sense::click_and_drag());
+                                        output_ports.insert((id,output_index),center);
                                         // Connector disk is painted on this node's own layer after its frame.
                                         ui.painter().text(center - egui::vec2(11.0* *canvas_zoom,0.0), egui::Align2::RIGHT_CENTER,
                                             name, egui::TextStyle::Small.resolve(ui.style()),ui.visuals().text_color());
                                         let response = response.on_hover_text(format!(
                                             "{} output ({})\nMultiple destinations allowed. Click or drag to an input.",name,ty));
                                         if response.drag_started() {
-                                            *dragging_wire = Some((id,row));
+                                            *dragging_wire = Some((id,output_index));
                                             *pending = None;
                                             *selected = Some(id);
                                             *status = format!("Drag {} output to a compatible input",ty);
                                         }
                                         if response.clicked() {
-                                            let active = *pending == Some((id,row));
-                                            *pending = if active {None} else {Some((id,row))};
+                                            let active = *pending == Some((id,output_index));
+                                            *pending = if active {None} else {Some((id,output_index))};
                                             *selected = Some(id);
                                             *status = if active {"Connection cancelled".into()} else {format!("Select a {} input",ty)};
                                         }
                                     }
                                 }
                             });
-                            // Connector discs are painted after the Area has been measured,
-                            // at its actual outer sidewalls (not the inset Frame body).
                         });
                     // The module's context menu is separate from its drag, port,
                     // and parameter interactions. Defer mutation until all nodes
@@ -3496,7 +3503,7 @@ impl MakerUi {
                     }
                     // Draw on the node's own layer so later Areas still occlude
                     // earlier nodes. The disc center straddles the actual border.
-                    let disc_painter=ctx.layer_painter(area.response.layer_id);
+                    let disc_painter=ctx.layer_painter(area.response.layer_id).with_clip_rect(canvas);
                     for (&(owner,row),&center) in &input_ports {
                         if owner==id {
                             if let Some(port)=module.inputs.get(row) {
@@ -3966,25 +3973,7 @@ impl MakerUi {
                                                     (c.to == id && graph.node(c.from).is_some_and(|n| n.module_id == "screenshaver.test.universal_test"))
                                                 }) && graph.node(id).is_some_and(|n| n.module_id != "screenshaver.test.universal_test");
                                                 if let Some(node) = graph.node_mut(id) { edit_parameters(ui, node, exploration); }
-                                                if let Some((_,dimension))=graph.node(id).and_then(|n|n.callable_spec()) {
-                                                    ui.add_space(8.0);
-                                                    ui.separator();
-                                                    ui.strong("Callable Fields");
-                                                    let exposed=graph.node(id).is_some_and(|n|n.callable_exposed);
-                                                    let mut requested=exposed;
-                                                    if ui.checkbox(&mut requested,"Expose as Callable Field")
-                                                        .on_hover_text(format!("Expose a {} output on this module",dimension))
-                                                        .changed() {
-                                                        match graph.set_callable_exposed(id,requested) {
-                                                            Ok(())=>{
-                                                                routes.clear();
-                                                                *status=if requested {"Callable field exposed".into()} else {"Callable field hidden".into()};
-                                                            },
-                                                            Err(e)=>*status=e,
-                                                        }
-                                                    }
-                                                    ui.small(format!("Output type: {}",dimension));
-                                                }
+
                                             }
                                         });
                                 });

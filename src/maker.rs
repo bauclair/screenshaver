@@ -75,7 +75,7 @@ impl Drop for WorkerProcessGuard {
 pub(crate) fn graph_to_wire(graph:&Graph)->serde_json::Value {
     serde_json::json!({"nodes":graph.nodes.iter().map(|n|serde_json::json!({
         "id":n.id,"module_id":n.module_id,"pos":n.pos,"expanded":n.expanded,
-        "parameters":n.parameters,"callable_exposed":n.callable_exposed})).collect::<Vec<_>>(),
+        "parameters":n.parameters})).collect::<Vec<_>>(),
         "connections":graph.connections.iter().map(|c|serde_json::json!({
         "from":c.from,"from_port":c.from_port,"to":c.to,"to_port":c.to_port
         })).collect::<Vec<_>>(),"revision":graph.revision})
@@ -96,7 +96,6 @@ pub(crate) fn graph_from_wire(v:&serde_json::Value)->Result<Graph,String>{
         if ids.insert(id,new_id).is_some(){return Err("Duplicate node ID".into())}
         let node=graph.node_mut(new_id).ok_or("Missing reconstructed node")?;
         node.expanded=n["expanded"].as_bool().unwrap_or(true);
-         node.callable_exposed=n["callable_exposed"].as_bool().unwrap_or(false) && node.callable_spec().is_some();
         if let Some(params)=n["parameters"].as_object(){
             node.parameters=params.iter().map(|(k,v)|(k.clone(),v.clone())).collect();
         }

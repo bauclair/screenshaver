@@ -158,7 +158,7 @@ fn candidates(g:&Graph,output:NodeId,index:&ConnectionFeasibility,seed:u64)->Vec
     let mut edges=Vec::new();
     for node in &g.nodes {
         if !reachable.contains(&node.id){continue}
-        for port in 0..node.definition().inputs.len(){
+        for port in 0..node.input_count(){
             if g.input_connection(node.id,port).is_some(){continue}
             if let Some(sources)=index.sources.get(&(node.id,port)){
                 for &(from,from_port) in sources {
@@ -284,7 +284,7 @@ impl Explorer {
     fn checkpoint_at(&self,scale:usize,path:&std::path::Path)->Result<usize,String>{
         let tmp=path.with_extension("tmp");
         let frames:Vec<_>=self.frames.iter().map(|f|serde_json::json!({"edges":graph_edges(&f.graph),"next":f.next})).collect();
-        let bytes=serde_json::to_vec(&serde_json::json!({"version":14,"wire_limit":wire_limit(),"min_wire_limit":self.min_depth,"depth_limit":self.depth_limit,"scale":scale,"seed":self.seed,
+        let bytes=serde_json::to_vec(&serde_json::json!({"version":15,"wire_limit":wire_limit(),"min_wire_limit":self.min_depth,"depth_limit":self.depth_limit,"scale":scale,"seed":self.seed,
             "catalog":catalog_fingerprint(&self.base),"examined":self.examined,"valid":self.valid,
             "rejected_parent":self.rejected_parent,"traversal_digest":self.traversal_digest,"prefiltered":self.prefiltered,"prefilter_enabled":self.prefilter_enabled,"reference_checks":self.reference_checks,
             "reference_mismatches":self.reference_mismatches,"frames":frames})).map_err(|e|e.to_string())?;
@@ -298,7 +298,7 @@ impl Explorer {
     fn restore_at(base:Graph,scale:usize,seed:u64,reference_enabled:bool,prefilter_enabled:bool,min_depth:usize,path:&std::path::Path)->Result<Self,String>{
         let bytes=std::fs::read(path).map_err(|e|e.to_string())?;
         let v:serde_json::Value=serde_json::from_slice(&bytes).map_err(|e|e.to_string())?;
-        if v["version"].as_u64()!=Some(14)||v["wire_limit"].as_u64()!=Some(wire_limit() as u64)||v["min_wire_limit"].as_u64()!=Some(min_depth as u64)||v["scale"].as_u64()!=Some(scale as u64)
+        if v["version"].as_u64()!=Some(15)||v["wire_limit"].as_u64()!=Some(wire_limit() as u64)||v["min_wire_limit"].as_u64()!=Some(min_depth as u64)||v["scale"].as_u64()!=Some(scale as u64)
             ||v["seed"].as_u64()!=Some(seed)||v["catalog"].as_u64()!=Some(catalog_fingerprint(&base))
             ||v["prefilter_enabled"].as_bool()!=Some(prefilter_enabled){
             return Err("Checkpoint version, catalog, scale or seed mismatch".into())
@@ -340,7 +340,7 @@ fn catalog_fingerprint(g:&Graph)->u64{
     // the catalog fingerprint even when its module ID is unchanged.
     mix(hash ^ maker_library::get().catalog_fingerprint)
 }
-fn checkpoint_path()->PathBuf{std::env::temp_dir().join("screenshaver-maker-discovery-canonical-v14.json")}
+fn checkpoint_path()->PathBuf{std::env::temp_dir().join("screenshaver-maker-discovery-canonical-v15.json")}
 
 // Production adapter: the qualified traversal remains the single implementation.
 // Its checkpoint is intentionally separate from the /tmp test harness.
@@ -348,7 +348,7 @@ pub(super) struct ProductionEnumeration { explorer:Explorer, path:PathBuf }
 impl ProductionEnumeration {
     fn path(min_wires:usize,max_wires:usize)->Result<PathBuf,String>{
         let home=std::env::var_os("HOME").ok_or("HOME is not set")?;
-        Ok(PathBuf::from(home).join(format!(".config/screenshaver/maker/discovery-canonical-v14-minwires-{min_wires}-maxwires-{max_wires}.json")))
+        Ok(PathBuf::from(home).join(format!(".config/screenshaver/maker/discovery-canonical-v15-minwires-{min_wires}-maxwires-{max_wires}.json")))
     }
     pub(super) fn reset_checkpoint_for_range(min_wires:usize,max_wires:usize)->Result<(),String>{
         if !(2..=25).contains(&min_wires) || !(3..=25).contains(&max_wires) || min_wires>max_wires {
@@ -439,11 +439,11 @@ fn exhaustive_oracle(base:&Graph,limit:usize)->Result<HashSet<Vec<Edge>>,String>
         }
         for target in &graph.nodes {
             if !reachable.contains(&target.id){continue}
-            for port in 0..target.definition().inputs.len(){
+            for port in 0..target.input_count(){
                 if graph.input_connection(target.id,port).is_some(){continue}
                 for source in &graph.nodes {
                     if source.definition().terminal || source.id==target.id{continue}
-                    for source_port in 0..source.definition().outputs.len(){
+                    for source_port in 0..source.output_count(){
                         if graph.check_connection(source.id,source_port,target.id,port).is_err(){continue}
                         let mut next=graph.clone();
                         if next.connect(source.id,source_port,target.id,port).is_ok(){
