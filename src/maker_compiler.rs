@@ -67,6 +67,10 @@ vec3 maker_rotate_3d(vec3 p,float xy,float yz,float xz){
     "screenshaver.fields.traversal" => {
      if let Some(c)=graph.input_connection(n.id,0){callable.require(c.from,c.from_port,"float")?;}
     }
+    "screenshaver.fields.temporal_frequency_layering_3d" => {
+     let c=graph.input_connection(n.id,0).ok_or("Temporal Frequency Layering 3D requires a connected scalar field")?;
+     callable.require(c.from,c.from_port,"float")?;
+    }
     "screenshaver.fields.volume_density_ray_integrator" => {
      let c=graph.input_connection(n.id,0).ok_or("Volume Density Ray Integrator requires a connected density field")?;
      callable.require(c.from,c.from_port,"float")?;
@@ -146,6 +150,34 @@ vec3 maker_rotate_3d(vec3 p,float xy,float yz,float xz){
     }
    }
   }
+ // Generate per-node field resampling for temporal frequency layering.
+ for n in graph.nodes.iter().filter(|n|reachable.contains(&n.id)) {
+  if n.module_id=="screenshaver.fields.temporal_frequency_layering_3d" {
+   let c=graph.input_connection(n.id,0).ok_or("Temporal Frequency Layering 3D requires a connected scalar field")?;
+   let field=callable.reference(c.from,c.from_port,"sample_position","float")?;
+   let id=n.id;
+   src.push_str(&format!(r#"
+float maker_temporal_layers_{id}(vec3 position,float layers,float spatialScale,float temporalScale,float decay,float speed){{
+ vec3 spatial=position;
+ float phase=u_time*speed;
+ float amplitude=1.0;
+ float total=0.0;
+ float weight=0.0;
+ int count=int(clamp(floor(layers+0.5),1.0,8.0));
+ for(int k=0;k<8;k++){{
+  if(k>=count)break;
+  vec3 sample_position=spatial+vec3(0.0,0.0,phase);
+  total+=({field})*amplitude;
+  weight+=amplitude;
+  spatial*=spatialScale;
+  phase*=temporalScale;
+  amplitude*=clamp(decay,0.0,1.0);
+ }}
+ return total/max(weight,1e-8);
+}}
+"#));
+  }
+ }
  // Generate a bounded Beer-Lambert volume integrator for each connected density field.
  for n in graph.nodes.iter().filter(|n|reachable.contains(&n.id)) {
   if n.module_id=="screenshaver.fields.volume_density_ray_integrator" {
@@ -340,6 +372,10 @@ fn emit(graph:&Graph,id:NodeId,emitted:&mut HashSet<NodeId>,src:&mut String)->Re
  if m.id=="screenshaver.color.angular_wave_background" && graph.input_connection(id,0).is_none(){vars.insert("direction".into(),"normalize(vec3(maker_uv,1.0))".into());}
  if m.id=="screenshaver.lighting.refractive_surface" {
   src.push_str(&format!("  vec3 v{}_p0=maker_optical_render_{}(maker_uv);\n",id,id));
+  emitted.insert(id);return Ok(());
+ }
+ if m.id=="screenshaver.fields.temporal_frequency_layering_3d" {
+  src.push_str(&format!("  float v{}_p0=maker_temporal_layers_{}({},u_n{}_layers,u_n{}_spatial_scale,u_n{}_temporal_scale,u_n{}_amplitude_decay,u_n{}_speed);\n",id,id,vars["position"],id,id,id,id,id));
   emitted.insert(id);return Ok(());
  }
  if m.id=="screenshaver.fields.volume_density_ray_integrator" {

@@ -1,0 +1,79 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.temporal_frequency_layering_3d",
+  "name": "Temporal Frequency Layering 3D",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "header_color": "#398F94",
+  "description": "Repeatedly samples a connected position-dependent scalar 3D field with independently scaled spatial and temporal frequencies.",
+  "uses": "Animated fractal noise, layered cellular fields, turbulence and parallax-like motion.",
+  "notes": "Requires a connected position-dependent scalar source. Samples up to eight layers. Each octave changes the sample position and the time-offset independently. The field is normalized by accumulated nonnegative amplitude. Uses a compiler-generated callable rather than copying source shader code.",
+  "inputs": [
+    {
+      "id": "field",
+      "name": "Scalar Field",
+      "type": "float",
+      "semantic_role": "intensity",
+      "default": "0.0"
+    },
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "semantic_role": "position3d",
+      "default": "vec3(maker_uv,0.0)"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "value",
+      "name": "Layered Value",
+      "type": "float",
+      "semantic_role": "intensity"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "layers",
+      "name": "Layer Count",
+      "type": "float",
+      "default": 5,
+      "min": 1,
+      "max": 8
+    },
+    {
+      "id": "spatial_scale",
+      "name": "Spatial Frequency Multiplier",
+      "type": "float",
+      "default": 2,
+      "min": 0.25,
+      "max": 4
+    },
+    {
+      "id": "temporal_scale",
+      "name": "Temporal Frequency Multiplier",
+      "type": "float",
+      "default": 1.5,
+      "min": 0.1,
+      "max": 4
+    },
+    {
+      "id": "amplitude_decay",
+      "name": "Amplitude Decay",
+      "type": "float",
+      "default": 0.5,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "speed",
+      "name": "Animation Speed",
+      "type": "float",
+      "default": 1,
+      "min": -5,
+      "max": 5
+    }
+  ],
+  "helpers": "",
+  "glsl": "0.0"
+}

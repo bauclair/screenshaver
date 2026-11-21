@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.color.thermal_emission_palette",
+  "name": "Thermal Emission Palette",
+  "category": "Color",
+  "created_by": "Screenshaver",
+  "header_color": "#B86A3C",
+  "description": "Approximate thermal radiation colors from temperature using Planck spectral radiance at representative visible wavelengths.",
+  "uses": "Fire, heated surfaces, lava, incandescent effects and temperature-driven color ramps.",
+  "notes": "Independent implementation of Planck radiation mathematics. RGB channels approximate narrow-band visible samples, not a calibrated blackbody-to-sRGB conversion. No randomized artistic RGB parameters: physical spectral relationships remain fixed. Exposure and temperature are editable scalar controls.",
+  "inputs": [
+    {
+      "id": "heat",
+      "name": "Heat Fraction",
+      "type": "float",
+      "semantic_role": "intensity",
+      "default": "maker_uv.y"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "color",
+      "name": "Emission Color",
+      "type": "vec3",
+      "semantic_role": "color"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "cold",
+      "name": "Minimum Temperature (K)",
+      "type": "float",
+      "default": 1400,
+      "min": 800,
+      "max": 6000
+    },
+    {
+      "id": "hot",
+      "name": "Maximum Temperature (K)",
+      "type": "float",
+      "default": 2700,
+      "min": 1000,
+      "max": 12000
+    },
+    {
+      "id": "exposure",
+      "name": "Exposure",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 8
+    }
+  ],
+  "helpers": "vec3 maker_thermal_emission(float heat,float cold,float hot,float exposure){\n float temperature=max(mix(cold,hot,clamp(heat,0.0,1.0)),100.0);\n // Representative wavelengths (metres). Planck's second radiation constant.\n vec3 lambda=vec3(650e-9,540e-9,460e-9);\n vec3 exponent=clamp(vec3(0.01438776877)/(lambda*temperature),vec3(0.0),vec3(80.0));\n vec3 radiance=1.0/(pow(lambda/vec3(550e-9),vec3(5.0))*max(exp(exponent)-vec3(1.0),vec3(1e-12)));\n // Fixed normalization makes the user exposure meaningful across temperatures.\n return vec3(1.0)-exp(-max(radiance,vec3(0.0))*max(exposure,0.0)*120.0);\n}",
+  "glsl": "maker_thermal_emission({heat},{cold},{hot},{exposure})"
+}
