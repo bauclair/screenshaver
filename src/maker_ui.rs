@@ -4282,6 +4282,7 @@ fn maker_category_color(category: &str) -> egui::Color32 {
         "output" => [190, 45, 31],
         "test" => [83, 125, 137],
         "other" => [83, 91, 99],
+        "third-party" => [105, 95, 123],
         // Unrecognized categories have a stable fallback until assigned a color.
         _ => [83, 91, 99],
     };
@@ -4315,7 +4316,7 @@ fn module_library_tooltip(ui:&mut egui::Ui,module:&Module){
     ui.separator();ui.label(format!("Created by: {}",module.created_by));
     for name in &module.attributed_to {ui.label(format!("Attributed to: {name}"));}
     if module.trust==Trust::Community{
-        ui.colored_label(egui::Color32::YELLOW,"This is a third-party module, not provided by Screenshaver.");
+        ui.colored_label(egui::Color32::YELLOW,"This is a third-party module, not provided by Screenshaver");
     }else{ui.small("Official Screenshaver Library");}
 }
 

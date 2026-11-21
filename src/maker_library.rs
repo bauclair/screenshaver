@@ -155,10 +155,17 @@ impl Library {
         }
         if self.modules.contains_key(&module.id){self.errors.push(format!("{path}: duplicate module ID '{}'",module.id));}
         else{
-            let category=path.replace('\\',"/");
-            let category=category.split('/').rev().nth(1).unwrap_or("Other");
-            let category=if category=="modules" {"Other"} else {category};
-            self.categories.insert(module.id.clone(),category.to_owned());
+            // Local modules always appear under Third-Party, regardless of
+            // their filesystem subdirectory or self-declared functional category.
+            // Trust is assigned by the loader, never by module JSON.
+            let category=if trust==Trust::Community {
+                "Third-Party".to_owned()
+            }else{
+                let category=path.replace('\\',"/");
+                let category=category.split('/').rev().nth(1).unwrap_or("Other");
+                (if category=="modules" {"Other"} else {category}).to_owned()
+            };
+            self.categories.insert(module.id.clone(),category);
             // Fingerprint only successfully registered modules. Hash the complete
             // definition (including ports, defaults, GLSL and helpers), not just IDs.
             // This stable FNV-1a stream is independent of process-randomized hashers.
