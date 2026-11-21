@@ -9,6 +9,8 @@ impl Library {
  fn load()->Self{
     let mut result=Self{modules:BTreeMap::new(),categories:BTreeMap::new(),errors:Vec::new(),catalog_fingerprint:0xcbf29ce484222325};
     let official=[
+      ("lighting/spherical_surface_shading_2d.smmod",include_str!("../assets/maker/modules/lighting/spherical_surface_shading_2d.smmod")),
+      ("fields/animated_layered_particle_field.smmod",include_str!("../assets/maker/modules/fields/animated_layered_particle_field.smmod")),
       ("test/universal_test.smmod",include_str!("../assets/maker/modules/test/universal_test.smmod")),
       ("coordinates/uv_coordinates.smmod",include_str!("../assets/maker/modules/coordinates/uv_coordinates.smmod")),
       ("coordinates/spherical_direction.smmod",include_str!("../assets/maker/modules/coordinates/spherical_direction.smmod")),

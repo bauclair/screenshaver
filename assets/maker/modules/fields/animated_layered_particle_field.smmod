@@ -1,0 +1,97 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.animated_layered_particle_field",
+  "name": "Animated Layered Particle Field",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "terminal": false,
+  "header_color": "#597D69",
+  "description": "Animated, depth-layered field of softly edged circular particles with adjustable density, movement and size.",
+  "uses": "Floating particles, drifting dust, bokeh, snow-like fields and abstract bubbles.",
+  "notes": "Original deterministic integer-cell hash and independent layer motion. Output is a scalar mask that can feed any editable palette or color module; no borrowed third-party hash or repetition code.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "position2d"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "density",
+      "name": "Particle Density",
+      "type": "float",
+      "semantic_role": "intensity"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "layers",
+      "name": "Depth Layers",
+      "type": "float",
+      "default": 4,
+      "min": 1,
+      "max": 8
+    },
+    {
+      "id": "grid_density",
+      "name": "Grid Density",
+      "type": "float",
+      "default": 6,
+      "min": 1,
+      "max": 24
+    },
+    {
+      "id": "radius",
+      "name": "Particle Radius",
+      "type": "float",
+      "default": 0.22,
+      "min": 0.02,
+      "max": 0.48
+    },
+    {
+      "id": "softness",
+      "name": "Edge Softness",
+      "type": "float",
+      "default": 0.06,
+      "min": 0.001,
+      "max": 0.3
+    },
+    {
+      "id": "drift",
+      "name": "Vertical Drift",
+      "type": "float",
+      "default": 0.25,
+      "min": -3,
+      "max": 3
+    },
+    {
+      "id": "sway",
+      "name": "Horizontal Sway",
+      "type": "float",
+      "default": 0.15,
+      "min": 0,
+      "max": 2
+    },
+    {
+      "id": "seed",
+      "name": "Seed",
+      "type": "float",
+      "default": 2,
+      "min": 0,
+      "max": 100
+    },
+    {
+      "id": "opacity",
+      "name": "Opacity",
+      "type": "float",
+      "default": 0.8,
+      "min": 0,
+      "max": 1
+    }
+  ],
+  "helpers": "float maker_layer_hash(vec2 p){vec2 q=fract(p*vec2(0.1031,0.11369));q+=dot(q,q.yx+vec2(19.19));return fract((q.x+q.y)*q.x);}float maker_layer_particles(vec2 uv,float layers,float gridDensity,float radius,float softness,float drift,float sway,float seed,float opacity){float result=0.0;for(int layer=0;layer<8;++layer){if(float(layer)>=clamp(floor(layers+0.5),1.0,8.0))break;float depth=float(layer)+1.0;float scale=max(gridDensity,0.1)*(0.55+depth*0.3);vec2 p=uv*scale; p.y+=u_time*drift/(0.5+depth*0.4);p.x+=sin(u_time*0.37+depth*2.1)*sway;vec2 cell=floor(p);vec2 local=fract(p);float h=maker_layer_hash(cell+vec2(seed+depth*13.0));vec2 center=vec2(0.2+0.6*h,0.2+0.6*maker_layer_hash(cell.yx+vec2(seed+depth*17.0)));float d=length(local-center);float r=clamp(radius,0.02,0.48)*(0.65+0.35*h)/(0.7+0.15*depth);float edge=max(softness,0.0001);float disc=1.0-smoothstep(r,r+edge,d);float visible=step(0.25,maker_layer_hash(cell+vec2(seed+depth*23.0)));result+=disc*visible/(0.65+depth*0.4);}return clamp(result*clamp(opacity,0.0,1.0),0.0,1.0);}",
+  "glsl": "maker_layer_particles({position},{layers},{grid_density},{radius},{softness},{drift},{sway},{seed},{opacity})"
+}

@@ -1,0 +1,106 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.lighting.spherical_surface_shading_2d",
+  "name": "Spherical Surface Shading 2D",
+  "category": "Lighting",
+  "created_by": "Screenshaver",
+  "terminal": false,
+  "header_color": "#477D9A",
+  "description": "Reconstructs the visible hemisphere of a circular 2D footprint and shades it with an adjustable light.",
+  "uses": "Shaded discs, spherical ornaments, bubble-like highlights and procedural round objects.",
+  "notes": "Independently implemented from standard sphere geometry and Lambertian lighting; does not reproduce the submitted shader. Alpha is a soft circle mask. Colors are editable and randomized during thumbnail enumeration.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec2",
+      "default": "vec2(0.0)"
+    },
+    {
+      "id": "light_direction",
+      "name": "Light Direction",
+      "type": "vec3",
+      "default": "vec3(-0.4,0.6,1.0)"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "color",
+      "name": "Shaded Color",
+      "type": "vec3"
+    },
+    {
+      "id": "mask",
+      "name": "Circle Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "radius",
+      "name": "Radius",
+      "type": "float",
+      "default": 0.5,
+      "min": 0.01,
+      "max": 3.0
+    },
+    {
+      "id": "edge_softness",
+      "name": "Edge Softness",
+      "type": "float",
+      "default": 0.025,
+      "min": 0.001,
+      "max": 0.3
+    },
+    {
+      "id": "ambient",
+      "name": "Ambient",
+      "type": "float",
+      "default": 0.22,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "diffuse",
+      "name": "Diffuse",
+      "type": "float",
+      "default": 0.8,
+      "min": 0,
+      "max": 2
+    },
+    {
+      "id": "base_color",
+      "name": "Base Color",
+      "type": "color3",
+      "default": [
+        0.08,
+        0.4,
+        0.8
+      ]
+    },
+    {
+      "id": "highlight_color",
+      "name": "Highlight Color",
+      "type": "color3",
+      "default": [
+        0.8,
+        0.95,
+        1.0
+      ]
+    }
+  ],
+  "helpers": "vec4 maker_sphere_disc_shade(vec2 p,vec2 center,vec3 light,float radius,float softness,float ambient,float diffuse,vec3 baseColor,vec3 highlightColor){float r=max(radius,0.0001);vec2 q=(p-center)/r;float rr=dot(q,q);float mask=1.0-smoothstep(1.0,1.0+max(softness,0.0001)/r,length(q));vec3 n=normalize(vec3(q,sqrt(max(1.0-rr,0.0))));vec3 l=normalize(light+vec3(0.00001));float d=max(dot(n,l),0.0);float amount=clamp(ambient+diffuse*d,0.0,1.0);return vec4(mix(baseColor,highlightColor,amount),mask);}",
+  "glsl": "maker_sphere_disc_shade({position},{center},{light_direction},{radius},{edge_softness},{ambient},{diffuse},{base_color},{highlight_color}).rgb",
+  "glsl_outputs": [
+    "maker_sphere_disc_shade({position},{center},{light_direction},{radius},{edge_softness},{ambient},{diffuse},{base_color},{highlight_color}).rgb",
+    "maker_sphere_disc_shade({position},{center},{light_direction},{radius},{edge_softness},{ambient},{diffuse},{base_color},{highlight_color}).a"
+  ]
+}
