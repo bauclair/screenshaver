@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "created_by": "Screenshaver",
+  "terminal": false,
+  "id": "screenshaver.lighting.beer_lambert_transmittance",
+  "name": "Beer\u2013Lambert Transmittance",
+  "category": "Lighting",
+  "header_color": "#B88655",
+  "description": "Exponential transmission of light through a homogeneous participating medium.",
+  "uses": "Optical attenuation, fog, absorption, and volumetric shading.",
+  "notes": "Density, extinction and distance are clamped nonnegative; optical depth is capped for numerical stability.",
+  "inputs": [
+    {
+      "id": "density",
+      "name": "Density",
+      "type": "float",
+      "default": "1.0"
+    },
+    {
+      "id": "extinction",
+      "name": "Extinction Coefficient",
+      "type": "float",
+      "default": "1.0"
+    },
+    {
+      "id": "distance",
+      "name": "Travel Distance",
+      "type": "float",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "transmittance",
+      "name": "Transmittance",
+      "type": "float"
+    },
+    {
+      "id": "opacity",
+      "name": "Opacity",
+      "type": "float"
+    }
+  ],
+  "parameters": [],
+  "helpers": "float maker_beer_lambert(float rho,float sigma,float lengthAlongRay){return exp(-min(max(rho,0.0)*max(sigma,0.0)*max(lengthAlongRay,0.0),80.0));}",
+  "glsl": "maker_beer_lambert({density},{extinction},{distance})",
+  "glsl_outputs": {
+    "transmittance": "maker_beer_lambert({density},{extinction},{distance})",
+    "opacity": "1.0-maker_beer_lambert({density},{extinction},{distance})"
+  }
+}

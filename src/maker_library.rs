@@ -76,6 +76,11 @@ impl Library {
       ("geometry/warped_plane_field.smmod",include_str!("../assets/maker/modules/geometry/warped_plane_field.smmod")),
       ("lighting/procedural_environment_reflection.smmod",include_str!("../assets/maker/modules/lighting/procedural_environment_reflection.smmod")),
       ("lighting/distance_fog.smmod",include_str!("../assets/maker/modules/lighting/distance_fog.smmod")),
+      ("lighting/beer_lambert_transmittance.smmod",include_str!("../assets/maker/modules/lighting/beer_lambert_transmittance.smmod")),
+      ("fields/volume_density_ray_integrator.smmod",include_str!("../assets/maker/modules/fields/volume_density_ray_integrator.smmod")),
+      ("geometry/ray_box_intersection_3d.smmod",include_str!("../assets/maker/modules/geometry/ray_box_intersection_3d.smmod")),
+      ("geometry/periodic_slice_field_3d.smmod",include_str!("../assets/maker/modules/geometry/periodic_slice_field_3d.smmod")),
+      ("geometry/spherical_inversion_3d.smmod",include_str!("../assets/maker/modules/geometry/spherical_inversion_3d.smmod")),
       ("geometry/ray_sphere_intersection.smmod",include_str!("../assets/maker/modules/geometry/ray_sphere_intersection.smmod")),
       ("geometry/ray_plane_intersection.smmod",include_str!("../assets/maker/modules/geometry/ray_plane_intersection.smmod")),
       ("geometry/procedural_sphere_distribution.smmod",include_str!("../assets/maker/modules/geometry/procedural_sphere_distribution.smmod")),
@@ -93,9 +98,8 @@ impl Library {
       ("coordinates/tunnel_wall_uv_mapping.smmod",include_str!("../assets/maker/modules/coordinates/tunnel_wall_uv_mapping.smmod")),
       ("lighting/lattice_crossing_highlight.smmod",include_str!("../assets/maker/modules/lighting/lattice_crossing_highlight.smmod")),
       ("geometry/gyroid_surface_field_3d.smmod",include_str!("../assets/maker/modules/geometry/gyroid_surface_field_3d.smmod")),
-      ("geometry/periodic_slice_field_3d.smmod",include_str!("../assets/maker/modules/geometry/periodic_slice_field_3d.smmod")),
-      ("geometry/spherical_inversion_3d.smmod",include_str!("../assets/maker/modules/geometry/spherical_inversion_3d.smmod")),
       ("fields/second_order_cellular_field_3d.smmod",include_str!("../assets/maker/modules/fields/second_order_cellular_field_3d.smmod")),
+      ("fields/chebyshev_voronoi_edge_2d.smmod",include_str!("../assets/maker/modules/fields/chebyshev_voronoi_edge_2d.smmod")),
       ("coordinates/organic_coordinate_mutation_3d.smmod",include_str!("../assets/maker/modules/coordinates/organic_coordinate_mutation_3d.smmod")),
       ("coordinates/sinusoidal_tunnel_path_3d.smmod",include_str!("../assets/maker/modules/coordinates/sinusoidal_tunnel_path_3d.smmod")),
       ("coordinates/iterative_inversion_fold_3d.smmod",include_str!("../assets/maker/modules/coordinates/iterative_inversion_fold_3d.smmod")),
@@ -110,6 +114,10 @@ impl Library {
       ("coordinates/staggered_grid_coordinates_2d.smmod",include_str!("../assets/maker/modules/coordinates/staggered_grid_coordinates_2d.smmod")),
       ("fields/randomized_bokeh_disc_field.smmod",include_str!("../assets/maker/modules/fields/randomized_bokeh_disc_field.smmod")),
       ("geometry/sdf_normal_estimation.smmod",include_str!("../assets/maker/modules/geometry/sdf_normal_estimation.smmod")),
+       ("geometry/point_segment_distance_2d.smmod",include_str!("../assets/maker/modules/geometry/point_segment_distance_2d.smmod")),
+      ("lighting/distance_glow_falloff.smmod",include_str!("../assets/maker/modules/lighting/distance_glow_falloff.smmod")),
+      ("geometry/height_field_normal_2d.smmod",include_str!("../assets/maker/modules/geometry/height_field_normal_2d.smmod")),
+       ("math/vector_magnitude_2d.smmod",include_str!("../assets/maker/modules/math/vector_magnitude_2d.smmod")),
       ];
     for (path,src) in official {result.register(path,src,Trust::Official)}
     if let Some(home)=std::env::var_os("HOME"){

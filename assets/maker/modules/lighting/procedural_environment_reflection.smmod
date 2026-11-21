@@ -6,9 +6,9 @@
   "name": "Procedural Environment Reflection",
   "category": "Lighting",
   "header_color": "#477D9A",
-  "description": "Computes a reflected direction and shades it with a procedural grid-and-sky environment.",
+  "description": "Computes a reflected direction and shades it with an editable-color procedural grid-and-sky environment.",
   "uses": "Procedural reflections without cubemaps or texture samplers.",
-  "notes": "Uses GLSL reflect() with a smooth sky gradient and periodic line highlights. No texture or cubemap is required.",
+  "notes": "Dark sky, bright sky and grid accent colors are independently editable. Original colors are retained as defaults.",
   "inputs": [
     {
       "id": "incident",
@@ -54,8 +54,38 @@
       "default": 0.5,
       "min": 0,
       "max": 4
+    },
+    {
+      "id": "sky_dark",
+      "name": "Dark Sky Color",
+      "type": "color3",
+      "default": [
+        0.04,
+        0.07,
+        0.12
+      ]
+    },
+    {
+      "id": "sky_bright",
+      "name": "Bright Sky Color",
+      "type": "color3",
+      "default": [
+        0.36,
+        0.57,
+        0.75
+      ]
+    },
+    {
+      "id": "accent_color",
+      "name": "Grid Accent Color",
+      "type": "color3",
+      "default": [
+        0.15,
+        0.35,
+        0.48
+      ]
     }
   ],
-  "helpers": "vec3 maker_procedural_env(vec3 direction, float frequency, float tileScale, float strength) {\n    vec3 d = normalize(direction);\n    float sky = smoothstep(-0.6, 0.9, d.y);\n    vec3 base = mix(vec3(0.04, 0.07, 0.12), vec3(0.36, 0.57, 0.75), sky);\n    float f = max(frequency, 0.001) / max(tileScale, 0.001);\n    vec2 uv = d.xz * f;\n    vec2 grid = abs(fract(uv) - 0.5);\n    float lines = 1.0 - smoothstep(0.43, 0.49, max(grid.x, grid.y));\n    vec3 accent = vec3(0.15, 0.35, 0.48) * lines * (0.35 + 0.65 * sky);\n    return (base + accent) * strength;\n}",
-  "glsl": "maker_procedural_env(reflect(normalize({incident}+vec3(0.000001)),normalize({normal}+vec3(0.000001))),{frequency},{tile_scale},{strength})"
+  "helpers": "vec3 maker_procedural_env(vec3 direction,float frequency,float tileScale,float strength,vec3 skyDark,vec3 skyBright,vec3 accentColor){\n vec3 d=normalize(direction);\n float sky=smoothstep(-0.6,0.9,d.y);\n vec3 base=mix(skyDark,skyBright,sky);\n float f=max(frequency,0.001)/max(tileScale,0.001);\n vec2 uv=d.xz*f;\n vec2 grid=abs(fract(uv)-0.5);\n float lines=1.0-smoothstep(0.43,0.49,max(grid.x,grid.y));\n vec3 accent=accentColor*lines*(0.35+0.65*sky);\n return (base+accent)*strength;\n}",
+  "glsl": "maker_procedural_env(reflect(normalize({incident}+vec3(0.000001)),normalize({normal}+vec3(0.000001))),{frequency},{tile_scale},{strength},{sky_dark},{sky_bright},{accent_color})"
 }

@@ -5,9 +5,9 @@
   "category": "Color",
   "created_by": "Screenshaver",
   "header_color": "#A26D9C",
-  "description": "Cycles smoothly through the Screenshaver red, yellow, green, blue and violet palette.",
+  "description": "Cycles smoothly through five independently editable palette colors.",
   "uses": "Colorizing procedural fields, rainbow gradients and animated spectral lighting.",
-  "notes": "The phase wraps every 1.0. Five colors are interpolated smoothly with a cubic easing curve.",
+  "notes": "Five color stops are independently editable and wrap from Color 5 to Color 1. Original colors are retained as defaults.",
   "inputs": [
     {
       "id": "phase",
@@ -48,9 +48,59 @@
       "default": 0,
       "min": -4,
       "max": 4
+    },
+    {
+      "id": "color_a",
+      "name": "Color 1 \u2014 Red",
+      "type": "color3",
+      "default": [
+        1.0,
+        0.015,
+        0.015
+      ]
+    },
+    {
+      "id": "color_b",
+      "name": "Color 2 \u2014 Yellow",
+      "type": "color3",
+      "default": [
+        1.0,
+        0.92,
+        0.01
+      ]
+    },
+    {
+      "id": "color_c",
+      "name": "Color 3 \u2014 Green",
+      "type": "color3",
+      "default": [
+        0.01,
+        1.0,
+        0.035
+      ]
+    },
+    {
+      "id": "color_d",
+      "name": "Color 4 \u2014 Blue",
+      "type": "color3",
+      "default": [
+        0.01,
+        0.16,
+        1.0
+      ]
+    },
+    {
+      "id": "color_e",
+      "name": "Color 5 \u2014 Violet",
+      "type": "color3",
+      "default": [
+        0.72,
+        0.01,
+        1.0
+      ]
     }
   ],
-  "helpers": "vec3 maker_primary_spectrum_palette(float phase,float scale,float offset,float speed){\n float x=fract(phase*scale+offset+u_time*speed)*5.0;\n float i=floor(x);\n float f=fract(x);f=f*f*(3.0-2.0*f);\n vec3 a=vec3(1.0,0.015,0.015);\n vec3 b=vec3(1.0,0.92,0.01);\n vec3 c=vec3(0.01,1.0,0.035);\n vec3 d=vec3(0.01,0.16,1.0);\n vec3 e=vec3(0.72,0.01,1.0);\n if(i<1.0)return mix(a,b,f);\n if(i<2.0)return mix(b,c,f);\n if(i<3.0)return mix(c,d,f);\n if(i<4.0)return mix(d,e,f);\n return mix(e,a,f);\n}",
+  "helpers": "vec3 maker_primary_spectrum_palette(float phase,float scale,float offset,float speed,vec3 a,vec3 b,vec3 c,vec3 d,vec3 e){\n float x=fract(phase*scale+offset+u_time*speed)*5.0;\n float i=floor(x);\n float f=fract(x);f=f*f*(3.0-2.0*f);\n if(i<1.0)return mix(a,b,f);\n if(i<2.0)return mix(b,c,f);\n if(i<3.0)return mix(c,d,f);\n if(i<4.0)return mix(d,e,f);\n return mix(e,a,f);\n}",
   "terminal": false,
-  "glsl": "maker_primary_spectrum_palette({phase},{scale},{offset},{speed})"
+  "glsl": "maker_primary_spectrum_palette({phase},{scale},{offset},{speed},{color_a},{color_b},{color_c},{color_d},{color_e})"
 }

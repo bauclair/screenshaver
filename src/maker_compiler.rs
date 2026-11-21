@@ -67,6 +67,10 @@ vec3 maker_rotate_3d(vec3 p,float xy,float yz,float xz){
     "screenshaver.fields.traversal" => {
      if let Some(c)=graph.input_connection(n.id,0){callable.require(c.from,c.from_port,"float")?;}
     }
+    "screenshaver.fields.volume_density_ray_integrator" => {
+     let c=graph.input_connection(n.id,0).ok_or("Volume Density Ray Integrator requires a connected density field")?;
+     callable.require(c.from,c.from_port,"float")?;
+    }
     "screenshaver.fields.sdf_raymarch" => {
      let c=graph.input_connection(n.id,0).ok_or("SDF Ray March requires a connected distance field")?;
      callable.require(c.from,c.from_port,"float")?;
@@ -142,6 +146,35 @@ vec3 maker_rotate_3d(vec3 p,float xy,float yz,float xz){
     }
    }
   }
+ // Generate a bounded Beer-Lambert volume integrator for each connected density field.
+ for n in graph.nodes.iter().filter(|n|reachable.contains(&n.id)) {
+  if n.module_id=="screenshaver.fields.volume_density_ray_integrator" {
+   let c=graph.input_connection(n.id,0).ok_or("Volume Density Ray Integrator requires a connected density field")?;
+   let field=callable.reference(c.from,c.from_port,"sample_position","float")?;
+   let id=n.id;
+   src.push_str(&format!(r#"
+vec4 maker_volume_integrate_{id}(vec3 origin,vec3 direction,vec3 emission,float distance,float extinction,float gain,float samples){{
+ float directionLength=length(direction);
+ if(directionLength<1e-8)return vec4(0.0,0.0,0.0,1.0);
+ vec3 ray=direction/directionLength;
+ float extent=max(distance,0.0);
+ int count=int(clamp(floor(samples+0.5),1.0,64.0));
+ float stepSize=extent/float(count);
+ float transmission=1.0;
+ vec3 accumulated=vec3(0.0);
+ for(int k=0;k<64;k++){{
+  if(k>=count || transmission<0.001)break;
+  vec3 sample_position=origin+ray*((float(k)+0.5)*stepSize);
+  float rho=max({field},0.0);
+  float alpha=1.0-exp(-min(rho*max(extinction,0.0)*stepSize,80.0));
+  accumulated+=transmission*alpha*max(emission,vec3(0.0))*max(gain,0.0);
+  transmission*=1.0-alpha;
+ }}
+ return vec4(accumulated,transmission);
+}}
+"#));
+  }
+ }
  // Generate an independent signed-distance ray marcher for each SDF node.
  for n in graph.nodes.iter().filter(|n|reachable.contains(&n.id)) {
   if n.module_id=="screenshaver.fields.sdf_raymarch" {
@@ -307,6 +340,11 @@ fn emit(graph:&Graph,id:NodeId,emitted:&mut HashSet<NodeId>,src:&mut String)->Re
  if m.id=="screenshaver.color.angular_wave_background" && graph.input_connection(id,0).is_none(){vars.insert("direction".into(),"normalize(vec3(maker_uv,1.0))".into());}
  if m.id=="screenshaver.lighting.refractive_surface" {
   src.push_str(&format!("  vec3 v{}_p0=maker_optical_render_{}(maker_uv);\n",id,id));
+  emitted.insert(id);return Ok(());
+ }
+ if m.id=="screenshaver.fields.volume_density_ray_integrator" {
+  src.push_str(&format!("  vec4 v{}_volume=maker_volume_integrate_{}({},{},{},u_n{}_distance,u_n{}_extinction,u_n{}_emission_gain,u_n{}_samples);\n",id,id,vars["origin"],vars["direction"],vars["emission"],id,id,id,id));
+  src.push_str(&format!("  vec3 v{}_p0=v{}_volume.rgb; float v{}_p1=1.0-v{}_volume.a; float v{}_p2=v{}_volume.a;\n",id,id,id,id,id,id));
   emitted.insert(id);return Ok(());
  }
  if m.id=="screenshaver.fields.sdf_raymarch" {

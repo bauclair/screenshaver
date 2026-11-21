@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "created_by": "Screenshaver",
+  "terminal": false,
+  "helpers": "",
+  "id": "screenshaver.geometry.height_field_normal_2d",
+  "name": "Height Field Normal 2D",
+  "category": "Geometry",
+  "header_color": "#557C9C",
+  "description": "Estimate the surface normal of a height field from four samples of a connected callable 2D scalar field.",
+  "uses": "Bump lighting on procedural scalar height fields, including warped noise and periodic patterns.",
+  "notes": "Central finite differences of a callable 2D field; output is a normalized vec3 normal for z=h(x,y). Requires a Field 2D connection. Unlike SDF Normal Estimation, this samples a two-dimensional height function.",
+  "inputs": [
+    {
+      "id": "field",
+      "name": "Height Field 2D",
+      "type": "field2d"
+    },
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "position2d"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "normal",
+      "name": "Normal",
+      "type": "vec3",
+      "semantic_role": "normal3d"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "epsilon",
+      "name": "Sample Step",
+      "type": "float",
+      "default": 0.005,
+      "min": 0.0001,
+      "max": 0.1
+    },
+    {
+      "id": "strength",
+      "name": "Bump Strength",
+      "type": "float",
+      "default": 1.0,
+      "min": 0.0,
+      "max": 10.0
+    }
+  ],
+  "glsl": "normalize(vec3(-{strength}*({field}({position}+vec2({epsilon},0.0))-{field}({position}-vec2({epsilon},0.0)))/(2.0*max({epsilon},0.00001)),-{strength}*({field}({position}+vec2(0.0,{epsilon}))-{field}({position}-vec2(0.0,{epsilon})))/(2.0*max({epsilon},0.00001)),1.0))"
+}

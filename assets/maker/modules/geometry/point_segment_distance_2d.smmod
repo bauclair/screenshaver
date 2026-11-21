@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "created_by": "Screenshaver",
+  "terminal": false,
+  "helpers": "",
+  "id": "screenshaver.geometry.point_segment_distance_2d",
+  "name": "Point-to-Segment Distance 2D",
+  "category": "Geometry",
+  "header_color": "#557C9C",
+  "description": "Shortest Euclidean distance from a 2D point to a finite line segment.",
+  "uses": "Procedural line art, finite line masks, geometric motifs and wireframes.",
+  "notes": "Uses orthogonal projection clamped to the segment, with a guard for coincident endpoints. Standard analytic geometry, independently implemented.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "start",
+      "name": "Segment Start",
+      "type": "vec2",
+      "default": "vec2(-0.5,0.0)"
+    },
+    {
+      "id": "end",
+      "name": "Segment End",
+      "type": "vec2",
+      "default": "vec2(0.5,0.0)"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "distance",
+      "name": "Distance",
+      "type": "float",
+      "semantic_role": "distance"
+    }
+  ],
+  "parameters": [],
+  "glsl": "length(({position})-mix(({start}),({end}),clamp(dot(({position})-({start}),({end})-({start}))/max(dot(({end})-({start}),({end})-({start})),1e-10),0.0,1.0)))"
+}

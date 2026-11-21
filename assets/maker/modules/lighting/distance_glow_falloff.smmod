@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "created_by": "Screenshaver",
+  "terminal": false,
+  "helpers": "",
+  "id": "screenshaver.lighting.distance_glow_falloff",
+  "name": "Distance Glow Falloff",
+  "category": "Lighting",
+  "header_color": "#B58A49",
+  "description": "Convert a nonnegative distance into a bounded, smooth glow intensity.",
+  "uses": "Soft highlights around procedural segments, curves, distance fields and outlines.",
+  "notes": "Standard rational falloff: intensity / (1 + (distance/radius)^2). Finite at zero distance; no original third-party code.",
+  "inputs": [
+    {
+      "id": "distance",
+      "name": "Distance",
+      "type": "float",
+      "default": "length(maker_uv)"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "intensity",
+      "name": "Glow Intensity",
+      "type": "float",
+      "semantic_role": "intensity"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "radius",
+      "name": "Glow Radius",
+      "type": "float",
+      "default": 0.12,
+      "min": 0.001,
+      "max": 5.0
+    },
+    {
+      "id": "strength",
+      "name": "Strength",
+      "type": "float",
+      "default": 1.0,
+      "min": 0.0,
+      "max": 10.0
+    }
+  ],
+  "glsl": "({strength}/(1.0+pow(max({distance},0.0)/max({radius},0.00001),2.0)))"
+}

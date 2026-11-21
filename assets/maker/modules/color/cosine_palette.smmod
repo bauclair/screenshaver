@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
   "created_by": "Screenshaver",
-  "uses": "Colorize noise and generate animated gradients.",
-  "notes": "Unconnected Value defaults to 0.5.",
+  "uses": "Map a scalar field to a fully selectable five-color cyclic palette.",
+  "notes": "Color 1 retains the legacy color parameter ID for project compatibility. Existing tint values now act as the first palette stop; the appearance of older compositions changes. Set Animation Speed to 0 for a static palette. The five color stops are joined with cosine easing, including Color 5 back to Color 1.",
   "inputs": [
     {
       "id": "value",
@@ -29,21 +29,69 @@
     },
     {
       "id": "color",
-      "name": "Color",
+      "name": "Color 1",
       "type": "color3",
       "default": [
         0.25,
         0.65,
         1.0
       ]
+    },
+    {
+      "id": "color_2",
+      "name": "Color 2",
+      "type": "color3",
+      "default": [
+        0.0,
+        0.78,
+        1.0
+      ]
+    },
+    {
+      "id": "color_3",
+      "name": "Color 3",
+      "type": "color3",
+      "default": [
+        0.66,
+        0.33,
+        0.97
+      ]
+    },
+    {
+      "id": "color_4",
+      "name": "Color 4",
+      "type": "color3",
+      "default": [
+        1.0,
+        0.54,
+        0.0
+      ]
+    },
+    {
+      "id": "color_5",
+      "name": "Color 5",
+      "type": "color3",
+      "default": [
+        1.0,
+        0.95,
+        0.7
+      ]
+    },
+    {
+      "id": "animation_speed",
+      "name": "Animation Speed",
+      "type": "float",
+      "default": 0.0,
+      "min": -3.0,
+      "max": 3.0
     }
   ],
-  "helpers": "",
+  "helpers": "vec3 screenshaver_cosine_palette_five(float phase, vec3 c1, vec3 c2, vec3 c3, vec3 c4, vec3 c5) {\n    float scaled = fract(phase) * 5.0;\n    float segment = floor(scaled);\n    float local = fract(scaled);\n    float blend = 0.5 - 0.5 * cos(3.141592653589793 * local);\n    if (segment < 1.0) return mix(c1, c2, blend);\n    if (segment < 2.0) return mix(c2, c3, blend);\n    if (segment < 3.0) return mix(c3, c4, blend);\n    if (segment < 4.0) return mix(c4, c5, blend);\n    return mix(c5, c1, blend);\n}",
   "terminal": false,
   "id": "screenshaver.color.cosine_palette",
   "name": "Cosine Palette",
   "category": "Color",
   "header_color": "#B46A35",
-  "description": "Animated cosine-wave RGB palette with configurable tint.",
-  "glsl": "((0.5+0.5*cos(6.2831853*({value}*{frequency}+vec3(0.0,0.33,0.67))+u_time*0.3))*{color})"
+  "description": "Five selectable palette colors with smooth cosine interpolation and optional animation.",
+  "glsl": "screenshaver_cosine_palette_five(({value})*({frequency})+u_time*({animation_speed}), {color}, {color_2}, {color_3}, {color_4}, {color_5})"
 }

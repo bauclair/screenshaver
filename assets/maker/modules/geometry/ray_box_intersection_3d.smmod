@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "created_by": "Screenshaver",
+  "terminal": false,
+  "id": "screenshaver.geometry.ray_box_intersection_3d",
+  "name": "Ray–Box Intersection 3D",
+  "category": "Geometry",
+  "header_color": "#557C9C",
+  "description": "Intersect a ray with an axis-aligned three-dimensional box using the standard slab method.",
+  "uses": "Procedural geometry queries, bounding-volume tests, and ray-based compositions.",
+  "notes": "Independently implemented slab intersection. Bounds are sorted per axis. Entry and exit are ray parameters, not necessarily world-space distances when direction is unnormalized. A ray starting inside returns entry=0. A miss returns entry=-1, exit=-1, hit=0. Zero direction is handled without division by zero. Tangential contact counts as a hit.",
+  "inputs": [
+    {
+      "id": "origin",
+      "name": "Ray Origin",
+      "type": "vec3",
+      "default": "vec3(0.0,0.0,-4.0)"
+    },
+    {
+      "id": "direction",
+      "name": "Ray Direction",
+      "type": "vec3",
+      "default": "normalize(vec3(maker_uv,1.5))"
+    },
+    {
+      "id": "box_min",
+      "name": "Box Minimum",
+      "type": "vec3",
+      "default": "vec3(-1.0)"
+    },
+    {
+      "id": "box_max",
+      "name": "Box Maximum",
+      "type": "vec3",
+      "default": "vec3(1.0)"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "entry",
+      "name": "Entry Parameter",
+      "type": "float"
+    },
+    {
+      "id": "exit",
+      "name": "Exit Parameter",
+      "type": "float"
+    },
+    {
+      "id": "hit",
+      "name": "Hit Mask",
+      "type": "float"
+    }
+  ],
+  "parameters": [],
+  "helpers": "vec3 maker_ray_box_intersection_3d(vec3 origin, vec3 direction, vec3 boxMin, vec3 boxMax){\n vec3 lo=min(boxMin,boxMax),hi=max(boxMin,boxMax);\n if(dot(direction,direction)<1e-12)return vec3(-1.0,-1.0,0.0);\n float nearT=-1e30,farT=1e30;\n for(int axis=0;axis<3;axis++){\n  float o=origin[axis],d=direction[axis];\n  if(abs(d)<1e-8){if(o<lo[axis]||o>hi[axis])return vec3(-1.0,-1.0,0.0);}\n  else {\n   float a=(lo[axis]-o)/d,b=(hi[axis]-o)/d;\n   nearT=max(nearT,min(a,b));farT=min(farT,max(a,b));\n   if(nearT>farT)return vec3(-1.0,-1.0,0.0);\n  }\n }\n if(farT<0.0)return vec3(-1.0,-1.0,0.0);\n return vec3(max(nearT,0.0),farT,1.0);\n}",
+  "glsl": "maker_ray_box_intersection_3d({origin},{direction},{box_min},{box_max}).x",
+  "glsl_outputs": {
+    "entry": "maker_ray_box_intersection_3d({origin},{direction},{box_min},{box_max}).x",
+    "exit": "maker_ray_box_intersection_3d({origin},{direction},{box_min},{box_max}).y",
+    "hit": "maker_ray_box_intersection_3d({origin},{direction},{box_min},{box_max}).z"
+  }
+}

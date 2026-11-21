@@ -1,0 +1,97 @@
+{
+  "schema_version": 1,
+  "created_by": "Screenshaver",
+  "terminal": false,
+  "id": "screenshaver.fields.volume_density_ray_integrator",
+  "name": "Volume Density Ray Integrator",
+  "category": "Fields",
+  "header_color": "#477D9A",
+  "description": "Samples a connected 3D scalar density field along a ray and integrates absorption and constant-color emission.",
+  "uses": "Clouds, fog, smoke, volumetric light and procedural media.",
+  "notes": "Requires a connected position-dependent scalar density source. Density is sampled at each ray step; negative values are clamped to zero. Fixed midpoint integration (up to 64 steps), exponential attenuation and early termination. Direction is normalized; zero-length direction produces transparent output. Color is premultiplied accumulated emission, not a full scattering simulation.",
+  "inputs": [
+    {
+      "id": "density",
+      "name": "Density Field",
+      "type": "float",
+      "default": "0.0"
+    },
+    {
+      "id": "origin",
+      "name": "Ray Origin",
+      "type": "vec3",
+      "default": "vec3(0.0,0.0,-2.0)"
+    },
+    {
+      "id": "direction",
+      "name": "Ray Direction",
+      "type": "vec3",
+      "default": "normalize(vec3(maker_uv,1.5))"
+    },
+    {
+      "id": "emission",
+      "name": "Emission Color",
+      "type": "vec3",
+      "default": "vec3(0.7,0.8,1.0)",
+      "semantic_role": "color"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "color",
+      "name": "Integrated Color",
+      "type": "vec3"
+    },
+    {
+      "id": "opacity",
+      "name": "Opacity",
+      "type": "float"
+    },
+    {
+      "id": "transmittance",
+      "name": "Transmittance",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "distance",
+      "name": "Integration Distance",
+      "type": "float",
+      "default": 4,
+      "min": 0.1,
+      "max": 30
+    },
+    {
+      "id": "extinction",
+      "name": "Extinction Coefficient",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "emission_gain",
+      "name": "Emission Gain",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 5
+    },
+    {
+      "id": "samples",
+      "name": "Sample Count",
+      "type": "float",
+      "default": 32,
+      "min": 4,
+      "max": 64
+    }
+  ],
+  "helpers": "",
+  "glsl": "vec3(0.0)",
+  "glsl_outputs": {
+    "color": "vec3(0.0)",
+    "opacity": "0.0",
+    "transmittance": "1.0"
+  }
+}

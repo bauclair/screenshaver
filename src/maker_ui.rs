@@ -300,6 +300,27 @@ pub struct CandidateJob {
     pub source_revision: u64,
     pub connection_candidate: bool,
 }
+// One independent color draw per editable color3 parameter, per GPU candidate.
+// The values live in the candidate graph, not in shader-frame randomness.
+fn randomize_candidate_colors(graph:&mut Graph, mut state:u64){
+    fn next(state:&mut u64)->f64 {
+        *state=state.wrapping_add(0x9E3779B97F4A7C15);
+        let mut z=*state;
+        z=(z^(z>>30)).wrapping_mul(0xBF58476D1CE4E5B9);
+        z=(z^(z>>27)).wrapping_mul(0x94D049BB133111EB);
+        ((z^(z>>31))>>11) as f64 * (1.0/9007199254740992.0)
+    }
+    for node in &mut graph.nodes {
+        let ids:Vec<String>=node.definition().parameters.iter()
+            .filter(|p|p.ty=="color3").map(|p|p.id.clone()).collect();
+        for id in ids {
+            node.parameters.insert(id,serde_json::json!([
+                next(&mut state),next(&mut state),next(&mut state)
+            ]));
+        }
+    }
+}
+
 fn is_speed_parameter(id:&str)->bool {
     // Animation speed is user-controlled and never part of candidate discovery.
     id.eq_ignore_ascii_case("speed") || id.eq_ignore_ascii_case("animation_speed")
@@ -1649,8 +1670,15 @@ impl MakerUi {
         if self.candidate_base.is_none(){return None}
         if self.candidates.len()>=CANDIDATES_RETAINED && self.connection_search.is_none() && self.candidate_jobs.first().is_some_and(|job|!job.connection_candidate) {self.candidate_jobs.clear();return None}
         if self.connection_search.is_some() && self.candidate_glsl_capable>=self.max_candidates {self.candidate_jobs.clear();return None}
-        let job=self.candidate_jobs.pop();
-        if job.is_some(){self.candidate_evaluated+=1;}
+        let mut job=self.candidate_jobs.pop();
+        if let Some(candidate)=job.as_mut(){
+            self.candidate_evaluated+=1;
+            let entropy=std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d|d.as_nanos() as u64).unwrap_or(0);
+            randomize_candidate_colors(&mut candidate.graph,
+                entropy ^ (self.candidate_evaluated as u64).wrapping_mul(0xD6E8FEB86659FD93));
+        }
         job
     }
     pub fn receive_candidate(&mut self,job:CandidateJob,rgba:Vec<u8>,width:usize,height:usize){
@@ -1721,9 +1749,17 @@ impl MakerUi {
             for c in &candidate.connections {
                 graph.connect(c.from,c.from_port,c.to,c.to_port)?;
             }
-        } else {
-            for node in &mut graph.nodes {
-                if let Some(parameters)=candidate.parameters.get(&node.id){node.parameters=parameters.clone();}
+        }
+        // Both connection and parameter candidates retain their exact sampled colors.
+        for node in &mut graph.nodes {
+            if let Some(parameters)=candidate.parameters.get(&node.id){
+                if candidate.connection_candidate {
+                    for (id,value) in parameters {
+                        if node.definition().parameters.iter().any(|p|p.id==*id && p.ty=="color3") {
+                            node.parameters.insert(id.clone(),value.clone());
+                        }
+                    }
+                } else {node.parameters=parameters.clone();}
             }
         }
         Ok(graph)
@@ -3069,6 +3105,19 @@ impl MakerUi {
                                             for c in &candidate.connections {
                                                 if let Err(error)=proposed.connect(c.from,c.from_port,c.to,c.to_port) {
                                                     result=Err(error);break;
+                                                }
+                                            }
+                                            if result.is_ok() {
+                                                for node in &mut proposed.nodes {
+                                                    if let Some(parameters)=candidate.parameters.get(&node.id) {
+                                                        let color_ids:Vec<_>=node.definition().parameters.iter()
+                                                            .filter(|p|p.ty=="color3").map(|p|p.id.clone()).collect();
+                                                        for id in color_ids {
+                                                            if let Some(value)=parameters.get(&id) {
+                                                                node.parameters.insert(id,value.clone());
+                                                            }
+                                                        }
+                                                    }
                                                 }
                                             }
                                             result

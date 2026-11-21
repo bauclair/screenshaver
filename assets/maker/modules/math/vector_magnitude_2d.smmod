@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "created_by": "Screenshaver",
+  "terminal": false,
+  "helpers": "",
+  "id": "screenshaver.math.vector_magnitude_2d",
+  "name": "Vector Magnitude 2D",
+  "category": "Math",
+  "header_color": "#678A9C",
+  "description": "Compute the Euclidean length of a two-dimensional vector.",
+  "uses": "Convert warped coordinates, displacement vectors, or 2D signals into scalar values.",
+  "notes": "Standard Euclidean norm sqrt(x*x+y*y). No third-party shader implementation is used.",
+  "inputs": [
+    {
+      "id": "vector",
+      "name": "Vector",
+      "type": "vec2",
+      "default": "maker_uv"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "magnitude",
+      "name": "Magnitude",
+      "type": "float"
+    }
+  ],
+  "parameters": [],
+  "glsl": "length({vector})"
+}
