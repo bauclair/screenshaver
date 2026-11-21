@@ -1,0 +1,87 @@
+{
+  "schema_version": 1,
+  "created_by": "Screenshaver",
+  "terminal": false,
+  "category": "Geometry",
+  "header_color": "#557C9C",
+  "helpers": "",
+  "id": "screenshaver.geometry.periodic_slice_field_3d",
+  "name": "Periodic Slice Field 3D",
+  "description": "Signed distance to a periodic stack of parallel planes, with a separate band mask.",
+  "uses": "Create layered geometry, slicing masks, and repeating planar structures using elementary periodic distance.",
+  "notes": "Independently defined periodic plane distance. The distance output is an exact signed distance to a union of parallel slabs when the normal is axis-aligned and the spacing is positive. No third-party shader code is used.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "semantic_role": "position3d",
+      "default": "vec3(maker_uv,0.0)"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "distance",
+      "name": "Slab Distance",
+      "type": "float",
+      "semantic_role": "distance"
+    },
+    {
+      "id": "mask",
+      "name": "Band Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "spacing",
+      "name": "Spacing",
+      "type": "float",
+      "default": 0.5,
+      "min": 0.05,
+      "max": 10.0
+    },
+    {
+      "id": "thickness",
+      "name": "Half Thickness",
+      "type": "float",
+      "default": 0.06,
+      "min": 0.001,
+      "max": 2.0
+    },
+    {
+      "id": "offset",
+      "name": "Offset",
+      "type": "float",
+      "default": 0.0,
+      "min": -10.0,
+      "max": 10.0
+    },
+    {
+      "id": "speed",
+      "name": "Travel Speed",
+      "type": "float",
+      "default": 0.0,
+      "min": -5.0,
+      "max": 5.0
+    },
+    {
+      "id": "axis",
+      "name": "Axis",
+      "type": "choice",
+      "default": 2,
+      "options": [
+        "X",
+        "Y",
+        "Z"
+      ],
+      "min": 0,
+      "max": 2
+    }
+  ],
+  "glsl_outputs": {
+    "distance": "abs(mod((({axis}<0.5)?({position}).x:(({axis}<1.5)?({position}).y:({position}).z))-{offset}-u_time*{speed}+0.5*max({spacing},0.001),max({spacing},0.001))-0.5*max({spacing},0.001))-max({thickness},0.0001)",
+    "mask": "1.0-smoothstep(0.0,max({thickness},0.0001),abs(mod((({axis}<0.5)?({position}).x:(({axis}<1.5)?({position}).y:({position}).z))-{offset}-u_time*{speed}+0.5*max({spacing},0.001),max({spacing},0.001))-0.5*max({spacing},0.001)))"
+  }
+}

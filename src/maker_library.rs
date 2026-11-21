@@ -93,6 +93,8 @@ impl Library {
       ("coordinates/tunnel_wall_uv_mapping.smmod",include_str!("../assets/maker/modules/coordinates/tunnel_wall_uv_mapping.smmod")),
       ("lighting/lattice_crossing_highlight.smmod",include_str!("../assets/maker/modules/lighting/lattice_crossing_highlight.smmod")),
       ("geometry/gyroid_surface_field_3d.smmod",include_str!("../assets/maker/modules/geometry/gyroid_surface_field_3d.smmod")),
+      ("geometry/periodic_slice_field_3d.smmod",include_str!("../assets/maker/modules/geometry/periodic_slice_field_3d.smmod")),
+      ("geometry/spherical_inversion_3d.smmod",include_str!("../assets/maker/modules/geometry/spherical_inversion_3d.smmod")),
       ("fields/second_order_cellular_field_3d.smmod",include_str!("../assets/maker/modules/fields/second_order_cellular_field_3d.smmod")),
       ("coordinates/organic_coordinate_mutation_3d.smmod",include_str!("../assets/maker/modules/coordinates/organic_coordinate_mutation_3d.smmod")),
       ("coordinates/sinusoidal_tunnel_path_3d.smmod",include_str!("../assets/maker/modules/coordinates/sinusoidal_tunnel_path_3d.smmod")),

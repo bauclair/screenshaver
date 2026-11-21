@@ -1,0 +1,73 @@
+{
+  "schema_version": 1,
+  "created_by": "Screenshaver",
+  "terminal": false,
+  "category": "Geometry",
+  "header_color": "#557C9C",
+  "helpers": "",
+  "id": "screenshaver.geometry.spherical_inversion_3d",
+  "name": "Spherical Inversion 3D",
+  "description": "Transform a three-dimensional position using standard inversion in a sphere.",
+  "uses": "Coordinate warping for procedural geometry, gyroid fields, and volumetric patterns.",
+  "notes": "Classical geometric inversion p' = center + radius^2 (p-center)/|p-center|^2. Near the center the denominator is bounded to avoid singularity. Output is a position, not a signed-distance field; distances sampled after inversion do not automatically remain metric SDFs.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "semantic_role": "position3d",
+      "default": "vec3(maker_uv,0.0)"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "position",
+      "name": "Inverted Position",
+      "type": "vec3",
+      "semantic_role": "position3d"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "radius",
+      "name": "Inversion Radius",
+      "type": "float",
+      "default": 1.0,
+      "min": 0.05,
+      "max": 10.0
+    },
+    {
+      "id": "center_x",
+      "name": "Center X",
+      "type": "float",
+      "default": 0.0,
+      "min": -10.0,
+      "max": 10.0
+    },
+    {
+      "id": "center_y",
+      "name": "Center Y",
+      "type": "float",
+      "default": 0.0,
+      "min": -10.0,
+      "max": 10.0
+    },
+    {
+      "id": "center_z",
+      "name": "Center Z",
+      "type": "float",
+      "default": 0.0,
+      "min": -10.0,
+      "max": 10.0
+    },
+    {
+      "id": "minimum_radius",
+      "name": "Singularity Guard",
+      "type": "float",
+      "default": 0.1,
+      "min": 0.001,
+      "max": 2.0
+    }
+  ],
+  "glsl": "(vec3({center_x},{center_y},{center_z}) + (max({radius},0.001)*max({radius},0.001)) * (({position})-vec3({center_x},{center_y},{center_z})) / max(dot((({position})-vec3({center_x},{center_y},{center_z})),(({position})-vec3({center_x},{center_y},{center_z}))),max({minimum_radius},0.001)*max({minimum_radius},0.001)))"
+}

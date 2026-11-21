@@ -574,6 +574,54 @@ fn graph_semantic_penalty(graph:&Graph)->u32 {
     })
 }
 
+// Discovery preference only: a normal evaluated at the default origin is the
+// same normal for every pixel. This is legal GLSL, but a poor callable thumbnail.
+// Do not alter graph validity, module defaults, or manually authored graphs.
+fn callable_sampling_penalty(graph:&Graph)->u32 {
+    if !graph_has_callable_edge(graph) {return 0;}
+    let reachable=graph.output_reachable_ids();
+    let mut penalty=0u32;
+    for node in &graph.nodes {
+        if !reachable.contains(&node.id) {continue;}
+        if node.module_id!="screenshaver.geometry.sdf_normal_estimation" {continue;}
+        let definition=node.definition();
+        let field=definition.inputs.iter().position(|p|p.ty=="field3d");
+        let position=definition.inputs.iter().position(|p|p.ty=="vec3" &&
+            (p.semantic_role=="position3d" || p.id=="position"));
+        if let (Some(field),Some(position))=(field,position) {
+            if graph.input_connection(node.id,field).is_some() &&
+                graph.input_connection(node.id,position).is_none() {
+                // Strong preference for spatially supplied normals, not a rejection.
+                penalty=penalty.saturating_add(40);
+            }
+        }
+    }
+    penalty
+}
+
+// A deliberately conservative structural hint, not a proof of pixel motion.
+// Only a time-dependent module on the reachable output path counts; declaring
+// u_time in the shader header alone is not evidence of animation.
+fn graph_time_dependency_hint(graph:&Graph)->bool {
+    let reachable=graph.output_reachable_ids();
+    graph.nodes.iter().any(|n|reachable.contains(&n.id) && {
+        let m=n.definition();
+        m.glsl_outputs.iter().any(|expression|expression.contains("u_time") || expression.contains("{time}")) ||
+        m.parameters.iter().any(|p|p.id=="speed" &&
+            m.glsl_outputs.iter().any(|expression|expression.contains("{speed}"))) ||
+        matches!(n.module_id.as_str(),"screenshaver.geometry.rotation_3d"|
+            "screenshaver.fields.sdf_raymarch"|"screenshaver.fields.traversal")
+    })
+}
+
+fn graph_discovery_penalty(graph:&Graph)->u32 {
+    let base=graph_semantic_penalty(graph).saturating_add(callable_sampling_penalty(graph));
+    // This small tie preference never invalidates static shaders.
+    if graph_has_callable_edge(graph) && !graph_time_dependency_hint(graph) {
+        base.saturating_add(2)
+    } else {base}
+}
+
 // Stable, connection-count-neutral priority for GPU admission. The hash
 // uses connection identities, never the number of connections or a complexity
 // score. It makes selection reproducible across runs and worker counts.
@@ -888,7 +936,7 @@ impl ConnectionSearch {
             DiscoveryStage::Qualify=>{
                 let end=(self.cursor+CPU_STAGE_BATCH).min(self.raw.len());
                 let scores=parallel_map(&self.raw[self.cursor..end],self.workers,|graph| {
-                    (graph_semantic_penalty(graph),discovery_priority(graph),graph_source_cost(graph),graph_compile_cost(graph))
+                    (graph_discovery_penalty(graph),discovery_priority(graph),graph_source_cost(graph),graph_compile_cost(graph))
                 });
                 for (i,(semantic_penalty,score,source_cost,runtime_cost)) in scores.into_iter().enumerate(){
                     self.min_source_cost=self.min_source_cost.min(source_cost);
@@ -906,6 +954,12 @@ impl ConnectionSearch {
                         self.scores.len(),self.deferred_complexity,MAX_COMPILE_COST,MAX_ESTIMATED_RUNTIME_WORK,
                         if self.min_source_cost==u64::MAX {0}else{self.min_source_cost},self.max_source_cost,
                         if self.min_runtime_cost==u64::MAX {0}else{self.min_runtime_cost},self.max_runtime_cost);
+                    let constant_normal_candidates=self.scores.iter().filter(|(_,_,index)|
+                        callable_sampling_penalty(&self.raw[*index])>0).count();
+                    let callable_time_hints=self.scores.iter().filter(|(_,_,index)|
+                        graph_has_callable_edge(&self.raw[*index]) && graph_time_dependency_hint(&self.raw[*index])).count();
+                    eprintln!("[MAKER CALLABLE QUALITY] admissible_constant_normal={} admissible_time_hint={} (time hint is not measured motion)",
+                        constant_normal_candidates,callable_time_hints);
                     // Preserve the semantic score and hash ordering as a deterministic
                     // shortlist, then select distinct graph structures for GPU work.
                     self.scores.sort_unstable_by(|a,b|a.0.cmp(&b.0).then_with(||a.1.cmp(&b.1)).then_with(||a.2.cmp(&b.2)));
@@ -4268,5 +4322,29 @@ fn graph_scrollbar(ui:&mut egui::Ui,canvas:egui::Rect,available:egui::Rect,
             let new_position=low+fraction*scrollable;
             if horizontal {pan.x=-new_position*zoom;} else {pan.y=-new_position*zoom;}
         }
+    }
+}
+
+#[cfg(test)]
+mod callable_quality_regression {
+    use super::*;
+    #[test]
+    fn unconnected_normal_position_is_deprioritized_not_rejected() {
+        crate::maker_library::initialize().expect("initialize Maker modules");
+        let mut graph=Graph::blank();
+        let sphere=graph.add("screenshaver.geometry.sdf_sphere",[0.0,0.0]).unwrap();
+        let normal=graph.add("screenshaver.geometry.sdf_normal_estimation",[0.0,0.0]).unwrap();
+        let source=graph.node(sphere).unwrap();
+        let callable=source.definition().outputs.len();
+        let normal_node=graph.node(normal).unwrap();
+        let field=normal_node.definition().inputs.iter().position(|p|p.ty=="field3d").unwrap();
+        graph.connect(sphere,callable,normal,field).unwrap();
+        // Structural penalty is independent of whether the graph is renderable.
+        // The normal still has its documented vec3(0.0) default.
+        assert_eq!(callable_sampling_penalty(&graph),0); // not on output path
+        let output=graph.nodes.iter().find(|n|n.definition().terminal).unwrap().id;
+        graph.connect(normal,0,output,0).unwrap();
+        assert_eq!(callable_sampling_penalty(&graph),40);
+        assert!(graph.validate_renderable().is_ok());
     }
 }
