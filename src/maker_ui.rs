@@ -314,6 +314,7 @@ fn randomize_candidate_colors(graph:&mut Graph, mut state:u64){
         let ids:Vec<String>=node.definition().parameters.iter()
             .filter(|p|p.ty=="color3").map(|p|p.id.clone()).collect();
         for id in ids {
+            if node.module_id=="screenshaver.lighting.layered_refractive_boundary_traversal" && id=="tint" {continue;}
             node.parameters.insert(id,serde_json::json!([
                 next(&mut state),next(&mut state),next(&mut state)
             ]));
@@ -393,6 +394,9 @@ pub(crate) fn graph_compile_cost(graph:&Graph)->u64 {
             "screenshaver.lighting.refractive_surface"=>
                 250u64.saturating_add(inputs.first().copied().unwrap_or(0).saturating_mul(96*5))
                     .saturating_add(inputs.get(1).copied().unwrap_or(0).saturating_mul(3)),
+            "screenshaver.lighting.layered_refractive_boundary_traversal"=>
+                300u64.saturating_add(inputs.first().copied().unwrap_or(0).saturating_mul(4*48+4*9))
+                    .saturating_add(inputs.get(1).copied().unwrap_or(0).saturating_mul(5)),
             "screenshaver.fields.traversal"=>
                 60u64.saturating_add(inputs.first().copied().unwrap_or(0).saturating_mul(20))
                     .saturating_add(total.saturating_sub(inputs.first().copied().unwrap_or(0))),
@@ -424,6 +428,7 @@ pub(crate) fn graph_source_cost(graph:&Graph)->u64 {
         score=score.saturating_add(match node.module_id.as_str() {
             "screenshaver.fields.sdf_raymarch"=>8_000,
             "screenshaver.lighting.refractive_surface"=>5_000,
+            "screenshaver.lighting.layered_refractive_boundary_traversal"=>8_000,
             "screenshaver.fields.traversal"=>3_000,
             "screenshaver.geometry.domain_fold_3d"=>1_000,
             _=>0,
@@ -463,10 +468,29 @@ fn candidate_graphs(graph:&Graph)->Vec<(String,Graph)> {
     // Equal values (degenerate ranges) are deduplicated.
     // Speed is intentionally excluded from candidate discovery.
     let base=graph.clone();
+    let optical_id=base.nodes.iter().find(|n|n.module_id=="screenshaver.lighting.layered_refractive_boundary_traversal"
+        && base.output_reachable_ids().contains(&n.id)).map(|n|n.id);
+    // A single bounded optical axis avoids a 3^N combinatorial explosion.
+    // Each preset is an actual graph parameter set, rendered by the normal GPU worker.
+    let optical_presets:[(&str,f64,f64,f64,[f64;3]);8]=[
+        ("neutral",1.45,0.15,2.0,[1.0,1.0,1.0]),
+        ("clear",1.15,0.0,2.0,[1.0,1.0,1.0]),
+        ("glass",1.45,0.15,4.0,[0.65,0.85,1.0]),
+        ("strong",1.8,0.15,4.0,[1.0,1.0,1.0]),
+        ("blue",1.45,0.6,4.0,[0.65,0.85,1.0]),
+        ("amber",1.45,0.6,4.0,[1.0,0.78,0.45]),
+        ("dense",1.8,0.6,2.0,[0.65,0.85,1.0]),
+        ("subtle",1.15,0.15,4.0,[1.0,0.78,0.45]),
+    ];
     let mut dimensions:Vec<(NodeId,String,String,Vec<Value>)>=Vec::new();
+    if let Some(id)=optical_id {
+        dimensions.push((id,"__optical_preset".into(),"Optical preset".into(),
+            (0..optical_presets.len()).map(|i|serde_json::json!(i)).collect()));
+    }
     for node in &base.nodes {
         for param in &node.definition().parameters {
             if is_speed_parameter(&param.id) {continue;}
+            if Some(node.id)==optical_id && matches!(param.id.as_str(),"ior"|"absorption"|"tint"|"max_boundaries") {continue;}
             let values:Vec<Value>=match param.ty.as_str() {
                 "float" => {
                     let lo=param.min as f64;
@@ -495,6 +519,18 @@ fn candidate_graphs(graph:&Graph)->Vec<(String,Graph)> {
         let mut labels=Vec::new();
         for ((id,param_id,param_name,values),digit) in dimensions.iter().zip(&digits) {
             let value=&values[*digit];
+            if param_id=="__optical_preset" {
+                let index=value.as_u64().unwrap_or(0) as usize;
+                let (name,ior,absorption,boundaries,tint)=optical_presets[index];
+                if let Some(node)=proposed.node_mut(*id){
+                    node.parameters.insert("ior".into(),serde_json::json!(ior));
+                    node.parameters.insert("absorption".into(),serde_json::json!(absorption));
+                    node.parameters.insert("max_boundaries".into(),serde_json::json!(boundaries));
+                    node.parameters.insert("tint".into(),serde_json::json!(tint));
+                }
+                labels.push(format!("Optical #{}={}",id,name));
+                continue;
+            }
             if let Some(node)=proposed.node_mut(*id) {
                 node.parameters.insert(param_id.clone(),value.clone());
             }
@@ -2349,6 +2385,8 @@ impl MakerUi {
                     let category=library.categories.get(&module.id).map(String::as_str).unwrap_or("Other");
                     grouped.entry(category.to_owned()).or_default().push(module);
                 }
+                // Advertise community module support even when no local modules are installed.
+                grouped.entry("third-party".to_owned()).or_default();
                 // Size all category headers to the longest category caption,
                 // independent of the module-button and dock widths.
                 let category_header_font = egui::TextStyle::Button.resolve(ui.style());
@@ -2400,6 +2438,9 @@ impl MakerUi {
                     );
                     if header_response.clicked() && !searching {*stored_expanded=!*stored_expanded;}
                     if expanded {ui.indent(("maker_library_category",category.as_str()),|ui|{
+                        if category == "third-party" && modules.is_empty() {
+                            ui.small("No third-party modules installed");
+                        }
                         for module in modules.iter().copied(){
                     // Each category owns its own aligned pinpoint column. The
                     // indicator is interactive only when this type is in the graph.

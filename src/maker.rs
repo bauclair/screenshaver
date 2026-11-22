@@ -160,12 +160,13 @@ fn candidate_complexity_gate(source:&str)->Result<(),String>{
     let loop_sites=source.matches("for(int ").count();
     let sdf_marchers=source.matches("for(int i=0;i<128;i++)").count();
     let optical_marchers=source.matches("for(int k=0;k<96;k++)").count();
-    eprintln!("[MAKER GLSL PREFLIGHT] bytes={} callable_definitions={} loop_sites={} sdf_marchers={} optical_marchers={}",
-        source.len(),callables,loop_sites,sdf_marchers,optical_marchers);
+    let layered_marchers=source.matches("for(int boundary=0;boundary<4;boundary++)").count();
+    eprintln!("[MAKER GLSL PREFLIGHT] bytes={} callable_definitions={} loop_sites={} sdf_marchers={} optical_marchers={} layered_marchers={}",
+        source.len(),callables,loop_sites,sdf_marchers,optical_marchers,layered_marchers);
     if source.len()>64*1024 {return Err(format!("GLSL source budget exceeded: {} bytes",source.len()))}
     // Conservative hard ceilings; these are safety budgets, not visual-quality filters.
-    if callables>96 || loop_sites>24 || sdf_marchers+optical_marchers>4 {
-        return Err(format!("GLSL structural safety budget exceeded: {callables} callables, {loop_sites} loops, {} marchers",sdf_marchers+optical_marchers));
+    if callables>96 || loop_sites>24 || sdf_marchers+optical_marchers+layered_marchers>4 {
+        return Err(format!("GLSL structural safety budget exceeded: {callables} callables, {loop_sites} loops, {} marchers",sdf_marchers+optical_marchers+layered_marchers));
     }
     Ok(())
 }

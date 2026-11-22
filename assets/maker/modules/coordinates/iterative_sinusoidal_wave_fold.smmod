@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.iterative_sinusoidal_wave_fold",
+  "name": "Iterative Sinusoidal Wave Fold",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "header_color": "#287C9B",
+  "description": "Iteratively displaces vertical coordinates using two coupled sinusoidal phases with bounded feedback.",
+  "uses": "Crumpled wave patterns, rippling bands, animated fabric-like distortions and abstract coordinate folding.",
+  "notes": "Independent mathematical implementation. Fixed maximum of eight feedback steps. Unlike Cross-Axis Sine Warp, only the vertical coordinate is displaced.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "iterations",
+      "name": "Iterations",
+      "type": "float",
+      "default": 7,
+      "min": 1,
+      "max": 8
+    },
+    {
+      "id": "frequency",
+      "name": "Frequency",
+      "type": "float",
+      "default": 2.5,
+      "min": 0.1,
+      "max": 12
+    },
+    {
+      "id": "amplitude",
+      "name": "Amplitude",
+      "type": "float",
+      "default": 0.12,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "speed",
+      "name": "Speed",
+      "type": "float",
+      "default": 0.5,
+      "min": -4,
+      "max": 4
+    },
+    {
+      "id": "phase_offset",
+      "name": "Phase Offset",
+      "type": "float",
+      "default": 0.65,
+      "min": -6.28,
+      "max": 6.28
+    }
+  ],
+  "helpers": "vec2 maker_iterative_sinusoidal_wave_fold(vec2 p,float time,float iterations,float frequency,float amplitude,float speed,float phase_offset){vec2 q=p;int count=clamp(int(floor(iterations+0.5)),1,8);float t=time*speed;for(int j=0;j<8;j++){if(j>=count)break;float layer=float(j)+1.0;float fx=frequency*(1.0+0.38*layer);float fy=frequency*(1.0+0.27*layer);float wave=sin(q.x*fx+t+layer*phase_offset)*cos(q.y*fy-t*0.7+layer*0.43);q.y+=amplitude*wave/(1.0+0.24*layer);}return q;}",
+  "glsl": "maker_iterative_sinusoidal_wave_fold({position},u_time,{iterations},{frequency},{amplitude},{speed},{phase_offset})",
+  "terminal": false
+}

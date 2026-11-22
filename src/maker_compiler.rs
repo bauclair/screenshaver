@@ -80,6 +80,18 @@ vec3 maker_rotate_3d(vec3 p,float xy,float yz,float xz){
      callable.require(c.from,c.from_port,"float")?;
      if let Some(c)=graph.input_connection(n.id,1){callable.require(c.from,c.from_port,"vec2")?;}
     }
+    "screenshaver.lighting.layered_refractive_boundary_traversal" => {
+     let c=graph.input_connection(n.id,0).ok_or("Layered Refractive Boundary Traversal requires a connected Distance Field")?;
+     // The field3d disc is synthesized after the declared scalar outputs.
+     let source=graph.node(c.from).ok_or("Layered Refractive Boundary Traversal field source missing")?;
+     let (scalar,dimension)=source.callable_spec().ok_or("Layered Refractive Boundary Traversal requires a position-dependent scalar SDF")?;
+     if dimension!="field3d" || c.from_port!=source.definition().outputs.len(){
+      return Err("Layered Refractive Boundary Traversal requires a field3d callable output".into());
+     }
+     callable.require(c.from,scalar,"float")?;
+     let c=graph.input_connection(n.id,1).ok_or("Layered Refractive Boundary Traversal requires a connected Background")?;
+     callable.require(c.from,c.from_port,"vec3")?;
+    }
     "screenshaver.lighting.refractive_surface" => {
      let c=graph.input_connection(n.id,0).ok_or("Refractive Surface Sampling requires a connected Distance Field")?;
      callable.require(c.from,c.from_port,"float")?;
@@ -264,6 +276,85 @@ vec3 maker_sdf_render_{id}(vec2 uv,float speed,float maxDistance,float epsilon,f
 "#));
   }
  }
+ // Bounded single-path optical traversal: only emitted for an active optical node.
+ for n in graph.nodes.iter().filter(|n|reachable.contains(&n.id)) {
+  if n.module_id=="screenshaver.lighting.layered_refractive_boundary_traversal" {
+   let field_conn=graph.input_connection(n.id,0).ok_or("Layered Refractive Boundary Traversal requires a connected Distance Field")?;
+   let bg_conn=graph.input_connection(n.id,1).ok_or("Layered Refractive Boundary Traversal requires a connected Background")?;
+   let source=graph.node(field_conn.from).ok_or("Layered Refractive Boundary Traversal field source missing")?;
+   let (scalar,dimension)=source.callable_spec().ok_or("Layered Refractive Boundary Traversal requires a position-dependent scalar SDF")?;
+   if dimension!="field3d" || field_conn.from_port!=source.definition().outputs.len(){
+    return Err("Layered Refractive Boundary Traversal requires a field3d callable output".into());
+   }
+   let field=callable.reference(field_conn.from,scalar,"sample_position","float")?;
+   let background=callable.reference(bg_conn.from,bg_conn.from_port,"sample_direction","vec3")?;
+   let id=n.id;
+   src.push_str(&format!(r#"
+float maker_layer_sdf_{id}(vec3 sample_position){{return {field};}}
+vec3 maker_layer_background_{id}(vec3 sample_direction){{return {background};}}
+vec3 maker_layer_normal_{id}(vec3 p,float e){{
+ vec3 dx=vec3(e,0.0,0.0),dy=vec3(0.0,e,0.0),dz=vec3(0.0,0.0,e);
+ vec3 g=vec3(maker_layer_sdf_{id}(p+dx)-maker_layer_sdf_{id}(p-dx),
+             maker_layer_sdf_{id}(p+dy)-maker_layer_sdf_{id}(p-dy),
+             maker_layer_sdf_{id}(p+dz)-maker_layer_sdf_{id}(p-dz));
+ return length(g)>1e-7?normalize(g):vec3(0.0,0.0,-1.0);
+}}
+vec3 maker_layer_render_{id}(vec2 uv){{
+ vec3 ro=vec3(0.0,0.0,u_n{id}_camera_z);
+ vec3 rd=normalize(vec3(uv,1.0));
+ float eps=max(u_n{id}_epsilon,0.001);
+ float maxDistance=max(u_n{id}_max_distance,2.0);
+ float ior=max(u_n{id}_ior,1.0);
+ int limit=int(clamp(floor(u_n{id}_max_boundaries+0.5),1.0,4.0));
+ float travelled=0.0;
+ float throughput=1.0;
+ vec3 attenuation=vec3(1.0);
+ // A single path, with a finite total SDF evaluation budget (4*48 march steps).
+ for(int boundary=0;boundary<4;boundary++){{
+  if(boundary>=limit || throughput<0.002 || travelled>=maxDistance)break;
+  float t=0.0;
+  bool hit=false;
+  vec3 p=ro;
+  for(int stepIndex=0;stepIndex<48;stepIndex++){{
+   p=ro+rd*t;
+   float d=maker_layer_sdf_{id}(p);
+   if(abs(d)<=eps){{hit=true;break;}}
+   // Safe signed-distance step, including travel inside the object.
+   float stepLength=max(abs(d)*0.75,eps*0.75);
+   if(travelled+t+stepLength>maxDistance)break;
+   t+=stepLength;
+  }}
+  if(!hit){{
+   float remaining=max(maxDistance-travelled,0.0);
+   if(maker_layer_sdf_{id}(ro)<-eps)
+    attenuation*=exp(-max(u_n{id}_absorption,0.0)*remaining*(vec3(1.0)-clamp(u_n{id}_tint,0.0,1.0)+vec3(0.05)));
+   return clamp(maker_layer_background_{id}(rd)*attenuation*throughput,0.0,1.0);
+  }}
+  float startInside=maker_layer_sdf_{id}(ro);
+  if(startInside<-eps)
+   attenuation*=exp(-max(u_n{id}_absorption,0.0)*t*(vec3(1.0)-clamp(u_n{id}_tint,0.0,1.0)+vec3(0.05)));
+  travelled+=t;
+  vec3 outward=maker_layer_normal_{id}(p,max(eps*2.0,0.002));
+  bool entering=dot(rd,outward)<0.0;
+  vec3 normal=entering?outward:-outward;
+  float eta=entering?1.0/ior:ior;
+  float cosine=clamp(-dot(rd,normal),0.0,1.0);
+  float f0=pow((ior-1.0)/(ior+1.0),2.0);
+  float fresnel=f0+(1.0-f0)*pow(1.0-cosine,5.0);
+  vec3 transmitted=refract(rd,normal,eta);
+  bool totalInternal=dot(transmitted,transmitted)<1e-8;
+  if(totalInternal){{rd=normalize(reflect(rd,normal));}}
+  else{{rd=normalize(transmitted);throughput*=1.0-fresnel;}}
+  // Offset beyond the interface to avoid self-intersections; keep this distance bounded.
+  float offset=eps*3.0;
+  ro=p+rd*offset;
+  travelled+=offset;
+ }}
+ return clamp(maker_layer_background_{id}(rd)*attenuation*throughput,0.0,1.0);
+}}
+"#));
+  }
+ }
  // Optical sampling: evaluate the connected background at the actual ray direction.
  for n in graph.nodes.iter().filter(|n|reachable.contains(&n.id)) {
   if n.module_id=="screenshaver.lighting.refractive_surface" {
@@ -370,6 +461,10 @@ fn emit(graph:&Graph,id:NodeId,emitted:&mut HashSet<NodeId>,src:&mut String)->Re
  }
  for p in &m.parameters{vars.insert(p.id.clone(),format!("u_n{}_{}",id,p.id));}
  if m.id=="screenshaver.color.angular_wave_background" && graph.input_connection(id,0).is_none(){vars.insert("direction".into(),"normalize(vec3(maker_uv,1.0))".into());}
+ if m.id=="screenshaver.lighting.layered_refractive_boundary_traversal" {
+  src.push_str(&format!("  vec3 v{}_p0=maker_layer_render_{}(maker_uv);\n",id,id));
+  emitted.insert(id);return Ok(());
+ }
  if m.id=="screenshaver.lighting.refractive_surface" {
   src.push_str(&format!("  vec3 v{}_p0=maker_optical_render_{}(maker_uv);\n",id,id));
   emitted.insert(id);return Ok(());

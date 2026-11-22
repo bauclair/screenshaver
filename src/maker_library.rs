@@ -9,6 +9,9 @@ impl Library {
  fn load()->Self{
     let mut result=Self{modules:BTreeMap::new(),categories:BTreeMap::new(),errors:Vec::new(),catalog_fingerprint:0xcbf29ce484222325};
     let official=[
+      ("geometry/spherical_aperture_mask.smmod",include_str!("../assets/maker/modules/geometry/spherical_aperture_mask.smmod")),
+      ("geometry/animated_radial_shell_field.smmod",include_str!("../assets/maker/modules/geometry/animated_radial_shell_field.smmod")),
+      ("color/radial_edge_hue_blend.smmod",include_str!("../assets/maker/modules/color/radial_edge_hue_blend.smmod")),
       ("color/thermal_emission_palette.smmod",include_str!("../assets/maker/modules/color/thermal_emission_palette.smmod")),
       ("fields/temporal_frequency_layering_3d.smmod",include_str!("../assets/maker/modules/fields/temporal_frequency_layering_3d.smmod")),
       ("lighting/spherical_surface_shading_2d.smmod",include_str!("../assets/maker/modules/lighting/spherical_surface_shading_2d.smmod")),
@@ -20,6 +23,7 @@ impl Library {
       ("fields/sinusoidal_ribbon_field.smmod",include_str!("../assets/maker/modules/fields/sinusoidal_ribbon_field.smmod")),
       ("fields/iterative_spiral_field.smmod",include_str!("../assets/maker/modules/fields/iterative_spiral_field.smmod")),
       ("fields/iterative_radial_field.smmod",include_str!("../assets/maker/modules/fields/iterative_radial_field.smmod")),
+      ("fields/procedural_radial_ray_field.smmod",include_str!("../assets/maker/modules/fields/procedural_radial_ray_field.smmod")),
       ("noise/value_noise_2d.smmod",include_str!("../assets/maker/modules/noise/value_noise_2d.smmod")),
       ("math/multiply.smmod",include_str!("../assets/maker/modules/math/multiply.smmod")),
       ("color/cosine_palette.smmod",include_str!("../assets/maker/modules/color/cosine_palette.smmod")),
@@ -48,6 +52,7 @@ impl Library {
       ("lighting/ray_glow.smmod",include_str!("../assets/maker/modules/lighting/ray_glow.smmod")),
       ("color/angular_wave_background.smmod",include_str!("../assets/maker/modules/color/angular_wave_background.smmod")),
       ("color/rgb_channel_remap.smmod",include_str!("../assets/maker/modules/color/rgb_channel_remap.smmod")),
+      ("lighting/layered_refractive_boundary_traversal.smmod",include_str!("../assets/maker/modules/lighting/layered_refractive_boundary_traversal.smmod")),
       ("lighting/refractive_surface.smmod",include_str!("../assets/maker/modules/lighting/refractive_surface.smmod")),
       ("geometry/sdf_torus.smmod",include_str!("../assets/maker/modules/geometry/sdf_torus.smmod")),
       ("geometry/sdf_triangular_prism.smmod",include_str!("../assets/maker/modules/geometry/sdf_triangular_prism.smmod")),
@@ -65,6 +70,7 @@ impl Library {
       ("coordinates/coordinate_feedback_warp.smmod",include_str!("../assets/maker/modules/coordinates/coordinate_feedback_warp.smmod")),
       ("color/weighted_rgb_colorizer.smmod",include_str!("../assets/maker/modules/color/weighted_rgb_colorizer.smmod")),
       ("coordinates/cross_axis_sine_warp.smmod",include_str!("../assets/maker/modules/coordinates/cross_axis_sine_warp.smmod")),
+      ("coordinates/iterative_sinusoidal_wave_fold.smmod",include_str!("../assets/maker/modules/coordinates/iterative_sinusoidal_wave_fold.smmod")),
       ("coordinates/depth_gated_axis_warp.smmod",include_str!("../assets/maker/modules/coordinates/depth_gated_axis_warp.smmod")),
       ("math/cosine_range_oscillator.smmod",include_str!("../assets/maker/modules/math/cosine_range_oscillator.smmod")),
       ("color/procedural_sine_rgb.smmod",include_str!("../assets/maker/modules/color/procedural_sine_rgb.smmod")),

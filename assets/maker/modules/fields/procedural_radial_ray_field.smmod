@@ -1,0 +1,77 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.procedural_radial_ray_field",
+  "name": "Procedural Radial Ray Field",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "header_color": "#267A49",
+  "description": "Animated radial ray intensity generated from bounded angular harmonics and distance attenuation.",
+  "uses": "Solar flares, stylized energy bursts, radial light patterns, abstract backgrounds.",
+  "notes": "Original Screenshaver implementation of general radial and harmonic mathematics. Not a translation of Cosmic Flare or Flaring. Fixed-cost evaluation; no ray marching, texture fetches, or dynamic loops.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv"
+    },
+    {
+      "id": "time",
+      "name": "Time",
+      "type": "float",
+      "default": "u_time"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "field",
+      "name": "Field",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "density",
+      "name": "Ray Density",
+      "type": "float",
+      "default": 18,
+      "min": 2,
+      "max": 96
+    },
+    {
+      "id": "irregularity",
+      "name": "Irregularity",
+      "type": "float",
+      "default": 0.65,
+      "min": 0,
+      "max": 2
+    },
+    {
+      "id": "speed",
+      "name": "Animation Speed",
+      "type": "float",
+      "default": 0.7,
+      "min": -4,
+      "max": 4
+    },
+    {
+      "id": "reach",
+      "name": "Ray Reach",
+      "type": "float",
+      "default": 0.35,
+      "min": 0.05,
+      "max": 2
+    },
+    {
+      "id": "sharpness",
+      "name": "Ray Sharpness",
+      "type": "float",
+      "default": 10,
+      "min": 1,
+      "max": 40
+    }
+  ],
+  "helpers": "float maker_procedural_radial_rays(vec2 position,float time,float density,float irregularity,float speed,float reach,float sharpness){\n  vec2 p=position-vec2(0.5);\n  float radius=length(p);\n  float angle=atan(p.y,p.x);\n  float phase=time*speed;\n  float n=max(density,1.0);\n  float w=angle*n;\n  // Independent angular harmonic design; no sampled noise or source-shader formulas.\n  float perturb=(0.18*sin(w*0.73+phase*0.41)+0.11*sin(w*1.37-phase*0.29)+0.07*cos(w*2.11+phase*0.17));\n  float carrier=0.5+0.5*cos(w+irregularity*perturb*5.0+phase*0.23);\n  float beam=pow(max(carrier,0.0),max(sharpness,1.0));\n  float envelope=exp(-radius/max(reach,0.001));\n  float core=1.0-smoothstep(0.0,0.025,radius);\n  return clamp(beam*envelope*(1.0-0.35*core),0.0,1.0);\n}",
+  "glsl": "maker_procedural_radial_rays({position},{time},{density},{irregularity},{speed},{reach},{sharpness})",
+  "terminal": false
+}

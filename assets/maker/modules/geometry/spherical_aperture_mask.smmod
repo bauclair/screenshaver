@@ -1,0 +1,82 @@
+{
+  "schema_version": 1,
+  "created_by": "Screenshaver",
+  "terminal": false,
+  "id": "screenshaver.geometry.spherical_aperture_mask",
+  "name": "Spherical Aperture Mask",
+  "category": "Geometry",
+  "header_color": "#557C9C",
+  "description": "Antipodally paired, approximately uniform circular apertures over the unit sphere, evaluated from a 3D direction.",
+  "uses": "Masks for perforated spheres, patterned planets and independently designed shell compositions.",
+  "notes": "Outputs masks, not a signed-distance field. To make physical openings, a geometry/composition stage must use the aperture mask to remove shell material. Axes are generated procedurally using a Fibonacci-sphere distribution; no fixed third-party direction tables or star-sky code are used. At the zero vector the aperture mask is zero. Overlapping apertures merge naturally.",
+  "inputs": [
+    {
+      "id": "direction",
+      "name": "Direction",
+      "type": "vec3",
+      "semantic_role": "direction3d",
+      "default": "vec3(0.0,0.0,1.0)"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "aperture",
+      "name": "Aperture Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    },
+    {
+      "id": "solid",
+      "name": "Solid Surface Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "pairs",
+      "name": "Antipodal Pairs",
+      "type": "float",
+      "default": 16.0,
+      "min": 4.0,
+      "max": 32.0
+    },
+    {
+      "id": "radius",
+      "name": "Hole Angular Radius",
+      "type": "float",
+      "default": 0.22,
+      "min": 0.01,
+      "max": 1.2
+    },
+    {
+      "id": "softness",
+      "name": "Edge Softness (radians)",
+      "type": "float",
+      "default": 0.025,
+      "min": 0.001,
+      "max": 0.2
+    },
+    {
+      "id": "rotation",
+      "name": "Z Rotation",
+      "type": "float",
+      "default": 0.0,
+      "min": -6.283185,
+      "max": 6.283185
+    },
+    {
+      "id": "speed",
+      "name": "Rotation Speed",
+      "type": "float",
+      "default": 0.0,
+      "min": -3.0,
+      "max": 3.0
+    }
+  ],
+  "helpers": "// Independently implemented Fibonacci-sphere aperture distribution.\n// Each generated axis is paired with its antipode; no source tables are reused.\nfloat maker_spherical_aperture_coverage(vec3 direction, float pair_count, float hole_radius, float edge_width, float spin){\n    float len2=dot(direction,direction);\n    if(len2<1e-12) return 0.0;\n    vec3 d=direction*inversesqrt(len2);\n    float n=clamp(floor(pair_count+0.5),4.0,32.0);\n    float best=-1.0;\n    float a=2.399963229728653;\n    float cs=cos(spin), sn=sin(spin);\n    for(int i=0;i<32;i++){\n        if(float(i)>=n) break;\n        float z=1.0-2.0*(float(i)+0.5)/n;\n        float r=sqrt(max(0.0,1.0-z*z));\n        float phi=float(i)*a;\n        vec3 axis=vec3(r*cos(phi),r*sin(phi),z);\n        axis=vec3(cs*axis.x-sn*axis.y,sn*axis.x+cs*axis.y,axis.z);\n        best=max(best,abs(dot(d,axis)));\n    }\n    float angle=acos(clamp(best,-1.0,1.0));\n    float radius=clamp(hole_radius,0.001,1.4);\n    float width=max(edge_width,0.0001);\n    return 1.0-smoothstep(max(0.0,radius-width),radius+width,angle);\n}",
+  "glsl_outputs": {
+    "aperture": "maker_spherical_aperture_coverage({direction},{pairs},{radius},{softness},{rotation}+u_time*{speed})",
+    "solid": "(1.0-maker_spherical_aperture_coverage({direction},{pairs},{radius},{softness},{rotation}+u_time*{speed}))"
+  }
+}

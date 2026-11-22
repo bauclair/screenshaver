@@ -1,0 +1,94 @@
+{
+  "schema_version": 1,
+  "created_by": "Screenshaver",
+  "terminal": false,
+  "id": "screenshaver.lighting.layered_refractive_boundary_traversal",
+  "name": "Layered Refractive Boundary Traversal",
+  "category": "Lighting",
+  "header_color": "#6689A6",
+  "description": "Bounded single-path refraction through successive interfaces of a connected signed distance field, with Fresnel transmission, internal reflection and absorption.",
+  "uses": "Connect a callable 3D distance field and a direction-dependent background color; connect Color to Output Color. The camera faces +Z.",
+  "notes": "Initial GPU-conservative implementation: at most four interfaces, 48 SDF steps per interface, no secondary rays, no accumulation buffers. Assumes one homogeneous refractive material inside the signed field (negative SDF). Disjoint and nested boundaries are supported when represented by a correct signed union field; different per-shell IORs and material IDs are not yet supported. Benchmark before broad thumbnail enumeration.",
+  "inputs": [
+    {
+      "id": "field",
+      "name": "Distance Field",
+      "type": "field3d"
+    },
+    {
+      "id": "background",
+      "name": "Background",
+      "type": "vec3",
+      "default": ""
+    }
+  ],
+  "outputs": [
+    {
+      "id": "color",
+      "name": "Color",
+      "type": "vec3"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "ior",
+      "name": "Glass IOR",
+      "type": "float",
+      "default": 1.45,
+      "min": 1.0,
+      "max": 2.4
+    },
+    {
+      "id": "absorption",
+      "name": "Absorption",
+      "type": "float",
+      "default": 0.15,
+      "min": 0.0,
+      "max": 3.0
+    },
+    {
+      "id": "tint",
+      "name": "Glass Tint",
+      "type": "color3",
+      "default": [
+        0.65,
+        0.85,
+        1.0
+      ]
+    },
+    {
+      "id": "max_boundaries",
+      "name": "Boundary Limit",
+      "type": "float",
+      "default": 4.0,
+      "min": 1.0,
+      "max": 4.0
+    },
+    {
+      "id": "max_distance",
+      "name": "Max Distance",
+      "type": "float",
+      "default": 16.0,
+      "min": 2.0,
+      "max": 40.0
+    },
+    {
+      "id": "epsilon",
+      "name": "Hit Threshold",
+      "type": "float",
+      "default": 0.003,
+      "min": 0.001,
+      "max": 0.02
+    },
+    {
+      "id": "camera_z",
+      "name": "Camera Z",
+      "type": "float",
+      "default": -4.0,
+      "min": -15.0,
+      "max": -1.0
+    }
+  ],
+  "helpers": "",
+  "glsl": "vec3(0.0)"
+}
