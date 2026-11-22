@@ -80,6 +80,13 @@ vec3 maker_rotate_3d(vec3 p,float xy,float yz,float xz){
      callable.require(c.from,c.from_port,"float")?;
      if let Some(c)=graph.input_connection(n.id,1){callable.require(c.from,c.from_port,"vec2")?;}
     }
+     "screenshaver.lighting.secondary_sdf_reflection_trace" => {
+      let c=graph.input_connection(n.id,0).ok_or("Secondary SDF Reflection Trace requires a connected 3D distance field")?;
+      let source=graph.node(c.from).ok_or("Secondary reflection field source missing")?;
+      let (scalar,dimension)=source.callable_spec().ok_or("Secondary reflection requires a position-dependent scalar SDF")?;
+      if dimension!="field3d" || c.from_port!=source.definition().outputs.len(){return Err("Secondary reflection requires a field3d callable output".into())}
+      callable.require(c.from,scalar,"float")?;
+     }
     "screenshaver.lighting.layered_refractive_boundary_traversal" => {
      let c=graph.input_connection(n.id,0).ok_or("Layered Refractive Boundary Traversal requires a connected Distance Field")?;
      // The field3d disc is synthesized after the declared scalar outputs.
@@ -232,8 +239,8 @@ vec3 maker_sdf_normal_{id}(vec3 p,float e){{
  vec2 h=vec2(e,0.0);
  return normalize(vec3(maker_sdf_{id}(p+h.xyy)-maker_sdf_{id}(p-h.xyy),maker_sdf_{id}(p+h.yxy)-maker_sdf_{id}(p-h.yxy),maker_sdf_{id}(p+h.yyx)-maker_sdf_{id}(p-h.yyx)));
 }}
-vec3 maker_sdf_render_{id}(vec2 uv,float speed,float maxDistance,float epsilon,float stepScale,float fov,float glowFalloff,float glowGain,vec3 externalOrigin,vec3 externalDirection,float cameraSource,out vec3 surfaceNormal,out float surfaceAO,out float surfaceCurvature,out float rayGlow){{
- surfaceNormal=vec3(0.0,0.0,1.0); surfaceAO=1.0; surfaceCurvature=0.0; rayGlow=0.0;
+vec3 maker_sdf_render_{id}(vec2 uv,float speed,float maxDistance,float epsilon,float stepScale,float fov,float glowFalloff,float glowGain,vec3 externalOrigin,vec3 externalDirection,float cameraSource,out vec3 surfaceNormal,out float surfaceAO,out float surfaceCurvature,out float rayGlow,out vec3 hitPosition,out vec3 incomingDirection,out float hitMask){{
+ surfaceNormal=vec3(0.0,0.0,1.0); surfaceAO=1.0; surfaceCurvature=0.0; rayGlow=0.0; hitPosition=vec3(0.0); incomingDirection=vec3(0.0); hitMask=0.0;
  // Bounded, periodic camera travel: preserve the original view at t=0,
  // but never advance beyond origin-centered SDF geometry while looking +Z.
  // Negative Z keeps the camera on the approach side of the scene.
@@ -247,6 +254,7 @@ vec3 maker_sdf_render_{id}(vec2 uv,float speed,float maxDistance,float epsilon,f
   ro=externalOrigin;
   rd=normalize(externalDirection);
  }}
+ incomingDirection=rd;
  float t=0.03;
  for(int i=0;i<128;i++){{
   vec3 p=ro+rd*t;
@@ -256,6 +264,7 @@ vec3 maker_sdf_render_{id}(vec2 uv,float speed,float maxDistance,float epsilon,f
    float e=max(epsilon*3.0,0.003);
    vec3 nor=maker_sdf_normal_{id}(p,e);
    surfaceNormal=nor;
+   hitPosition=p; hitMask=1.0;
    float occ=0.0;
    for(int j=1;j<=5;j++){{
     float h=0.045*float(j);
@@ -399,6 +408,47 @@ vec3 maker_optical_render_{id}(vec2 uv){{
 "#));
   }
  }
+ // One bounded, nonrecursive reflected SDF traversal per reachable reflection node.
+ for n in graph.nodes.iter().filter(|n|reachable.contains(&n.id)) {
+  if n.module_id=="screenshaver.lighting.secondary_sdf_reflection_trace" {
+   let c=graph.input_connection(n.id,0).ok_or("Secondary reflection requires connected Distance Field")?;
+   let source=graph.node(c.from).ok_or("Secondary reflection source missing")?;
+   let (scalar,dimension)=source.callable_spec().ok_or("Secondary reflection requires callable SDF")?;
+   if dimension!="field3d" || c.from_port!=source.definition().outputs.len(){return Err("Secondary reflection requires a field3d callable output".into())}
+   let field=callable.reference(c.from,scalar,"sample_position","float")?;
+   let id=n.id;
+   src.push_str(&format!(r#"
+float maker_reflection_sdf_{id}(vec3 sample_position){{return {field};}}
+vec3 maker_reflection_trace_{id}(vec3 hitPosition,vec3 surfaceNormal,vec3 incomingDirection,float primaryHit,out float secondaryHit,out float secondaryDistance){{
+ secondaryHit=0.0; secondaryDistance=-1.0;
+ if(primaryHit<0.5 || dot(surfaceNormal,surfaceNormal)<1e-10 || dot(incomingDirection,incomingDirection)<1e-10)return u_n{id}_miss_color;
+ vec3 n=normalize(surfaceNormal);
+ vec3 incoming=normalize(incomingDirection);
+ vec3 ray=normalize(reflect(incoming,n));
+ float eps=max(u_n{id}_epsilon,0.0005);
+ float bias=max(u_n{id}_surface_bias,eps*2.0);
+ vec3 origin=hitPosition+ray*bias;
+ float travelled=0.0;
+ float extent=max(u_n{id}_max_distance,eps);
+ int limit=int(clamp(floor(u_n{id}_max_steps+0.5),1.0,48.0));
+ for(int i=0;i<48;i++){{
+  if(i>=limit || travelled>extent)break;
+  vec3 sample_position=origin+ray*travelled;
+  float d=maker_reflection_sdf_{id}(sample_position);
+  if(isnan(d)||isinf(d))break;
+  if(abs(d)<=eps){{
+   secondaryHit=1.0; secondaryDistance=travelled+bias;
+   float shade=0.35+0.65*max(dot(normalize(vec3(0.45,0.8,-0.35)),n),0.0);
+   float fade=exp(-max(u_n{id}_attenuation,0.0)*secondaryDistance);
+   return mix(u_n{id}_miss_color,u_n{id}_hit_color*shade,fade)*clamp(u_n{id}_strength,0.0,1.0);
+  }}
+  travelled+=max(abs(d)*0.75,eps*0.75);
+ }}
+ return u_n{id}_miss_color;
+}}
+"#));
+  }
+ }
  src.push_str("void main(){\n  vec2 maker_uv=(gl_FragCoord.xy-0.5*u_resolution)/max(u_resolution.y,1.0);\n");
  if graph.input_connection(out.id,0).is_some(){
   let c=graph.input_connection(out.id,0).unwrap();emit(graph,c.from,&mut emitted,&mut src)?;
@@ -484,9 +534,13 @@ fn emit(graph:&Graph,id:NodeId,emitted:&mut HashSet<NodeId>,src:&mut String)->Re
   src.push_str(&format!("  vec3 v{}_p0=v{}_volume.rgb; float v{}_p1=1.0-v{}_volume.a; float v{}_p2=v{}_volume.a;\n",id,id,id,id,id,id));
   emitted.insert(id);return Ok(());
  }
+ if m.id=="screenshaver.lighting.secondary_sdf_reflection_trace" {
+  src.push_str(&format!("  float v{}_p1; float v{}_p2; vec3 v{}_p0=maker_reflection_trace_{}({},{},{},{},v{}_p1,v{}_p2);\n",id,id,id,id,vars["hit_position"],vars["surface_normal"],vars["incoming_direction"],vars["hit_mask"],id,id));
+  emitted.insert(id);return Ok(());
+ }
  if m.id=="screenshaver.fields.sdf_raymarch" {
-  src.push_str(&format!("  vec3 v{}_p0; vec3 v{}_p1; float v{}_p2; float v{}_p3; float v{}_p4;\n",id,id,id,id,id));
-  src.push_str(&format!("  v{}_p0=maker_sdf_render_{}(maker_uv,u_n{}_speed,u_n{}_max_distance,u_n{}_epsilon,u_n{}_step_scale,u_n{}_fov,u_n{}_glow_falloff,u_n{}_glow_gain,{},{},u_n{}_camera_source,v{}_p1,v{}_p2,v{}_p3,v{}_p4);\n",id,id,id,id,id,id,id,id,id,vars["ray_origin"],vars["ray_direction"],id,id,id,id,id));
+  src.push_str(&format!("  vec3 v{}_p0; vec3 v{}_p1; float v{}_p2; float v{}_p3; float v{}_p4; vec3 v{}_p5; vec3 v{}_p6; float v{}_p7;\n",id,id,id,id,id,id,id,id));
+  src.push_str(&format!("  v{}_p0=maker_sdf_render_{}(maker_uv,u_n{}_speed,u_n{}_max_distance,u_n{}_epsilon,u_n{}_step_scale,u_n{}_fov,u_n{}_glow_falloff,u_n{}_glow_gain,{},{},u_n{}_camera_source,v{}_p1,v{}_p2,v{}_p3,v{}_p4,v{}_p5,v{}_p6,v{}_p7);\n",id,id,id,id,id,id,id,id,id,vars["ray_origin"],vars["ray_direction"],id,id,id,id,id,id,id,id));
   emitted.insert(id);return Ok(());
  }
  for (port,output) in m.outputs.iter().enumerate(){

@@ -1,0 +1,143 @@
+{
+  "schema_version": 1,
+  "created_by": "Screenshaver",
+  "terminal": false,
+  "id": "screenshaver.lighting.secondary_sdf_reflection_trace",
+  "name": "Secondary SDF Reflection Trace",
+  "category": "Lighting",
+  "header_color": "#B37B54",
+  "description": "One bounded nonrecursive secondary reflection ray through a connected callable SDF scene.",
+  "uses": "Reflected geometry on primary SDF raymarch surfaces.",
+  "notes": "Connect the Field 3D callable output of the same geometry used by SDF Ray March. Connect SDF Ray March Hit Position, Surface Normal, Incoming Ray Direction, and Hit Mask. Hit Color is a constant material approximation, not full reflected scene shading. Output Reflection Color can be blended with the primary color. Misses return Miss Color; reflection strength scales secondary hits only. Maximum 48 steps and one bounce.",
+  "inputs": [
+    {
+      "id": "distance_field",
+      "name": "Distance Field",
+      "type": "field3d",
+      "default": ""
+    },
+    {
+      "id": "hit_position",
+      "name": "Hit Position",
+      "type": "vec3",
+      "default": "vec3(0.0)"
+    },
+    {
+      "id": "surface_normal",
+      "name": "Surface Normal",
+      "type": "vec3",
+      "default": "vec3(0.0)",
+      "semantic_role": "normal3d"
+    },
+    {
+      "id": "incoming_direction",
+      "name": "Incoming Ray Direction",
+      "type": "vec3",
+      "default": "vec3(0.0)",
+      "semantic_role": "direction3d"
+    },
+    {
+      "id": "hit_mask",
+      "name": "Primary Hit Mask",
+      "type": "float",
+      "default": "0.0",
+      "semantic_role": "mask"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "reflection_color",
+      "name": "Reflection Color",
+      "type": "vec3",
+      "semantic_role": "color"
+    },
+    {
+      "id": "secondary_hit",
+      "name": "Secondary Hit Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    },
+    {
+      "id": "secondary_distance",
+      "name": "Secondary Hit Distance",
+      "type": "float",
+      "semantic_role": "distance"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "max_steps",
+      "name": "Maximum Steps",
+      "type": "float",
+      "default": 40,
+      "min": 1,
+      "max": 48
+    },
+    {
+      "id": "max_distance",
+      "name": "Maximum Distance",
+      "type": "float",
+      "default": 30,
+      "min": 1,
+      "max": 100
+    },
+    {
+      "id": "epsilon",
+      "name": "Hit Epsilon",
+      "type": "float",
+      "default": 0.005,
+      "min": 0.001,
+      "max": 0.05
+    },
+    {
+      "id": "surface_bias",
+      "name": "Surface Bias",
+      "type": "float",
+      "default": 0.03,
+      "min": 0.001,
+      "max": 0.2
+    },
+    {
+      "id": "attenuation",
+      "name": "Distance Attenuation",
+      "type": "float",
+      "default": 0.025,
+      "min": 0,
+      "max": 0.5
+    },
+    {
+      "id": "strength",
+      "name": "Reflection Strength",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "hit_color",
+      "name": "Secondary Hit Color",
+      "type": "color3",
+      "default": [
+        0.7,
+        0.85,
+        1.0
+      ]
+    },
+    {
+      "id": "miss_color",
+      "name": "Miss Color",
+      "type": "color3",
+      "default": [
+        0.015,
+        0.025,
+        0.05
+      ]
+    }
+  ],
+  "helpers": "",
+  "glsl_outputs": {
+    "reflection_color": "vec3(0.0)",
+    "secondary_hit": "0.0",
+    "secondary_distance": "-1.0"
+  }
+}

@@ -53,6 +53,7 @@ impl Library {
       ("color/angular_wave_background.smmod",include_str!("../assets/maker/modules/color/angular_wave_background.smmod")),
       ("color/rgb_channel_remap.smmod",include_str!("../assets/maker/modules/color/rgb_channel_remap.smmod")),
       ("lighting/layered_refractive_boundary_traversal.smmod",include_str!("../assets/maker/modules/lighting/layered_refractive_boundary_traversal.smmod")),
+       ("lighting/secondary_sdf_reflection_trace.smmod",include_str!("../assets/maker/modules/lighting/secondary_sdf_reflection_trace.smmod")),
       ("lighting/refractive_surface.smmod",include_str!("../assets/maker/modules/lighting/refractive_surface.smmod")),
       ("geometry/sdf_torus.smmod",include_str!("../assets/maker/modules/geometry/sdf_torus.smmod")),
       ("geometry/sdf_triangular_prism.smmod",include_str!("../assets/maker/modules/geometry/sdf_triangular_prism.smmod")),
