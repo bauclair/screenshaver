@@ -32,6 +32,7 @@ impl Preview {
             gl::Viewport(x,y,pw,ph);
             gl::UseProgram(self.program);
             uniform_1f(self.program,"u_time",t);uniform_2f(self.program,"u_resolution",pw as f32,ph as f32);
+             uniform_2f(self.program,"u_viewport_origin",x as f32,y as f32);
             for n in &graph.nodes{
                 for p in &n.definition().parameters {
                     if let Some(value)=n.parameters.get(&p.id){
@@ -147,6 +148,7 @@ impl Preview {
                 gl::ClearColor(0.0,0.0,0.0,1.0);gl::Clear(gl::COLOR_BUFFER_BIT);
                 gl::UseProgram(program);
                 uniform_1f(program,"u_time",time);uniform_2f(program,"u_resolution",W as f32,H as f32);
+                 uniform_2f(program,"u_viewport_origin",0.0,0.0);
                 for n in &graph.nodes {for p in &n.definition().parameters {
                     if let Some(value)=n.parameters.get(&p.id){let name=format!("u_n{}_{}",n.id,p.id);
                         match p.ty.as_str(){

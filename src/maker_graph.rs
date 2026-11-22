@@ -4,11 +4,18 @@ use serde_json::Value;
 use crate::maker_library;
 pub type NodeId=u64;
 #[derive(Clone,Debug)]
-pub struct Node {pub id:NodeId,pub module_id:String,pub pos:[f32;2],pub expanded:bool,pub parameters:HashMap<String,Value>}
+pub struct Node {pub id:NodeId,pub module_id:String,pub module_name:String,pub pos:[f32;2],pub expanded:bool,pub parameters:HashMap<String,Value>,
+ /// Original JSON fields not owned by this version of Maker.
+ pub extra:serde_json::Map<String,Value>,
+ /// Persisted port descriptors permit wires to remain visible without an installed module.
+ pub saved_inputs:Vec<crate::maker_module::Port>,pub saved_outputs:Vec<crate::maker_module::Port>,
+ /// Set when a loaded definition cannot safely represent this node's saved wiring.
+ pub invalid_reason:Option<String> }
 impl Node {
   /// First scalar output that can be sampled at a declared position input.
   pub fn callable_spec(&self)->Option<(usize,&'static str)> {
    let m=self.definition();
+   if self.unresolved(){return None}
    if m.terminal || m.inputs.iter().any(|p|p.ty.starts_with("field")){return None}
    let dimension=if m.inputs.iter().any(|p|p.ty=="vec3" && (p.semantic_role=="position3d"||p.id=="position")) {"field3d"}
     else if m.inputs.iter().any(|p|p.ty=="vec2" && (p.semantic_role=="position2d"||p.semantic_role=="uv"||p.id=="uv")) {"field2d"}
@@ -33,9 +40,16 @@ impl Node {
 impl Node {
  fn new(id:NodeId,module_id:&str,pos:[f32;2])->Result<Self,String>{
   let m=maker_library::get().module(module_id).ok_or_else(||format!("Unknown module: {module_id}"))?;
-  Ok(Self{id,module_id:module_id.into(),pos,expanded:true,parameters:m.parameters.iter().map(|p|(p.id.clone(),p.default.clone())).collect()})
+  Ok(Self{id,module_id:module_id.into(),module_name:m.name.clone(),pos,expanded:true,parameters:m.parameters.iter().map(|p|(p.id.clone(),p.default.clone())).collect(),extra:serde_json::Map::new(),saved_inputs:m.inputs.clone(),saved_outputs:m.outputs.clone(),invalid_reason:None})
  }
- pub fn definition(&self)->&'static crate::maker_module::Module{maker_library::get().module(&self.module_id).expect("Registered node module")}
+ pub fn resolved_definition(&self)->Option<&'static crate::maker_module::Module>{
+  if self.invalid_reason.is_some(){None}else{maker_library::get().module(&self.module_id)}
+ }
+ pub fn unresolved(&self)->bool{self.resolved_definition().is_none()}
+ pub fn display_name(&self)->&str{if self.module_name.is_empty(){&self.module_id}else{&self.module_name}}
+ pub fn definition(&self)->&'static crate::maker_module::Module{
+  self.resolved_definition().unwrap_or_else(||crate::maker_module::unresolved_definition(&self.module_id,self.display_name(),&self.saved_inputs,&self.saved_outputs))
+ }
 }
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub struct Connection {pub from:NodeId,pub from_port:usize,pub to:NodeId,pub to_port:usize}
@@ -58,7 +72,7 @@ impl Graph {
  }
  pub fn add(&mut self,module_id:&str,pos:[f32;2])->Result<NodeId,String>{
   let def=maker_library::get().module(module_id).ok_or("Unknown module")?;
-  if def.terminal && self.nodes.iter().any(|n|n.definition().terminal){return Err("Only one output terminal is allowed".into())}
+  if def.terminal && self.nodes.iter().any(|n|n.module_id=="screenshaver.output.color"){return Err("Only one output terminal is allowed".into())}
   let id=self.next_id;let node=Node::new(id,module_id,pos)?;self.next_id+=1;self.nodes.push(node);self.revision+=1;Ok(id)
  }
   /// IDs of nonterminal modules that cannot contribute to Output Color.
@@ -67,12 +81,12 @@ impl Graph {
   pub fn orphan_ids(&self)->Vec<NodeId>{
    let mut reachable=HashSet::new();
    let mut pending:Vec<NodeId>=self.nodes.iter()
-    .filter(|n|n.definition().terminal).map(|n|n.id).collect();
+    .filter(|n|n.module_id=="screenshaver.output.color").map(|n|n.id).collect();
    while let Some(id)=pending.pop(){
     if !reachable.insert(id){continue}
     for c in self.connections.iter().filter(|c|c.to==id){pending.push(c.from);}
    }
-   self.nodes.iter().filter(|n|!n.definition().terminal && !reachable.contains(&n.id))
+   self.nodes.iter().filter(|n|n.module_id!="screenshaver.output.color" && !reachable.contains(&n.id))
     .map(|n|n.id).collect()
   }
   /// Remove all modules without a directed path to Output Color.
@@ -90,7 +104,7 @@ impl Graph {
   /// Only nodes contributing to the output participate in shader compilation.
   pub fn output_reachable_ids(&self)->HashSet<NodeId>{
    let mut ids=HashSet::new();
-   let mut pending:Vec<NodeId>=self.nodes.iter().filter(|n|n.definition().terminal).map(|n|n.id).collect();
+   let mut pending:Vec<NodeId>=self.nodes.iter().filter(|n|n.module_id=="screenshaver.output.color").map(|n|n.id).collect();
    while let Some(id)=pending.pop(){
     if ids.insert(id){for c in self.connections.iter().filter(|c|c.to==id){pending.push(c.from);}}
    }
@@ -99,7 +113,7 @@ impl Graph {
   /// A single rule used by discovery and the compiler for mandatory connections.
   pub fn input_required(&self,id:NodeId,port:usize)->bool{
    let Some(node)=self.node(id) else{return false};
-   let Some(input)=node.definition().inputs.get(port) else{return false};
+   let Some(input)=node.resolved_definition().and_then(|m|m.inputs.get(port)) else{return false};
    input.default.trim().is_empty() ||
     ((matches!(node.module_id.as_str(),
        "screenshaver.fields.sdf_raymarch" | "screenshaver.geometry.rotation_3d" |
@@ -110,7 +124,10 @@ impl Graph {
   pub fn validate_renderable(&self)->Result<(),String>{
    self.validate()?;
    let reachable=self.output_reachable_ids();
-   let output=self.nodes.iter().find(|n|n.definition().terminal).ok_or("Missing output")?;
+   let output=self.nodes.iter().find(|n|n.module_id=="screenshaver.output.color").ok_or("Missing output")?;
+   if let Some(node)=self.nodes.iter().find(|n|reachable.contains(&n.id)&&n.unresolved()){
+    return Err(format!("Unresolved module on output path: {} ({})",node.display_name(),node.module_id));
+   }
    if self.input_connection(output.id,0).is_none(){return Err("Output Color is not connected".into())}
    for node in self.nodes.iter().filter(|n|reachable.contains(&n.id)){
     for (port,input) in node.definition().inputs.iter().enumerate(){
@@ -125,7 +142,7 @@ impl Graph {
  pub fn node_mut(&mut self,id:NodeId)->Option<&mut Node>{self.nodes.iter_mut().find(|n|n.id==id)}
  pub fn remove(&mut self,id:NodeId)->Result<(),String>{
   let n=self.node(id).ok_or("Node not found")?;
-  if n.definition().terminal{return Err("Output Color is required".into())}
+  if n.module_id=="screenshaver.output.color"{return Err("Output Color is required".into())}
   self.nodes.retain(|n|n.id!=id);self.connections.retain(|c|c.from!=id&&c.to!=id);self.revision+=1;Ok(())
  }
   pub fn input_connection(&self,id:NodeId,port:usize)->Option<Connection>{self.connections.iter().copied().find(|c|c.to==id&&c.to_port==port)}
@@ -133,6 +150,7 @@ impl Graph {
  pub fn check_connection(&self,from:NodeId,from_port:usize,to:NodeId,to_port:usize)->Result<(),String>{
   if from==to{return Err("A node cannot connect to itself".into())}
   let source=self.node(from).ok_or("Source node missing")?;let target=self.node(to).ok_or("Target node missing")?;
+   if source.unresolved()||target.unresolved(){return Err("Cannot create connections to unresolved modules".into())}
    let a=source.definition();let b=target.definition();
    let ap=source.output_port(from_port).ok_or("Source port missing")?;let bp=target.input_port(to_port).ok_or("Target port missing")?;
   if a.id=="screenshaver.test.universal_test" && ap.id=="preview_color" && !b.terminal {return Err("Preview Color connects only to Output Color".into())}
@@ -149,18 +167,48 @@ impl Graph {
   if at==target{return true}if !visited.insert(at){return false}
   self.connections.iter().filter(|c|c.from==at).any(|c|self.reaches(c.to,target,visited))
  }
+ /// Loading validation preserves legacy wires involving unresolved modules.
+ /// Normal connection creation remains strict, and the compiler checks the output path.
  pub fn validate(&self)->Result<(),String>{
-  if self.nodes.iter().filter(|n|n.definition().terminal).count()!=1{return Err("Exactly one output terminal required".into())}
+  if self.nodes.iter().filter(|n|n.module_id=="screenshaver.output.color").count()!=1{return Err("Exactly one output terminal required".into())}
+  let mut ids=HashSet::new();
+  for node in &self.nodes{if !ids.insert(node.id){return Err("Duplicate node ID".into())}}
   let mut dest=HashSet::new();
   for c in &self.connections{
-   let source=self.node(c.from).ok_or("Dangling source")?;let target=self.node(c.to).ok_or("Dangling target")?;
-    let a=source.definition();let b=target.definition();
-    let at=source.output_port(c.from_port).ok_or("Bad output port")?;let bt=target.input_port(c.to_port).ok_or("Bad input port")?;
+   let source=self.node(c.from).ok_or("Dangling source")?;
+   let target=self.node(c.to).ok_or("Dangling target")?;
+   if c.from==c.to{return Err("Self connection".into())}
+   if !dest.insert((c.to,c.to_port)){return Err("Multiple sources for an input".into())}
+   if source.unresolved()||target.unresolved(){continue}
+   let a=source.definition();let b=target.definition();
+   let at=source.output_port(c.from_port).ok_or("Bad output port")?;
+   let bt=target.input_port(c.to_port).ok_or("Bad input port")?;
    if a.id=="screenshaver.test.universal_test" && at.id=="preview_color" && !b.terminal{return Err("Preview Color connects only to Output Color".into())}
    if at.ty!=bt.ty{return Err("Invalid connection types".into())}
-   if !dest.insert((c.to,c.to_port)){return Err("Multiple sources for an input".into())}
   }
   for n in &self.nodes{if self.connections.iter().filter(|c|c.from==n.id).any(|c|self.reaches(c.to,n.id,&mut HashSet::new())){return Err("Cycle detected".into())}}
   Ok(())
+ }
+ /// Restore saved wiring without treating unresolved ports as new connections.
+ pub fn restore_connection(&mut self,c:Connection)->Result<(),String>{
+  if self.node(c.from).is_none()||self.node(c.to).is_none(){return Err("Dangling saved connection".into())}
+  if self.node(c.from).is_some_and(|n|n.unresolved())||self.node(c.to).is_some_and(|n|n.unresolved()){
+   if self.connections.iter().any(|x|x.to==c.to&&x.to_port==c.to_port){return Err("Duplicate saved input connection".into())}
+   self.connections.push(c);self.revision=self.revision.wrapping_add(1);Ok(())
+  }else{self.connect(c.from,c.from_port,c.to,c.to_port)}
+ }
+ pub fn set_terminal_saved_id(&mut self,id:NodeId)->Result<(),String>{
+  if id==u64::MAX{return Err("Node ID overflow".into())}
+  let terminal=self.nodes.iter_mut().find(|n|n.module_id=="screenshaver.output.color").ok_or("Missing output terminal")?;
+  terminal.id=id;self.next_id=id+1;Ok(())
+ }
+ /// Insert a saved node with its original identity and fields.
+ pub fn restore_saved_node(&mut self,mut node:Node)->Result<NodeId,String>{
+  if self.nodes.iter().any(|n|n.id==node.id){return Err("Duplicate node ID".into())}
+  if node.module_id=="screenshaver.output.color"{return Err("Output Color cannot be unresolved".into())}
+  let id=node.id;
+  if node.module_name.is_empty(){node.module_name=node.module_id.clone()}
+  self.next_id=self.next_id.max(id.checked_add(1).ok_or("Node ID overflow")?);
+  self.nodes.push(node);self.revision=self.revision.wrapping_add(1);Ok(id)
  }
 }

@@ -97,3 +97,22 @@ impl Module {
         helpers:v.get("helpers").and_then(Value::as_str).unwrap_or("").into(),terminal,trust})
  }
 }
+
+/// A non-executable display definition for a module unavailable at load time.
+/// Definitions are cached by identity and saved port layout; they never enter GLSL.
+pub fn unresolved_definition(id:&str,name:&str,inputs:&[Port],outputs:&[Port])->&'static Module{
+    use std::sync::{Mutex,OnceLock};
+    static CACHE:OnceLock<Mutex<std::collections::HashMap<String,&'static Module>>>=OnceLock::new();
+    let cache=CACHE.get_or_init(||Mutex::new(std::collections::HashMap::new()));
+    let key=format!("{}\0{}\0{:?}\0{:?}",id,name,inputs,outputs);
+    let mut guard=cache.lock().unwrap_or_else(|e|e.into_inner());
+    if let Some(&module)=guard.get(&key){return module}
+    let module=Box::leak(Box::new(Module{
+        id:id.into(),name:name.into(),category:"Unresolved".into(),created_by:"Unavailable".into(),
+        attributed_to:Vec::new(),description:"Module definition unavailable; original project data is preserved".into(),
+        uses:String::new(),notes:String::new(),header_color:[90,90,90],inputs:inputs.to_vec(),outputs:outputs.to_vec(),
+        parameters:Vec::new(),glsl:String::new(),glsl_outputs:Vec::new(),helpers:String::new(),terminal:false,trust:Trust::Community,
+    }));
+    guard.insert(key,module);
+    module
+}

@@ -1,0 +1,104 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.geometry.animated_polygon_sector_mask",
+  "name": "Animated Polygon Sector Mask",
+  "category": "Geometry",
+  "created_by": "Screenshaver",
+  "header_color": "#A94F1F",
+  "terminal": false,
+  "description": "Animated polar-sector shutter with a soft-edged polygonal iris mask, sector-local coordinates and sector index.",
+  "uses": "Mechanical iris patterns, polygonal flowers, radial shutters, animated sector masks and procedural sector coloring.",
+  "notes": "Mask ranges from 0 to 1. Sector UV.x is normalized across the current wedge opening; UV.y is radial distance normalized by Radius. Sector Index ranges from 0 to Sectors-1. Opening oscillates around Opening with Pulse amplitude at Speed radians/second; Speed=0 produces a static phase. No external texture required. The UV and index outputs can be connected to existing color or coordinate modules.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "position2d"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "mask",
+      "name": "Sector Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    },
+    {
+      "id": "sector_uv",
+      "name": "Sector Coordinates",
+      "type": "vec2",
+      "semantic_role": "uv"
+    },
+    {
+      "id": "sector_index",
+      "name": "Sector Index",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "sectors",
+      "name": "Sectors",
+      "type": "float",
+      "default": 12,
+      "min": 3,
+      "max": 32
+    },
+    {
+      "id": "radius",
+      "name": "Radius",
+      "type": "float",
+      "default": 0.7,
+      "min": 0.05,
+      "max": 4
+    },
+    {
+      "id": "opening",
+      "name": "Opening",
+      "type": "float",
+      "default": 0.75,
+      "min": 0.02,
+      "max": 1
+    },
+    {
+      "id": "pulse",
+      "name": "Opening Variation",
+      "type": "float",
+      "default": 0.2,
+      "min": 0,
+      "max": 0.98
+    },
+    {
+      "id": "speed",
+      "name": "Opening Speed",
+      "type": "float",
+      "default": 1.0,
+      "min": -8,
+      "max": 8
+    },
+    {
+      "id": "rotation",
+      "name": "Rotation",
+      "type": "float",
+      "default": 0,
+      "min": -6.283185,
+      "max": 6.283185
+    },
+    {
+      "id": "feather",
+      "name": "Edge Softness",
+      "type": "float",
+      "default": 0.008,
+      "min": 0.0001,
+      "max": 0.2
+    }
+  ],
+  "helpers": "// Independently designed polar-sector iris mask; no source-shader expressions reused.\nvec4 maker_polygon_iris(vec2 p,float sectors,float radius,float opening,float pulse,float speed,float rotation,float feather){\n float count=clamp(floor(sectors+0.5),3.0,32.0);\n float tau=6.283185307179586;\n float wedge=tau/count;\n float angle=atan(p.y,p.x)-rotation;\n float sectorIndex=mod(floor((angle+0.5*wedge)/wedge),count);\n float localAngle=mod(angle+0.5*wedge,wedge)-0.5*wedge;\n float phase=0.5+0.5*sin(u_time*speed);\n float animated=clamp(opening+pulse*(2.0*phase-1.0),0.02,1.0);\n float halfWidth=0.5*wedge*animated;\n float edge=max(feather,0.0001);\n float radial=length(p);\n // A radial taper makes the aperture read as a polygonal shutter rather than a ring of rectangles.\n float taperedWidth=halfWidth*clamp(1.0-0.22*radial/max(radius,0.0001),0.15,1.0);\n float angularDistance=(abs(localAngle)-taperedWidth)*max(radial,0.025);\n float angularMask=1.0-smoothstep(-edge,edge,angularDistance);\n float radialMask=1.0-smoothstep(max(radius-edge,0.0),radius+edge,radial);\n float mask=clamp(angularMask*radialMask,0.0,1.0);\n vec2 sectorUV=vec2(localAngle/max(halfWidth,0.0001)*0.5+0.5,radial/max(radius,0.0001));\n return vec4(mask,sectorUV,sectorIndex);\n}",
+  "glsl_outputs": {
+    "mask": "maker_polygon_iris({position},{sectors},{radius},{opening},{pulse},{speed},{rotation},{feather}).x",
+    "sector_uv": "maker_polygon_iris({position},{sectors},{radius},{opening},{pulse},{speed},{rotation},{feather}).yz",
+    "sector_index": "maker_polygon_iris({position},{sectors},{radius},{opening},{pulse},{speed},{rotation},{feather}).w"
+  }
+}

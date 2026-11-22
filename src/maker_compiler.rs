@@ -18,7 +18,7 @@ pub fn fragment_source(graph:&Graph)->Result<String,String>{
   let creator=attribution_text(&module.created_by);
   src.push_str(&format!(" * {name} — Created by: {creator}\n"));
  }
- src.push_str(" */\nout vec4 fragColor;\nuniform vec2 u_resolution;\nuniform float u_time;\n");
+ src.push_str(" */\nout vec4 fragColor;\nuniform vec2 u_resolution;\nuniform vec2 u_viewport_origin;\nuniform float u_time;\n");
  let mut emitted=HashSet::new();let mut helpers=HashSet::new();
   // Uniforms precede helpers because callable traversal functions read node parameters.
   for n in graph.nodes.iter().filter(|n|reachable.contains(&n.id)){for p in &n.definition().parameters{
@@ -449,7 +449,7 @@ vec3 maker_reflection_trace_{id}(vec3 hitPosition,vec3 surfaceNormal,vec3 incomi
 "#));
   }
  }
- src.push_str("void main(){\n  vec2 maker_uv=(gl_FragCoord.xy-0.5*u_resolution)/max(u_resolution.y,1.0);\n");
+ src.push_str("void main(){\n  vec2 maker_uv=(gl_FragCoord.xy-u_viewport_origin-0.5*u_resolution)/max(u_resolution.y,1.0);\n");
  if graph.input_connection(out.id,0).is_some(){
   let c=graph.input_connection(out.id,0).unwrap();emit(graph,c.from,&mut emitted,&mut src)?;
   src.push_str(&format!("  fragColor=vec4(clamp(v{}_p{},0.0,1.0),1.0);\n",c.from,c.from_port));

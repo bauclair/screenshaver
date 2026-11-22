@@ -73,43 +73,112 @@ impl Drop for WorkerProcessGuard {
 // A dedicated OS process owns SDL2 and OpenGL. The bridge thread handles only
 // pipes; it never initializes SDL2 or touches GL objects.
 pub(crate) fn graph_to_wire(graph:&Graph)->serde_json::Value {
-    serde_json::json!({"nodes":graph.nodes.iter().map(|n|serde_json::json!({
-        "id":n.id,"module_id":n.module_id,"pos":n.pos,"expanded":n.expanded,
-        "parameters":n.parameters})).collect::<Vec<_>>(),
-        "connections":graph.connections.iter().map(|c|serde_json::json!({
+    let nodes:Vec<serde_json::Value>=graph.nodes.iter().map(|n|{
+        let mut obj=n.extra.clone();
+        obj.insert("id".into(),serde_json::json!(n.id));
+        obj.insert("module_id".into(),serde_json::json!(n.module_id));
+        obj.insert("module_name".into(),serde_json::json!(if n.unresolved(){n.display_name()}else{n.definition().name.as_str()}));
+        obj.insert("pos".into(),serde_json::json!(n.pos));
+        obj.insert("expanded".into(),serde_json::json!(n.expanded));
+        obj.insert("parameters".into(),serde_json::json!(n.parameters));
+        // Saved port descriptors are used only if the definition disappears.
+        if !n.unresolved(){
+            obj.insert("saved_inputs".into(),serde_json::json!(n.saved_inputs.iter().map(port_to_wire).collect::<Vec<_>>()));
+            obj.insert("saved_outputs".into(),serde_json::json!(n.saved_outputs.iter().map(port_to_wire).collect::<Vec<_>>()));
+        }else{
+            obj.entry("saved_inputs").or_insert_with(||serde_json::json!(n.saved_inputs.iter().map(port_to_wire).collect::<Vec<_>>()));
+            obj.entry("saved_outputs").or_insert_with(||serde_json::json!(n.saved_outputs.iter().map(port_to_wire).collect::<Vec<_>>()));
+        }
+        serde_json::Value::Object(obj)
+    }).collect();
+    serde_json::json!({"nodes":nodes,"connections":graph.connections.iter().map(|c|serde_json::json!({
         "from":c.from,"from_port":c.from_port,"to":c.to,"to_port":c.to_port
-        })).collect::<Vec<_>>(),"revision":graph.revision})
+    })).collect::<Vec<_>>(),"revision":graph.revision})
+}
+fn port_to_wire(p:&crate::maker_module::Port)->serde_json::Value{
+    serde_json::json!({"id":p.id,"name":p.name,"type":p.ty,"default":p.default,"semantic_role":p.semantic_role})
+}
+fn port_from_wire(v:&serde_json::Value)->Option<crate::maker_module::Port>{
+    Some(crate::maker_module::Port{id:v["id"].as_str()?.into(),name:v["name"].as_str()?.into(),
+        ty:v["type"].as_str()?.into(),default:v["default"].as_str().unwrap_or("").into(),
+        semantic_role:v["semantic_role"].as_str().unwrap_or("").into()})
 }
 pub(crate) fn graph_from_wire(v:&serde_json::Value)->Result<Graph,String>{
     use std::collections::HashMap;
     let nodes=v["nodes"].as_array().ok_or("Missing nodes")?;
+    let connections=v["connections"].as_array().ok_or("Missing connections")?;
     let mut graph=Graph::blank();
-    let terminal=graph.nodes[0].id;
+    let terminal_saved=nodes.iter().find(|n|n["module_id"]=="screenshaver.output.color")
+        .and_then(|n|n["id"].as_u64()).ok_or("Missing output terminal")?;
+    graph.set_terminal_saved_id(terminal_saved)?;
+    let terminal=terminal_saved;
     let mut ids=HashMap::new();
     for n in nodes {
         let id=n["id"].as_u64().ok_or("Invalid node ID")?;
         let module=n["module_id"].as_str().ok_or("Invalid module ID")?;
-        let new_id=if module=="screenshaver.output.color" {terminal} else {
-            graph.add(module,[n["pos"][0].as_f64().unwrap_or(0.0) as f32,
-                              n["pos"][1].as_f64().unwrap_or(0.0) as f32])?
+        let pos=[n["pos"][0].as_f64().unwrap_or(0.0) as f32,n["pos"][1].as_f64().unwrap_or(0.0) as f32];
+        let definition=crate::maker_library::get().module(module);
+        let saved_inputs=n["saved_inputs"].as_array().map(|a|a.iter().filter_map(port_from_wire).collect::<Vec<_>>()).unwrap_or_default();
+        let saved_outputs=n["saved_outputs"].as_array().map(|a|a.iter().filter_map(port_from_wire).collect::<Vec<_>>()).unwrap_or_default();
+        let mut saved_inputs=saved_inputs;
+        let mut saved_outputs=saved_outputs;
+        // Version-1 projects lack port snapshots. Recover the occupied indices
+        // from their wires so those wires can still be drawn and located.
+        if definition.is_none(){
+            let in_count=connections.iter().filter(|c|c["to"].as_u64()==Some(id))
+                .filter_map(|c|c["to_port"].as_u64()).max().and_then(|v|v.checked_add(1)).unwrap_or(0).min(64) as usize;
+            let out_count=connections.iter().filter(|c|c["from"].as_u64()==Some(id))
+                .filter_map(|c|c["from_port"].as_u64()).max().and_then(|v|v.checked_add(1)).unwrap_or(0).min(64) as usize;
+            for index in saved_inputs.len()..in_count{saved_inputs.push(crate::maker_module::Port{
+                id:format!("saved_input_{index}"),name:format!("Input {}",index+1),ty:"float".into(),
+                default:String::new(),semantic_role:String::new()});}
+            for index in saved_outputs.len()..out_count{saved_outputs.push(crate::maker_module::Port{
+                id:format!("saved_output_{index}"),name:format!("Output {}",index+1),ty:"float".into(),
+                default:String::new(),semantic_role:String::new()});}
+        }
+        let invalid_reason=definition.and_then(|def|{
+            let bad=connections.iter().any(|c|{
+                (c["from"].as_u64()==Some(id)&&c["from_port"].as_u64().is_some_and(|p|p as usize>=def.outputs.len()+usize::from(def.outputs.iter().any(|p|p.ty=="float")&&!def.terminal)))||
+                (c["to"].as_u64()==Some(id)&&c["to_port"].as_u64().is_some_and(|p|p as usize>=def.inputs.len()))
+            });
+            bad.then(||"Saved connection ports are incompatible with installed module".to_string())
+        });
+        let new_id=if module=="screenshaver.output.color"{terminal}else{
+            let extra=n.as_object().cloned().unwrap_or_default().into_iter().filter(|(k,_)|
+                !["id","module_id","module_name","pos","expanded","parameters","saved_inputs","saved_outputs"].contains(&k.as_str())).collect();
+            let node=crate::maker_graph::Node{id,module_id:module.into(),
+                module_name:n["module_name"].as_str().or_else(||definition.map(|d|d.name.as_str())).unwrap_or(module).into(),pos,
+                expanded:n["expanded"].as_bool().unwrap_or(true),parameters:HashMap::new(),extra,
+                saved_inputs:if invalid_reason.is_none(){definition.map(|d|d.inputs.clone()).unwrap_or(saved_inputs)}else{saved_inputs},
+                saved_outputs:if invalid_reason.is_none(){definition.map(|d|d.outputs.clone()).unwrap_or(saved_outputs)}else{saved_outputs},invalid_reason};
+            graph.restore_saved_node(node)?
         };
         if ids.insert(id,new_id).is_some(){return Err("Duplicate node ID".into())}
         let node=graph.node_mut(new_id).ok_or("Missing reconstructed node")?;
+        node.pos=pos;
         node.expanded=n["expanded"].as_bool().unwrap_or(true);
-        if let Some(params)=n["parameters"].as_object(){
-            node.parameters=params.iter().map(|(k,v)|(k.clone(),v.clone())).collect();
+        if let Some(name)=n["module_name"].as_str(){node.module_name=name.into();}
+        if let Some(params)=n["parameters"].as_object(){node.parameters=params.iter().map(|(k,v)|(k.clone(),v.clone())).collect();}
+        if node.resolved_definition().is_some(){
+            if let Some(def)=definition{node.saved_inputs=def.inputs.clone();node.saved_outputs=def.outputs.clone();}
+        }
+        if let Some(obj)=n.as_object(){
+            node.extra=obj.iter().filter(|(k,_)|!["id","module_id","module_name","pos","expanded","parameters","saved_inputs","saved_outputs"].contains(&k.as_str()))
+                .map(|(k,v)|(k.clone(),v.clone())).collect();
         }
     }
-    for c in v["connections"].as_array().ok_or("Missing connections")? {
+    for c in connections {
         let from=*ids.get(&c["from"].as_u64().ok_or("Invalid source")?).ok_or("Missing source")?;
         let to=*ids.get(&c["to"].as_u64().ok_or("Invalid destination")?).ok_or("Missing destination")?;
-        graph.connect(from,c["from_port"].as_u64().ok_or("Invalid source port")? as usize,
-                      to,c["to_port"].as_u64().ok_or("Invalid target port")? as usize)?;
+        graph.restore_connection(crate::maker_graph::Connection{from,
+            from_port:usize::try_from(c["from_port"].as_u64().ok_or("Invalid source port")?).map_err(|_|"Source port overflow")?,
+            to,to_port:usize::try_from(c["to_port"].as_u64().ok_or("Invalid target port")?).map_err(|_|"Target port overflow")?})?;
     }
     graph.revision=v["revision"].as_u64().unwrap_or(graph.revision);
     graph.validate()?;
     Ok(graph)
 }
+
 fn wire_request(request:&WorkerRequest)->serde_json::Value{
     match request {
         WorkerRequest::Candidate{epoch,job}=>serde_json::json!({"kind":"candidate","epoch":epoch,"graph":graph_to_wire(&job.graph)}),

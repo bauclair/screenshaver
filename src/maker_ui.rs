@@ -303,6 +303,7 @@ pub struct CandidateJob {
 // One independent color draw per editable color3 parameter, per GPU candidate.
 // The values live in the candidate graph, not in shader-frame randomness.
 fn randomize_candidate_colors(graph:&mut Graph, mut state:u64){
+    if graph.nodes.iter().any(|n|n.unresolved()){return;}
     fn next(state:&mut u64)->f64 {
         *state=state.wrapping_add(0x9E3779B97F4A7C15);
         let mut z=*state;
@@ -346,6 +347,7 @@ fn decimal_string(value:&[u8])->String {
     result
 }
 fn parameter_permutation_count(graph:&Graph)->String {
+    if graph.nodes.iter().any(|n|n.unresolved()){return "Unavailable while modules are unresolved".into();}
     let mut total=vec![1u8];
     for node in &graph.nodes {
         for param in &node.definition().parameters {
@@ -372,6 +374,7 @@ fn parameter_permutation_count(graph:&Graph)->String {
 // large fan-out graphs from overflowing the score. This is a qualification
 // heuristic, not a claim about actual GPU instructions or compilation time.
 pub(crate) fn graph_compile_cost(graph:&Graph)->u64 {
+    if graph.output_reachable_ids().iter().any(|id|graph.node(*id).is_some_and(|n|n.unresolved())){return u64::MAX;}
     use std::collections::{HashMap,HashSet};
     fn cost(graph:&Graph,id:NodeId,cache:&mut HashMap<NodeId,u64>,visiting:&mut HashSet<NodeId>)->u64 {
         if let Some(&v)=cache.get(&id){return v}
@@ -418,6 +421,7 @@ const MAX_ESTIMATED_RUNTIME_WORK:u64=50_000_000;
 const MAX_CONNECTION_GPU_JOBS:usize=32; // bounded per discovery batch
 const DEFAULT_MAX_CANDIDATES:usize=250;
 pub(crate) fn graph_source_cost(graph:&Graph)->u64 {
+    if graph.output_reachable_ids().iter().any(|id|graph.node(*id).is_some_and(|n|n.unresolved())){return u64::MAX;}
     let reachable=graph.output_reachable_ids();
     let mut score=0u64;
     for node in graph.nodes.iter().filter(|n|reachable.contains(&n.id)) {
@@ -441,6 +445,7 @@ pub(crate) fn graph_source_cost(graph:&Graph)->u64 {
 // Single admission policy used by both CPU discovery and the isolated GPU worker.
 // These estimates are conservative screening heuristics, not proof of GPU safety.
 pub(crate) fn candidate_admission(graph:&Graph)->Result<(),String> {
+    graph.validate_renderable()?;
     if graph.output_reachable_ids().iter().any(|id| graph.node(*id).is_some_and(|n| n.definition().category.eq_ignore_ascii_case("Test"))) { return Err("Test modules are excluded from shader candidate enumeration".into()); }
     let source_cost=graph_source_cost(graph);
     if source_cost>MAX_COMPILE_COST {
@@ -461,6 +466,7 @@ fn graph_preflight(graph:&Graph, _output:NodeId)->Result<(),String> {
 // Bound graph snapshots independently in discovery.
 const MAX_PENDING_RENDER_JOBS: usize = 96;
 fn candidate_graphs(graph:&Graph)->Vec<(String,Graph)> {
+    if graph.nodes.iter().any(|n|n.unresolved()){return Vec::new()}
     if graph.nodes.iter().any(|n| n.definition().category.eq_ignore_ascii_case("Test")) { return Vec::new(); }
     const MAX_CANDIDATES:usize=1_000;
     // Deterministic mixed-radix enumeration. Each numeric slider has exactly
@@ -1639,7 +1645,11 @@ impl MakerUi {
         self.project_path=Some(path);
         self.saved_graph_snapshot=serde_json::json!(crate::maker::graph_to_wire(&self.graph));
         self.preview_active=true;
-        self.status=format!("Opened project {}",self.project_name);
+        let unresolved:Vec<_>=self.graph.nodes.iter().filter(|n|n.unresolved()).collect();
+        self.status=if unresolved.is_empty(){format!("Opened project {}",self.project_name)}else{
+            let invalid=unresolved.iter().filter(|n|n.invalid_reason.is_some()).count();
+            format!("Project opened with {} unresolved modules (Missing {}, Invalid {})",unresolved.len(),unresolved.len()-invalid,invalid)
+        };
     }
     pub fn with_candidate_epoch<R>(&mut self,epoch:u64,f:impl FnOnce(&mut Self)->R)->Option<R>{
         if self.candidate_epoch==epoch {return Some(f(self));}
@@ -2019,6 +2029,7 @@ impl MakerUi {
         let mut requested_start_close_all=false;
         let mut requested_candidate_tab:Option<Graph>=None;
         let mut requested_close_tab=false;
+        let mut requested_close_tab_index:Option<usize>=None;
         let mut requested_open_project:Option<(std::path::PathBuf,Graph)>=None;
         let project_name=&mut self.project_name;
         let thumbnail_workspace=&mut self.thumbnail_workspace;
@@ -2397,6 +2408,16 @@ impl MakerUi {
                     let category=library.categories.get(&module.id).map(String::as_str).unwrap_or("Other");
                     grouped.entry(category.to_owned()).or_default().push(module);
                 }
+                // Project-local unresolved definitions remain discoverable even when their
+                // .smmod file is missing or invalid. They are not addable modules.
+                for node in &graph.nodes {
+                    if !node.unresolved(){continue}
+                    if searching && !node.display_name().to_lowercase().contains(&search_term)
+                        && !node.module_id.to_lowercase().contains(&search_term){continue}
+                    let category="Unresolved".to_owned();
+                    let list=grouped.entry(category).or_default();
+                    if !list.iter().any(|m|m.id==node.module_id){list.push(node.definition());}
+                }
                 // Advertise community module support even when no local modules are installed.
                 grouped.entry("third-party".to_owned()).or_default();
                 // Size all category headers to the longest category caption,
@@ -2432,7 +2453,11 @@ impl MakerUi {
                     let stored_expanded=library_expanded.entry(category.clone()).or_insert(false);
                     let expanded=searching || *stored_expanded;
                     // The category header and its module buttons share one palette entry.
-                    let category_color = maker_category_color(category);
+                    let category_color = if category == "Unresolved" {
+                        egui::Color32::from_rgb(235, 20, 35)
+                    } else {
+                        maker_category_color(category)
+                    };
                     let header_text = format!("{} {}", if expanded {"▼"} else {"▶"}, display);
                     // Use an empty native button and paint its caption at a fixed left inset.
                     // This avoids egui's default centered Button text alignment while
@@ -2461,6 +2486,7 @@ impl MakerUi {
                         let occurrences: Vec<NodeId> = graph.nodes.iter()
                             .filter(|node| node.module_id == module.id)
                             .map(|node| node.id).collect();
+                        let is_unresolved=graph.nodes.iter().any(|n|n.module_id==module.id&&n.unresolved());
                         if occurrences.is_empty() {
                             ui.allocate_exact_size(
                                 egui::vec2(pinpoint_column_width, ui.spacing().interact_size.y),
@@ -2480,18 +2506,22 @@ impl MakerUi {
                             let square = egui::Rect::from_center_size(
                                 indicator_rect.center(), egui::vec2(side, side),
                             );
-                            let green = if check.hovered() {
-                                egui::Color32::from_rgb(34, 185, 68)
-                            } else {
-                                egui::Color32::from_rgb(24, 155, 52)
-                            };
-                            ui.painter().rect_filled(square, 3.0, green);
+                            let indicator_color=if is_unresolved {
+                                if check.hovered(){egui::Color32::from_rgb(225,62,62)}else{egui::Color32::from_rgb(190,35,35)}
+                            }else if check.hovered(){egui::Color32::from_rgb(34,185,68)}
+                            else{egui::Color32::from_rgb(24,155,52)};
+                            ui.painter().rect_filled(square, 3.0, indicator_color);
                             let p = |x: f32, y: f32| {
                                 square.min + egui::vec2(x * side, y * side)
                             };
                             let stroke = egui::Stroke::new(2.0, egui::Color32::WHITE);
-                            ui.painter().line_segment([p(0.22, 0.52), p(0.43, 0.73)], stroke);
-                            ui.painter().line_segment([p(0.43, 0.73), p(0.80, 0.29)], stroke);
+                            if is_unresolved {
+                                ui.painter().line_segment([p(0.27,0.27),p(0.73,0.73)],stroke);
+                                ui.painter().line_segment([p(0.73,0.27),p(0.27,0.73)],stroke);
+                            }else{
+                                ui.painter().line_segment([p(0.22, 0.52), p(0.43, 0.73)], stroke);
+                                ui.painter().line_segment([p(0.43, 0.73), p(0.80, 0.29)], stroke);
+                            }
                             if check.clicked() {
                                 let previous = pinpoint_next.get(&module.id).copied();
                                 let target = previous.and_then(|id| occurrences.iter().copied().find(|next| *next > id))
@@ -2510,16 +2540,20 @@ impl MakerUi {
                             egui::Button::new("").fill(node_header_color(module)),
                         ).on_hover_ui(|ui| {
                             ui.set_max_width(350.0);
-                            module_library_tooltip(ui, module);
+                            if is_unresolved {
+                                ui.strong(format!("{} (unknown)",module.name));
+                                ui.label(format!("Module ID: {}",module.id));
+                                ui.colored_label(egui::Color32::LIGHT_RED,"Module definition missing or invalid; saved graph data retained");
+                            }else{module_library_tooltip(ui, module);}
                         });
                         ui.painter().text(
                             add_response.rect.left_center() + egui::vec2(8.0, 0.0),
                             egui::Align2::LEFT_CENTER,
-                            format!("+ {}", module.name),
+                            format!("{} {}",if is_unresolved {"!"}else{"+"},module.name),
                             egui::TextStyle::Button.resolve(ui.style()),
                             egui::Color32::WHITE,
                         );
-                    if add_response.clicked(){
+                    if add_response.clicked() && !is_unresolved{
                         let count=graph.nodes.len();
                         match graph.add(&module.id,[80.0+(count%3) as f32*45.0,180.0+(count%4) as f32*42.0]){
                             Ok(id)=>{*selected=Some(id);*status=format!("Added {} #{}",module.name,id);},
@@ -2751,6 +2785,13 @@ impl MakerUi {
                     } else {
                         ui.add_enabled(false, egui::SelectableLabel::new(false, "Thumbnail"));
                     }
+                    // The Thumbnail workspace is fixed outside the scrolling tab rail.
+                    // Give it the same independent close target as ordinary projects.
+                    if let Some(index) = thumbnail_tab_index {
+                        if ui.small_button("×").on_hover_text("Close Thumbnail").clicked() {
+                            requested_close_tab_index = Some(index);
+                        }
+                    }
                     ui.separator();
                     // The scroll area clips the ordinary tabs but never paints a scrollbar
                     // over their labels. Arrow buttons navigate the same scroll offset.
@@ -2780,6 +2821,13 @@ impl MakerUi {
                                             if response.clicked() {
                                                 requested_tab = Some(index);
                                                 ui.memory_mut(|memory| memory.request_focus(rail_focus_id));
+                                            }
+                                            // A separate hit target closes this tab without treating the X as a selection click.
+                                            // The existing close command handles dirty-state confirmation and Save/Discard/Cancel.
+                                            if ui.small_button("×")
+                                                .on_hover_text(format!("Close {title}"))
+                                                .clicked() {
+                                                requested_close_tab_index = Some(index);
                                             }
                                             if index == active_tab_index && !ui.clip_rect().contains_rect(response.rect) {
                                                 response.scroll_to_me(Some(egui::Align::Center));
@@ -3263,7 +3311,7 @@ impl MakerUi {
                     });
                 } else if let Some(id)=*selected{
                     if let Some(n)=graph.node_mut(id){
-                        ui.strong(format!("{} #{}",n.definition().name,id));ui.separator();
+                        ui.strong(format!("{}{} #{}",n.display_name(),if n.unresolved(){" (unknown)"}else{""},id));ui.separator();
                         ui.label(n.definition().description.as_str());
                         if !n.definition().parameters.is_empty() {
                             let response=ui.button("Open parameter editor");
@@ -3462,6 +3510,8 @@ impl MakerUi {
                     // The closure also needs mutable access to the graph.
                     let Some(node) = graph.node(id) else { continue };
                     let module = node.definition();
+                    let is_unresolved = node.unresolved();
+                    let unresolved_display_name = if is_unresolved { Some(node.display_name().to_owned()) } else { None };
                     let pos = node.pos;
                     let expanded = node.expanded;
                     let area=egui::Area::new(egui::Id::new(("maker_node",id)))
@@ -3494,8 +3544,9 @@ impl MakerUi {
                                 let header_height = 27.0 * *canvas_zoom;
                                 ui.set_min_width(node_width);
                                 ui.set_max_width(node_width);
-                                let header_color = node_header_color(module);
-                                let title = format!("{} #{}", module.name.as_str(), id);
+                                let header_color = if is_unresolved {egui::Color32::from_rgb(85,85,85)}else{node_header_color(module)};
+                                let title = if is_unresolved{format!("{} (unknown) #{}",unresolved_display_name.as_deref().unwrap_or(&module.name),id)}
+                                    else{format!("{} #{}",module.name.as_str(),id)};
                                 let (header_rect, header_response) = ui.allocate_exact_size(
                                     egui::vec2(node_width, header_height), egui::Sense::click_and_drag(),
                                 );
@@ -3657,7 +3708,9 @@ impl MakerUi {
                                         egui::Order::Foreground, egui::Id::new("maker_pinpoint_pulse")));
                                     let border = area.response.rect.expand(2.0);
                                     let stroke = egui::Stroke::new(3.0,
-                                        egui::Color32::from_rgb(0x39,0xff,0x14));
+                                        if graph.node(id).is_some_and(|n|n.unresolved()) {
+                                            egui::Color32::from_rgb(0xff,0x38,0x38)
+                                        }else{egui::Color32::from_rgb(0x39,0xff,0x14)});
                                     painter.line_segment([border.left_top(),border.right_top()],stroke);
                                     painter.line_segment([border.right_top(),border.right_bottom()],stroke);
                                     painter.line_segment([border.right_bottom(),border.left_bottom()],stroke);
@@ -4283,6 +4336,18 @@ impl MakerUi {
         let shapes=self.context.tessellate(output.shapes,output.pixels_per_point);
         self.painter.paint_and_update_textures([dw,dh],output.pixels_per_point,&shapes,&output.textures_delta);
         if saved_thumbnail_this_frame { self.move_saved_thumbnail_to_end(); }
+        // Resolve a tab X through the established close command, including its
+        // unsaved-changes confirmation. Switching is internal and never saves or
+        // discards the target graph; it simply makes that tab the close target.
+        if let Some(index)=requested_close_tab_index {
+            if self.project_open && index<=self.inactive_tabs.len()
+                && self.unsaved_action.is_none() && !self.close_all_running {
+                if index!=self.active_tab {self.switch_project_tab(index);}
+                self.pending_menu_command=Some("close");
+                self.context.request_repaint();
+            }
+            return self.open;
+        }
         if requested_start_close_all {self.close_all_running=true;}
         if let Some(graph)=requested_candidate_tab {self.show_candidate_thumbnail(graph);}
         else if requested_close_tab {self.close_active_project_tab();}

@@ -9,6 +9,7 @@ impl Library {
  fn load()->Self{
     let mut result=Self{modules:BTreeMap::new(),categories:BTreeMap::new(),sources:BTreeMap::new(),errors:Vec::new(),catalog_fingerprint:0xcbf29ce484222325};
     let official=[
+      ("geometry/animated_polygon_sector_mask.smmod",include_str!("../assets/maker/modules/geometry/animated_polygon_sector_mask.smmod")),
       ("geometry/spherical_aperture_mask.smmod",include_str!("../assets/maker/modules/geometry/spherical_aperture_mask.smmod")),
       ("geometry/animated_radial_shell_field.smmod",include_str!("../assets/maker/modules/geometry/animated_radial_shell_field.smmod")),
       ("color/radial_edge_hue_blend.smmod",include_str!("../assets/maker/modules/color/radial_edge_hue_blend.smmod")),
@@ -54,6 +55,7 @@ impl Library {
       ("color/rgb_channel_remap.smmod",include_str!("../assets/maker/modules/color/rgb_channel_remap.smmod")),
       ("lighting/layered_refractive_boundary_traversal.smmod",include_str!("../assets/maker/modules/lighting/layered_refractive_boundary_traversal.smmod")),
       ("lighting/refractive_surface.smmod",include_str!("../assets/maker/modules/lighting/refractive_surface.smmod")),
+       ("lighting/secondary_sdf_reflection_trace.smmod",include_str!("../assets/maker/modules/lighting/secondary_sdf_reflection_trace.smmod")),
       ("geometry/sdf_torus.smmod",include_str!("../assets/maker/modules/geometry/sdf_torus.smmod")),
       ("geometry/sdf_triangular_prism.smmod",include_str!("../assets/maker/modules/geometry/sdf_triangular_prism.smmod")),
       ("geometry/sdf_twisted_ring.smmod",include_str!("../assets/maker/modules/geometry/sdf_twisted_ring.smmod")),
