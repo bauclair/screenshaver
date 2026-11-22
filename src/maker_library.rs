@@ -2,12 +2,12 @@
 use crate::maker_module::{Module,Trust};
 use std::{collections::BTreeMap,fs,path::Path,sync::OnceLock};
 static LIBRARY:OnceLock<Library>=OnceLock::new();
-pub struct Library { pub modules:BTreeMap<String,Module>, pub categories:BTreeMap<String,String>, pub errors:Vec<String>, pub catalog_fingerprint:u64 }
+pub struct Library { pub modules:BTreeMap<String,Module>, pub categories:BTreeMap<String,String>, pub sources:BTreeMap<String,String>, pub errors:Vec<String>, pub catalog_fingerprint:u64 }
 pub fn get()->&'static Library{LIBRARY.get().expect("Maker library must initialize before graph creation")}
 pub fn initialize()->Result<(),String>{LIBRARY.set(Library::load()).map_err(|_|"Maker library already initialized".into())}
 impl Library {
  fn load()->Self{
-    let mut result=Self{modules:BTreeMap::new(),categories:BTreeMap::new(),errors:Vec::new(),catalog_fingerprint:0xcbf29ce484222325};
+    let mut result=Self{modules:BTreeMap::new(),categories:BTreeMap::new(),sources:BTreeMap::new(),errors:Vec::new(),catalog_fingerprint:0xcbf29ce484222325};
     let official=[
       ("geometry/spherical_aperture_mask.smmod",include_str!("../assets/maker/modules/geometry/spherical_aperture_mask.smmod")),
       ("geometry/animated_radial_shell_field.smmod",include_str!("../assets/maker/modules/geometry/animated_radial_shell_field.smmod")),
@@ -53,7 +53,6 @@ impl Library {
       ("color/angular_wave_background.smmod",include_str!("../assets/maker/modules/color/angular_wave_background.smmod")),
       ("color/rgb_channel_remap.smmod",include_str!("../assets/maker/modules/color/rgb_channel_remap.smmod")),
       ("lighting/layered_refractive_boundary_traversal.smmod",include_str!("../assets/maker/modules/lighting/layered_refractive_boundary_traversal.smmod")),
-       ("lighting/secondary_sdf_reflection_trace.smmod",include_str!("../assets/maker/modules/lighting/secondary_sdf_reflection_trace.smmod")),
       ("lighting/refractive_surface.smmod",include_str!("../assets/maker/modules/lighting/refractive_surface.smmod")),
       ("geometry/sdf_torus.smmod",include_str!("../assets/maker/modules/geometry/sdf_torus.smmod")),
       ("geometry/sdf_triangular_prism.smmod",include_str!("../assets/maker/modules/geometry/sdf_triangular_prism.smmod")),
@@ -191,6 +190,7 @@ impl Library {
                 self.catalog_fingerprint^=u64::from(byte);
                 self.catalog_fingerprint=self.catalog_fingerprint.wrapping_mul(0x100000001b3);
             }
+            self.sources.insert(module.id.clone(),src.to_owned());
             self.modules.insert(module.id.clone(),module);
         }
     },Err(e)=>self.errors.push(format!("{path}: {e}"))}
@@ -207,4 +207,5 @@ impl Library {
     }
  }
  pub fn module(&self,id:&str)->Option<&Module>{self.modules.get(id)}
+ pub fn source(&self,id:&str)->Option<&str>{self.sources.get(id).map(String::as_str)}
 }

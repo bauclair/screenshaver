@@ -1340,6 +1340,7 @@ pub struct MakerUi {
     thumbnail_workspace: bool,
     thumbnail_hash: Option<String>,
     project_dialog: Option<MakerProjectBrowser>,
+    examine_module: Option<String>,
     glsl_export_dialog: Option<(String,String,bool)>,
     project_path: Option<std::path::PathBuf>,
     recent_projects: Vec<std::path::PathBuf>,
@@ -1404,6 +1405,7 @@ pub struct MakerUi {
     analysis: Option<CandidateAnalysis>,
     pending_clipboard: Option<String>,
     pending_clipboard_is_glsl: bool,
+    pending_clipboard_is_module: bool,
     pending_glsl_export: Option<(usize,bool)>,
 
 }
@@ -1667,12 +1669,12 @@ impl MakerUi {
             egui::TextureOptions::LINEAR,
         );
         Ok(Self{inactive_tabs:Vec::new(),close_all_running:false,active_tab:0,project_tab_scroll_x:0.0,project_open:true,next_tab_epoch:1,context,painter,events:Vec::new(),pointer:egui::Pos2::ZERO,
-            modifiers:egui::Modifiers::default(),start:Instant::now(),graph,project_name:"Untitled".into(),thumbnail_workspace:false,thumbnail_hash:None,project_dialog:None,glsl_export_dialog:None,project_path:None,recent_projects,saved_graph_snapshot,unsaved_action:None,after_save_action:None,discard_approved:None,selected,parameter_popup:None,pending_source:None,dragging_wire:None,
+            modifiers:egui::Modifiers::default(),start:Instant::now(),graph,project_name:"Untitled".into(),thumbnail_workspace:false,thumbnail_hash:None,project_dialog:None,examine_module:None,glsl_export_dialog:None,project_path:None,recent_projects,saved_graph_snapshot,unsaved_action:None,after_save_action:None,discard_approved:None,selected,parameter_popup:None,pending_source:None,dragging_wire:None,
             status:"Click an output port, then a compatible input port".into(),menu_icon,open:true,
             preview_rect:egui::Rect::from_min_size(egui::pos2(210.0,600.0),egui::vec2(950.0,210.0)),
             preview_height:maker_saved_preview_height(),preview_active:true,routes:Routes::new(),canvas_pan:egui::Vec2::ZERO,canvas_zoom:1.0,pending_zoom:None,pending_zoom_to_fit:false,pending_menu_command:None,canvas_rect:egui::Rect::NOTHING,pinpoint_next:HashMap::new(),pinpoint_target:None,pinpoint_pulse:None,pinpoint_boxes:BTreeMap::new(),workspace_min:[-1000.0,-1000.0],workspace_max:[2000.0,2000.0],routing_undo:Vec::new(),routing_redo:Vec::new(),candidate_mode:2,candidate_sort:0,max_wire_connections:saved_max_wires,min_wire_connections:saved_min_wires,max_enumerations:saved_max_enumerations,max_candidates:saved_max_candidates,
             candidates:Vec::new(),candidate_jobs:Vec::new(),candidate_epoch:0,candidate_base:None,
-            candidate_selected:None,candidate_undo:Vec::new(),orphan_undo:Vec::new(),orphan_redo:Vec::new(),delete_project_confirm:false,orphan_restore_pending:false,candidate_notice:String::new(),library_expanded:HashMap::new(),library_search:String::new(),connection_search:None,reset_enumeration_confirm:false,candidate_evaluated:0,candidate_glsl_capable:0,candidate_rejections:0,candidate_uniform:0,candidate_glsl_errors:0,candidate_render_errors:0,analysis_request:None,analysis:None,pending_clipboard:None,pending_clipboard_is_glsl:false,pending_glsl_export:None})
+            candidate_selected:None,candidate_undo:Vec::new(),orphan_undo:Vec::new(),orphan_redo:Vec::new(),delete_project_confirm:false,orphan_restore_pending:false,candidate_notice:String::new(),library_expanded:HashMap::new(),library_search:String::new(),connection_search:None,reset_enumeration_confirm:false,candidate_evaluated:0,candidate_glsl_capable:0,candidate_rejections:0,candidate_uniform:0,candidate_glsl_errors:0,candidate_render_errors:0,analysis_request:None,analysis:None,pending_clipboard:None,pending_clipboard_is_glsl:false,pending_clipboard_is_module:false,pending_glsl_export:None})
     }
     /// Returns the exact candidate reconstruction, independent of the currently applied graph.
     /// The boolean requests saving to disk rather than copying to the clipboard.
@@ -1691,11 +1693,14 @@ impl MakerUi {
     pub fn take_clipboard_request(&mut self)->Option<String>{self.pending_clipboard.take()}
     pub fn clipboard_result(&mut self,result:Result<(),String>){
         let is_glsl=std::mem::take(&mut self.pending_clipboard_is_glsl);
-        let message=match (is_glsl,result) {
-            (true,Ok(()))=>"Active project GLSL copied to system clipboard".to_owned(),
-            (true,Err(e))=>format!("GLSL clipboard export failed: {e}"),
-            (false,Ok(()))=>"Analysis report copied to system clipboard".to_owned(),
-            (false,Err(e))=>format!("Clipboard copy failed: {e}"),
+        let is_module=std::mem::take(&mut self.pending_clipboard_is_module);
+        let message=match (is_glsl,is_module,result) {
+            (_,true,Ok(()))=>"Module JSON copied to system clipboard".to_owned(),
+            (_,true,Err(e))=>format!("Module JSON clipboard copy failed: {e}"),
+            (true,false,Ok(()))=>"Active project GLSL copied to system clipboard".to_owned(),
+            (true,false,Err(e))=>format!("GLSL clipboard export failed: {e}"),
+            (false,false,Ok(()))=>"Analysis report copied to system clipboard".to_owned(),
+            (false,false,Err(e))=>format!("Clipboard copy failed: {e}"),
         };
         self.status=message.clone();
         self.candidate_notice=message;
@@ -1884,7 +1889,7 @@ impl MakerUi {
                 self.events.push(egui::Event::PointerButton { pos: self.pointer, button, pressed, modifiers: self.modifiers });
             }
             Event::MouseWheel { x, y, .. } => {
-                if self.canvas_rect.contains(self.pointer) {
+                if self.canvas_rect.contains(self.pointer) && self.examine_module.is_none() {
                     let delta = if self.modifiers.shift { *y as f32 + *x as f32 }
                                 else { *y as f32 };
                     let axis=if self.modifiers.shift {0} else {1};
@@ -2019,6 +2024,7 @@ impl MakerUi {
         let thumbnail_workspace=&mut self.thumbnail_workspace;
         let thumbnail_hash=&mut self.thumbnail_hash;
         let project_dialog=&mut self.project_dialog;
+        let examine_module=&mut self.examine_module;
         let glsl_export_dialog=&mut self.glsl_export_dialog;
         let project_path=&mut self.project_path;
         let recent_projects=&mut self.recent_projects;
@@ -2075,6 +2081,7 @@ impl MakerUi {
         let analysis=&mut self.analysis;
         let pending_clipboard=&mut self.pending_clipboard;
         let pending_clipboard_is_glsl=&mut self.pending_clipboard_is_glsl;
+        let pending_clipboard_is_module=&mut self.pending_clipboard_is_module;
         let pending_glsl_export=&mut self.pending_glsl_export;
         let candidate_uniform=&mut self.candidate_uniform;
         let candidate_glsl_errors=&mut self.candidate_glsl_errors;
@@ -2127,6 +2134,11 @@ impl MakerUi {
                 let mut completed:Option<(std::path::PathBuf,Option<Graph>)>=None;
                 egui::Window::new(if browser.save{"Save Maker Project"}else{"Open Maker Project"})
                     .id(egui::Id::new("maker_project_file_browser"))
+                    // The Inspector and scrollbar widgets intentionally use Foreground
+                    // layers to prevent node hit-test interception. The project browser
+                    // must share that order and be raised after those controls, or they
+                    // will be painted over its window and receive its pointer events.
+                    .order(egui::Order::Foreground)
                     .collapsible(false).resizable(true).default_width(650.0).min_width(480.0)
                     .show(ctx,|ui|{
                         ui.label("Browse to a folder, select a .smprj project, or enter a filename.");
@@ -2525,6 +2537,7 @@ impl MakerUi {
             if let Some(action)=*unsaved_action {
                 egui::Window::new("Unsaved Project Changes")
                     .id(egui::Id::new("maker_unsaved_changes"))
+                    .order(egui::Order::Foreground)
                     .collapsible(false).resizable(false).default_width(390.0)
                     .anchor(egui::Align2::CENTER_CENTER,egui::Vec2::ZERO)
                     .show(ctx,|ui|{
@@ -2931,6 +2944,11 @@ impl MakerUi {
                 }
             });
             egui::SidePanel::right("maker_inspector").resizable(true).default_width(260.0).min_width(200.0).show(ctx,|ui|{
+                // Keep panel sizing/resizing on its original layer, but register
+                // Inspector controls above independent graph-node Areas.
+                ui.with_layer_id(egui::LayerId::new(
+                    if project_dialog.is_some() || unsaved_action.is_some() { egui::Order::Background } else { egui::Order::Foreground },
+                    egui::Id::new("maker_inspector_interaction")), |ui| {
                 ui.heading("Inspector");ui.separator();
                 ui.horizontal(|ui|{
                     ui.selectable_value(candidate_mode,2,"Connections");
@@ -3094,7 +3112,34 @@ impl MakerUi {
                             for line in &report.lines {ui.small(line);}
                         });
                     } else if analysis_request.is_some(){ui.small("Analyzing candidate...");}
+                    // The Inspector controls use a dedicated foreground layer to
+                    // protect them from graph-node hit testing. In egui 0.33 that
+                    // layer can prevent the nested ScrollArea from claiming wheel
+                    // input through its usual hover test. Route wheel movement by
+                    // the candidate viewport's actual geometry instead, without
+                    // changing any Inspector, node, scrollbar or dialog layers.
+                    let candidate_viewport=ui.available_rect_before_wrap().intersect(ui.clip_rect());
+                    let candidate_wheel=if project_dialog.is_none() && examine_module.is_none()
+                        && ui.ctx().input(|i| i.pointer.hover_pos()
+                            .is_some_and(|p| candidate_viewport.contains(p)))
+                    {
+                        ui.input_mut(|i| {
+                            // Candidate thumbnails are relatively tall; amplify only
+                            // their Inspector wheel movement, leaving graph zoom and
+                            // all other scroll regions unchanged.
+                            const CANDIDATE_WHEEL_MULTIPLIER: f32 = 3.0;
+                            let delta=i.smooth_scroll_delta.y * CANDIDATE_WHEEL_MULTIPLIER;
+                            // Do not also let the ScrollArea consume this event:
+                            // it would otherwise be applied twice on frames where
+                            // its built-in hover detection succeeds.
+                            i.smooth_scroll_delta.y=0.0;
+                            delta
+                        })
+                    } else {0.0};
                     egui::ScrollArea::vertical().show(ui,|ui|{
+                        if candidate_wheel!=0.0 {
+                            ui.scroll_with_delta(egui::vec2(0.0,candidate_wheel));
+                        }
                         let mut display_order:Vec<usize>=(0..candidates.len()).collect();
                         // Stable ties and discovery-order mode preserve original arrival order.
                         if *candidate_sort!=5 {
@@ -3233,6 +3278,7 @@ impl MakerUi {
                 }else{ui.label("Select a node to edit its parameters.");}
                 ui.separator();ui.label("Graph status");
                 match graph.validate(){Ok(())=>{ui.small("Typed connections valid; no cycles");},Err(e)=>{ui.colored_label(egui::Color32::LIGHT_RED,e);}}
+                });
             });
             // Keep the preview panel allocated at its existing height even when
             // no project is open. Only its shader rendering is disabled.
@@ -3410,6 +3456,7 @@ impl MakerUi {
                 let mut active_node_drag=false;
                 let ids:Vec<NodeId>=graph.nodes.iter().map(|n|n.id).collect();
                 let mut context_remove_node: Option<NodeId> = None;
+                let mut context_examine_module: Option<String> = None;
                 for id in ids{
                     // Copy the immutable node fields before entering the UI closure.
                     // The closure also needs mutable access to the graph.
@@ -3590,14 +3637,16 @@ impl MakerUi {
                     // The module's context menu is separate from its drag, port,
                     // and parameter interactions. Defer mutation until all nodes
                     // have been rendered so iteration and connector layout remain valid.
-                    if !module.terminal {
-                        area.response.context_menu(|ui| {
-                            if ui.button("Remove Module").clicked() {
-                                context_remove_node = Some(id);
-                                ui.close_menu();
-                            }
-                        });
-                    }
+                    area.response.context_menu(|ui| {
+                        if ui.button("Examine Module Code").clicked() {
+                            context_examine_module = Some(module.id.clone());
+                            ui.close_menu();
+                        }
+                        if !module.terminal && ui.button("Remove Module").clicked() {
+                            context_remove_node = Some(id);
+                            ui.close_menu();
+                        }
+                    });
                     if let Some((pulse_id, started)) = pinpoint_pulse.as_ref() {
                         if *pulse_id == id {
                             let elapsed = started.elapsed().as_secs_f32();
@@ -3682,6 +3731,9 @@ impl MakerUi {
                     if area.response.clicked() && *parameter_popup == Some(id) {
                         *parameter_popup = None;
                     }
+                }
+                if let Some(module_id) = context_examine_module {
+                    *examine_module = Some(module_id);
                 }
                 if let Some(id) = context_remove_node {
                     match graph.remove(id) {
@@ -4043,10 +4095,17 @@ impl MakerUi {
                     // own requested position. A per-frame clamp here caused
                     // one-frame centering followed by a snap to the corner.
                 }
-                graph_scrollbar(ui,canvas,available,true,canvas_pan,*canvas_zoom,
-                    workspace_min[0],workspace_max[0]);
-                graph_scrollbar(ui,canvas,available,false,canvas_pan,*canvas_zoom,
-                    workspace_min[1],workspace_max[1]);
+                // Scrollbar widgets must win hit testing over graph-node Areas.
+                // Keep their geometry and pan calculations unchanged; only their
+                // interaction/paint layer is elevated above node Areas.
+                ui.with_layer_id(egui::LayerId::new(
+                    if project_dialog.is_some() || unsaved_action.is_some() { egui::Order::Background } else { egui::Order::Foreground },
+                    egui::Id::new("maker_graph_scrollbar_interaction")), |ui| {
+                    graph_scrollbar(ui,canvas,available,true,canvas_pan,*canvas_zoom,
+                        workspace_min[0],workspace_max[0]);
+                    graph_scrollbar(ui,canvas,available,false,canvas_pan,*canvas_zoom,
+                        workspace_min[1],workspace_max[1]);
+                });
                 ui.allocate_rect(available,egui::Sense::hover());
             });
             // Node Areas use Middle order so their painted bodies are above the
@@ -4127,6 +4186,96 @@ impl MakerUi {
             }
             if parameter_popup.is_some() && ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
                 *parameter_popup = None;
+            }
+            // The code viewer is read-only and uses the original JSON loaded by
+            // Maker (including bundled official definitions), not reconstructed GLSL.
+            // A foreground shield prevents clicks reaching the graph and docks.
+            if let Some(module_id) = examine_module.clone() {
+                let library = maker_library::get();
+                let module_name = library.module(&module_id)
+                    .map(|module| module.name.as_str()).unwrap_or(module_id.as_str());
+                let source = library.source(&module_id).unwrap_or("Module source unavailable");
+                let screen = ctx.screen_rect();
+                egui::Area::new(egui::Id::new("maker_examine_code_shield"))
+                    .order(egui::Order::Foreground)
+                    .fixed_pos(screen.min)
+                    .interactable(true)
+                    .show(ctx, |ui| {
+                        ui.allocate_rect(egui::Rect::from_min_size(ui.min_rect().min, screen.size()), egui::Sense::click());
+                    });
+                let mut window_open = true;
+                let mut close_button = false;
+                egui::Window::new(format!("Examine Module Code — {module_name}"))
+                    .id(egui::Id::new("maker_examine_module_code"))
+                    .order(egui::Order::Foreground)
+                    .open(&mut window_open)
+                    .collapsible(false)
+                    .resizable(true)
+                    .movable(true)
+                    .default_size(egui::vec2(780.0, 570.0))
+                    .show(ctx, |ui| {
+                        ui.label(format!("Module ID: {module_id}"));
+                        ui.separator();
+                        // The modal shield and the graph's SDL wheel handler
+                        // can otherwise keep this ScrollArea from receiving wheel
+                        // input. Route wheel movement to the viewer viewport,
+                        // consuming it once so the underlying graph cannot pan.
+                        let code_viewport = ui.available_rect_before_wrap().intersect(ui.clip_rect());
+                        let code_wheel = if ui.ctx().input(|i| i.pointer.hover_pos()
+                            .is_some_and(|p| code_viewport.contains(p))) {
+                            ui.input_mut(|i| {
+                                let delta = i.smooth_scroll_delta;
+                                i.smooth_scroll_delta = egui::Vec2::ZERO;
+                                delta
+                            })
+                        } else { egui::Vec2::ZERO };
+                        egui::ScrollArea::both().auto_shrink([false, false])
+                            .max_height((ui.available_height() - 38.0).max(120.0))
+                            .show(ui, |ui| {
+                                if code_wheel != egui::Vec2::ZERO {
+                                    ui.scroll_with_delta(code_wheel);
+                                }
+                                ui.add(egui::Label::new(egui::RichText::new(source).monospace()).selectable(true));
+                            });
+                        ui.separator();
+                        ui.horizontal(|ui| {
+                            if ui.button("Copy to Clipboard").clicked() {
+                                // Maker owns the SDL2 event loop; egui copy_text alone
+                                // does not update the native clipboard. Queue the exact
+                                // .smmod source for Maker's existing SDL2 clipboard writer.
+                                *pending_clipboard=Some(source.to_owned());
+                                *pending_clipboard_is_glsl=false;
+                                *pending_clipboard_is_module=true;
+                                *status="Copying module JSON to system clipboard".into();
+                            }
+                            if ui.button("Close").clicked() { close_button = true; }
+                        });
+                    });
+                if !window_open || close_button || ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+                    *examine_module = None;
+                } else {
+                    ctx.move_to_top(egui::LayerId::new(
+                        egui::Order::Foreground, egui::Id::new("maker_examine_module_code")));
+                }
+            }
+            // Windows are created before panels in this UI pass. Raise the project
+            // browser after the menu, Inspector, scrollbars and graph have all been
+            // registered. This changes only the browser's z-order, not the node
+            // paint order or the foreground protection of underlying controls.
+            if project_dialog.is_some() {
+                ctx.move_to_top(egui::LayerId::new(
+                    egui::Order::Foreground,
+                    egui::Id::new("maker_project_file_browser"),
+                ));
+            }
+            // The Unsaved Changes confirmation is modal as well. Raise it above
+            // the foreground menu and restore Inspector/scrollbar priority when
+            // it closes (the layer choice above is evaluated each frame).
+            if unsaved_action.is_some() {
+                ctx.move_to_top(egui::LayerId::new(
+                    egui::Order::Foreground,
+                    egui::Id::new("maker_unsaved_changes"),
+                ));
             }
 
         });
