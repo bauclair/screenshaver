@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.axial_twist_and_pulse_warp",
+  "name": "Axial Twist and Pulse Warp",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "header_color": "#287C9B",
+  "description": "Rotates and smoothly scales XY coordinates as functions of depth and animation time while preserving Z.",
+  "uses": "Animated crystalline tunnels, twisting columns, depth-varying repeated geometry, and pulsing 3D coordinate domains.",
+  "notes": "Independent implementation of axial rotation and bounded periodic radial scaling. This is a coordinate transformation, not an SDF; nonuniform or varying scaling can affect exact signed-distance properties.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "default": "vec3(maker_uv,0.0)",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "time",
+      "name": "Time",
+      "type": "float",
+      "default": "u_time",
+      "semantic_role": "time"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "position",
+      "name": "Warped Position",
+      "type": "vec3",
+      "semantic_role": "position3d"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "twist_rate",
+      "name": "Twist Rate",
+      "type": "float",
+      "default": 0.35,
+      "min": -5,
+      "max": 5
+    },
+    {
+      "id": "twist_speed",
+      "name": "Twist Speed",
+      "type": "float",
+      "default": 0.3,
+      "min": -5,
+      "max": 5
+    },
+    {
+      "id": "pulse_frequency",
+      "name": "Pulse Frequency",
+      "type": "float",
+      "default": 2.0,
+      "min": 0,
+      "max": 12
+    },
+    {
+      "id": "pulse_depth",
+      "name": "Pulse Depth",
+      "type": "float",
+      "default": 0.15,
+      "min": 0,
+      "max": 0.9
+    },
+    {
+      "id": "pulse_speed",
+      "name": "Pulse Speed",
+      "type": "float",
+      "default": 1.0,
+      "min": -5,
+      "max": 5
+    },
+    {
+      "id": "minimum_scale",
+      "name": "Minimum Scale",
+      "type": "float",
+      "default": 0.2,
+      "min": 0.05,
+      "max": 1
+    }
+  ],
+  "helpers": "vec3 maker_axial_twist_and_pulse_warp(vec3 p,float time,float twist_rate,float twist_speed,float pulse_frequency,float pulse_depth,float pulse_speed,float minimum_scale){\n  float angle=p.z*twist_rate+time*twist_speed;\n  float cs=cos(angle),sn=sin(angle);\n  vec2 rotated=vec2(cs*p.x-sn*p.y,sn*p.x+cs*p.y);\n  float depth=clamp(pulse_depth,0.0,0.9);\n  float scale=1.0+depth*sin(p.z*pulse_frequency+time*pulse_speed);\n  scale=max(scale,max(minimum_scale,0.05));\n  return vec3(rotated*scale,p.z);\n}",
+  "glsl": "maker_axial_twist_and_pulse_warp({position},{time},{twist_rate},{twist_speed},{pulse_frequency},{pulse_depth},{pulse_speed},{minimum_scale})",
+  "terminal": false
+}

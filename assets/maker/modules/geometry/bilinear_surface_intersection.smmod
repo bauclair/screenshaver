@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "created_by": "Screenshaver",
+  "terminal": false,
+  "id": "screenshaver.geometry.bilinear_surface_intersection",
+  "name": "Bilinear Surface Intersection",
+  "category": "Geometry",
+  "header_color": "#557C9C",
+  "description": "Nearest forward ray intersection with a finite bilinear patch specified by four corner positions.",
+  "uses": "Analytical ray intersections with warped quadrilateral surfaces, including nonplanar patches.",
+  "notes": "Independently derived projection/quadratic intersection. Corner order: p00, p10, p01, p11. Returns the nearest forward root, ray parameter t (not world distance for non-unit direction), patch UV, geometric normal, and hit mask. Miss: t=-1, normal=0, UV=0, hit=0. Degenerate and tangent configurations may return a miss. This is not an SDF.",
+  "inputs": [
+    {
+      "id": "origin",
+      "name": "Ray Origin",
+      "type": "vec3",
+      "default": "vec3(0.0,0.0,-3.0)",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "direction",
+      "name": "Ray Direction",
+      "type": "vec3",
+      "default": "normalize(vec3(maker_uv,1.5))",
+      "semantic_role": "direction3d"
+    },
+    {
+      "id": "p00",
+      "name": "Corner (0,0)",
+      "type": "vec3",
+      "default": "vec3(-1.0,-1.0,0.0)"
+    },
+    {
+      "id": "p10",
+      "name": "Corner (1,0)",
+      "type": "vec3",
+      "default": "vec3(1.0,-1.0,0.0)"
+    },
+    {
+      "id": "p01",
+      "name": "Corner (0,1)",
+      "type": "vec3",
+      "default": "vec3(-1.0,1.0,0.0)"
+    },
+    {
+      "id": "p11",
+      "name": "Corner (1,1)",
+      "type": "vec3",
+      "default": "vec3(1.0,1.0,0.5)"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "distance",
+      "name": "Intersection Parameter",
+      "type": "float",
+      "default": "",
+      "semantic_role": "distance"
+    },
+    {
+      "id": "normal",
+      "name": "Surface Normal",
+      "type": "vec3",
+      "semantic_role": "normal3d"
+    },
+    {
+      "id": "uv",
+      "name": "Patch UV",
+      "type": "vec2",
+      "semantic_role": "uv"
+    },
+    {
+      "id": "hit",
+      "name": "Hit Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    }
+  ],
+  "parameters": [],
+  "helpers": "// Independent ray/bilinear-patch intersection by projection onto the plane\n// perpendicular to the ray's dominant component. Returns normal, (t,u,v), hit.\nmat3 maker_bilinear_patch_hit(vec3 ro,vec3 rd,vec3 p00,vec3 p10,vec3 p01,vec3 p11){\n mat3 miss=mat3(vec3(0.0),vec3(-1.0,0.0,0.0),vec3(0.0));\n float dd=dot(rd,rd);if(dd<1e-12)return miss;\n vec3 ab=p10-p00,ac=p01-p00,tw=p11-p10-p01+p00;\n int axis=0;if(abs(rd.y)>abs(rd.x))axis=1;if(abs(rd.z)>abs(rd[axis]))axis=2;\n int j=(axis+1)%3,k=(axis+2)%3;\n // Project a point into two ray-invariant coordinates.\n vec2 q=vec2(ro[j]-p00[j]-rd[j]*(ro[axis]-p00[axis])/rd[axis],\n             ro[k]-p00[k]-rd[k]*(ro[axis]-p00[axis])/rd[axis]);\n vec2 b=vec2(ab[j]-rd[j]*ab[axis]/rd[axis],ab[k]-rd[k]*ab[axis]/rd[axis]);\n vec2 c=vec2(ac[j]-rd[j]*ac[axis]/rd[axis],ac[k]-rd[k]*ac[axis]/rd[axis]);\n vec2 d=vec2(tw[j]-rd[j]*tw[axis]/rd[axis],tw[k]-rd[k]*tw[axis]/rd[axis]);\n // q = b*u + c*v + d*u*v. Eliminating u gives a quadratic in v.\n float aa=-(c.x*d.y-c.y*d.x);\n float bb=q.x*d.y-q.y*d.x-(c.x*b.y-c.y*b.x);\n float cc=q.x*b.y-q.y*b.x;\n float roots[2];int count=0;\n if(abs(aa)<1e-10){if(abs(bb)<1e-10)return miss;roots[0]=-cc/bb;count=1;}\n else {float disc=bb*bb-4.0*aa*cc;if(disc<0.0)return miss;\n  float s=sqrt(max(disc,0.0));roots[0]=(-bb-s)/(2.0*aa);roots[1]=(-bb+s)/(2.0*aa);count=2;}\n float best=1e30;vec3 bestN=vec3(0.0);vec2 bestUV=vec2(0.0);\n for(int i=0;i<2;i++){if(i>=count)break;float v=roots[i];if(v< -1e-5||v>1.00001)continue;\n  vec2 basis=b+d*v;float denom=dot(basis,basis);if(denom<1e-14)continue;\n  float u=dot(q-c*v,basis)/denom;if(u< -1e-5||u>1.00001)continue;\n  u=clamp(u,0.0,1.0);v=clamp(v,0.0,1.0);\n  vec3 point=p00+ab*u+ac*v+tw*(u*v);\n  float t=dot(point-ro,rd)/dd;if(t<=1e-5||t>=best)continue;\n  vec3 du=ab+tw*v,dv=ac+tw*u,n=cross(du,dv);\n  float n2=dot(n,n);if(n2<1e-14)continue;\n  if(length(cross(point-ro,rd))>1e-3*max(1.0,length(point-ro))*sqrt(dd))continue;\n  best=t;bestN=n*inversesqrt(n2);bestUV=vec2(u,v);\n }\n if(best==1e30)return miss;\n return mat3(bestN,vec3(best,bestUV),vec3(1.0,0.0,0.0));\n}",
+  "glsl": "maker_bilinear_patch_hit({origin},{direction},{p00},{p10},{p01},{p11})[1].x",
+  "glsl_outputs": {
+    "distance": "maker_bilinear_patch_hit({origin},{direction},{p00},{p10},{p01},{p11})[1].x",
+    "normal": "maker_bilinear_patch_hit({origin},{direction},{p00},{p10},{p01},{p11})[0]",
+    "uv": "maker_bilinear_patch_hit({origin},{direction},{p00},{p10},{p01},{p11})[1].yz",
+    "hit": "maker_bilinear_patch_hit({origin},{direction},{p00},{p10},{p01},{p11})[2].x"
+  }
+}

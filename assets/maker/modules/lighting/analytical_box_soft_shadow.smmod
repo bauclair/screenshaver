@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "created_by": "Screenshaver",
+  "terminal": false,
+  "id": "screenshaver.lighting.analytical_box_soft_shadow",
+  "name": "Analytical Box Soft Shadow",
+  "category": "Lighting",
+  "header_color": "#477D9A",
+  "description": "Fixed-cost approximate visibility from a square area light occluded by an axis-aligned box.",
+  "uses": "Modulating procedural point lighting or color using approximate soft shadows from box obstacles.",
+  "notes": "Independently implemented 9-sample deterministic area-light visibility, not an exact analytic penumbra or physically correct area-light integral. The square emitter faces the surface point; radius is its half-width in world units. Visibility 0 means blocked and 1 means clear. A zero radius uses one exact segment/box test. No SDF or scene traversal.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Surface Position",
+      "type": "vec3",
+      "default": "vec3(0.0,0.0,0.0)",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "light_position",
+      "name": "Light Position",
+      "type": "vec3",
+      "default": "vec3(1.5,3.0,2.0)",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "box_min",
+      "name": "Box Minimum",
+      "type": "vec3",
+      "default": "vec3(-0.5,0.5,0.5)"
+    },
+    {
+      "id": "box_max",
+      "name": "Box Maximum",
+      "type": "vec3",
+      "default": "vec3(0.5,1.5,1.5)"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "visibility",
+      "name": "Shadow Visibility",
+      "type": "float",
+      "semantic_role": "intensity"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "light_radius",
+      "name": "Light Half-Width",
+      "type": "float",
+      "default": 0.3,
+      "min": 0,
+      "max": 3
+    }
+  ],
+  "helpers": "// Deterministic nine-point square area-light visibility approximation.\n// Each sample tests the finite segment from surface to sampled emitter point.\nfloat maker_box_segment_occluded(vec3 start,vec3 end,vec3 low,vec3 high){\n vec3 dir=end-start;float nearT=0.0001,farT=0.9999;\n for(int axis=0;axis<3;axis++){\n  float o=start[axis],d=dir[axis];\n  if(abs(d)<1e-8){if(o<low[axis]||o>high[axis])return 0.0;}\n  else {float a=(low[axis]-o)/d,b=(high[axis]-o)/d;\n   nearT=max(nearT,min(a,b));farT=min(farT,max(a,b));\n   if(nearT>farT)return 0.0;}\n }\n return farT>=nearT?1.0:0.0;\n}\nfloat maker_box_soft_visibility(vec3 surface,vec3 light,vec3 boxMin,vec3 boxMax,float radius){\n vec3 lo=min(boxMin,boxMax),hi=max(boxMin,boxMax);\n vec3 axis=light-surface;float len2=dot(axis,axis);\n if(len2<1e-12)return 1.0;\n if(radius<=1e-5)return 1.0-maker_box_segment_occluded(surface,light,lo,hi);\n vec3 forward=axis*inversesqrt(len2);\n vec3 helper=abs(forward.z)<0.9?vec3(0.0,0.0,1.0):vec3(0.0,1.0,0.0);\n vec3 right=normalize(cross(helper,forward));vec3 up=cross(forward,right);\n float visible=0.0;\n for(int i=0;i<9;i++){\n  float x=float(i%3-1),y=float(i/3-1);\n  vec3 emitter=light+radius*(right*x+up*y);\n  visible+=1.0-maker_box_segment_occluded(surface,emitter,lo,hi);\n }\n return visible/9.0;\n}",
+  "glsl": "maker_box_soft_visibility({position},{light_position},{box_min},{box_max},{light_radius})"
+}

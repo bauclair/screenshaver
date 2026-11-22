@@ -1,0 +1,87 @@
+{
+  "schema_version": 1,
+  "created_by": "Screenshaver",
+  "terminal": false,
+  "id": "screenshaver.color.alternating_3d_cell_color",
+  "name": "Alternating 3D Cell Color",
+  "category": "Color",
+  "header_color": "#9C718D",
+  "description": "Choose between two colors using parity of discrete three-dimensional cell coordinates.",
+  "uses": "Checkerboard materials on tiled objects and alternating voxel colors.",
+  "notes": "Independently implemented integer-cell parity; position is evaluated in the supplied coordinate space. Cell Size is clamped to avoid division by zero. Offset is measured in whole cells. Default position uses a screen-space slice for standalone preview; connect a world-space position for 3D scenes.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "default": "vec3(maker_uv,0.0)",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "color_a",
+      "name": "Color A",
+      "type": "vec3",
+      "default": "vec3(0.08,0.12,0.2)",
+      "semantic_role": "color"
+    },
+    {
+      "id": "color_b",
+      "name": "Color B",
+      "type": "vec3",
+      "default": "vec3(0.95,0.78,0.35)",
+      "semantic_role": "color"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "color",
+      "name": "Cell Color",
+      "type": "vec3",
+      "semantic_role": "color"
+    },
+    {
+      "id": "parity",
+      "name": "Cell Parity",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "cell_size",
+      "name": "Cell Size",
+      "type": "float",
+      "default": 1.0,
+      "min": 0.01,
+      "max": 20.0
+    },
+    {
+      "id": "offset_x",
+      "name": "X Cell Offset",
+      "type": "float",
+      "default": 0.0,
+      "min": -20,
+      "max": 20
+    },
+    {
+      "id": "offset_y",
+      "name": "Y Cell Offset",
+      "type": "float",
+      "default": 0.0,
+      "min": -20,
+      "max": 20
+    },
+    {
+      "id": "offset_z",
+      "name": "Z Cell Offset",
+      "type": "float",
+      "default": 0.0,
+      "min": -20,
+      "max": 20
+    }
+  ],
+  "helpers": "float maker_cell_parity(vec3 position,float cellSize,vec3 cellOffset){\n vec3 cell=floor(position/max(abs(cellSize),0.0001))+floor(cellOffset);\n float p=mod(mod(cell.x,2.0)+mod(cell.y,2.0)+mod(cell.z,2.0),2.0);\n return p;\n}",
+  "glsl_outputs": {
+    "color": "mix({color_a},{color_b},maker_cell_parity({position},{cell_size},vec3({offset_x},{offset_y},{offset_z})))",
+    "parity": "maker_cell_parity({position},{cell_size},vec3({offset_x},{offset_y},{offset_z}))"
+  }
+}

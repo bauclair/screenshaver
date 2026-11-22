@@ -232,7 +232,7 @@ vec3 maker_sdf_normal_{id}(vec3 p,float e){{
  vec2 h=vec2(e,0.0);
  return normalize(vec3(maker_sdf_{id}(p+h.xyy)-maker_sdf_{id}(p-h.xyy),maker_sdf_{id}(p+h.yxy)-maker_sdf_{id}(p-h.yxy),maker_sdf_{id}(p+h.yyx)-maker_sdf_{id}(p-h.yyx)));
 }}
-vec3 maker_sdf_render_{id}(vec2 uv,float speed,float maxDistance,float epsilon,float stepScale,float fov,float glowFalloff,float glowGain,out vec3 surfaceNormal,out float surfaceAO,out float surfaceCurvature,out float rayGlow){{
+vec3 maker_sdf_render_{id}(vec2 uv,float speed,float maxDistance,float epsilon,float stepScale,float fov,float glowFalloff,float glowGain,vec3 externalOrigin,vec3 externalDirection,float cameraSource,out vec3 surfaceNormal,out float surfaceAO,out float surfaceCurvature,out float rayGlow){{
  surfaceNormal=vec3(0.0,0.0,1.0); surfaceAO=1.0; surfaceCurvature=0.0; rayGlow=0.0;
  // Bounded, periodic camera travel: preserve the original view at t=0,
  // but never advance beyond origin-centered SDF geometry while looking +Z.
@@ -241,6 +241,12 @@ vec3 maker_sdf_render_{id}(vec2 uv,float speed,float maxDistance,float epsilon,f
  vec2 camera_xy={camera};
  vec3 ro=vec3(camera_xy,camera_z);
  vec3 rd=normalize(vec3(uv*fov,1.0));
+ // Preserve legacy behavior unless the user explicitly selects External Camera.
+ // Guard invalid directions deterministically without producing NaNs.
+ if(cameraSource>=0.5 && dot(externalDirection,externalDirection)>1e-12){{
+  ro=externalOrigin;
+  rd=normalize(externalDirection);
+ }}
  float t=0.03;
  for(int i=0;i<128;i++){{
   vec3 p=ro+rd*t;
@@ -480,7 +486,7 @@ fn emit(graph:&Graph,id:NodeId,emitted:&mut HashSet<NodeId>,src:&mut String)->Re
  }
  if m.id=="screenshaver.fields.sdf_raymarch" {
   src.push_str(&format!("  vec3 v{}_p0; vec3 v{}_p1; float v{}_p2; float v{}_p3; float v{}_p4;\n",id,id,id,id,id));
-  src.push_str(&format!("  v{}_p0=maker_sdf_render_{}(maker_uv,u_n{}_speed,u_n{}_max_distance,u_n{}_epsilon,u_n{}_step_scale,u_n{}_fov,u_n{}_glow_falloff,u_n{}_glow_gain,v{}_p1,v{}_p2,v{}_p3,v{}_p4);\n",id,id,id,id,id,id,id,id,id,id,id,id,id));
+  src.push_str(&format!("  v{}_p0=maker_sdf_render_{}(maker_uv,u_n{}_speed,u_n{}_max_distance,u_n{}_epsilon,u_n{}_step_scale,u_n{}_fov,u_n{}_glow_falloff,u_n{}_glow_gain,{},{},u_n{}_camera_source,v{}_p1,v{}_p2,v{}_p3,v{}_p4);\n",id,id,id,id,id,id,id,id,id,vars["ray_origin"],vars["ray_direction"],id,id,id,id,id));
   emitted.insert(id);return Ok(());
  }
  for (port,output) in m.outputs.iter().enumerate(){

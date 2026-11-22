@@ -71,6 +71,7 @@ impl Library {
       ("color/weighted_rgb_colorizer.smmod",include_str!("../assets/maker/modules/color/weighted_rgb_colorizer.smmod")),
       ("coordinates/cross_axis_sine_warp.smmod",include_str!("../assets/maker/modules/coordinates/cross_axis_sine_warp.smmod")),
       ("coordinates/iterative_sinusoidal_wave_fold.smmod",include_str!("../assets/maker/modules/coordinates/iterative_sinusoidal_wave_fold.smmod")),
+      ("coordinates/axial_twist_and_pulse_warp.smmod",include_str!("../assets/maker/modules/coordinates/axial_twist_and_pulse_warp.smmod")),
       ("coordinates/depth_gated_axis_warp.smmod",include_str!("../assets/maker/modules/coordinates/depth_gated_axis_warp.smmod")),
       ("math/cosine_range_oscillator.smmod",include_str!("../assets/maker/modules/math/cosine_range_oscillator.smmod")),
       ("color/procedural_sine_rgb.smmod",include_str!("../assets/maker/modules/color/procedural_sine_rgb.smmod")),
@@ -128,6 +129,13 @@ impl Library {
       ("lighting/distance_glow_falloff.smmod",include_str!("../assets/maker/modules/lighting/distance_glow_falloff.smmod")),
       ("geometry/height_field_normal_2d.smmod",include_str!("../assets/maker/modules/geometry/height_field_normal_2d.smmod")),
        ("math/vector_magnitude_2d.smmod",include_str!("../assets/maker/modules/math/vector_magnitude_2d.smmod")),
+      ("geometry/finite_cube_cluster_field.smmod",include_str!("../assets/maker/modules/geometry/finite_cube_cluster_field.smmod")),
+      ("math/spatial_phase_oscillator.smmod",include_str!("../assets/maker/modules/math/spatial_phase_oscillator.smmod")),
+      ("camera/look_at_camera_direction.smmod",include_str!("../assets/maker/modules/camera/look_at_camera_direction.smmod")),
+       ("geometry/bilinear_surface_intersection.smmod",include_str!("../assets/maker/modules/geometry/bilinear_surface_intersection.smmod")),
+       ("lighting/analytical_box_soft_shadow.smmod",include_str!("../assets/maker/modules/lighting/analytical_box_soft_shadow.smmod")),
+       ("color/alternating_3d_cell_color.smmod",include_str!("../assets/maker/modules/color/alternating_3d_cell_color.smmod")),
+       ("coordinates/spatially_modulated_cell_displacement.smmod",include_str!("../assets/maker/modules/coordinates/spatially_modulated_cell_displacement.smmod")),
       ];
     for (path,src) in official {result.register(path,src,Trust::Official)}
     if let Some(home)=std::env::var_os("HOME"){

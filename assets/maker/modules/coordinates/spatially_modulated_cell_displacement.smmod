@@ -1,0 +1,105 @@
+{
+  "schema_version": 1,
+  "created_by": "Screenshaver",
+  "terminal": false,
+  "id": "screenshaver.coordinates.spatially_modulated_cell_displacement",
+  "name": "Spatially Modulated Cell Displacement",
+  "category": "Coordinates",
+  "header_color": "#627FC2",
+  "description": "Translate every point in a discrete 3D cell by the same time-varying displacement, preserving local shape.",
+  "uses": "Coherent per-cell motion for tiled 3D geometry and animated voxel fields.",
+  "notes": "Independently designed. Cell identity is computed from the original input position, so this is a coordinate warp rather than an object-instance transform. When feeding a repeated SDF, use displaced sample positions consistently with cell repetition. Boundary discontinuities are intentional.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "default": "vec3(maker_uv,0.0)",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "time",
+      "name": "Time",
+      "type": "float",
+      "default": "u_time",
+      "semantic_role": "time"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "position",
+      "name": "Displaced Position",
+      "type": "vec3",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "displacement",
+      "name": "Cell Displacement",
+      "type": "vec3",
+      "semantic_role": "offset3d"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "cell_size",
+      "name": "Cell Size",
+      "type": "float",
+      "default": 2.0,
+      "min": 0.01,
+      "max": 20.0
+    },
+    {
+      "id": "amplitude_x",
+      "name": "X Amplitude",
+      "type": "float",
+      "default": 0.0,
+      "min": -5,
+      "max": 5
+    },
+    {
+      "id": "amplitude_y",
+      "name": "Y Amplitude",
+      "type": "float",
+      "default": 0.5,
+      "min": -5,
+      "max": 5
+    },
+    {
+      "id": "amplitude_z",
+      "name": "Z Amplitude",
+      "type": "float",
+      "default": 0.0,
+      "min": -5,
+      "max": 5
+    },
+    {
+      "id": "spatial_frequency",
+      "name": "Cell Spatial Frequency",
+      "type": "float",
+      "default": 0.7,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "speed",
+      "name": "Animation Speed",
+      "type": "float",
+      "default": 1.0,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "phase",
+      "name": "Phase",
+      "type": "float",
+      "default": 0.0,
+      "min": -6.283,
+      "max": 6.283
+    }
+  ],
+  "helpers": "vec3 maker_cell_displacement(vec3 p,float t,float cellSize,vec3 amplitude,float frequency,float speed,float phase){\n vec3 cell=floor(p/max(abs(cellSize),0.0001));\n float theta=dot(cell,vec3(0.754877666,1.324717957,0.569840291))*frequency+t*speed+phase;\n return amplitude*vec3(sin(theta),sin(theta+2.094395102),sin(theta+4.188790205));\n}",
+  "glsl_outputs": {
+    "position": "({position}+maker_cell_displacement({position},{time},{cell_size},vec3({amplitude_x},{amplitude_y},{amplitude_z}),{spatial_frequency},{speed},{phase}))",
+    "displacement": "maker_cell_displacement({position},{time},{cell_size},vec3({amplitude_x},{amplitude_y},{amplitude_z}),{spatial_frequency},{speed},{phase})"
+  }
+}

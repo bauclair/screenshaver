@@ -1,0 +1,79 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.math.spatial_phase_oscillator",
+  "name": "Spatial Phase Oscillator",
+  "category": "Math",
+  "created_by": "Screenshaver",
+  "header_color": "#688C91",
+  "description": "Bounded scalar oscillation with phase driven by three-dimensional position and time.",
+  "uses": "Spatially coordinated motion, pulsating material values and connected size modulation.",
+  "notes": "Independently designed. Output can connect to the Finite Cube Cluster Field Size Modulation port. A connected value is evaluated at the graph sample position, not separately for each cluster cell.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "default": "vec3(maker_uv,0.0)",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "time",
+      "name": "Time",
+      "type": "float",
+      "default": "u_time",
+      "semantic_role": "time"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "value",
+      "name": "Value",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "frequency",
+      "name": "Time Frequency",
+      "type": "float",
+      "default": 1.0,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "spatial_scale",
+      "name": "Spatial Phase Scale",
+      "type": "float",
+      "default": 1.0,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "minimum",
+      "name": "Minimum",
+      "type": "float",
+      "default": 0.7,
+      "min": -4,
+      "max": 4
+    },
+    {
+      "id": "maximum",
+      "name": "Maximum",
+      "type": "float",
+      "default": 1.3,
+      "min": -4,
+      "max": 4
+    },
+    {
+      "id": "phase_offset",
+      "name": "Phase Offset",
+      "type": "float",
+      "default": 0,
+      "min": -6.283,
+      "max": 6.283
+    }
+  ],
+  "helpers": "float maker_spatial_phase_oscillator(vec3 p,float t,float frequency,float spatialScale,float lo,float hi,float offset){\n float phase=t*frequency+dot(p,vec3(0.57735027,0.57735027,0.57735027))*spatialScale+offset;\n float v=0.5+0.5*sin(phase);\n return mix(min(lo,hi),max(lo,hi),v);\n}",
+  "glsl": "maker_spatial_phase_oscillator({position},{time},{frequency},{spatial_scale},{minimum},{maximum},{phase_offset})",
+  "terminal": false
+}
