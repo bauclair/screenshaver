@@ -1,0 +1,83 @@
+{
+  "schema_version": 1,
+  "created_by": "Screenshaver",
+  "terminal": false,
+  "id": "screenshaver.animation.beat_phase_envelope",
+  "name": "Beat Phase Envelope",
+  "category": "Animation",
+  "header_color": "#B477C7",
+  "description": "Derives beat and bar progress and exponential onset envelopes from a tempo.",
+  "uses": "Musical timing, synchronized pulses and rhythmic procedural animation.",
+  "notes": "Procedural timing only; does not analyze audio. Beat and bar pulses decay from each cycle onset.",
+  "inputs": [
+    {
+      "id": "time",
+      "name": "Time",
+      "type": "float",
+      "default": "u_time"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "beat_phase",
+      "name": "Beat Phase",
+      "type": "float"
+    },
+    {
+      "id": "bar_phase",
+      "name": "Bar Phase",
+      "type": "float"
+    },
+    {
+      "id": "beat_pulse",
+      "name": "Beat Pulse",
+      "type": "float"
+    },
+    {
+      "id": "bar_pulse",
+      "name": "Bar Pulse",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "bpm",
+      "name": "Tempo BPM",
+      "type": "float",
+      "default": 120,
+      "min": 1,
+      "max": 300
+    },
+    {
+      "id": "beats_per_bar",
+      "name": "Beats per Bar",
+      "type": "float",
+      "default": 4,
+      "min": 1,
+      "max": 16
+    },
+    {
+      "id": "beat_decay",
+      "name": "Beat Decay",
+      "type": "float",
+      "default": 5,
+      "min": 0,
+      "max": 30
+    },
+    {
+      "id": "bar_decay",
+      "name": "Bar Decay",
+      "type": "float",
+      "default": 3,
+      "min": 0,
+      "max": 30
+    }
+  ],
+  "helpers": "",
+  "glsl_outputs": {
+    "beat_phase": "fract(({time})*max({bpm},0.001)/60.0)",
+    "bar_phase": "fract(({time})*max({bpm},0.001)/(60.0*max({beats_per_bar},1.0)))",
+    "beat_pulse": "exp(-max({beat_decay},0.0)*fract(({time})*max({bpm},0.001)/60.0))",
+    "bar_pulse": "exp(-max({bar_decay},0.0)*fract(({time})*max({bpm},0.001)/(60.0*max({beats_per_bar},1.0))))"
+  }
+}

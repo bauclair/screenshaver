@@ -1,0 +1,77 @@
+{
+  "schema_version": 1,
+  "created_by": "Screenshaver",
+  "terminal": false,
+  "id": "screenshaver.lighting.radial_core_glow",
+  "name": "Radial Core Glow",
+  "category": "Lighting",
+  "header_color": "#C98C44",
+  "description": "Combines a steady central radial glow with an optional pulse and a tint.",
+  "uses": "Firework origins, luminous centers, energy cores and soft central illumination.",
+  "notes": "Color output can be added to existing color with Color Accumulation.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv"
+    },
+    {
+      "id": "tint",
+      "name": "Tint",
+      "type": "vec3",
+      "default": "vec3(0.75,0.88,1.0)"
+    },
+    {
+      "id": "pulse",
+      "name": "Pulse",
+      "type": "float",
+      "default": "0.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "color",
+      "name": "Glow Color",
+      "type": "vec3"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "strength",
+      "name": "Glow Strength",
+      "type": "float",
+      "default": 0.07,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "base",
+      "name": "Base Brightness",
+      "type": "float",
+      "default": 0.35,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "pulse_gain",
+      "name": "Pulse Gain",
+      "type": "float",
+      "default": 0.1,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "softness",
+      "name": "Core Softness",
+      "type": "float",
+      "default": 0.1,
+      "min": 0.001,
+      "max": 2
+    }
+  ],
+  "helpers": "",
+  "glsl_outputs": {
+    "color": "({tint})*max({strength},0.0)*(max({base},0.0)+max({pulse_gain},0.0)*max({pulse},0.0))/(dot(({position}),({position}))+max({softness},0.001)*max({softness},0.001))"
+  }
+}

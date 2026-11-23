@@ -1,0 +1,75 @@
+{
+  "schema_version": 1,
+  "created_by": "Screenshaver",
+  "terminal": false,
+  "id": "screenshaver.geometry.damped_ballistic_motion_2d",
+  "name": "Damped Ballistic Motion 2D",
+  "category": "Geometry",
+  "header_color": "#557C9C",
+  "description": "Computes a two-dimensional trajectory with exponentially decaying velocity and constant downward acceleration.",
+  "uses": "Comet paths, particles, projectile effects and drifting motes.",
+  "notes": "Elapsed time is nonnegative; drag approaches a linear displacement as drag tends to zero.",
+  "inputs": [
+    {
+      "id": "direction",
+      "name": "Initial Direction",
+      "type": "vec2",
+      "default": "vec2(0.0,1.0)"
+    },
+    {
+      "id": "elapsed",
+      "name": "Elapsed Time",
+      "type": "float",
+      "default": "u_time"
+    },
+    {
+      "id": "origin",
+      "name": "Origin",
+      "type": "vec2",
+      "default": "vec2(0.0)"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2"
+    },
+    {
+      "id": "displacement",
+      "name": "Displacement",
+      "type": "vec2"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "speed",
+      "name": "Initial Speed",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 20
+    },
+    {
+      "id": "drag",
+      "name": "Drag",
+      "type": "float",
+      "default": 1.6,
+      "min": 0,
+      "max": 20
+    },
+    {
+      "id": "gravity",
+      "name": "Gravity",
+      "type": "float",
+      "default": 0.8,
+      "min": -20,
+      "max": 20
+    }
+  ],
+  "helpers": "vec2 maker_ballistic_displacement(vec2 direction,float elapsed,float speed,float drag,float gravity){float t=max(elapsed,0.0);float d=max(drag,0.0);float travel=d<0.0001?t:(1.0-exp(-d*t))/d;return direction*(speed*travel)+vec2(0.0,-0.5*gravity*t*t);}",
+  "glsl_outputs": {
+    "position": "({origin})+maker_ballistic_displacement({direction},{elapsed},{speed},{drag},{gravity})",
+    "displacement": "maker_ballistic_displacement({direction},{elapsed},{speed},{drag},{gravity})"
+  }
+}

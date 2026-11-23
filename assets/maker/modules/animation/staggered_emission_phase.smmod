@@ -1,0 +1,67 @@
+{
+  "schema_version": 1,
+  "created_by": "Screenshaver",
+  "terminal": false,
+  "id": "screenshaver.animation.staggered_emission_phase",
+  "name": "Staggered Emission Phase",
+  "category": "Animation",
+  "header_color": "#B477C7",
+  "description": "Creates a deterministic offset emission phase and cycle index for one indexed particle.",
+  "uses": "Independently staggered particle bursts, repeatable emitter scheduling and indexed animation.",
+  "notes": "Evaluates one particle index per graph node; does not iterate over a particle collection. Cycle index can seed other procedural modules.",
+  "inputs": [
+    {
+      "id": "time",
+      "name": "Time",
+      "type": "float",
+      "default": "u_time"
+    },
+    {
+      "id": "index",
+      "name": "Particle Index",
+      "type": "float",
+      "default": "0.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "phase",
+      "name": "Lifetime Phase",
+      "type": "float"
+    },
+    {
+      "id": "cycle",
+      "name": "Cycle Index",
+      "type": "float"
+    },
+    {
+      "id": "seed",
+      "name": "Cycle Seed",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "rate",
+      "name": "Cycles per Second",
+      "type": "float",
+      "default": 1,
+      "min": 0.001,
+      "max": 60
+    },
+    {
+      "id": "seed_offset",
+      "name": "Seed Offset",
+      "type": "float",
+      "default": 0,
+      "min": -1000,
+      "max": 1000
+    }
+  ],
+  "helpers": "float maker_emit_hash(float x){return fract(sin(x*127.1+78.233)*43758.5453);}",
+  "glsl_outputs": {
+    "phase": "fract(({time})*max({rate},0.0001)+maker_emit_hash({index}+{seed_offset}))",
+    "cycle": "floor(({time})*max({rate},0.0001)+maker_emit_hash({index}+{seed_offset}))",
+    "seed": "maker_emit_hash(floor(({time})*max({rate},0.0001)+maker_emit_hash({index}+{seed_offset}))+({index})*17.0+{seed_offset})"
+  }
+}

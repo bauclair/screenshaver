@@ -409,6 +409,7 @@ impl PostprocessPipeline {
         self.present_scene_with_bloom_diagnostic_to_framebuffer(
             false,
             output_framebuffer,
+            None,
         );
     }
 
@@ -425,14 +426,32 @@ impl PostprocessPipeline {
         self.present_scene_with_bloom_diagnostic_to_framebuffer(
             bloom_diagnostic,
             0,
+            None,
         );
     }
 
+
+    /// Control Center only: present the processed scene in a right-hand SDL
+    /// drawable viewport. The dimensions of this pipeline must match the
+    /// viewport width and height, not the enclosing SDL window.
+    pub(crate) fn present_scene_in_viewport(
+        &self,
+        bloom_diagnostic: bool,
+        x: i32,
+        y: i32,
+    ) {
+        self.present_scene_with_bloom_diagnostic_to_framebuffer(
+            bloom_diagnostic,
+            0,
+            Some((x, y)),
+        );
+    }
 
     fn present_scene_with_bloom_diagnostic_to_framebuffer(
         &self,
         bloom_diagnostic: bool,
         output_framebuffer: u32,
+        output_origin: Option<(i32, i32)>,
     ) {
         prepare_fullscreen_pass();
 
@@ -453,10 +472,11 @@ impl PostprocessPipeline {
             // directly at full output resolution. Blur, composition, and
             // dithering are intentionally bypassed for this frame.
             if bloom_diagnostic {
-                bind_output_framebuffer(
+                bind_presentation_framebuffer(
                     output_framebuffer,
                     self.output_width,
                     self.output_height,
+                    output_origin,
                 );
 
                 self.render_bloom_extraction(
@@ -521,7 +541,7 @@ impl PostprocessPipeline {
                 self.composite_target.bind(
                     self.output_width,
                     self.output_height,
-                );
+                    );
 
                 self.bloom.render_composite(
                     self.scratch_target.texture,
@@ -535,10 +555,11 @@ impl PostprocessPipeline {
                     ),
                 );
 
-                bind_output_framebuffer(
+                bind_presentation_framebuffer(
                     output_framebuffer,
                     self.output_width,
                     self.output_height,
+                    output_origin,
                 );
 
                 self.dithering.render(
@@ -546,10 +567,11 @@ impl PostprocessPipeline {
                     self.dithering_level,
                 );
             } else {
-                bind_output_framebuffer(
+                bind_presentation_framebuffer(
                     output_framebuffer,
                     self.output_width,
                     self.output_height,
+                    output_origin,
                 );
 
                 self.bloom.render_composite(
@@ -578,10 +600,11 @@ impl PostprocessPipeline {
                 self.scene_target.texture
             );
 
-            bind_output_framebuffer(
+            bind_presentation_framebuffer(
                     output_framebuffer,
                 self.output_width,
                 self.output_height,
+                output_origin,
             );
 
             self.dithering.render(
@@ -589,10 +612,11 @@ impl PostprocessPipeline {
                 self.dithering_level,
             );
         } else {
-            bind_output_framebuffer(
+            bind_presentation_framebuffer(
                     output_framebuffer,
                 self.output_width,
                 self.output_height,
+                output_origin,
             );
 
             self.render_primary_pass(
@@ -1457,6 +1481,18 @@ fn prepare_fullscreen_pass(
         gl::Disable(
             gl::BLEND
         );
+    }
+}
+
+fn bind_presentation_framebuffer(
+    framebuffer: u32,
+    width: u32,
+    height: u32,
+    origin: Option<(i32, i32)>,
+) {
+    bind_output_framebuffer(framebuffer, width, height);
+    if let Some((x, y)) = origin {
+        unsafe { gl::Viewport(x, y, width as i32, height as i32); }
     }
 }
 

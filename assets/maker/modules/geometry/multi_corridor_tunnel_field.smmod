@@ -1,0 +1,83 @@
+{
+  "schema_version": 1,
+  "created_by": "Screenshaver",
+  "terminal": false,
+  "id": "screenshaver.geometry.multi_corridor_tunnel_field",
+  "name": "Multi-Corridor Tunnel Field",
+  "category": "Geometry",
+  "header_color": "#557C9C",
+  "description": "Combines distances from two independently positioned circular corridor cross-sections using a smooth union of interior clearances.",
+  "uses": "Overlapping passages, branching tunnel masks, and procedural interior boundaries.",
+  "notes": "The scalar output is positive inside at least one corridor and negative outside. This is a generic two-disc smooth-max field; it does not reproduce the source tunnel geometry.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Sample Position",
+      "type": "vec2",
+      "default": "vec2(0.0)"
+    },
+    {
+      "id": "center_a",
+      "name": "Corridor A Center",
+      "type": "vec2",
+      "default": "vec2(-0.5,0.0)"
+    },
+    {
+      "id": "center_b",
+      "name": "Corridor B Center",
+      "type": "vec2",
+      "default": "vec2(0.5,0.0)"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "clearance",
+      "name": "Interior Clearance",
+      "type": "float"
+    },
+    {
+      "id": "mask",
+      "name": "Interior Mask",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "radius_a",
+      "name": "Radius A",
+      "type": "float",
+      "default": 1,
+      "min": 0.001,
+      "max": 20
+    },
+    {
+      "id": "radius_b",
+      "name": "Radius B",
+      "type": "float",
+      "default": 1,
+      "min": 0.001,
+      "max": 20
+    },
+    {
+      "id": "blend",
+      "name": "Smooth Union Width",
+      "type": "float",
+      "default": 0.2,
+      "min": 0,
+      "max": 5
+    },
+    {
+      "id": "edge",
+      "name": "Mask Feather",
+      "type": "float",
+      "default": 0.05,
+      "min": 0.001,
+      "max": 2
+    }
+  ],
+  "helpers": "float maker_corridor_clearance(vec2 p,vec2 a,vec2 b,float ra,float rb,float blend){float da=max(ra,0.0001)-length(p-a);float db=max(rb,0.0001)-length(p-b);float k=max(blend,0.0);if(k<0.0001)return max(da,db);float h=max(k-abs(da-db),0.0)/k;return max(da,db)+0.25*k*h*h;}",
+  "glsl_outputs": {
+    "clearance": "maker_corridor_clearance({position},{center_a},{center_b},{radius_a},{radius_b},{blend})",
+    "mask": "smoothstep(-max({edge},0.0001),max({edge},0.0001),maker_corridor_clearance({position},{center_a},{center_b},{radius_a},{radius_b},{blend}))"
+  }
+}

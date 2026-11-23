@@ -1,0 +1,85 @@
+{
+  "schema_version": 1,
+  "created_by": "Screenshaver",
+  "terminal": false,
+  "id": "screenshaver.fields.segmented_radial_ring",
+  "name": "Segmented Radial Ring",
+  "category": "Fields",
+  "header_color": "#4B9A86",
+  "description": "Creates a repeating angular segment mask along a radially displaced ring.",
+  "uses": "Spectrum rings, segmented halos, radial gauges and circular visualizers.",
+  "notes": "Feed Spectrum Intensity into Displacement for a spectrum-like ring. Coordinates are centered at the origin.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv"
+    },
+    {
+      "id": "displacement",
+      "name": "Radial Displacement",
+      "type": "float",
+      "default": "0.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "mask",
+      "name": "Ring Mask",
+      "type": "float"
+    },
+    {
+      "id": "glow",
+      "name": "Ring Glow",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "radius",
+      "name": "Base Radius",
+      "type": "float",
+      "default": 0.3,
+      "min": 0,
+      "max": 4
+    },
+    {
+      "id": "segments",
+      "name": "Segment Count",
+      "type": "float",
+      "default": 96,
+      "min": 1,
+      "max": 512
+    },
+    {
+      "id": "width",
+      "name": "Ring Width",
+      "type": "float",
+      "default": 0.008,
+      "min": 0.0001,
+      "max": 0.3
+    },
+    {
+      "id": "gap",
+      "name": "Segment Gap",
+      "type": "float",
+      "default": 0.3,
+      "min": 0,
+      "max": 0.95
+    },
+    {
+      "id": "glow_width",
+      "name": "Glow Width",
+      "type": "float",
+      "default": 0.025,
+      "min": 0.0001,
+      "max": 0.5
+    }
+  ],
+  "helpers": "vec2 maker_radial_segments(vec2 p,float displacement,float radius,float segments,float width,float gap,float halo){float a=atan(p.y,p.x)/6.28318530718+0.5;float slot=abs(fract(a*max(segments,1.0))-0.5)*2.0;float angular=1.0-smoothstep(1.0-clamp(gap,0.0,0.95)-0.05,1.0-clamp(gap,0.0,0.95)+0.05,slot);float d=abs(length(p)-max(radius+displacement,0.0));float w=max(width,0.0001);return vec2((1.0-smoothstep(w*0.5,w,d))*angular,exp(-d/max(halo,0.0001))*angular);}",
+  "glsl_outputs": {
+    "mask": "maker_radial_segments({position},{displacement},{radius},{segments},{width},{gap},{glow_width}).x",
+    "glow": "maker_radial_segments({position},{displacement},{radius},{segments},{width},{gap},{glow_width}).y"
+  }
+}

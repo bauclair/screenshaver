@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "created_by": "Screenshaver",
+  "terminal": false,
+  "id": "screenshaver.animation.modulated_travel_time",
+  "name": "Modulated Travel Time",
+  "category": "Animation",
+  "header_color": "#6B68A8",
+  "description": "Analytic integral of a nonnegative sinusoidally modulated travel speed.",
+  "uses": "Smooth camera progression, looping motion, and variable-rate animation.",
+  "notes": "Generic analytic integration; not a reproduction of the source shader. The modulation depth is clamped to [0,1] so travel is monotonic. Phase is in radians.",
+  "inputs": [
+    {
+      "id": "time",
+      "name": "Time",
+      "type": "float",
+      "default": "u_time"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "travel",
+      "name": "Travel Coordinate",
+      "type": "float"
+    },
+    {
+      "id": "velocity",
+      "name": "Instantaneous Speed",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "base_speed",
+      "name": "Base Speed",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 30
+    },
+    {
+      "id": "depth",
+      "name": "Speed Modulation",
+      "type": "float",
+      "default": 0.35,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "frequency",
+      "name": "Angular Frequency",
+      "type": "float",
+      "default": 0.5,
+      "min": 0.001,
+      "max": 20
+    },
+    {
+      "id": "phase",
+      "name": "Phase",
+      "type": "float",
+      "default": 0,
+      "min": -6.2832,
+      "max": 6.2832
+    }
+  ],
+  "helpers": "float maker_modulated_travel(float t,float v,float a,float w,float ph){float f=max(abs(w),0.0001);float k=clamp(a,0.0,1.0);return v*(t+(k/f)*(sin(f*t+ph)-sin(ph)));}",
+  "glsl_outputs": {
+    "travel": "maker_modulated_travel({time},{base_speed},{depth},{frequency},{phase})",
+    "velocity": "({base_speed})*(1.0+clamp({depth},0.0,1.0)*cos(max(abs({frequency}),0.0001)*({time})+({phase})))"
+  }
+}

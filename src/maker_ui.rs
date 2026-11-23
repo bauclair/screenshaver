@@ -3000,7 +3000,7 @@ impl MakerUi {
                 // Keep panel sizing/resizing on its original layer, but register
                 // Inspector controls above independent graph-node Areas.
                 ui.with_layer_id(egui::LayerId::new(
-                    if project_dialog.is_some() || unsaved_action.is_some() { egui::Order::Background } else { egui::Order::Foreground },
+                    if project_dialog.is_some() || unsaved_action.is_some() { egui::Order::Background } else { egui::Order::Middle },
                     egui::Id::new("maker_inspector_interaction")), |ui| {
                 ui.heading("Inspector");ui.separator();
                 ui.horizontal(|ui|{
@@ -4318,6 +4318,13 @@ impl MakerUi {
                         egui::Order::Foreground, egui::Id::new("maker_examine_module_code")));
                 }
             }
+            // Keep Inspector controls above graph-node Areas within Middle order.
+            // ComboBox popups use Foreground order, so they must remain above
+            // Inspector controls rather than being occluded by them.
+            if project_dialog.is_none() && unsaved_action.is_none() {
+                ctx.move_to_top(egui::LayerId::new(
+                    egui::Order::Middle, egui::Id::new("maker_inspector_interaction")));
+            }
             // Windows are created before panels in this UI pass. Raise the project
             // browser after the menu, Inspector, scrollbars and graph have all been
             // registered. This changes only the browser's z-order, not the node
@@ -4364,6 +4371,27 @@ impl MakerUi {
         self.advance_close_all();
         self.open
     }
+    /// Request a graceful application shutdown through the existing per-project
+    /// Save / Discard / Cancel workflow. A canceled confirmation leaves the
+    /// editor and its project tabs intact.
+    pub fn request_application_close(&mut self) {
+        if !self.close_all_running {
+            self.close_all_running = true;
+            self.context.request_repaint();
+        }
+    }
+
+    /// True only after all projects have been closed by the existing workflow.
+    /// In particular, canceling a confirmation does not satisfy this condition.
+    /// The close-all operation ended without closing every project (Cancel).
+    pub fn application_close_cancelled(&self) -> bool {
+        !self.close_all_running && self.project_open
+    }
+
+    pub fn application_close_ready(&self) -> bool {
+        !self.project_open && !self.close_all_running
+    }
+
     pub fn destroy(&mut self){self.painter.destroy();}
 }
 fn edit_parameters(ui:&mut egui::Ui,node:&mut crate::maker_graph::Node,exploration:bool){

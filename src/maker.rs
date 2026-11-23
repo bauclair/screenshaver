@@ -400,10 +400,21 @@ pub fn run_candidate_worker()->Result<(),String>{
     preview.destroy();Ok(())
 }
 
-pub fn run()->Result<(),String>{
+pub fn run()->Result<(),String>{ run_inner(None).map(|_| ()) }
+
+pub fn run_with_coordinator(owner:&crate::application_coordinator::Owner)->Result<(),String>{
+    run_inner(Some(owner)).map(|_| ())
+}
+
+/// Returns true only after the user approves closing all Maker projects.
+pub fn run_for_transition(owner:&crate::application_coordinator::Owner)->Result<bool,String>{
+    run_inner(Some(owner))
+}
+
+fn run_inner(coordinator:Option<&crate::application_coordinator::Owner>)->Result<bool,String>{
     if std::env::var("SCREENSHAVER_MAKER_DISCOVERY_TEST").ok().as_deref()==Some("1"){
         crate::maker_library::initialize()?;
-        return crate::maker_ui::run_discovery_test();
+        return crate::maker_ui::run_discovery_test().map(|_| false);
     }
     let sdl=sdl2::init()?;let video=sdl.video()?;
     {let a=video.gl_attr();a.set_context_profile(GLProfile::Core);a.set_context_version(3,3);a.set_double_buffer(true);}
@@ -431,13 +442,43 @@ pub fn run()->Result<(),String>{
     let mut events=sdl.event_pump()?;let start=Instant::now();
     let mut diagnostic_frame: u64=0;
     eprintln!("[MAKER TIMING] enabled; slow stage threshold 100 ms; GL compile/readback start/end markers");
+    let mut pending_control_switch = false;
     'running:loop{
+        // Drain activation messages on the UI thread. Cross-editor switches
+        // remain explicitly rejected by the IPC listener until Control Center
+        // participates in the same ownership and shutdown protocol.
+        if let Some(owner)=coordinator {
+            loop {
+                match owner.try_recv() {
+                    Ok(Some(crate::application_coordinator::Request::Activate(
+                        crate::application_coordinator::Application::Maker))) => {
+                        // Already active. No duplicate window or worker is created.
+                    }
+                    Ok(Some(crate::application_coordinator::Request::Activate(
+                        crate::application_coordinator::Application::Control))) |
+                    Ok(Some(crate::application_coordinator::Request::Switch(
+                        crate::application_coordinator::Application::Control))) => {
+                        pending_control_switch = true;
+                        ui.request_application_close();
+                    }
+                    Ok(Some(request)) => eprintln!("[MAKER COORDINATOR] Unexpected request: {request:?}"),
+                    Ok(None) => break,
+                    Err(error) => { eprintln!("[MAKER COORDINATOR] {error}"); break; }
+                }
+            }
+        }
         diagnostic_frame+=1;
         let frame_started=Instant::now();
         let event_started=Instant::now();
         for event in events.poll_iter(){
-            if matches!(event,sdl2::event::Event::Quit{..}){break 'running}
-            if let sdl2::event::Event::KeyDown{keycode:Some(sdl2::keyboard::Keycode::Escape),..}=event{break 'running}
+            if matches!(event,sdl2::event::Event::Quit{..}) {
+                ui.request_application_close();
+                continue;
+            }
+            if let sdl2::event::Event::KeyDown{keycode:Some(sdl2::keyboard::Keycode::Escape),..}=event {
+                ui.request_application_close();
+                continue;
+            }
             ui.handle_event(&event);
         }
         maker_timing("events",diagnostic_frame,event_started);
@@ -571,6 +612,12 @@ pub fn run()->Result<(),String>{
         maker_timing("preview",diagnostic_frame,preview_started);
         let ui_started=Instant::now();
         if !ui.frame(dw,dh,ww,wh,scale,preview.error.as_deref()){break}
+        if ui.application_close_ready() { break 'running; }
+        // A canceled close-all dialog leaves an open project. Withdraw the
+        // transition so later ordinary closure cannot launch Control Center.
+        if pending_control_switch && ui.application_close_cancelled() {
+            pending_control_switch = false;
+        }
         maker_timing("ui-frame",diagnostic_frame,ui_started);
         if let Some((source,save))=ui.take_glsl_export(){
             if save {
@@ -601,7 +648,7 @@ pub fn run()->Result<(),String>{
     // remain able to exit. Dropping the sender requests shutdown when idle.
     drop(worker_tx);
     drop(worker_process_guard);
-    ui.destroy();preview.destroy();Ok(())
+    ui.destroy();preview.destroy();Ok(pending_control_switch)
 }
 
 fn maker_timing(stage:&str,frame:u64,start:Instant){

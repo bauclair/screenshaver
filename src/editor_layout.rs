@@ -24,19 +24,24 @@ const EDIT_WINDOW_REFERENCE_WIDTH: f32 =
     645.0;
 
 pub(crate) const EDIT_WINDOW_REFERENCE_HEIGHT_PIXELS: f32 =
-    692.0;
+    720.0;
 
 pub(crate) const EDIT_WINDOW_REFERENCE_DISPLAY_HEIGHT: f32 =
     1080.0;
 
 pub(crate) const EDIT_WINDOW_SCALE_MIN: f32 =
-    0.80;
+    0.85;
 
 pub(crate) const EDIT_WINDOW_SCALE_MAX: f32 =
-    1.80;
+    1.25;
 
 const EDIT_TABBED_CONTENT_HEIGHT: f32 =
     367.0;
+
+// The dock occupies the full 720-pixel SDL client height. Give its extra
+// vertical space to policy and playlist lists, not to other tab controls.
+const EDIT_DOCK_EXTRA_LIST_HEIGHT: f32 =
+    EDIT_WINDOW_REFERENCE_HEIGHT_PIXELS - 692.0;
 
 pub const STARTING_OFFSET_MIN: f32 =
     0.0;
@@ -2533,13 +2538,8 @@ impl EditWindowOverlay {
             );
 
 
-        let resolution_scale =
-            (screen_size_points.y
-                / EDIT_WINDOW_REFERENCE_DISPLAY_HEIGHT)
-                .clamp(
-                    EDIT_WINDOW_SCALE_MIN,
-                    EDIT_WINDOW_SCALE_MAX,
-                );
+        // The dock does not rescale when the canvas/window width changes.
+        let resolution_scale = 1.0_f32;
 
 
         editor_theme::configure_editor_style(
@@ -2564,10 +2564,10 @@ impl EditWindowOverlay {
         let available_size =
             egui::vec2(
                 (screen_size_points.x
-                    - 24.0 * resolution_scale)
+                    - 0.0 * resolution_scale)
                     .max(320.0),
                 (screen_size_points.y
-                    - 24.0 * resolution_scale)
+                    - 0.0 * resolution_scale)
                     .max(320.0),
             );
 
@@ -2585,38 +2585,13 @@ impl EditWindowOverlay {
         let maximum_size =
             initial_size;
 
-        let centered_position =
-            egui::pos2(
-                ((screen_size_points.x - initial_size.x) * 0.5)
-                    .max(0.0),
-                ((screen_size_points.y - initial_size.y) * 0.5)
-                    .max(0.0),
-            );
-
-        let maximum_window_x =
-            (screen_size_points.x - initial_size.x)
-                .max(0.0);
-
-        let maximum_window_y =
-            (screen_size_points.y - initial_size.y)
-                .max(0.0);
-
-        let initial_position =
-            self.window_position
-                .unwrap_or(
-                    centered_position
-                );
-
+        // Dock foundation: anchor the existing editor at the left edge.
+        // The shader canvas will receive its own viewport in the next batch.
+        // Do not restore a previously floating editor position.
         let initial_position =
             egui::pos2(
-                initial_position.x.clamp(
-                    0.0,
-                    maximum_window_x,
-                ),
-                initial_position.y.clamp(
-                    0.0,
-                    maximum_window_y,
-                ),
+                0.0,
+                0.0,
             );
 
         let mut observed_window_position:
@@ -3406,46 +3381,28 @@ impl EditWindowOverlay {
             self.context.run(
                 raw_input,
                 |context| {
-                    let initial_rect =
-                        egui::Rect::from_min_size(
-                            initial_position,
-                            initial_size,
-                        );
-
+                    // A SidePanel owns the complete client height. Unlike an
+                    // egui Window, it never shrink-wraps to its tab contents.
                     let main_window_response =
-                        egui::Window::new(
-                            &editor_title
-                        )
-                    .open(
-                        &mut window_open
-                    )
-                    .default_open(
-                        true
-                    )
-                    .collapsible(
-                        false
-                    )
-                    .default_rect(
-                        initial_rect
-                    )
-                    .current_pos(
-                        initial_position
-                    )
-                    .min_size(
-                        minimum_size
-                    )
-                    .max_size(
-                        maximum_size
-                    )
-                    .constrain_to(
-                        screen_rect
-                    )
-                    .resizable(
-                        false
-                    )
-                    .show(
-                        context,
-                        |ui| {
+                        egui::SidePanel::left("screenshaver_control_center_dock")
+                            .resizable(false)
+                            .exact_width(665.0 * resolution_scale)
+                            .frame(
+                                egui::Frame::side_top_panel(&context.style())
+                                    .inner_margin(egui::Margin::same(8))
+                            )
+                            .show(context, |ui| {
+                                ui.horizontal(|ui| {
+                                    ui.label(egui::RichText::new(&editor_title).strong());
+                                    ui.with_layout(
+                                        egui::Layout::right_to_left(egui::Align::Center),
+                                        |ui| {
+                                            if ui.small_button("✕").clicked() {
+                                                self.close_requested = true;
+                                            }
+                                        },
+                                    );
+                                });
                             ui.set_enabled(
                                 pending_confirmation
                                     .is_none()
@@ -3680,7 +3637,10 @@ impl EditWindowOverlay {
                                 ui,
                                 |ui| {
                                     ui.set_min_height(
-                                        EDIT_TABBED_CONTENT_HEIGHT
+                                        (EDIT_TABBED_CONTENT_HEIGHT
+                                            + if matches!(active_tab, EditorTab::Policies | EditorTab::Playlists) {
+                                                EDIT_DOCK_EXTRA_LIST_HEIGHT
+                                            } else { 0.0 })
                                             * resolution_scale
                                     );
 
@@ -4020,17 +3980,8 @@ impl EditWindowOverlay {
                         }
                     );
 
-                    if let Some(main_window_response) =
-                        main_window_response
-                    {
-                        observed_window_position =
-                            Some(
-                                main_window_response
-                                    .response
-                                    .rect
-                                    .min
-                            );
-                    }
+                    observed_window_position =
+                        Some(main_window_response.response.rect.min);
 
                     draw_policy_confirmation_modal(
                         context,
@@ -6919,6 +6870,14 @@ fn draw_policies_tab(
             18.0 * metrics.scale
         );
 
+    // Use the remaining height of the full-height SidePanel instead of the
+    // old fixed 270-pixel policy-list limit. Keep the QBE controls immediately
+    // below the table visible and leave room for their vertical layout.
+    // This is measured every frame, so Mango window-size changes are honored.
+    let policy_list_height =
+        (ui.available_height() - 100.0 * metrics.scale)
+            .max((270.0 + EDIT_DOCK_EXTRA_LIST_HEIGHT) * metrics.scale);
+
     egui::ScrollArea::vertical()
         .auto_shrink(
             [
@@ -6926,9 +6885,7 @@ fn draw_policies_tab(
                 false,
             ]
         )
-        .max_height(
-            270.0 * metrics.scale
-        )
+        .max_height(policy_list_height)
         .show(
             ui,
             |ui| {

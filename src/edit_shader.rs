@@ -1,8 +1,8 @@
-//! Full-screen interactive shader-edit rendering session.
+//! Windowed interactive shader-edit rendering session.
 //!
 //! This checkpoint renders one optional shader continuously beneath an empty
 //! movable and resizable egui editor window. When no shader is supplied, the
-//! session displays a black full-screen background. Ordinary keyboard and mouse
+//! session displays a black rendering background. Ordinary keyboard and mouse
 //! activity do not terminate edit mode.
 
 use std::collections::VecDeque;
@@ -21,7 +21,6 @@ use sdl2::keyboard::{
     Scancode,
 };
 use sdl2::video::{
-    FullscreenType,
     GLProfile,
 };
 use crate::parse_texture_specification::TextureSpecification;
@@ -52,6 +51,22 @@ macro_rules! localized_edit {
         localized_edit_values($key, &[$($value.to_string()),+])
     }};
 }
+
+// Window foundation.  The editor dock and canvas viewport will be separated
+// in the next layout checkpoint; do not scale the existing UI to fit the window.
+// Owns the SDL window and its GL context across the transition from the
+// policy-list Control Center to the shader editor. The compositor sees one
+// unchanged native window ID throughout the transition.
+struct ControlCenterSession {
+    sdl: sdl2::Sdl,
+    video: sdl2::VideoSubsystem,
+    window: sdl2::video::Window,
+    gl_context: sdl2::video::GLContext,
+}
+
+const CONTROL_CENTER_INITIAL_WIDTH: u32 = 1440;
+const CONTROL_CENTER_INITIAL_HEIGHT: u32 = 720;
+const CONTROL_CENTER_DOCK_WIDTH: u32 = 665;
 
 const FPS_AVERAGE_WINDOW: Duration =
 Duration::from_secs(5);
@@ -809,7 +824,8 @@ pub fn run(
                 None,
                 audio_bands,
                 true,
-            )
+            None
+        )
         }
 
         crate::preview_shader_directory::PreviewTarget::Directory(
@@ -857,7 +873,8 @@ pub fn run_wallpaper_only(
         None,
         audio_bands,
         true,
-    )
+            None
+        )
 }
 
 
@@ -888,7 +905,8 @@ pub fn run_wallpaper_only_prepaused(
         None,
         audio_bands,
         false,
-    )
+            None
+        )
 }
 
 
@@ -913,7 +931,8 @@ pub fn run_windowshader_only_prepaused(
         None,
         audio_bands,
         false,
-    )
+            None
+        )
 }
 
 
@@ -940,7 +959,8 @@ pub fn run_screensaver_only(
         None,
         audio_bands,
         false,
-    )
+            None
+        )
 }
 
 // Hold both presentation transactions for the entire competing-renderer
@@ -1091,11 +1111,11 @@ fn run_empty_session_impl_with_assignments(
     video
     .window(
         &localized_edit!("edit.control_center"),
-        0,
-        0,
+        CONTROL_CENTER_INITIAL_WIDTH,
+        CONTROL_CENTER_INITIAL_HEIGHT,
     )
-    .fullscreen_desktop()
-    .borderless()
+    .position_centered()
+    .resizable()
     .opengl()
     .build()
     .map_err(
@@ -1109,6 +1129,8 @@ fn run_empty_session_impl_with_assignments(
         }
     )?;
 
+
+    let _ = window.set_minimum_size(1100, 700);
 
     let gl_context =
     window
@@ -1126,11 +1148,6 @@ fn run_empty_session_impl_with_assignments(
 
 
     window.raise();
-
-    let _ =
-    window.set_fullscreen(
-        FullscreenType::Desktop
-    );
 
 
     gl::load_with(
@@ -2413,38 +2430,10 @@ process_export_destination_browse_request(
     edit_window.destroy();
 
 
-    // The empty Control Center session owns SDL's single EventPump.
-    // Drop it, along with the empty-session window/context objects,
-    // before starting a shader-loaded Control Center session.
-    drop(
-        event_pump
-    );
-
-
-    drop(
-        gl_context
-    );
-
-
-    drop(
-        window
-    );
-
-
-    drop(
-        video
-    );
-
-
-    drop(
-        sdl
-    );
-
-
-    drop(
-        presentation_pause_guards
-    );
-
+    // Release the only EventPump before the shader editor creates its own.
+    // Keep the SDL window and GL context alive so Mango retains the tile.
+    drop(event_pump);
+    drop(presentation_pause_guards);
 
     if let Some((
         shader_path,
@@ -2469,6 +2458,7 @@ process_export_destination_browse_request(
             policy_name,
             audio_bands,
             false,
+            Some(ControlCenterSession { sdl, video, window, gl_context })
         );
     }
 
@@ -2623,29 +2613,12 @@ fn process_restore_archive_browse_request(
 }
 
 
+// Legacy name retained for existing file-dialog call sites.  Dialogs must never
+// switch the Control Center back into fullscreen mode.
 fn restore_editor_fullscreen(
     window: &mut sdl2::video::Window,
 ) -> Result<(), String> {
-
-    window
-    .set_fullscreen(
-        FullscreenType::Desktop
-    )
-    .map_err(
-        |error| {
-            localized_edit!(
-"edit.unable_to_restore_control_center_fullscreen_state",
-
-                error,
-            
-)
-        }
-    )?;
-
-
     window.raise();
-
-
     Ok(())
 }
 
@@ -2688,6 +2661,7 @@ fn run_paths(
     audio_bands:
     Option<crate::audio_backend::SharedAudioBands>,
     acquire_wallpaper_pause: bool,
+    existing_session: Option<ControlCenterSession>,
 ) -> Result<(), String> {
     let _renderer_status_guard = ControlCenterStatusGuard::begin();
 
@@ -3052,6 +3026,12 @@ fn run_paths(
                 };
 
 
+            let ControlCenterSession { sdl, video, mut window, gl_context } =
+                if let Some(session) = existing_session {
+                    // The existing SDL window remains mapped and tiled. Never
+                    // raise or reposition it when opening a shader.
+                    session
+                } else {
             let sdl =
             sdl2::init()
             .map_err(
@@ -3101,11 +3081,11 @@ fn run_paths(
             video
             .window(
                 &localized_edit!("edit.control_center"),
-                0,
-                0,
+                CONTROL_CENTER_INITIAL_WIDTH,
+                CONTROL_CENTER_INITIAL_HEIGHT,
             )
-            .fullscreen_desktop()
-            .borderless()
+            .position_centered()
+            .resizable()
             .opengl()
             .build()
             .map_err(
@@ -3119,6 +3099,11 @@ fn run_paths(
                 }
             )?;
 
+
+            // Match the normal Edit entry point. A fixed-height maximum can
+            // cause tiling compositors to classify this window as floating.
+            // The full-height egui dock follows the actual client height.
+            let _ = window.set_minimum_size(1100, 700);
 
             let gl_context =
             window
@@ -3138,12 +3123,6 @@ fn run_paths(
             window.raise();
 
 
-            let _ =
-            window.set_fullscreen(
-                FullscreenType::Desktop
-            );
-
-
             gl::load_with(
                 |symbol| {
                     video.gl_get_proc_address(
@@ -3158,6 +3137,9 @@ fn run_paths(
                 0
             );
 
+
+                    ControlCenterSession { sdl, video, window, gl_context }
+                };
 
             // Diagnostic overlays are owned by this Control Center GL context.
             // Empty sessions and bulk-edit's black frame do not claim Rendering.
@@ -3249,7 +3231,13 @@ fn run_paths(
                 width,
                  height,
             ) =
-            window.size();
+            window.drawable_size();
+
+            let dock_pixels = ((CONTROL_CENTER_DOCK_WIDTH as f64)
+
+                * (width as f64 / window.size().0.max(1) as f64)).round() as u32;
+
+            let width = width.saturating_sub(dock_pixels).max(1);
 
 
             let (
@@ -4253,7 +4241,13 @@ process_export_destination_browse_request(
                                 width,
                                  height,
                             ) =
-                            window.size();
+                            window.drawable_size();
+
+                            let dock_pixels = ((CONTROL_CENTER_DOCK_WIDTH as f64)
+
+                                * (width as f64 / window.size().0.max(1) as f64)).round() as u32;
+
+                            let width = width.saturating_sub(dock_pixels).max(1);
 
 
                             let elapsed =
@@ -4492,8 +4486,12 @@ process_export_destination_browse_request(
 
 
                                 postprocess
-                                .present_scene_with_bloom_diagnostic(
-                                    bloom_diagnostic
+                                .present_scene_in_viewport(
+                                    bloom_diagnostic,
+                                    ((CONTROL_CENTER_DOCK_WIDTH as f32)
+                                        * (window.drawable_size().0 as f32 / window.size().0.max(1) as f32))
+                                        .round() as i32,
+                                    0,
                                 );
 
 

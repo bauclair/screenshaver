@@ -138,7 +138,17 @@ impl Library {
        ("lighting/analytical_box_soft_shadow.smmod",include_str!("../assets/maker/modules/lighting/analytical_box_soft_shadow.smmod")),
        ("color/alternating_3d_cell_color.smmod",include_str!("../assets/maker/modules/color/alternating_3d_cell_color.smmod")),
        ("coordinates/spatially_modulated_cell_displacement.smmod",include_str!("../assets/maker/modules/coordinates/spatially_modulated_cell_displacement.smmod")),
-      ];
+        ("animation/beat_phase_envelope.smmod",include_str!("../assets/maker/modules/animation/beat_phase_envelope.smmod")),
+      ("geometry/damped_ballistic_motion_2d.smmod",include_str!("../assets/maker/modules/geometry/damped_ballistic_motion_2d.smmod")),
+      ("animation/staggered_emission_phase.smmod",include_str!("../assets/maker/modules/animation/staggered_emission_phase.smmod")),
+      ("animation/particle_lifetime_envelope.smmod",include_str!("../assets/maker/modules/animation/particle_lifetime_envelope.smmod")),
+      ("fields/procedural_spectrum_envelope.smmod",include_str!("../assets/maker/modules/fields/procedural_spectrum_envelope.smmod")),
+      ("fields/segmented_radial_ring.smmod",include_str!("../assets/maker/modules/fields/segmented_radial_ring.smmod")),
+      ("lighting/radial_core_glow.smmod",include_str!("../assets/maker/modules/lighting/radial_core_glow.smmod")),
+       ("animation/modulated_travel_time.smmod",include_str!("../assets/maker/modules/animation/modulated_travel_time.smmod")),
+       ("geometry/multi_corridor_tunnel_field.smmod",include_str!("../assets/maker/modules/geometry/multi_corridor_tunnel_field.smmod")),
+       ("coordinates/directional_sine_perturbation_3d.smmod",include_str!("../assets/maker/modules/coordinates/directional_sine_perturbation_3d.smmod")),
+    ];
     for (path,src) in official {result.register(path,src,Trust::Official)}
     if let Some(home)=std::env::var_os("HOME"){
         let directory=Path::new(&home).join(".config/screenshaver/maker/modules");

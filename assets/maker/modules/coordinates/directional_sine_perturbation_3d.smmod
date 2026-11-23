@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "created_by": "Screenshaver",
+  "terminal": false,
+  "id": "screenshaver.coordinates.directional_sine_perturbation_3d",
+  "name": "Directional Sine Perturbation 3D",
+  "category": "Coordinates",
+  "header_color": "#4E8D84",
+  "description": "Offsets a 3D sample position along a user-supplied displacement direction using a traveling sinusoidal plane wave.",
+  "uses": "Surface deformation, flowing domains, and procedural geometry variation.",
+  "notes": "Independent plane-wave displacement. The wave vector and displacement direction are separate inputs; zero-length directions yield no displacement.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "default": "vec3(0.0)"
+    },
+    {
+      "id": "wave_vector",
+      "name": "Wave Vector",
+      "type": "vec3",
+      "default": "vec3(1.0,0.7,0.3)"
+    },
+    {
+      "id": "direction",
+      "name": "Displacement Direction",
+      "type": "vec3",
+      "default": "vec3(0.0,1.0,0.0)"
+    },
+    {
+      "id": "time",
+      "name": "Time",
+      "type": "float",
+      "default": "u_time"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "warped",
+      "name": "Warped Position",
+      "type": "vec3"
+    },
+    {
+      "id": "displacement",
+      "name": "Displacement",
+      "type": "vec3"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "amplitude",
+      "name": "Amplitude",
+      "type": "float",
+      "default": 0.15,
+      "min": 0,
+      "max": 5
+    },
+    {
+      "id": "frequency",
+      "name": "Spatial Frequency",
+      "type": "float",
+      "default": 2,
+      "min": 0,
+      "max": 30
+    },
+    {
+      "id": "speed",
+      "name": "Phase Speed",
+      "type": "float",
+      "default": 1,
+      "min": -20,
+      "max": 20
+    },
+    {
+      "id": "phase",
+      "name": "Phase Offset",
+      "type": "float",
+      "default": 0,
+      "min": -6.2832,
+      "max": 6.2832
+    }
+  ],
+  "helpers": "vec3 maker_directional_sine_offset(vec3 p,vec3 wave,vec3 dir,float t,float amp,float freq,float speed,float phase){float n=length(dir);vec3 unit_dir=n>0.00001?dir/n:vec3(0.0);float angle=dot(p,wave)*freq-t*speed+phase;return unit_dir*(amp*sin(angle));}",
+  "glsl_outputs": {
+    "warped": "({position})+maker_directional_sine_offset({position},{wave_vector},{direction},{time},{amplitude},{frequency},{speed},{phase})",
+    "displacement": "maker_directional_sine_offset({position},{wave_vector},{direction},{time},{amplitude},{frequency},{speed},{phase})"
+  }
+}

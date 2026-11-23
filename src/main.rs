@@ -2,6 +2,7 @@ mod initialize_user_files;
 mod startup_checks;
 mod load_config;
 mod singleton;
+mod application_coordinator;
 mod logger;
 mod parse_mode;
 mod parse_interval;
@@ -231,9 +232,43 @@ fn main() {
     match &command {
 
         crate::parse_arguments::Command::Maker => {
-            if let Err(error) = crate::maker::run() {
-                eprintln!("Screenshaver Maker: {error}");
-                std::process::exit(1);
+            // Reserve the shared editor slot before creating SDL/OpenGL state.
+            // A forwarded invocation must never start a second renderer.
+            match crate::application_coordinator::enter(
+                crate::application_coordinator::Application::Maker,
+            ) {
+                Ok(crate::application_coordinator::Entry::Forwarded) => return,
+                Ok(crate::application_coordinator::Entry::Owner(owner)) => {
+                    let result = crate::maker::run_for_transition(&owner);
+                    // Releasing the owner drops its listener and exclusive lock.
+                    // Do not start Control Center until Maker's GL and worker
+                    // cleanup has returned and this lock has been released.
+                    drop(owner);
+                    match result {
+                        Ok(true) => {
+                            let executable = match std::env::current_exe() {
+                                Ok(path) => path,
+                                Err(error) => {
+                                    eprintln!("[MAKER] Cannot locate executable for Control Center: {error}");
+                                    return;
+                                }
+                            };
+                            if let Err(error) = std::process::Command::new(executable)
+                                .arg("--control").spawn() {
+                                eprintln!("[MAKER] Control Center launch failed: {error}");
+                            }
+                        }
+                        Ok(false) => {}
+                        Err(error) => {
+                            eprintln!("Screenshaver Maker: {error}");
+                            std::process::exit(1);
+                        }
+                    }
+                }
+                Err(error) => {
+                    eprintln!("Screenshaver Maker coordination: {error}");
+                    std::process::exit(1);
+                }
             }
             return;
         }
@@ -1707,6 +1742,19 @@ Screen locking will be disabled for this Screenshaver launch only; your saved co
             shader_name,
             show_renderer_status,
         } => {
+            // Standalone Control Center shares the editor slot with Maker.
+            // Resident-hosted Control Center is handled separately by the
+            // resident tray path; never acquire the resident singleton here.
+            let _editor_owner = match crate::application_coordinator::enter(
+                crate::application_coordinator::Application::Control,
+            ) {
+                Ok(crate::application_coordinator::Entry::Forwarded) => return,
+                Ok(crate::application_coordinator::Entry::Owner(owner)) => owner,
+                Err(error) => {
+                    eprintln!("[CONTROL CENTER] Editor coordination: {error}");
+                    return;
+                }
+            };
             let _diagnostic_session = if show_renderer_status {
                 match crate::renderer_status::begin_session(false) {
                     Ok(session) => Some(session),
@@ -1728,10 +1776,36 @@ Screen locking will be disabled for this Screenshaver launch only; your saved co
                 );
 
 
-            match crate::edit_shader::run(
-                shader_name,
-                control_audio_bands,
-            ) {
+            // The listener accepts same-mode activation requests only. Drain
+            // them while the UI runs; switching remains explicitly NOT_READY.
+            // This helper does not access SDL/OpenGL from another thread.
+            let control_result = std::thread::scope(|scope| {
+                let finished = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+                // Move ownership into the monitor thread: Owner is Send but not
+                // Sync because its mpsc::Receiver cannot be shared by reference.
+                // The lock remains held until the monitor joins after UI shutdown.
+                let receiver = _editor_owner;
+                let finished_ref = std::sync::Arc::clone(&finished);
+                let monitor = scope.spawn(move || {
+                    while !finished_ref.load(std::sync::atomic::Ordering::Acquire) {
+                        match receiver.try_recv() {
+                            Ok(Some(crate::application_coordinator::Request::Activate(
+                                crate::application_coordinator::Application::Control,
+                            ))) => {
+                                eprintln!("[CONTROL CENTER] Existing editor activation requested (focus pending)");
+                            }
+                            Ok(Some(_)) | Ok(None) => {}
+                            Err(_) => break,
+                        }
+                        std::thread::sleep(std::time::Duration::from_millis(25));
+                    }
+                });
+                let result = crate::edit_shader::run(shader_name, control_audio_bands);
+                finished.store(true, std::sync::atomic::Ordering::Release);
+                let _ = monitor.join();
+                result
+            });
+            match control_result {
 
                 Ok(()) => {}
 
