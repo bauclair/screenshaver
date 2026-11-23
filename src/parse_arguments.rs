@@ -360,7 +360,7 @@ pub fn parse() -> Result<Command, String> {
         }
 
 
-        "--control" => {
+        "--effects" => {
 
             parse_control(
                 &args[1..]
@@ -877,7 +877,7 @@ fn parse_control(
     if args.len() > 1 {
 
         return Err(
-            "--control accepts at most one shader filename or path"
+            "--effects accepts at most one shader filename or path"
                 .to_string()
         );
     }
@@ -897,7 +897,7 @@ fn parse_control(
                 {
 
                     return Err(
-                        "--control accepts an optional shader filename or path"
+                        "--effects accepts an optional shader filename or path"
                             .to_string()
                     );
                 }
@@ -1000,10 +1000,10 @@ pub fn print_help() {
              -V, --version\n\
                  Display the Screenshaver version.\n\
          \n\
-             --control [PATH]\n\
-                 Open the Screenshaver Control Center.\n\
+             --effects [PATH]\n\
+                 Open the Screenshaver Effects Manager.\n\
                  If PATH is supplied, preload that shader for policy editing.\n\
-                 Combine --control with --show-renderer-status to enable the diagnostic.\n\
+                 Combine --effects with --show-renderer-status to enable the diagnostic.\n\
          \n\
              --show-renderer-status\n\
                   Start Screenshaver with the temporary four-pipeline renderer-status diagnostic.\n\
@@ -1091,9 +1091,9 @@ pub fn print_help() {
          Examples:\n\
              screenshaver --start\n\
              screenshaver --stop\n\
-             screenshaver --control\n\
+             screenshaver --effects\n\
              screenshaver --maker\n\
-             screenshaver --control \"Heartfelt.glsl\"\n\
+             screenshaver --effects \"Heartfelt.glsl\"\n\
          \n\
          Configuration:\n\
              ~/.config/screenshaver/\n\

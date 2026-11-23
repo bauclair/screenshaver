@@ -16,10 +16,7 @@ use std::time::{
 };
 
 use sdl2::event::Event;
-use sdl2::keyboard::{
-    Keycode,
-    Scancode,
-};
+use sdl2::keyboard::Scancode;
 use sdl2::video::{
     GLProfile,
 };
@@ -2623,25 +2620,10 @@ fn restore_editor_fullscreen(
 }
 
 
-fn edit_session_should_close(
-    event: &Event,
-) -> bool {
-
-    matches!(
-        event,
-        Event::Quit {
-            ..
-        }
-        | Event::KeyDown {
-            keycode:
-            Some(
-                Keycode::Escape
-                | Keycode::Q
-            ),
-            repeat: false,
-            ..
-        }
-    )
+fn edit_session_should_close(event: &Event) -> bool {
+    // A windowed Control Center closes through the window manager or its
+    // explicit UI controls, not ordinary Esc/Q keyboard input.
+    matches!(event, Event::Quit { .. })
 }
 
 fn run_paths(

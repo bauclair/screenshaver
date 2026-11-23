@@ -135,7 +135,7 @@ unsafe fn run_with_display(
     crate::logger::information(logfile, "[TRAY/X11] XEmbed tray backend started");
     let _ = ready.send(Ok(()));
     // Override-redirect popup is independent of the embedded icon window.
-    let menu = unsafe { xlib::XCreateSimpleWindow(display, root, 0, 0, 220, 240, 1,
+    let menu = unsafe { xlib::XCreateSimpleWindow(display, root, 0, 0, 220, 270, 1,
         xlib::XBlackPixel(display, screen), xlib::XWhitePixel(display, screen)) };
     unsafe {
         let mut attrs: xlib::XSetWindowAttributes = std::mem::zeroed();
@@ -226,7 +226,7 @@ unsafe fn run_with_display(
                             let screen_width = unsafe { xlib::XDisplayWidth(display, screen) };
                             let screen_height = unsafe { xlib::XDisplayHeight(display, screen) };
                             let x = e.x_root.clamp(0, (screen_width - 222).max(0));
-                            let y = (e.y_root - 240).clamp(0, (screen_height - 242).max(0));
+                            let y = (e.y_root - 270).clamp(0, (screen_height - 272).max(0));
                             unsafe {
                                 xlib::XMoveWindow(display, menu, x, y);
                                 xlib::XMapRaised(display, menu);
@@ -247,8 +247,9 @@ unsafe fn run_with_display(
                                 90..=119 => Some(TrayCommand::Edit),
                                 120..=149 if status.wallpaper.active_wallpaper().is_some() => Some(TrayCommand::EditWallpaper),
                                 150..=179 if status.wallpaper.active_windowshader().is_some() => Some(TrayCommand::EditWindowshader),
-                                180..=209 => Some(TrayCommand::Restart),
-                                210..=239 => Some(TrayCommand::Stop),
+                                180..=209 => Some(TrayCommand::Maker),
+                                210..=239 => Some(TrayCommand::Restart),
+                                240..=269 => Some(TrayCommand::Stop),
                                 _ => None,
                             }
                         } else { None };
@@ -372,6 +373,7 @@ unsafe fn paint_menu(
     let edit_label = crate::manage_localization::runtime_text("tray.menu.edit");
     let edit_wallpaper_label = "Edit current wallpaper".to_string();
     let edit_windowshader_label = "Edit current windowshader".to_string();
+    let maker_label = "Maker".to_string();
     let restart_label = crate::manage_localization::runtime_text("tray.menu.restart");
     let stop_label = crate::manage_localization::runtime_text("tray.menu.stop");
     let labels = [
@@ -381,13 +383,14 @@ unsafe fn paint_menu(
         edit_label,
         edit_wallpaper_label,
         edit_windowshader_label,
+        maker_label,
         restart_label,
         stop_label,
     ];
 
     unsafe {
         xlib::XSetForeground(display, gc, xlib::XWhitePixel(display, screen));
-        xlib::XFillRectangle(display, menu, gc, 0, 0, 220, 240);
+        xlib::XFillRectangle(display, menu, gc, 0, 0, 220, 270);
         xlib::XSetForeground(display, gc, xlib::XBlackPixel(display, screen));
         for (i, label) in labels.iter().enumerate() {
             xlib::XDrawString(

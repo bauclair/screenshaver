@@ -612,6 +612,33 @@ fn run_inner(coordinator:Option<&crate::application_coordinator::Owner>)->Result
         maker_timing("preview",diagnostic_frame,preview_started);
         let ui_started=Instant::now();
         if !ui.frame(dw,dh,ww,wh,scale,preview.error.as_deref()){break}
+        if let Some(action) = ui.take_tools_action() {
+            match action {
+                "start_screenshaver" => {
+                    let result = std::env::current_exe()
+                        .map_err(|error| error.to_string())
+                        .and_then(|executable| {
+                            std::process::Command::new(executable)
+                                .spawn()
+                                .map(|_| ())
+                                .map_err(|error| error.to_string())
+                        });
+                    match result {
+                        Ok(()) => ui.tools_status("Screenshaver launch requested".into()),
+                        Err(error) => ui.tools_status(format!("Unable to start Screenshaver: {error}")),
+                    }
+                }
+                "open_control_center" => {
+                    if coordinator.is_some() {
+                        pending_control_switch = true;
+                        ui.request_application_close();
+                    } else {
+                        ui.tools_status("Effects Manager switching requires coordinated Maker startup (--maker)".into());
+                    }
+                }
+                _ => {}
+            }
+        }
         if ui.application_close_ready() { break 'running; }
         // A canceled close-all dialog leaves an open project. Withdraw the
         // transition so later ordinary closure cannot launch Control Center.

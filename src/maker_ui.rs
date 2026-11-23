@@ -11,6 +11,8 @@ use serde_json::Value;
 use crate::maker_module::{Module, Trust};
 use crate::maker_library;
 
+const MAKER_BRANDING_IMAGE: &[u8] = include_bytes!("../assets/screenshaver-splash.png");
+
 const MAKER_MENU_ICON_RGBA: [u8; 1936] = [
     62, 1, 0, 192, 142, 3, 0, 198, 142, 3, 0, 198, 142, 3, 0, 198, 142, 3, 0, 198, 142, 3, 0, 198, 142, 3, 0, 198, 142, 3, 0, 198, 142, 3, 0, 198, 142, 3, 0, 198, 142, 3, 0, 198, 142, 3, 0, 198, 142, 3, 0, 198, 142, 3, 0, 198, 142, 3, 0, 198, 142, 3, 0, 198, 142, 3, 0, 198, 142, 3, 0, 198, 130, 3, 0, 202, 53, 1, 0, 229, 40, 1, 0, 235, 37, 0, 0, 214, 142, 18, 0, 198, 255, 32, 0, 255, 255, 32, 0, 255, 255, 32, 0, 255, 255, 32, 0, 255, 255, 32, 0, 255, 255, 32, 0, 255, 255, 32, 0, 255, 255, 32, 0, 255, 255, 32, 0, 255, 255, 32, 0, 255, 255, 32, 0, 255, 255, 32, 0, 255, 255, 32, 0, 255, 255, 32, 0, 255, 255, 32, 0, 255, 255, 32, 0, 255, 229, 29, 0, 255, 39, 5, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 40, 5, 0, 235, 142, 33, 0, 198, 255, 60, 0, 255, 255, 60, 0, 255, 255, 60, 0, 255, 255, 60, 0, 255, 255, 60, 0, 255, 255, 60, 0, 255, 255, 60, 0, 255, 255, 60, 0, 255, 255, 60, 0, 255, 255, 60, 0, 255, 255, 60, 0, 255, 255, 60, 0, 255, 255, 60, 0, 255, 255, 60, 0, 255, 255, 60, 0, 255, 229, 54, 0, 255, 39, 9, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 77, 19, 0, 220, 142, 48, 0, 198, 255, 87, 0, 255, 255, 87, 0, 255, 255, 87, 0, 255, 255, 87, 0, 255, 255, 87, 0, 255, 255, 87, 0, 255, 255, 87, 0, 255, 255, 87, 0, 255, 255, 87, 0, 255, 255, 87, 0, 255, 255, 87, 0, 255, 255, 87, 0, 255, 255, 87, 0, 255, 255, 87, 0, 255, 232, 79, 0, 255, 42, 14, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 99, 34, 0, 255, 140, 48, 0, 198, 142, 64, 0, 198, 255, 115, 0, 255, 255, 115, 0, 255, 255, 115, 0, 255, 255, 115, 0, 255, 255, 115, 0, 255, 255, 115, 0, 255, 255, 115, 0, 255, 255, 115, 0, 255, 255, 115, 0, 255, 255, 115, 0, 255, 255, 115, 0, 255, 255, 115, 0, 255, 255, 115, 0, 255, 232, 105, 0, 255, 42, 19, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 99, 45, 0, 255, 253, 114, 0, 255, 142, 64, 0, 198, 142, 79, 0, 198, 255, 141, 0, 255, 255, 141, 0, 255, 255, 141, 0, 255, 255, 141, 0, 255, 255, 141, 0, 255, 255, 141, 0, 255, 255, 141, 0, 255, 255, 141, 0, 255, 255, 141, 0, 255, 255, 141, 0, 255, 255, 141, 0, 255, 255, 141, 0, 255, 232, 128, 0, 255, 42, 23, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 99, 55, 0, 255, 253, 140, 0, 255, 255, 141, 0, 255, 142, 79, 0, 198, 142, 94, 0, 198, 255, 168, 0, 255, 255, 168, 0, 255, 255, 168, 0, 255, 255, 168, 0, 255, 255, 168, 0, 255, 255, 168, 0, 255, 255, 168, 0, 255, 255, 168, 0, 255, 255, 168, 0, 255, 255, 168, 0, 255, 255, 168, 0, 255, 232, 153, 0, 255, 42, 28, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 99, 65, 0, 255, 253, 167, 0, 255, 255, 168, 0, 255, 255, 168, 0, 255, 142, 94, 0, 198, 142, 108, 0, 198, 255, 194, 0, 255, 255, 194, 0, 255, 255, 194, 0, 255, 255, 194, 0, 255, 255, 194, 0, 255, 255, 194, 0, 255, 255, 194, 0, 255, 255, 194, 0, 255, 255, 194, 0, 255, 255, 194, 0, 255, 232, 177, 0, 255, 42, 32, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 99, 75, 0, 255, 253, 192, 0, 255, 255, 194, 0, 255, 255, 194, 0, 255, 255, 194, 0, 255, 142, 108, 0, 198, 142, 124, 0, 198, 255, 221, 0, 255, 255, 221, 0, 255, 255, 221, 0, 255, 255, 221, 0, 255, 255, 221, 0, 255, 255, 221, 0, 255, 255, 221, 0, 255, 255, 221, 0, 255, 255, 221, 0, 255, 232, 201, 0, 255, 42, 36, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 99, 86, 0, 255, 253, 219, 0, 255, 255, 221, 0, 255, 255, 221, 0, 255, 255, 221, 0, 255, 255, 221, 0, 255, 142, 124, 0, 198, 138, 134, 0, 198, 248, 241, 0, 255, 248, 241, 0, 255, 248, 241, 0, 255, 248, 241, 0, 255, 248, 241, 0, 255, 248, 241, 0, 255, 248, 241, 0, 255, 248, 241, 0, 255, 226, 219, 0, 255, 41, 40, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 67, 65, 0, 255, 246, 239, 0, 255, 248, 241, 0, 255, 248, 241, 0, 255, 248, 241, 0, 255, 248, 241, 0, 255, 248, 241, 0, 255, 138, 134, 0, 198, 118, 133, 0, 198, 213, 238, 0, 255, 213, 238, 0, 255, 213, 238, 0, 255, 213, 238, 0, 255, 213, 238, 0, 255, 213, 238, 0, 255, 213, 238, 0, 255, 194, 217, 0, 255, 35, 39, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 6, 7, 0, 255, 150, 168, 0, 255, 213, 238, 0, 255, 213, 238, 0, 255, 213, 238, 0, 255, 213, 238, 0, 255, 213, 238, 0, 255, 118, 133, 0, 198, 99, 131, 0, 198, 178, 235, 0, 255, 178, 235, 0, 255, 178, 235, 0, 255, 178, 235, 0, 255, 178, 235, 0, 255, 178, 235, 0, 255, 162, 214, 0, 255, 29, 39, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 4, 6, 0, 255, 124, 163, 0, 255, 178, 235, 0, 255, 178, 235, 0, 255, 178, 235, 0, 255, 178, 235, 0, 255, 99, 131, 0, 198, 80, 129, 0, 198, 143, 231, 0, 255, 143, 231, 0, 255, 143, 231, 0, 255, 143, 231, 0, 255, 143, 231, 0, 255, 130, 210, 0, 255, 24, 38, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 56, 90, 0, 255, 38, 61, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 3, 5, 0, 255, 99, 160, 0, 255, 143, 231, 0, 255, 143, 231, 0, 255, 143, 231, 0, 255, 80, 129, 0, 198, 59, 126, 0, 198, 108, 228, 0, 255, 108, 228, 0, 255, 108, 228, 0, 255, 108, 228, 0, 255, 98, 207, 0, 255, 18, 38, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 42, 89, 0, 255, 107, 226, 0, 255, 88, 186, 0, 255, 1, 3, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 3, 5, 0, 255, 75, 158, 0, 255, 108, 228, 0, 255, 108, 228, 0, 255, 59, 126, 0, 198, 40, 125, 0, 198, 73, 224, 0, 255, 73, 224, 0, 255, 73, 224, 0, 255, 66, 204, 0, 255, 12, 37, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 28, 87, 0, 255, 72, 222, 0, 255, 73, 224, 0, 255, 73, 224, 0, 255, 28, 87, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 2, 5, 0, 255, 51, 155, 0, 255, 73, 224, 0, 255, 40, 125, 0, 198, 28, 118, 15, 198, 52, 214, 29, 255, 52, 214, 29, 255, 47, 195, 26, 255, 9, 35, 5, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 20, 83, 11, 255, 52, 212, 29, 255, 52, 214, 29, 255, 52, 214, 29, 255, 52, 214, 29, 255, 48, 196, 26, 255, 3, 12, 2, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 1, 5, 1, 255, 36, 149, 20, 255, 28, 118, 15, 198, 18, 113, 35, 198, 33, 203, 62, 255, 30, 185, 56, 255, 5, 33, 10, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 13, 79, 24, 255, 33, 201, 62, 255, 33, 203, 62, 255, 33, 203, 62, 255, 33, 203, 62, 255, 33, 203, 62, 255, 33, 203, 62, 255, 17, 107, 33, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 1, 5, 1, 255, 15, 85, 27, 209, 8, 107, 53, 198, 13, 175, 86, 255, 2, 32, 16, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 5, 75, 37, 255, 14, 190, 94, 255, 14, 192, 95, 255, 14, 192, 95, 255, 14, 192, 95, 255, 14, 192, 95, 255, 14, 192, 95, 255, 14, 192, 95, 255, 14, 186, 92, 255, 2, 24, 12, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 2, 31, 16, 235, 0, 90, 67, 201, 0, 29, 21, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 68, 50, 255, 0, 175, 129, 255, 0, 176, 130, 255, 0, 176, 130, 255, 0, 176, 130, 255, 0, 176, 130, 255, 0, 176, 130, 255, 0, 176, 130, 255, 0, 176, 130, 255, 0, 176, 130, 255, 0, 117, 87, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 28, 21, 235, 0, 31, 37, 229, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 58, 68, 255, 0, 143, 169, 255, 0, 144, 170, 255, 0, 144, 170, 255, 0, 144, 170, 255, 0, 144, 170, 255, 0, 144, 170, 255, 0, 144, 170, 255, 0, 144, 170, 255, 0, 144, 170, 255, 0, 144, 170, 255, 0, 144, 170, 255, 0, 35, 41, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 23, 27, 235, 0, 17, 34, 235, 0, 0, 0, 255, 0, 0, 0, 255, 0, 45, 84, 255, 0, 113, 208, 255, 0, 113, 209, 255, 0, 113, 209, 255, 0, 113, 209, 255, 0, 113, 209, 255, 0, 113, 209, 255, 0, 113, 209, 255, 0, 113, 209, 255, 0, 113, 209, 255, 0, 113, 209, 255, 0, 113, 209, 255, 0, 113, 209, 255, 0, 91, 169, 255, 0, 1, 2, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 17, 34, 235, 0, 15, 45, 206, 0, 13, 40, 235, 0, 24, 74, 221, 0, 45, 138, 198, 0, 45, 138, 198, 0, 45, 138, 198, 0, 45, 138, 198, 0, 45, 138, 198, 0, 45, 138, 198, 0, 45, 138, 198, 0, 45, 138, 198, 0, 45, 138, 198, 0, 45, 138, 198, 0, 45, 138, 198, 0, 45, 138, 198, 0, 45, 138, 198, 0, 45, 138, 198, 0, 23, 72, 222, 0, 13, 40, 235, 0, 13, 40, 235, 0, 13, 40, 235, 0, 10, 30, 220
 ];
@@ -1361,6 +1363,8 @@ pub struct MakerUi {
 
     status: String,
     menu_icon: egui::TextureHandle,
+    branding_texture: egui::TextureHandle,
+    branding_aspect_ratio: f32,
     open: bool,
     preview_rect: egui::Rect,
     preview_height: Option<f32>,
@@ -1371,6 +1375,7 @@ pub struct MakerUi {
     pending_zoom: Option<f32>,
     pending_zoom_to_fit: bool,
     pending_menu_command: Option<&'static str>,
+    pending_tools_action: Option<&'static str>,
     canvas_rect: egui::Rect,
     parameter_wheel_rect: egui::Rect,
     pinpoint_next: HashMap<String, NodeId>,
@@ -1679,11 +1684,26 @@ impl MakerUi {
             egui::ColorImage::from_rgba_unmultiplied([22,22], &MAKER_MENU_ICON_RGBA),
             egui::TextureOptions::LINEAR,
         );
+        // Reuse the exact embedded Control Center logo and preserve its aspect ratio.
+        let branding_image = image::load_from_memory(MAKER_BRANDING_IMAGE)
+            .map_err(|error| format!("Unable to decode Screenshaver branding image: {error}"))?
+            .to_rgba8();
+        let (branding_width, branding_height) = branding_image.dimensions();
+        if branding_width == 0 || branding_height == 0 {
+            return Err("Screenshaver branding image has invalid dimensions".into());
+        }
+        let branding_aspect_ratio = branding_width as f32 / branding_height as f32;
+        let branding_texture = context.load_texture(
+            "screenshaver_maker_branding",
+            egui::ColorImage::from_rgba_unmultiplied(
+                [branding_width as usize, branding_height as usize], branding_image.as_raw()),
+            egui::TextureOptions::LINEAR,
+        );
         Ok(Self{inactive_tabs:Vec::new(),close_all_running:false,active_tab:0,project_tab_scroll_x:0.0,project_open:true,next_tab_epoch:1,context,painter,events:Vec::new(),pointer:egui::Pos2::ZERO,
             modifiers:egui::Modifiers::default(),start:Instant::now(),graph,project_name:"Untitled".into(),thumbnail_workspace:false,thumbnail_hash:None,project_dialog:None,examine_module:None,glsl_export_dialog:None,project_path:None,recent_projects,saved_graph_snapshot,unsaved_action:None,after_save_action:None,discard_approved:None,selected,parameter_popup:None,pending_source:None,dragging_wire:None,
-            status:"Click an output port, then a compatible input port".into(),menu_icon,open:true,
+            status:"Click an output port, then a compatible input port".into(),menu_icon,branding_texture,branding_aspect_ratio,open:true,
             preview_rect:egui::Rect::from_min_size(egui::pos2(210.0,600.0),egui::vec2(950.0,210.0)),
-            preview_height:maker_saved_preview_height(),preview_active:true,routes:Routes::new(),canvas_pan:egui::Vec2::ZERO,canvas_zoom:1.0,pending_zoom:None,pending_zoom_to_fit:false,pending_menu_command:None,canvas_rect:egui::Rect::NOTHING,parameter_wheel_rect:egui::Rect::NOTHING,pinpoint_next:HashMap::new(),pinpoint_target:None,pinpoint_pulse:None,pinpoint_boxes:BTreeMap::new(),workspace_min:[-1000.0,-1000.0],workspace_max:[2000.0,2000.0],routing_undo:Vec::new(),routing_redo:Vec::new(),candidate_mode:2,candidate_sort:0,max_wire_connections:saved_max_wires,min_wire_connections:saved_min_wires,max_enumerations:saved_max_enumerations,max_candidates:saved_max_candidates,
+            preview_height:maker_saved_preview_height(),preview_active:true,routes:Routes::new(),canvas_pan:egui::Vec2::ZERO,canvas_zoom:1.0,pending_zoom:None,pending_zoom_to_fit:false,pending_menu_command:None,pending_tools_action:None,canvas_rect:egui::Rect::NOTHING,parameter_wheel_rect:egui::Rect::NOTHING,pinpoint_next:HashMap::new(),pinpoint_target:None,pinpoint_pulse:None,pinpoint_boxes:BTreeMap::new(),workspace_min:[-1000.0,-1000.0],workspace_max:[2000.0,2000.0],routing_undo:Vec::new(),routing_redo:Vec::new(),candidate_mode:2,candidate_sort:0,max_wire_connections:saved_max_wires,min_wire_connections:saved_min_wires,max_enumerations:saved_max_enumerations,max_candidates:saved_max_candidates,
             candidates:Vec::new(),candidate_jobs:Vec::new(),candidate_epoch:0,candidate_base:None,
             candidate_selected:None,candidate_undo:Vec::new(),orphan_undo:Vec::new(),orphan_redo:Vec::new(),delete_project_confirm:false,orphan_restore_pending:false,candidate_notice:String::new(),library_expanded:HashMap::new(),library_search:String::new(),connection_search:None,reset_enumeration_confirm:false,candidate_evaluated:0,candidate_glsl_capable:0,candidate_rejections:0,candidate_uniform:0,candidate_glsl_errors:0,candidate_render_errors:0,analysis_request:None,analysis:None,pending_clipboard:None,pending_clipboard_is_glsl:false,pending_clipboard_is_module:false,pending_glsl_export:None})
     }
@@ -1701,6 +1721,8 @@ impl MakerUi {
         }
     }
     pub fn glsl_export_result(&mut self,message:String){self.candidate_notice=message;}
+    pub fn take_tools_action(&mut self)->Option<&'static str>{self.pending_tools_action.take()}
+    pub fn tools_status(&mut self,message:String){self.status=message;}
     pub fn take_clipboard_request(&mut self)->Option<String>{self.pending_clipboard.take()}
     pub fn clipboard_result(&mut self,result:Result<(),String>){
         let is_glsl=std::mem::take(&mut self.pending_clipboard_is_glsl);
@@ -2055,6 +2077,8 @@ impl MakerUi {
         let pending=&mut self.pending_source;
         let dragging_wire=&mut self.dragging_wire;
         let menu_icon=&self.menu_icon;
+        let branding_texture=&self.branding_texture;
+        let branding_aspect_ratio=self.branding_aspect_ratio;
         let status=&mut self.status;
         let open=&mut self.open;
         let preview_rect=&mut self.preview_rect;
@@ -2066,6 +2090,7 @@ impl MakerUi {
         let pending_zoom=&mut self.pending_zoom;
         let pending_zoom_to_fit=&mut self.pending_zoom_to_fit;
         let pending_menu_command=&mut self.pending_menu_command;
+        let pending_tools_action=&mut self.pending_tools_action;
         let canvas_rect=&mut self.canvas_rect;
         let pinpoint_next=&mut self.pinpoint_next;
         let pinpoint_target=&mut self.pinpoint_target;
@@ -2739,6 +2764,17 @@ impl MakerUi {
                             }
                         }
                     });
+                    ui.menu_button("Tools", |ui| {
+                        for (label, action) in [
+                            ("Start Screenshaver", "start_screenshaver"),
+                            ("Open Effects Manager", "open_control_center"),
+                        ] {
+                            if ui.button(label).clicked() {
+                                command = Some(action);
+                                ui.close_menu();
+                            }
+                        }
+                    });
                     ui.menu_button("View", |ui| {
                         for (label, action) in [
                             ("Zoom In    Ctrl++", "zoom_in"),
@@ -2868,6 +2904,8 @@ impl MakerUi {
                     }
                 }
                 match command {
+                    Some("start_screenshaver")=>{*pending_tools_action=Some("start_screenshaver");}
+                    Some("open_control_center")=>{*pending_tools_action=Some("open_control_center");}
                     Some("new")=>{requested_new_tab=true;}
                     Some("close_all")=>{requested_start_close_all=true;}
                     Some("close")=>{requested_close_tab=true;}
@@ -3002,7 +3040,15 @@ impl MakerUi {
                 ui.with_layer_id(egui::LayerId::new(
                     if project_dialog.is_some() || unsaved_action.is_some() { egui::Order::Background } else { egui::Order::Middle },
                     egui::Id::new("maker_inspector_interaction")), |ui| {
-                ui.heading("Inspector");ui.separator();
+                // Same 130 logical-point logo width as the Control Center header.
+                // Keep it at the top of the dock, above Shader Discovery.
+                let logo_width = 130.0_f32;
+                let logo_height = logo_width / branding_aspect_ratio.max(0.001);
+                ui.vertical_centered(|ui| {
+                    ui.add(egui::Image::new((branding_texture.id(), egui::vec2(logo_width, logo_height))));
+                    ui.heading("Shader Discovery");
+                });
+                ui.separator();
                 ui.horizontal(|ui|{
                     ui.selectable_value(candidate_mode,2,"Connections");
                     ui.selectable_value(candidate_mode,1,"Parameters");
@@ -3073,7 +3119,25 @@ impl MakerUi {
                         let scored=candidates.iter().filter(|c|c.motion.is_some() || c.motion_failed).count();
                         ui.small(format!("Motion analyzed: {scored} / {} retained (one candidate per frame)",candidates.len()));
                     }
-                    if ui.button(if *candidate_mode==2 {"Start Discovery"} else {"Discover parameters"}).clicked(){
+                    if *candidate_mode==2 {
+                        if ui.button("Reset Enumeration").on_hover_text("Reset only the checkpoint for the selected minimum/maximum wire range. Other ranges and retained thumbnails are preserved.").clicked(){
+                            *reset_enumeration_confirm=true;
+                        }
+                    }
+                    ui.add_space(14.0);
+                    let start_discovery_clicked = ui.horizontal(|ui| {
+                        let button_width = 210.0;
+                        ui.add_space(((ui.available_width() - button_width) * 0.5).max(0.0));
+                        ui.add_sized(
+                            [button_width, 42.0],
+                            egui::Button::new(
+                                egui::RichText::new(if *candidate_mode == 2 { "Start Discovery" } else { "Discover parameters" })
+                                    .size(18.0)
+                                    .strong(),
+                            ),
+                        ).clicked()
+                    }).inner;
+                    if start_discovery_clicked {
                         candidates.clear();*candidate_epoch=candidate_epoch.wrapping_add(1);candidate_jobs.clear();candidate_undo.clear();*analysis_request=None;*analysis=None;*candidate_selected=None;
                         *candidate_base=Some(graph.clone());
                         *connection_search=None;*candidate_evaluated=0;*candidate_glsl_capable=0;*candidate_rejections=0;*candidate_uniform=0;*candidate_glsl_errors=0;*candidate_render_errors=0;
@@ -3092,11 +3156,6 @@ impl MakerUi {
                                 connection_candidate:false,
                             }).collect();
                             *candidate_notice=format!("Evaluating {count} parameter combinations...");
-                        }
-                    }
-                    if *candidate_mode==2 {
-                        if ui.button("Reset Enumeration").on_hover_text("Reset only the checkpoint for the selected minimum/maximum wire range. Other ranges and retained thumbnails are preserved.").clicked(){
-                            *reset_enumeration_confirm=true;
                         }
                     }
                     if connection_search.is_some() || !candidate_jobs.is_empty(){

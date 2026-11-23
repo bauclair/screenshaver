@@ -3132,7 +3132,7 @@ impl EditWindowOverlay {
 
 
         let editor_title =
-            crate::manage_localization::runtime_text("editor.screenshaver_control_center_esc_or_q_to_exit");
+            crate::manage_localization::runtime_text("edit.control_center");
 
 
         let bulk_edit_mode =
@@ -3393,7 +3393,7 @@ impl EditWindowOverlay {
                             )
                             .show(context, |ui| {
                                 ui.horizontal(|ui| {
-                                    ui.label(egui::RichText::new(&editor_title).strong());
+                                    ui.label(egui::RichText::new(&editor_title).heading());
                                     ui.with_layout(
                                         egui::Layout::right_to_left(egui::Align::Center),
                                         |ui| {

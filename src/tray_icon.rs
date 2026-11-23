@@ -21,6 +21,7 @@ pub enum TrayCommand {
     Edit,
     EditWallpaper,
     EditWindowshader,
+    Maker,
     Restart,
     Stop,
 }
@@ -497,6 +498,14 @@ impl Tray for ScreenshaverTray {
                 enabled: self.status.wallpaper.active_windowshader().is_some(),
                 activate: Box::new(|tray: &mut Self| {
                     tray.send_command(TrayCommand::EditWindowshader);
+                }),
+                ..Default::default()
+            }.into(),
+            StandardItem {
+                label: "Maker".into(),
+                icon_name: "applications-graphics".into(),
+                activate: Box::new(|tray: &mut Self| {
+                    tray.send_command(TrayCommand::Maker);
                 }),
                 ..Default::default()
             }.into(),

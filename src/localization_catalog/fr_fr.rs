@@ -339,7 +339,7 @@ pub(crate) const TRANSLATIONS: &[FactoryTranslation] = &[
     FactoryTranslation {
         locale: "fr-FR",
         key: "backup.restore.success",
-        translated_text: "Sauvegarde restaurée avec succès. La base de données et les shaders gérés restaurés ont réussi la validation finale. Fermez le Centre de contrôle afin que Screenshaver puisse recharger la configuration restaurée.",
+        translated_text: "Sauvegarde restaurée avec succès. La base de données et les shaders gérés restaurés ont réussi la validation finale. Fermez le Gestionnaire des effets afin que Screenshaver puisse recharger la configuration restaurée.",
     },
     FactoryTranslation {
         locale: "fr-FR",
@@ -3325,7 +3325,7 @@ pub(crate) const TRANSLATIONS: &[FactoryTranslation] = &[
     FactoryTranslation {
         locale: "fr-FR",
         key: "edit.control_center",
-        translated_text: "Centre de contrôle Screenshaver",
+        translated_text: "Gestionnaire des effets GLSL Screenshaver",
     },
     FactoryTranslation {
         locale: "fr-FR",
@@ -3455,7 +3455,7 @@ pub(crate) const TRANSLATIONS: &[FactoryTranslation] = &[
     FactoryTranslation {
         locale: "fr-FR",
         key: "edit.unable_to_create_control_center_state_folder",
-        translated_text: "Impossible de créer le dossier d’état du Centre de contrôle {value1} : {value2}",
+        translated_text: "Impossible de créer le dossier d’état du Gestionnaire des effets {value1} : {value2}",
     },
     FactoryTranslation {
         locale: "fr-FR",
@@ -3555,7 +3555,7 @@ pub(crate) const TRANSLATIONS: &[FactoryTranslation] = &[
     FactoryTranslation {
         locale: "fr-FR",
         key: "edit.unable_to_restore_control_center_fullscreen_state",
-        translated_text: "Impossible de restaurer l’état plein écran du Centre de contrôle Screenshaver : {value1}",
+        translated_text: "Impossible de restaurer l’état plein écran du Gestionnaire des effets Screenshaver : {value1}",
     },
     FactoryTranslation {
         locale: "fr-FR",
@@ -3575,12 +3575,12 @@ pub(crate) const TRANSLATIONS: &[FactoryTranslation] = &[
     FactoryTranslation {
         locale: "fr-FR",
         key: "edit.unable_to_serialize_control_center_state",
-        translated_text: "Impossible de sérialiser l’état du Centre de contrôle : {value1}",
+        translated_text: "Impossible de sérialiser l’état du Gestionnaire des effets : {value1}",
     },
     FactoryTranslation {
         locale: "fr-FR",
         key: "edit.unable_to_write_control_center_state",
-        translated_text: "Impossible d’écrire l’état du Centre de contrôle {value1} : {value2}",
+        translated_text: "Impossible d’écrire l’état du Gestionnaire des effets {value1} : {value2}",
     },
     FactoryTranslation {
         locale: "fr-FR",
@@ -3705,22 +3705,22 @@ pub(crate) const TRANSLATIONS: &[FactoryTranslation] = &[
     FactoryTranslation {
         locale: "fr-FR",
         key: "assign_shader_policies.completion_message.one_policy_one_shader",
-        translated_text: "Screenshaver a créé {policy_count} politique de shader pour {shader_count} shader avec \"{assignment}\".\\n\\nVous pouvez consulter ou modifier les politiques de shader à tout moment en exécutant :\\n\\nscreenshaver --control\\n\\nCette commande ouvre le Centre de contrôle Screenshaver.",
+        translated_text: "Screenshaver a créé {policy_count} politique de shader pour {shader_count} shader avec \"{assignment}\".\\n\\nVous pouvez consulter ou modifier les politiques de shader à tout moment en exécutant :\\n\\nscreenshaver --effects\\n\\nCette commande ouvre le Gestionnaire des effets Screenshaver.",
     },
     FactoryTranslation {
         locale: "fr-FR",
         key: "assign_shader_policies.completion_message.one_policy_many_shaders",
-        translated_text: "Screenshaver a créé {policy_count} politique de shader pour {shader_count} shaders avec \"{assignment}\".\\n\\nVous pouvez consulter ou modifier les politiques de shader à tout moment en exécutant :\\n\\nscreenshaver --control\\n\\nCette commande ouvre le Centre de contrôle Screenshaver.",
+        translated_text: "Screenshaver a créé {policy_count} politique de shader pour {shader_count} shaders avec \"{assignment}\".\\n\\nVous pouvez consulter ou modifier les politiques de shader à tout moment en exécutant :\\n\\nscreenshaver --effects\\n\\nCette commande ouvre le Gestionnaire des effets Screenshaver.",
     },
     FactoryTranslation {
         locale: "fr-FR",
         key: "assign_shader_policies.completion_message.many_policies_one_shader",
-        translated_text: "Screenshaver a créé {policy_count} politiques de shader pour {shader_count} shader avec \"{assignment}\".\\n\\nVous pouvez consulter ou modifier les politiques de shader à tout moment en exécutant :\\n\\nscreenshaver --control\\n\\nCette commande ouvre le Centre de contrôle Screenshaver.",
+        translated_text: "Screenshaver a créé {policy_count} politiques de shader pour {shader_count} shader avec \"{assignment}\".\\n\\nVous pouvez consulter ou modifier les politiques de shader à tout moment en exécutant :\\n\\nscreenshaver --effects\\n\\nCette commande ouvre le Gestionnaire des effets Screenshaver.",
     },
     FactoryTranslation {
         locale: "fr-FR",
         key: "assign_shader_policies.completion_message.many_policies_many_shaders",
-        translated_text: "Screenshaver a créé {policy_count} politiques de shader pour {shader_count} shaders avec \"{assignment}\".\\n\\nVous pouvez consulter ou modifier les politiques de shader à tout moment en exécutant :\\n\\nscreenshaver --control\\n\\nCette commande ouvre le Centre de contrôle Screenshaver.",
+        translated_text: "Screenshaver a créé {policy_count} politiques de shader pour {shader_count} shaders avec \"{assignment}\".\\n\\nVous pouvez consulter ou modifier les politiques de shader à tout moment en exécutant :\\n\\nscreenshaver --effects\\n\\nCette commande ouvre le Gestionnaire des effets Screenshaver.",
     },
     FactoryTranslation {
         locale: "fr-FR",
@@ -4310,17 +4310,17 @@ pub(crate) const TRANSLATIONS: &[FactoryTranslation] = &[
     FactoryTranslation {
         locale: "fr-FR",
         key: "editor.unable_to_decode_embedded_control_center_branding_image",
-        translated_text: "Impossible de décoder l’image de marque intégrée du Centre de contrôle : {value1}",
+        translated_text: "Impossible de décoder l’image de marque intégrée du Gestionnaire des effets : {value1}",
     },
     FactoryTranslation {
         locale: "fr-FR",
         key: "editor.embedded_control_center_branding_image_has_invalid_dimensions",
-        translated_text: "L’image de marque intégrée du Centre de contrôle présente des dimensions non valides.",
+        translated_text: "L’image de marque intégrée du Gestionnaire des effets présente des dimensions non valides.",
     },
     FactoryTranslation {
         locale: "fr-FR",
         key: "editor.screenshaver_control_center_esc_or_q_to_exit",
-        translated_text: "Centre de contrôle Screenshaver (Échap ou Q pour quitter)",
+        translated_text: "Gestionnaire des effets Screenshaver (Échap ou Q pour quitter)",
     },
     FactoryTranslation {
         locale: "fr-FR",
@@ -4615,7 +4615,7 @@ pub(crate) const TRANSLATIONS: &[FactoryTranslation] = &[
     FactoryTranslation {
         locale: "fr-FR",
         key: "editor.the_screenshaver_control_center_has_unsaved_changes",
-        translated_text: "Le Centre de contrôle Screenshaver contient des modifications non enregistrées.",
+        translated_text: "Le Gestionnaire des effets Screenshaver contient des modifications non enregistrées.",
     },
     FactoryTranslation {
         locale: "fr-FR",

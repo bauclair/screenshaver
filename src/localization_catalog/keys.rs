@@ -358,7 +358,7 @@ pub(crate) const TRANSLATION_KEYS: &[FactoryTranslationKey] = &[
     },
     FactoryTranslationKey {
         key: "backup.restore.success",
-        english_text: "Backup restored successfully. The restored database and managed shaders passed final validation. Close the Control Center so Screenshaver can reload the restored configuration.",
+        english_text: "Backup restored successfully. The restored database and managed shaders passed final validation. Close the Effects Manager so Screenshaver can reload the restored configuration.",
         translator_context: "Restore from Backup user-facing message.",
     },
     FactoryTranslationKey {
@@ -3507,7 +3507,7 @@ pub(crate) const TRANSLATION_KEYS: &[FactoryTranslationKey] = &[
     },
     FactoryTranslationKey {
         key: "edit.control_center",
-        english_text: "Screenshaver Control Center",
+        english_text: "Screenshaver GLSL Effects Manager",
         translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
     },
     FactoryTranslationKey {
@@ -3637,7 +3637,7 @@ pub(crate) const TRANSLATION_KEYS: &[FactoryTranslationKey] = &[
     },
     FactoryTranslationKey {
         key: "edit.unable_to_create_control_center_state_folder",
-        english_text: "Unable to create Control Center state folder {value1}: {value2}",
+        english_text: "Unable to create Effects Manager state folder {value1}: {value2}",
         translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
     },
     FactoryTranslationKey {
@@ -3737,7 +3737,7 @@ pub(crate) const TRANSLATION_KEYS: &[FactoryTranslationKey] = &[
     },
     FactoryTranslationKey {
         key: "edit.unable_to_restore_control_center_fullscreen_state",
-        english_text: "Unable to restore Screenshaver Control Center fullscreen state: {value1}",
+        english_text: "Unable to restore Screenshaver Effects Manager fullscreen state: {value1}",
         translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
     },
     FactoryTranslationKey {
@@ -3757,12 +3757,12 @@ pub(crate) const TRANSLATION_KEYS: &[FactoryTranslationKey] = &[
     },
     FactoryTranslationKey {
         key: "edit.unable_to_serialize_control_center_state",
-        english_text: "Unable to serialize Control Center state: {value1}",
+        english_text: "Unable to serialize Effects Manager state: {value1}",
         translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
     },
     FactoryTranslationKey {
         key: "edit.unable_to_write_control_center_state",
-        english_text: "Unable to write Control Center state {value1}: {value2}",
+        english_text: "Unable to write Effects Manager state {value1}: {value2}",
         translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
     },
     FactoryTranslationKey {
@@ -3888,23 +3888,23 @@ pub(crate) const TRANSLATION_KEYS: &[FactoryTranslationKey] = &[
     },
     FactoryTranslationKey {
         key: "assign_shader_policies.completion_message.one_policy_one_shader",
-        english_text: "Screenshaver created {policy_count} shader policy for {shader_count} shader using \"{assignment}\".\n\nYou can review or change shader policies at any time by running:\n\nscreenshaver --control\n\nThis opens the Screenshaver Control Center.",
-        translator_context: "Completion message for one created policy and one shader. Counts are numeric; {assignment} is localized assignment-choice text; the command screenshaver --control must remain unchanged.",
+        english_text: "Screenshaver created {policy_count} shader policy for {shader_count} shader using \"{assignment}\".\n\nYou can review or change shader policies at any time by running:\n\nscreenshaver --effects\n\nThis opens the Screenshaver Effects Manager.",
+        translator_context: "Completion message for one created policy and one shader. Counts are numeric; {assignment} is localized assignment-choice text; the command screenshaver --effects must remain unchanged.",
     },
     FactoryTranslationKey {
         key: "assign_shader_policies.completion_message.one_policy_many_shaders",
-        english_text: "Screenshaver created {policy_count} shader policy for {shader_count} shaders using \"{assignment}\".\n\nYou can review or change shader policies at any time by running:\n\nscreenshaver --control\n\nThis opens the Screenshaver Control Center.",
-        translator_context: "Completion message for one created policy and multiple shaders. Counts are numeric; {assignment} is localized assignment-choice text; the command screenshaver --control must remain unchanged.",
+        english_text: "Screenshaver created {policy_count} shader policy for {shader_count} shaders using \"{assignment}\".\n\nYou can review or change shader policies at any time by running:\n\nscreenshaver --effects\n\nThis opens the Screenshaver Effects Manager.",
+        translator_context: "Completion message for one created policy and multiple shaders. Counts are numeric; {assignment} is localized assignment-choice text; the command screenshaver --effects must remain unchanged.",
     },
     FactoryTranslationKey {
         key: "assign_shader_policies.completion_message.many_policies_one_shader",
-        english_text: "Screenshaver created {policy_count} shader policies for {shader_count} shader using \"{assignment}\".\n\nYou can review or change shader policies at any time by running:\n\nscreenshaver --control\n\nThis opens the Screenshaver Control Center.",
-        translator_context: "Completion message for multiple created policies and one shader. Counts are numeric; {assignment} is localized assignment-choice text; the command screenshaver --control must remain unchanged.",
+        english_text: "Screenshaver created {policy_count} shader policies for {shader_count} shader using \"{assignment}\".\n\nYou can review or change shader policies at any time by running:\n\nscreenshaver --effects\n\nThis opens the Screenshaver Effects Manager.",
+        translator_context: "Completion message for multiple created policies and one shader. Counts are numeric; {assignment} is localized assignment-choice text; the command screenshaver --effects must remain unchanged.",
     },
     FactoryTranslationKey {
         key: "assign_shader_policies.completion_message.many_policies_many_shaders",
-        english_text: "Screenshaver created {policy_count} shader policies for {shader_count} shaders using \"{assignment}\".\n\nYou can review or change shader policies at any time by running:\n\nscreenshaver --control\n\nThis opens the Screenshaver Control Center.",
-        translator_context: "Completion message for multiple created policies and multiple shaders. Counts are numeric; {assignment} is localized assignment-choice text; the command screenshaver --control must remain unchanged.",
+        english_text: "Screenshaver created {policy_count} shader policies for {shader_count} shaders using \"{assignment}\".\n\nYou can review or change shader policies at any time by running:\n\nscreenshaver --effects\n\nThis opens the Screenshaver Effects Manager.",
+        translator_context: "Completion message for multiple created policies and multiple shaders. Counts are numeric; {assignment} is localized assignment-choice text; the command screenshaver --effects must remain unchanged.",
     },
     FactoryTranslationKey {
         key: "assign_shader_policies.error.prepare_query",
@@ -4542,17 +4542,17 @@ pub(crate) const TRANSLATION_KEYS: &[FactoryTranslationKey] = &[
     },
     FactoryTranslationKey {
         key: "editor.unable_to_decode_embedded_control_center_branding_image",
-        english_text: "Unable to decode embedded Control Center branding image: {value1}",
+        english_text: "Unable to decode embedded Effects Manager branding image: {value1}",
         translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
     },
     FactoryTranslationKey {
         key: "editor.embedded_control_center_branding_image_has_invalid_dimensions",
-        english_text: "Embedded Control Center branding image has invalid dimensions.",
+        english_text: "Embedded Effects Manager branding image has invalid dimensions.",
         translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
     },
     FactoryTranslationKey {
         key: "editor.screenshaver_control_center_esc_or_q_to_exit",
-        english_text: "Screenshaver Control Center (ESC or Q to exit)",
+        english_text: "Screenshaver Effects Manager (ESC or Q to exit)",
         translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
     },
     FactoryTranslationKey {
@@ -4847,7 +4847,7 @@ pub(crate) const TRANSLATION_KEYS: &[FactoryTranslationKey] = &[
     },
     FactoryTranslationKey {
         key: "editor.the_screenshaver_control_center_has_unsaved_changes",
-        english_text: "The Screenshaver Control Center has unsaved changes.",
+        english_text: "The Screenshaver Effects Manager has unsaved changes.",
         translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
     },
     FactoryTranslationKey {

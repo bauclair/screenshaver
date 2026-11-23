@@ -10,7 +10,7 @@ pub enum Pipeline { Screensaver, Wallpaper, Windowshader, ControlCenter }
 impl Pipeline {
     pub const ALL: [Self; 4] = [Self::Screensaver, Self::Wallpaper, Self::Windowshader, Self::ControlCenter];
     pub fn name(self) -> &'static str {
-        match self { Self::Screensaver => "Screensaver", Self::Wallpaper => "Wallpaper", Self::Windowshader => "Windowshader", Self::ControlCenter => "Control Center" }
+        match self { Self::Screensaver => "Screensaver", Self::Wallpaper => "Wallpaper", Self::Windowshader => "Windowshader", Self::ControlCenter => "Effects Manager" }
     }
     fn key(self) -> &'static str {
         match self { Self::Screensaver => "screensaver", Self::Wallpaper => "wallpaper", Self::Windowshader => "windowshader", Self::ControlCenter => "control-center" }

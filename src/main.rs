@@ -249,13 +249,13 @@ fn main() {
                             let executable = match std::env::current_exe() {
                                 Ok(path) => path,
                                 Err(error) => {
-                                    eprintln!("[MAKER] Cannot locate executable for Control Center: {error}");
+                                    eprintln!("[MAKER] Cannot locate executable for Effects Manager: {error}");
                                     return;
                                 }
                             };
                             if let Err(error) = std::process::Command::new(executable)
-                                .arg("--control").spawn() {
-                                eprintln!("[MAKER] Control Center launch failed: {error}");
+                                .arg("--effects").spawn() {
+                                eprintln!("[MAKER] Effects Manager launch failed: {error}");
                             }
                         }
                         Ok(false) => {}
@@ -1892,7 +1892,7 @@ Screen locking will be disabled for this Screenshaver launch only; your saved co
         );
 
         eprintln!(
-            "Run \"screenshaver --control\" to configure rendering targets."
+            "Run \"screenshaver --effects\" to configure rendering targets."
         );
 
 
@@ -3052,15 +3052,31 @@ Screensaver and wallpaper functionality will remain available. Screen locking mu
             }
 
 
+            Ok(crate::tray_icon::TrayCommand::Maker) => {
+                // Maker is a separate coordinated UI process. Keep the resident
+                // Screenshaver runtime and its tray icon running.
+                match std::env::current_exe() {
+                    Ok(executable) => {
+                        match std::process::Command::new(executable).arg("--maker").spawn() {
+                            Ok(_) => crate::logger::information(&logfile, "[TRAY] Maker launch requested"),
+                            Err(error) => crate::logger::warning(&logfile,
+                                &format!("[TRAY] Unable to launch Maker: {error}")),
+                        }
+                    }
+                    Err(error) => crate::logger::warning(&logfile,
+                        &format!("[TRAY] Unable to locate executable for Maker: {error}")),
+                }
+            }
+
             Ok(command @ (crate::tray_icon::TrayCommand::Edit | crate::tray_icon::TrayCommand::EditWallpaper | crate::tray_icon::TrayCommand::EditWindowshader)) => {
 
                 println!(
-                    "[TRAY] Control Center requested."
+                    "[TRAY] Effects Manager requested."
                 );
 
                 crate::logger::information(
                     &logfile,
-                    "[TRAY] Control Center requested",
+                    "[TRAY] Effects Manager requested",
                 );
 
                 let active_policy = match command {
@@ -3079,7 +3095,7 @@ Screensaver and wallpaper functionality will remain available. Screen locking mu
                 let edit_result =
                     if !wallpaper_pause_acquired {
                         Err(
-                            "Timed out waiting for the active wallpaper renderer to acknowledge suspension; Control Center was not opened."
+                            "Timed out waiting for the active wallpaper renderer to acknowledge suspension; Effects Manager was not opened."
                                 .to_string()
                         )
                     } else {
@@ -3145,7 +3161,7 @@ Screensaver and wallpaper functionality will remain available. Screen locking mu
 
                             crate::logger::information(
                                 &logfile,
-                                "[TRAY] Reloaded configuration after Control Center closed",
+                                "[TRAY] Reloaded configuration after Effects Manager closed",
                             );
                         }
 
@@ -3171,20 +3187,20 @@ Screensaver and wallpaper functionality will remain available. Screen locking mu
                     Ok(()) => {
                         crate::logger::information(
                             &logfile,
-                            "[TRAY] Control Center closed",
+                            "[TRAY] Effects Manager closed",
                         );
                     }
 
                     Err(error) => {
                         eprintln!(
-                            "[TRAY] Unable to open Control Center: {}",
+                            "[TRAY] Unable to open Effects Manager: {}",
                             error
                         );
 
                         crate::logger::error(
                             &logfile,
                             &format!(
-                                "[TRAY] Unable to open Control Center: {}",
+                                "[TRAY] Unable to open Effects Manager: {}",
                                 error,
                             ),
                         );
@@ -3463,6 +3479,12 @@ Screensaver and wallpaper functionality will remain available. Screen locking mu
                                                         pending_restart = true;
                                                         crate::logger::information(&logfile,
                                                             "[MATE LOCK] Tray Restart queued until native unlock");
+                                                    }
+                                                    Ok(crate::tray_icon::TrayCommand::Maker) => {
+                                                        // Defer UI startup until native screen unlock.
+                                                        if !pending_stop {
+                                                            deferred_tray_command = Some(crate::tray_icon::TrayCommand::Maker);
+                                                        }
                                                     }
                                                     Ok(command @ (crate::tray_icon::TrayCommand::Edit
                                                         | crate::tray_icon::TrayCommand::EditWallpaper
