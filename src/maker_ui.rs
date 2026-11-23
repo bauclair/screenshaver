@@ -1372,6 +1372,7 @@ pub struct MakerUi {
     pending_zoom_to_fit: bool,
     pending_menu_command: Option<&'static str>,
     canvas_rect: egui::Rect,
+    parameter_wheel_rect: egui::Rect,
     pinpoint_next: HashMap<String, NodeId>,
     pinpoint_target: Option<NodeId>,
     pinpoint_pulse: Option<(NodeId, Instant)>,
@@ -1682,7 +1683,7 @@ impl MakerUi {
             modifiers:egui::Modifiers::default(),start:Instant::now(),graph,project_name:"Untitled".into(),thumbnail_workspace:false,thumbnail_hash:None,project_dialog:None,examine_module:None,glsl_export_dialog:None,project_path:None,recent_projects,saved_graph_snapshot,unsaved_action:None,after_save_action:None,discard_approved:None,selected,parameter_popup:None,pending_source:None,dragging_wire:None,
             status:"Click an output port, then a compatible input port".into(),menu_icon,open:true,
             preview_rect:egui::Rect::from_min_size(egui::pos2(210.0,600.0),egui::vec2(950.0,210.0)),
-            preview_height:maker_saved_preview_height(),preview_active:true,routes:Routes::new(),canvas_pan:egui::Vec2::ZERO,canvas_zoom:1.0,pending_zoom:None,pending_zoom_to_fit:false,pending_menu_command:None,canvas_rect:egui::Rect::NOTHING,pinpoint_next:HashMap::new(),pinpoint_target:None,pinpoint_pulse:None,pinpoint_boxes:BTreeMap::new(),workspace_min:[-1000.0,-1000.0],workspace_max:[2000.0,2000.0],routing_undo:Vec::new(),routing_redo:Vec::new(),candidate_mode:2,candidate_sort:0,max_wire_connections:saved_max_wires,min_wire_connections:saved_min_wires,max_enumerations:saved_max_enumerations,max_candidates:saved_max_candidates,
+            preview_height:maker_saved_preview_height(),preview_active:true,routes:Routes::new(),canvas_pan:egui::Vec2::ZERO,canvas_zoom:1.0,pending_zoom:None,pending_zoom_to_fit:false,pending_menu_command:None,canvas_rect:egui::Rect::NOTHING,parameter_wheel_rect:egui::Rect::NOTHING,pinpoint_next:HashMap::new(),pinpoint_target:None,pinpoint_pulse:None,pinpoint_boxes:BTreeMap::new(),workspace_min:[-1000.0,-1000.0],workspace_max:[2000.0,2000.0],routing_undo:Vec::new(),routing_redo:Vec::new(),candidate_mode:2,candidate_sort:0,max_wire_connections:saved_max_wires,min_wire_connections:saved_min_wires,max_enumerations:saved_max_enumerations,max_candidates:saved_max_candidates,
             candidates:Vec::new(),candidate_jobs:Vec::new(),candidate_epoch:0,candidate_base:None,
             candidate_selected:None,candidate_undo:Vec::new(),orphan_undo:Vec::new(),orphan_redo:Vec::new(),delete_project_confirm:false,orphan_restore_pending:false,candidate_notice:String::new(),library_expanded:HashMap::new(),library_search:String::new(),connection_search:None,reset_enumeration_confirm:false,candidate_evaluated:0,candidate_glsl_capable:0,candidate_rejections:0,candidate_uniform:0,candidate_glsl_errors:0,candidate_render_errors:0,analysis_request:None,analysis:None,pending_clipboard:None,pending_clipboard_is_glsl:false,pending_clipboard_is_module:false,pending_glsl_export:None})
     }
@@ -1899,7 +1900,8 @@ impl MakerUi {
                 self.events.push(egui::Event::PointerButton { pos: self.pointer, button, pressed, modifiers: self.modifiers });
             }
             Event::MouseWheel { x, y, .. } => {
-                if self.canvas_rect.contains(self.pointer) && self.examine_module.is_none() {
+                if self.canvas_rect.contains(self.pointer) && self.examine_module.is_none()
+                    && !(self.parameter_popup.is_some() && self.parameter_wheel_rect.contains(self.pointer)) {
                     let delta = if self.modifiers.shift { *y as f32 + *x as f32 }
                                 else { *y as f32 };
                     let axis=if self.modifiers.shift {0} else {1};
@@ -1950,6 +1952,8 @@ impl MakerUi {
                         Keycode::X if self.modifiers.shift => self.pending_menu_command=Some("export_glsl_clipboard"),
                         Keycode::X => self.pending_menu_command=Some("export_glsl"),
                         Keycode::D if self.modifiers.shift => self.pending_menu_command=Some("delete"),
+                        Keycode::Comma if self.modifiers.shift => self.pending_menu_command=Some("optimize"),
+                        Keycode::Period if self.modifiers.shift => self.pending_menu_command=Some("remove_orphans"),
                         Keycode::Q if !self.modifiers.shift => self.pending_menu_command=Some("exit"),
                         _=>{}
                     }
@@ -2047,6 +2051,7 @@ impl MakerUi {
         let graph=&mut self.graph;
         let selected=&mut self.selected;
         let parameter_popup=&mut self.parameter_popup;
+        let parameter_wheel_rect=&mut self.parameter_wheel_rect;
         let pending=&mut self.pending_source;
         let dragging_wire=&mut self.dragging_wire;
         let menu_icon=&self.menu_icon;
@@ -2720,10 +2725,10 @@ impl MakerUi {
                     });
                     ui.menu_button("Edit", |ui| {
                         for (label, action, enabled) in [
-                            ("Remove Orphan Modules", "remove_orphans", !graph.orphan_ids().is_empty()),
+                            ("Remove Orphan Modules    Ctrl+>", "remove_orphans", !graph.orphan_ids().is_empty()),
                             ("Undo Remove", "undo_remove", !orphan_undo.is_empty()),
                             ("Redo Remove", "redo_remove", !orphan_redo.is_empty()),
-                            ("Optimize Routing", "optimize", true),
+                            ("Optimize Routing    Ctrl+<", "optimize", true),
                             ("Undo Routing", "undo_routing", !routing_undo.is_empty()),
                             ("Redo Routing", "redo_routing", !routing_redo.is_empty()),
                             ("Center Graph", "center", true),
@@ -4175,6 +4180,7 @@ impl MakerUi {
             if let Some(id) = *parameter_popup {
                 if graph.node(id).is_none() { *parameter_popup = None; }
             }
+            *parameter_wheel_rect = egui::Rect::NOTHING;
             if let Some(id) = *parameter_popup {
                 if let Some((anchor_id, anchor_pos)) = editor_anchor {
                     if anchor_id == id {
@@ -4192,7 +4198,7 @@ impl MakerUi {
                         let y = anchor_pos.y;
                         let room_below = (bounds.bottom() - y - 8.0).max(0.0);
                         let visible_height = target_height.min(room_below);
-                        egui::Area::new(egui::Id::new(("maker_parameter_area", id)))
+                        let parameter_area = egui::Area::new(egui::Id::new(("maker_parameter_area", id)))
                             .order(egui::Order::Foreground)
                             .movable(false)
                             .interactable(ctx.input(|i| {
@@ -4234,6 +4240,7 @@ impl MakerUi {
                                         });
                                 });
                             });
+                        *parameter_wheel_rect = parameter_area.response.rect.intersect(bounds);
                     }
                 }
             }
