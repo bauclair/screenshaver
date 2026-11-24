@@ -1,0 +1,81 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.logarithmic_radial_field_3d",
+  "name": "Logarithmic Radial Field 3D",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "description": "Evaluate a radial power multiplied by logarithmic growth around a configurable center.",
+  "uses": "Nonlinear density distributions, spatial attenuation and procedural volumetric fields.",
+  "notes": "Non-SDF field. Field 3D samples the Radial Field output. Positive exponent ensures a defined value at the center.",
+  "header_color": "#557C9C",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "semantic_role": "position3d",
+      "default": "vec3(0.0)"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec3",
+      "semantic_role": "",
+      "default": "vec3(0.0)"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "radial_field",
+      "name": "Radial Field",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "radius",
+      "name": "Radial Distance",
+      "type": "float",
+      "semantic_role": "distance"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "amplitude",
+      "name": "Amplitude",
+      "type": "float",
+      "default": 1,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "exponent",
+      "name": "Radial Exponent",
+      "type": "float",
+      "default": 1,
+      "min": 0.25,
+      "max": 4
+    },
+    {
+      "id": "scale",
+      "name": "Logarithmic Scale",
+      "type": "float",
+      "default": 2,
+      "min": 0.01,
+      "max": 20
+    },
+    {
+      "id": "bias",
+      "name": "Bias",
+      "type": "float",
+      "default": 0,
+      "min": -10,
+      "max": 10
+    }
+  ],
+  "helpers": "float maker_lrf_value(vec3 p,vec3 c,float amplitude,float exponent,float scale,float bias){\n float r=length(p-c);\n if(r==0.0)return bias;\n return amplitude*pow(r,max(exponent,0.001))*log(1.0+max(scale,0.0)*r)+bias;\n}",
+  "glsl_outputs": {
+    "radial_field": "maker_lrf_value({position},{center},{amplitude},{exponent},{scale},{bias})",
+    "radius": "length({position}-{center})"
+  }
+}

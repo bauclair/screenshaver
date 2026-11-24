@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.coordinate_rotation_3d",
+  "name": "Coordinate Rotation 3D",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "description": "Applies right-handed rotations directly to a three-dimensional coordinate.",
+  "uses": "Animated sampling coordinates, spherical projections and procedural geometry.",
+  "notes": "Angles are degrees; animation speeds are degrees per second. Fixed rotation order X then Y then Z. Rotates around the origin.",
+  "header_color": "#557C9C",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "semantic_role": "position3d",
+      "default": "vec3(maker_uv,0.0)"
+    },
+    {
+      "id": "time",
+      "name": "Time",
+      "type": "float",
+      "semantic_role": "time",
+      "default": "u_time"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "rotated",
+      "name": "Rotated Position",
+      "type": "vec3",
+      "semantic_role": "position3d"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "angle_x",
+      "name": "X Rotation",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "angle_y",
+      "name": "Y Rotation",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "angle_z",
+      "name": "Z Rotation",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "speed_x",
+      "name": "X Animation Speed",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "speed_y",
+      "name": "Y Animation Speed",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "speed_z",
+      "name": "Z Animation Speed",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    }
+  ],
+  "helpers": "vec3 maker_coordinate_rotation_xyz(vec3 p,vec3 angles){\n vec3 c=cos(angles),s=sin(angles);\n p=vec3(p.x,c.x*p.y-s.x*p.z,s.x*p.y+c.x*p.z);\n p=vec3(c.y*p.x+s.y*p.z,p.y,-s.y*p.x+c.y*p.z);\n return vec3(c.z*p.x-s.z*p.y,s.z*p.x+c.z*p.y,p.z);\n}",
+  "glsl": "maker_coordinate_rotation_xyz({position},radians(vec3({angle_x},{angle_y},{angle_z})+{time}*vec3({speed_x},{speed_y},{speed_z})))"
+}

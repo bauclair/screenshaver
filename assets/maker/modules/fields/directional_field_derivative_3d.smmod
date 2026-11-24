@@ -1,0 +1,91 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.directional_field_derivative_3d",
+  "name": "Directional Field Derivative 3D",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "description": "Measure the signed spatial rate of change of a connected scalar field along a normalized direction.",
+  "uses": "Procedural lighting, density transitions and directional field analysis.",
+  "notes": "Requires a callable Field 3D connection. A zero direction yields zero derivative. Sampling distance is in coordinate units. All three samples are evaluated regardless of mode.",
+  "header_color": "#557C9C",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "field",
+      "name": "Scalar Field",
+      "type": "field3d",
+      "semantic_role": ""
+    },
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "semantic_role": "position3d",
+      "default": "vec3(0.0)"
+    },
+    {
+      "id": "direction",
+      "name": "Direction",
+      "type": "vec3",
+      "semantic_role": "direction3d",
+      "default": "vec3(1.0,0.0,0.0)"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "derivative",
+      "name": "Directional Derivative",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "absolute",
+      "name": "Absolute Derivative",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "value",
+      "name": "Field Value",
+      "type": "float",
+      "semantic_role": ""
+    }
+  ],
+  "parameters": [
+    {
+      "id": "epsilon",
+      "name": "Sampling Distance",
+      "type": "float",
+      "default": 0.003,
+      "min": 0.0001,
+      "max": 0.1
+    },
+    {
+      "id": "mode",
+      "name": "Derivative Mode",
+      "type": "choice",
+      "default": 2,
+      "min": 0,
+      "max": 2,
+      "options": [
+        "Forward",
+        "Backward",
+        "Central"
+      ]
+    },
+    {
+      "id": "gain",
+      "name": "Response Gain",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 20
+    }
+  ],
+  "helpers": "vec3 maker_dfd_offset(vec3 d,float e){\n float n=length(d);\n return n>1e-8 ? d/n*max(e,1e-6) : vec3(0.0);\n}\nfloat maker_dfd_response(float a,float c,float b,float e,float mode,float gain){\n float delta=mode<0.5 ? a-c : (mode<1.5 ? c-b : 0.5*(a-b));\n return gain*delta/e;\n}",
+  "glsl_outputs": {
+    "derivative": "maker_dfd_response({field}({position}+maker_dfd_offset({direction},{epsilon})),{field}({position}),{field}({position}-maker_dfd_offset({direction},{epsilon})),max({epsilon},1e-6),{mode},{gain})",
+    "absolute": "abs(maker_dfd_response({field}({position}+maker_dfd_offset({direction},{epsilon})),{field}({position}),{field}({position}-maker_dfd_offset({direction},{epsilon})),max({epsilon},1e-6),{mode},{gain}))",
+    "value": "{field}({position})"
+  }
+}

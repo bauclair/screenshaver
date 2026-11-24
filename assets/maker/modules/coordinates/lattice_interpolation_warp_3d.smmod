@@ -1,0 +1,76 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.lattice_interpolation_warp_3d",
+  "name": "Lattice Interpolation Warp 3D",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "terminal": false,
+  "header_color": "#557C9C",
+  "description": "Remaps fractional lattice coordinates while preserving cell boundaries.",
+  "uses": "Noise sampling, grid deformation and procedural fields.",
+  "notes": "Cell Scale is lattice cells per position unit. Align with downstream noise frequency. Smooth mode uses cubic interpolation; Linear is identity. Exponents apply only in Power mode.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "semantic_role": "position3d",
+      "default": "vec3(maker_uv,0.0)"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "warped",
+      "name": "Warped Position",
+      "type": "vec3",
+      "semantic_role": "position3d"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "scale",
+      "name": "Cell Scale",
+      "type": "float",
+      "default": 1,
+      "min": 0.01,
+      "max": 100
+    },
+    {
+      "id": "exponent_x",
+      "name": "X Interpolation Exponent",
+      "type": "float",
+      "default": 1,
+      "min": 0.25,
+      "max": 8
+    },
+    {
+      "id": "exponent_y",
+      "name": "Y Interpolation Exponent",
+      "type": "float",
+      "default": 1,
+      "min": 0.25,
+      "max": 8
+    },
+    {
+      "id": "exponent_z",
+      "name": "Z Interpolation Exponent",
+      "type": "float",
+      "default": 1,
+      "min": 0.25,
+      "max": 8
+    },
+    {
+      "id": "profile",
+      "name": "Interpolation Profile",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Power",
+        "Smooth",
+        "Linear"
+      ]
+    }
+  ],
+  "helpers": "vec3 maker_lattice_warp(vec3 p,float scale,vec3 exponent,float profile){\n if(profile>1.5)return p;\n float s=max(scale,0.01); vec3 q=p*s; vec3 f=fract(q);\n vec3 w=profile>0.5?f*f*(3.0-2.0*f):pow(f,clamp(exponent,vec3(0.25),vec3(8.0)));\n return (floor(q)+w)/s;\n}",
+  "glsl": "maker_lattice_warp({position},{scale},vec3({exponent_x},{exponent_y},{exponent_z}),{profile})"
+}

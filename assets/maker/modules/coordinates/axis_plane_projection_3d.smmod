@@ -1,0 +1,82 @@
+{
+  "schema_version": 1,
+  "created_by": "Screenshaver",
+  "terminal": false,
+  "id": "screenshaver.coordinates.axis_plane_projection_3d",
+  "name": "Axis Plane Projection 3D",
+  "category": "Coordinates",
+  "header_color": "#557C9C",
+  "description": "Selects two components of a three-dimensional coordinate.",
+  "uses": "Planar mapping, spherical direction projection and coordinate conversion.",
+  "notes": "Orthographic component selection, not perspective projection. Swapping occurs before inversion.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "semantic_role": "position3d",
+      "default": "vec3(maker_uv,0.0)"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "projected",
+      "name": "Projected Position",
+      "type": "vec2",
+      "semantic_role": "position2d"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "plane",
+      "name": "Plane",
+      "type": "choice",
+      "default": 0,
+      "min": 0,
+      "max": 2,
+      "options": [
+        "XY",
+        "XZ",
+        "YZ"
+      ]
+    },
+    {
+      "id": "swap",
+      "name": "Swap Axes",
+      "type": "choice",
+      "default": 0,
+      "min": 0,
+      "max": 1,
+      "options": [
+        "Off",
+        "On"
+      ]
+    },
+    {
+      "id": "invert_x",
+      "name": "Invert X",
+      "type": "choice",
+      "default": 0,
+      "min": 0,
+      "max": 1,
+      "options": [
+        "Off",
+        "On"
+      ]
+    },
+    {
+      "id": "invert_y",
+      "name": "Invert Y",
+      "type": "choice",
+      "default": 0,
+      "min": 0,
+      "max": 1,
+      "options": [
+        "Off",
+        "On"
+      ]
+    }
+  ],
+  "helpers": "vec2 maker_axis_plane_project(vec3 p,float plane,float swapAxes,float invertX,float invertY){\n vec2 q=plane<0.5?p.xy:(plane<1.5?p.xz:p.yz);\n if(swapAxes>=0.5)q=q.yx;\n return q*vec2(invertX>=0.5?-1.0:1.0,invertY>=0.5?-1.0:1.0);\n}",
+  "glsl": "maker_axis_plane_project({position},{plane},{swap},{invert_x},{invert_y})"
+}

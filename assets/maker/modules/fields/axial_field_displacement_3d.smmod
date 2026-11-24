@@ -1,0 +1,112 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.axial_field_displacement_3d",
+  "name": "Axial Field Displacement 3D",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "description": "Add a spatially weighted displacement field to a base scalar field.",
+  "uses": "Procedural erosion, turbulence, implicit surfaces and density modulation.",
+  "notes": "Requires two connected Field 3D inputs. Envelope is clamped, supports reversed endpoints and uses a step for coincident endpoints. Smooth mode uses cubic smoothstep; exponent applies in Power mode only. Result is not generally an SDF.",
+  "header_color": "#557C9C",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "base",
+      "name": "Base Field",
+      "type": "field3d",
+      "semantic_role": ""
+    },
+    {
+      "id": "displacement",
+      "name": "Displacement Field",
+      "type": "field3d",
+      "semantic_role": ""
+    },
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "semantic_role": "position3d",
+      "default": "vec3(0.0)"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "value",
+      "name": "Displaced Field",
+      "type": "float",
+      "semantic_role": "intensity"
+    },
+    {
+      "id": "weight",
+      "name": "Displacement Weight",
+      "type": "float",
+      "semantic_role": "mask"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "axis",
+      "name": "Axis",
+      "type": "choice",
+      "default": 1,
+      "min": 0,
+      "max": 2,
+      "options": [
+        "X",
+        "Y",
+        "Z"
+      ]
+    },
+    {
+      "id": "start",
+      "name": "Envelope Start",
+      "type": "float",
+      "default": 0,
+      "min": -100,
+      "max": 100
+    },
+    {
+      "id": "end",
+      "name": "Envelope End",
+      "type": "float",
+      "default": 1,
+      "min": -100,
+      "max": 100
+    },
+    {
+      "id": "exponent",
+      "name": "Envelope Exponent",
+      "type": "float",
+      "default": 1,
+      "min": 0.25,
+      "max": 8
+    },
+    {
+      "id": "strength",
+      "name": "Displacement Strength",
+      "type": "float",
+      "default": 0.25,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "mode",
+      "name": "Envelope Mode",
+      "type": "choice",
+      "default": 1,
+      "min": 0,
+      "max": 2,
+      "options": [
+        "Linear",
+        "Smooth",
+        "Power"
+      ]
+    }
+  ],
+  "helpers": "float maker_axial_weight(vec3 p,float axis,float a,float b,float exponent,float mode){\n float x=axis<0.5?p.x:(axis<1.5?p.y:p.z);\n float span=b-a;\n float t=abs(span)<1e-7?step(a,x):clamp((x-a)/span,0.0,1.0);\n if(mode<0.5)return t;\n if(mode<1.5)return t*t*(3.0-2.0*t);\n return pow(t,max(exponent,0.0001));\n}",
+  "glsl_outputs": {
+    "value": "{base}({position})+{strength}*maker_axial_weight({position},{axis},{start},{end},{exponent},{mode})*{displacement}({position})",
+    "weight": "maker_axial_weight({position},{axis},{start},{end},{exponent},{mode})"
+  }
+}

@@ -1,0 +1,80 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.geometry.fibonacci_sphere_point_distribution",
+  "name": "Fibonacci Sphere Point Distribution",
+  "category": "Geometry",
+  "created_by": "Screenshaver",
+  "description": "Generate an indexed golden-angle point on a sphere.",
+  "uses": "Spherical sampling, particle placement and distributed geometry.",
+  "notes": "Count rounded and clamped to 1\u20134096; index rounded and clamped to valid range.",
+  "header_color": "#557C9C",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "index",
+      "name": "Point Index",
+      "type": "float",
+      "semantic_role": "",
+      "default": "0.0"
+    },
+    {
+      "id": "count",
+      "name": "Point Count",
+      "type": "float",
+      "semantic_role": "",
+      "default": "256.0"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec3",
+      "semantic_role": "",
+      "default": "vec3(0.0)"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "point",
+      "name": "Point Position",
+      "type": "vec3",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "direction",
+      "name": "Unit Direction",
+      "type": "vec3",
+      "semantic_role": "direction3d"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "radius",
+      "name": "Radius",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 100
+    },
+    {
+      "id": "angular_offset",
+      "name": "Angular Offset",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "animation_speed",
+      "name": "Animation Speed",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    }
+  ],
+  "helpers": "vec3 maker_fib_point(float index,float count,float angle){\n float n=clamp(floor(count+0.5),1.0,4096.0);\n float i=clamp(floor(index+0.5),0.0,n-1.0);\n float y=1.0-2.0*(i+0.5)/n;\n float r=sqrt(max(0.0,1.0-y*y));\n float a=mod(i*2.399963229728653+angle,6.283185307179586);\n return vec3(r*cos(a),y,r*sin(a));\n}",
+  "glsl_outputs": {
+    "point": "({center}+{radius}*maker_fib_point({index},{count},radians({angular_offset}+{animation_speed}*u_time)))",
+    "direction": "maker_fib_point({index},{count},radians({angular_offset}+{animation_speed}*u_time))"
+  }
+}

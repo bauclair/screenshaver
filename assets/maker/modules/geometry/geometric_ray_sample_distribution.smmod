@@ -1,0 +1,94 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.geometry.geometric_ray_sample_distribution",
+  "name": "Geometric Ray Sample Distribution",
+  "category": "Geometry",
+  "created_by": "Screenshaver",
+  "terminal": false,
+  "header_color": "#557C9C",
+  "description": "Computes a normalized geometric ray interval and sample position by index.",
+  "uses": "Nonuniform ray sampling, volume integration experiments and depth inspection.",
+  "notes": "Index is zero-based; count and index are rounded and clamped. Direction is normalized; zero direction falls back to +Z. Ratio is successive interval length ratio. Extreme ratios and counts may produce intervals too small to resolve in float positions. This module does not modify existing integrators.",
+  "inputs": [
+    {
+      "id": "index",
+      "name": "Sample Index",
+      "type": "float",
+      "semantic_role": "",
+      "default": "0.0"
+    },
+    {
+      "id": "count",
+      "name": "Sample Count",
+      "type": "float",
+      "semantic_role": "",
+      "default": "16.0"
+    },
+    {
+      "id": "origin",
+      "name": "Ray Origin",
+      "type": "vec3",
+      "semantic_role": "position3d",
+      "default": "vec3(0.0)"
+    },
+    {
+      "id": "direction",
+      "name": "Ray Direction",
+      "type": "vec3",
+      "semantic_role": "direction3d",
+      "default": "vec3(0.0,0.0,1.0)"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "position",
+      "name": "Sample Position",
+      "type": "vec3",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "distance",
+      "name": "Sample Distance",
+      "type": "float",
+      "semantic_role": "distance"
+    },
+    {
+      "id": "interval",
+      "name": "Interval Length",
+      "type": "float",
+      "semantic_role": "distance"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "length",
+      "name": "Integration Distance",
+      "type": "float",
+      "default": 10,
+      "min": 0,
+      "max": 1000
+    },
+    {
+      "id": "ratio",
+      "name": "Step Ratio",
+      "type": "float",
+      "default": 1,
+      "min": 0.75,
+      "max": 1.5
+    },
+    {
+      "id": "offset",
+      "name": "Sample Offset",
+      "type": "float",
+      "default": 0.5,
+      "min": 0,
+      "max": 1
+    }
+  ],
+  "helpers": "vec2 maker_geometric_interval(float index,float count,float distance,float ratio,float offset){\n int n=int(clamp(floor(count+0.5),1.0,256.0));\n int k=int(clamp(floor(index+0.5),0.0,float(n-1)));\n float q=clamp(ratio,0.75,1.5), l=log(q);\n float shift=max(l*float(n-1),0.0);\n float sum=0.0, before=0.0, weight=0.0;\n for(int j=0;j<256;++j){if(j>=n)break; float w=exp(l*float(j)-shift); sum+=w; if(j<k)before+=w; if(j==k)weight=w;}\n float d=max(distance,0.0); float stepLength=d*(weight/sum);\n return vec2(d*(before/sum)+clamp(offset,0.0,1.0)*stepLength,stepLength);\n}\nvec3 maker_geometric_position(vec3 origin,vec3 direction,float distance){\n float m=length(direction); return origin+(m>1e-8?direction/m:vec3(0.0,0.0,1.0))*distance;\n}",
+  "glsl_outputs": {
+    "position": "maker_geometric_position({origin},{direction},maker_geometric_interval({index},{count},{length},{ratio},{offset}).x)",
+    "distance": "maker_geometric_interval({index},{count},{length},{ratio},{offset}).x",
+    "interval": "maker_geometric_interval({index},{count},{length},{ratio},{offset}).y"
+  }
+}

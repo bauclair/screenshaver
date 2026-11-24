@@ -1,0 +1,130 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.spiral_wave_field_2d",
+  "name": "Spiral Wave Field 2D",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "description": "Periodic radial-angular wave with selectable profile and crest mask.",
+  "uses": "Spiral bands, interference patterns and animated masks.",
+  "notes": "Angular frequency is rounded to an integer. Frequencies are radians per coordinate unit and cycles per revolution respectively. Phase is in radians; mask width and softness are normalized crest thresholds. The polar origin uses angle zero.",
+  "header_color": "#557C9C",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "semantic_role": "position2d",
+      "default": "maker_uv"
+    },
+    {
+      "id": "time",
+      "name": "Time",
+      "type": "float",
+      "semantic_role": "time",
+      "default": "u_time"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "wave",
+      "name": "Wave",
+      "type": "float",
+      "semantic_role": "intensity"
+    },
+    {
+      "id": "mask",
+      "name": "Band Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    },
+    {
+      "id": "phase",
+      "name": "Phase",
+      "type": "float",
+      "semantic_role": "angle"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "radial",
+      "name": "Radial Frequency",
+      "type": "float",
+      "default": 24,
+      "min": 0,
+      "max": 128
+    },
+    {
+      "id": "angular",
+      "name": "Angular Frequency",
+      "type": "float",
+      "default": 6,
+      "min": 0,
+      "max": 64
+    },
+    {
+      "id": "winding",
+      "name": "Winding Direction",
+      "type": "choice",
+      "default": 0,
+      "min": 0,
+      "max": 1,
+      "options": [
+        "Clockwise",
+        "Counterclockwise"
+      ]
+    },
+    {
+      "id": "speed",
+      "name": "Animation Speed",
+      "type": "float",
+      "default": 1,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "offset",
+      "name": "Phase Offset",
+      "type": "float",
+      "default": 0,
+      "min": -6.283185,
+      "max": 6.283185
+    },
+    {
+      "id": "profile",
+      "name": "Wave Profile",
+      "type": "choice",
+      "default": 0,
+      "min": 0,
+      "max": 3,
+      "options": [
+        "Sine",
+        "Cosine",
+        "Triangle",
+        "Rectified Sine"
+      ]
+    },
+    {
+      "id": "width",
+      "name": "Band Width",
+      "type": "float",
+      "default": 0.2,
+      "min": 0.001,
+      "max": 1
+    },
+    {
+      "id": "softness",
+      "name": "Edge Softness",
+      "type": "float",
+      "default": 0.08,
+      "min": 0.001,
+      "max": 1
+    }
+  ],
+  "helpers": "float maker_spiral_phase(vec2 p,float t,float radial,float angular,float winding,float speed,float offset){\n float r=length(p);\n float theta=r>1e-7?atan(p.y,p.x):0.0;\n float arms=floor(max(angular,0.0)+0.5);\n return radial*r+(winding<0.5?arms:-arms)*theta+speed*t+offset;\n}\nfloat maker_spiral_profile(float phase,float profile){\n if(profile<0.5)return 0.5+0.5*sin(phase);\n if(profile<1.5)return 0.5+0.5*cos(phase);\n if(profile<2.5)return 1.0-abs(2.0*fract(phase/6.28318530718)-1.0);\n return abs(sin(phase));\n}\nfloat maker_spiral_mask(float wave,float width,float softness){\n float d=1.0-clamp(wave,0.0,1.0);\n return 1.0-smoothstep(width,width+max(softness,1e-5),d);\n}",
+  "glsl_outputs": {
+    "wave": "maker_spiral_profile(maker_spiral_phase({position},{time},{radial},{angular},{winding},{speed},{offset}),{profile})",
+    "mask": "maker_spiral_mask(maker_spiral_profile(maker_spiral_phase({position},{time},{radial},{angular},{winding},{speed},{offset}),{profile}),{width},{softness})",
+    "phase": "maker_spiral_phase({position},{time},{radial},{angular},{winding},{speed},{offset})"
+  }
+}

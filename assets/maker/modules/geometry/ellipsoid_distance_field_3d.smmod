@@ -1,0 +1,64 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.geometry.ellipsoid_distance_field_3d",
+  "name": "Ellipsoid Distance Field 3D",
+  "category": "Geometry",
+  "created_by": "Screenshaver",
+  "description": "Conservative signed distance bound for an axis-aligned ellipsoid.",
+  "uses": "Implicit geometry and conservative sphere tracing.",
+  "notes": "Exact for equal radii; otherwise a conservative bound. Center is an offset, not a sampling coordinate.",
+  "header_color": "#557C9C",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "semantic_role": "position3d",
+      "default": "vec3(0.0)"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec3",
+      "semantic_role": "",
+      "default": "vec3(0.0)"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "distance",
+      "name": "Distance",
+      "type": "float",
+      "semantic_role": "distance"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "x_radius",
+      "name": "X Radius",
+      "type": "float",
+      "default": 1,
+      "min": 0.01,
+      "max": 100
+    },
+    {
+      "id": "y_radius",
+      "name": "Y Radius",
+      "type": "float",
+      "default": 1,
+      "min": 0.01,
+      "max": 100
+    },
+    {
+      "id": "z_radius",
+      "name": "Z Radius",
+      "type": "float",
+      "default": 1,
+      "min": 0.01,
+      "max": 100
+    }
+  ],
+  "helpers": "float maker_ellipsoid_bound(vec3 p,vec3 r){\n r=max(r,vec3(0.0001));\n return min(r.x,min(r.y,r.z))*(length(p/r)-1.0);\n}",
+  "glsl": "maker_ellipsoid_bound({position}-{center},vec3({x_radius},{y_radius},{z_radius}))"
+}

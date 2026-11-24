@@ -1,0 +1,84 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.compositing.rgb_color_compositor",
+  "name": "RGB Color Compositor",
+  "category": "Compositing",
+  "created_by": "Screenshaver",
+  "description": "Combines two RGB signals using component-wise arithmetic.",
+  "uses": "Color layering, HDR accumulation, subtractive effects, and modulation.",
+  "notes": "Gains are applied before the selected operation. Output clamping is optional and disabled by default.",
+  "header_color": "#429F91",
+  "inputs": [
+    {
+      "id": "color_a",
+      "name": "Color A",
+      "type": "vec3",
+      "default": "vec3(0.0)",
+      "semantic_role": "color"
+    },
+    {
+      "id": "color_b",
+      "name": "Color B",
+      "type": "vec3",
+      "default": "vec3(0.0)",
+      "semantic_role": "color"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "color",
+      "name": "Color",
+      "type": "vec3",
+      "semantic_role": "color"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "mode",
+      "name": "Operation",
+      "type": "choice",
+      "default": 0,
+      "min": 0,
+      "max": 5,
+      "options": [
+        "Add",
+        "Subtract",
+        "Multiply",
+        "Maximum",
+        "Minimum",
+        "Absolute Difference"
+      ]
+    },
+    {
+      "id": "gain_a",
+      "name": "Color A Gain",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "gain_b",
+      "name": "Color B Gain",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "clamp_output",
+      "name": "Clamp Output",
+      "type": "choice",
+      "default": 0,
+      "min": 0,
+      "max": 1,
+      "options": [
+        "No",
+        "Yes"
+      ]
+    }
+  ],
+  "helpers": "vec3 maker_rgb_color_compositor(vec3 a, vec3 b, float mode, float gain_a, float gain_b, float clamp_mode) {\n    a *= gain_a;\n    b *= gain_b;\n    int op = int(clamp(floor(mode + 0.5), 0.0, 5.0));\n    vec3 result = a + b;\n    if (op == 1) result = a - b;\n    else if (op == 2) result = a * b;\n    else if (op == 3) result = max(a, b);\n    else if (op == 4) result = min(a, b);\n    else if (op == 5) result = abs(a - b);\n    return clamp_mode >= 0.5 ? clamp(result, 0.0, 1.0) : result;\n}",
+  "glsl": "maker_rgb_color_compositor({color_a},{color_b},{mode},{gain_a},{gain_b},{clamp_output})",
+  "terminal": false
+}

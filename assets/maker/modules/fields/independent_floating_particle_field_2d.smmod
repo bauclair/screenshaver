@@ -1,0 +1,160 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.independent_floating_particle_field_2d",
+  "name": "Independent Floating Particle Field 2D",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "terminal": false,
+  "header_color": "#597D69",
+  "description": "Finite deterministic collection of independently drifting luminous particles with periodic boundaries.",
+  "uses": "Floating lights, embers, dust, bubbles and snow-like effects.",
+  "notes": "Extents are half-width and half-height in position units. Motion wraps on both axes using nearest periodic images. Frequency is cycles per time unit. Radius endpoints are sorted. Intensities are additive and unclamped. Each connected output may require a separate evaluation; combined intensity evaluates both contributions in one loop.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "time",
+      "name": "Time",
+      "type": "float",
+      "default": "u_time",
+      "semantic_role": "time"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "core",
+      "name": "Core Intensity",
+      "type": "float",
+      "semantic_role": "intensity"
+    },
+    {
+      "id": "glow_intensity",
+      "name": "Glow Intensity",
+      "type": "float",
+      "semantic_role": "intensity"
+    },
+    {
+      "id": "combined",
+      "name": "Combined Intensity",
+      "type": "float",
+      "semantic_role": "intensity"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "count",
+      "name": "Particle Count",
+      "type": "float",
+      "default": 64,
+      "min": 1,
+      "max": 256
+    },
+    {
+      "id": "extent_x",
+      "name": "Horizontal Extent",
+      "type": "float",
+      "default": 2,
+      "min": 0.1,
+      "max": 10
+    },
+    {
+      "id": "extent_y",
+      "name": "Vertical Extent",
+      "type": "float",
+      "default": 1,
+      "min": 0.1,
+      "max": 10
+    },
+    {
+      "id": "radius_min",
+      "name": "Minimum Radius",
+      "type": "float",
+      "default": 0.01,
+      "min": 0.001,
+      "max": 0.5
+    },
+    {
+      "id": "radius_max",
+      "name": "Maximum Radius",
+      "type": "float",
+      "default": 0.025,
+      "min": 0.001,
+      "max": 0.5
+    },
+    {
+      "id": "speed",
+      "name": "Vertical Speed",
+      "type": "float",
+      "default": 0.2,
+      "min": -3,
+      "max": 3
+    },
+    {
+      "id": "variation",
+      "name": "Speed Variation",
+      "type": "float",
+      "default": 0.5,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "sway",
+      "name": "Sway Amplitude",
+      "type": "float",
+      "default": 0.04,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "frequency",
+      "name": "Sway Frequency",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "softness",
+      "name": "Core Softness",
+      "type": "float",
+      "default": 0.25,
+      "min": 0.01,
+      "max": 1
+    },
+    {
+      "id": "glow",
+      "name": "Glow Strength",
+      "type": "float",
+      "default": 0.5,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "falloff",
+      "name": "Glow Falloff Exponent",
+      "type": "float",
+      "default": 2,
+      "min": 0.5,
+      "max": 8
+    },
+    {
+      "id": "seed",
+      "name": "Seed",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 1000
+    }
+  ],
+  "helpers": "uint maker_ifp_hash(uint x){x ^= x >> 16u; x *= 0x7feb352du; x ^= x >> 15u; x *= 0x846ca68bu; return x ^ (x >> 16u);}\nfloat maker_ifp_random(uint x){return float(maker_ifp_hash(x)>>8u)*(1.0/16777216.0);}\nvec2 maker_ifp_evaluate(vec2 p,float t,float count,float ex,float ey,float rmin,float rmax,float speed,float variation,float sway,float frequency,float softness,float glow,float falloff,float seed,int mode){\n vec2 halfExtent=max(vec2(ex,ey),vec2(0.1)); vec2 span=2.0*halfExtent;\n float lo=max(min(rmin,rmax),0.001), hi=max(max(rmin,rmax),lo);\n int n=int(clamp(floor(count+0.5),1.0,256.0)); uint s=uint(clamp(floor(seed+0.5),0.0,1000.0));\n vec2 total=vec2(0.0);\n for(int i=0;i<256;++i){if(i>=n)break;\n  uint k=uint(i)*8u+s*2048u;\n  float v=speed*(1.0+clamp(variation,0.0,1.0)*(2.0*maker_ifp_random(k+2u)-1.0));\n  float phase=6.28318530718*maker_ifp_random(k+3u);\n  vec2 center=vec2(maker_ifp_random(k),maker_ifp_random(k+1u))*span-halfExtent;\n  center.y+=t*v;\n  center.x+=sway*sin(6.28318530718*frequency*t+phase);\n  vec2 delta=mod(p-center+halfExtent,span)-halfExtent;\n  float r=mix(lo,hi,maker_ifp_random(k+4u)); float q=dot(delta,delta)/(r*r);\n  if(mode!=1 && q<1.0){float inner=1.0-clamp(softness,0.01,1.0);total.x+=1.0-smoothstep(inner,1.0,sqrt(q));}\n  if(mode!=0 && glow>0.0){float denom=abs(falloff-2.0)<0.0001?q:pow(max(q,0.0),0.5*clamp(falloff,0.5,8.0));total.y+=glow/(1.0+denom);}\n }return total;\n}",
+  "glsl_outputs": {
+    "core": "maker_ifp_evaluate({position},{time},{count},{extent_x},{extent_y},{radius_min},{radius_max},{speed},{variation},{sway},{frequency},{softness},{glow},{falloff},{seed},0).x",
+    "glow_intensity": "maker_ifp_evaluate({position},{time},{count},{extent_x},{extent_y},{radius_min},{radius_max},{speed},{variation},{sway},{frequency},{softness},{glow},{falloff},{seed},1).y",
+    "combined": "dot(maker_ifp_evaluate({position},{time},{count},{extent_x},{extent_y},{radius_min},{radius_max},{speed},{variation},{sway},{frequency},{softness},{glow},{falloff},{seed},2),vec2(1.0))"
+  }
+}

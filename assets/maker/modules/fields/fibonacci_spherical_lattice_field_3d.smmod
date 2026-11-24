@@ -1,0 +1,102 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.fibonacci_spherical_lattice_field_3d",
+  "name": "Fibonacci Spherical Lattice Field 3D",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "description": "Find the nearest golden-angle direction using latitude-bound pruning.",
+  "uses": "Spherical dot textures, angular masks and procedural lattice geometry.",
+  "notes": "Non-SDF chord distance. Field 3D samples nearest point distance. Center uses positive Y direction. Count rounded and clamped to 1\u20134096.",
+  "header_color": "#557C9C",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "semantic_role": "position3d",
+      "default": "vec3(0.0)"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec3",
+      "semantic_role": "",
+      "default": "vec3(0.0)"
+    },
+    {
+      "id": "count",
+      "name": "Point Count",
+      "type": "float",
+      "semantic_role": "",
+      "default": "256.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "distance",
+      "name": "Nearest Point Distance",
+      "type": "float",
+      "semantic_role": "distance"
+    },
+    {
+      "id": "index",
+      "name": "Nearest Point Index",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "direction",
+      "name": "Nearest Point Direction",
+      "type": "vec3",
+      "semantic_role": "direction3d"
+    },
+    {
+      "id": "mask",
+      "name": "Dot Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "dot_radius",
+      "name": "Dot Radius",
+      "type": "float",
+      "default": 0.025,
+      "min": 0.001,
+      "max": 2
+    },
+    {
+      "id": "softness",
+      "name": "Edge Softness",
+      "type": "float",
+      "default": 0.005,
+      "min": 0.0001,
+      "max": 1
+    },
+    {
+      "id": "angular_offset",
+      "name": "Angular Offset",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "animation_speed",
+      "name": "Animation Speed",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    }
+  ],
+  "helpers": "vec3 maker_fibl_point(float index,float count,float angle){\n float n=clamp(floor(count+0.5),1.0,4096.0);\n float i=clamp(floor(index+0.5),0.0,n-1.0);\n float y=1.0-2.0*(i+0.5)/n;\n float r=sqrt(max(0.0,1.0-y*y));\n float a=mod(i*2.399963229728653+angle,6.283185307179586);\n return vec3(r*cos(a),y,r*sin(a));\n}\nvec4 maker_fibl_nearest(vec3 p,vec3 center,float count,float angle){\n vec3 v=p-center; float len=length(v);\n vec3 d=len>1e-8?v/len:vec3(0.0,1.0,0.0);\n int n=int(clamp(floor(count+0.5),1.0,4096.0));\n int mid=clamp(int(floor((1.0-d.y)*float(n)*0.5)),0,n-1);\n vec3 q=maker_fibl_point(float(mid),float(n),angle);\n float best=dot(q-d,q-d); int winner=mid;\n for(int side=0;side<2;++side){\n  int stepDir=side==0?-1:1;\n  for(int k=1;k<4096;++k){\n   int j=mid+k*stepDir; if(j<0||j>=n)break;\n   float dy=1.0-2.0*(float(j)+0.5)/float(n)-d.y;\n   if(dy*dy>best+0.000001)break;\n   vec3 candidate=maker_fibl_point(float(j),float(n),angle);\n   float ds=dot(candidate-d,candidate-d);\n   if(ds<best||(ds==best&&j<winner)){best=ds;winner=j;}\n  }\n }\n return vec4(maker_fibl_point(float(winner),float(n),angle),float(winner));\n}\nfloat maker_fibl_distance(vec3 p,vec3 center,vec3 q){\n vec3 v=p-center;float l=length(v);return length((l>1e-8?v/l:vec3(0.0,1.0,0.0))-q);\n}",
+  "glsl_outputs": {
+    "distance": "maker_fibl_distance({position},{center},maker_fibl_nearest({position},{center},{count},radians({angular_offset}+{animation_speed}*u_time)).xyz)",
+    "index": "maker_fibl_nearest({position},{center},{count},radians({angular_offset}+{animation_speed}*u_time)).w",
+    "direction": "maker_fibl_nearest({position},{center},{count},radians({angular_offset}+{animation_speed}*u_time)).xyz",
+    "mask": "(1.0-smoothstep({dot_radius},{dot_radius}+max({softness},0.0001),maker_fibl_distance({position},{center},maker_fibl_nearest({position},{center},{count},radians({angular_offset}+{animation_speed}*u_time)).xyz)))"
+  }
+}

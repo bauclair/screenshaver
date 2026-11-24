@@ -9,6 +9,9 @@ impl Library {
  fn load()->Self{
     let mut result=Self{modules:BTreeMap::new(),categories:BTreeMap::new(),sources:BTreeMap::new(),errors:Vec::new(),catalog_fingerprint:0xcbf29ce484222325};
     let official=[
+      ("fields/independent_floating_particle_field_2d.smmod",include_str!("../assets/maker/modules/fields/independent_floating_particle_field_2d.smmod")),
+      ("fields/axial_field_displacement_3d.smmod",include_str!("../assets/maker/modules/fields/axial_field_displacement_3d.smmod")),
+      ("geometry/ellipsoid_distance_field_3d.smmod",include_str!("../assets/maker/modules/geometry/ellipsoid_distance_field_3d.smmod")),
       ("geometry/animated_polygon_sector_mask.smmod",include_str!("../assets/maker/modules/geometry/animated_polygon_sector_mask.smmod")),
       ("geometry/spherical_aperture_mask.smmod",include_str!("../assets/maker/modules/geometry/spherical_aperture_mask.smmod")),
       ("geometry/animated_radial_shell_field.smmod",include_str!("../assets/maker/modules/geometry/animated_radial_shell_field.smmod")),
@@ -73,6 +76,7 @@ impl Library {
       ("fields/iterative_plasma_field.smmod",include_str!("../assets/maker/modules/fields/iterative_plasma_field.smmod")),
       ("coordinates/coordinate_feedback_warp.smmod",include_str!("../assets/maker/modules/coordinates/coordinate_feedback_warp.smmod")),
       ("color/weighted_rgb_colorizer.smmod",include_str!("../assets/maker/modules/color/weighted_rgb_colorizer.smmod")),
+      ("color/linear_rgb_gradient.smmod",include_str!("../assets/maker/modules/color/linear_rgb_gradient.smmod")),
       ("coordinates/cross_axis_sine_warp.smmod",include_str!("../assets/maker/modules/coordinates/cross_axis_sine_warp.smmod")),
       ("coordinates/iterative_sinusoidal_wave_fold.smmod",include_str!("../assets/maker/modules/coordinates/iterative_sinusoidal_wave_fold.smmod")),
       ("coordinates/axial_twist_and_pulse_warp.smmod",include_str!("../assets/maker/modules/coordinates/axial_twist_and_pulse_warp.smmod")),
@@ -127,6 +131,7 @@ impl Library {
       ("compositing/masked_color_blend.smmod",include_str!("../assets/maker/modules/compositing/masked_color_blend.smmod")),
       ("compositing/screen_color_blend.smmod",include_str!("../assets/maker/modules/compositing/screen_color_blend.smmod")),
       ("compositing/scalar_field_compositor.smmod",include_str!("../assets/maker/modules/compositing/scalar_field_compositor.smmod")),
+      ("compositing/rgb_color_compositor.smmod",include_str!("../assets/maker/modules/compositing/rgb_color_compositor.smmod")),
       ("coordinates/staggered_grid_coordinates_2d.smmod",include_str!("../assets/maker/modules/coordinates/staggered_grid_coordinates_2d.smmod")),
        ("coordinates/hexagonal_grid_coordinates_2d.smmod",include_str!("../assets/maker/modules/coordinates/hexagonal_grid_coordinates_2d.smmod")),
       ("fields/randomized_bokeh_disc_field.smmod",include_str!("../assets/maker/modules/fields/randomized_bokeh_disc_field.smmod")),
@@ -155,7 +160,18 @@ impl Library {
        ("geometry/perspective_ring_projection.smmod",include_str!("../assets/maker/modules/geometry/perspective_ring_projection.smmod")),
        ("fields/repeated_ring_accumulation.smmod",include_str!("../assets/maker/modules/fields/repeated_ring_accumulation.smmod")),
        ("fields/euclidean_voronoi_boundary_field_2d.smmod",include_str!("../assets/maker/modules/fields/euclidean_voronoi_boundary_field_2d.smmod")),
-    ];
+          ("fields/harmonic_polar_curve_field_2d.smmod",include_str!("../assets/maker/modules/fields/harmonic_polar_curve_field_2d.smmod")),
+      ("fields/harmonic_radial_curve_accumulation.smmod",include_str!("../assets/maker/modules/fields/harmonic_radial_curve_accumulation.smmod")),
+      ("coordinates/axis_plane_projection_3d.smmod",include_str!("../assets/maker/modules/coordinates/axis_plane_projection_3d.smmod")),
+      ("coordinates/coordinate_rotation_3d.smmod",include_str!("../assets/maker/modules/coordinates/coordinate_rotation_3d.smmod")),
+      ("fields/spiral_wave_field_2d.smmod",include_str!("../assets/maker/modules/fields/spiral_wave_field_2d.smmod")),
+      ("fields/logarithmic_radial_field_3d.smmod",include_str!("../assets/maker/modules/fields/logarithmic_radial_field_3d.smmod")),
+      ("fields/fibonacci_spherical_lattice_field_3d.smmod",include_str!("../assets/maker/modules/fields/fibonacci_spherical_lattice_field_3d.smmod")),
+      ("geometry/fibonacci_sphere_point_distribution.smmod",include_str!("../assets/maker/modules/geometry/fibonacci_sphere_point_distribution.smmod")),
+      ("fields/directional_field_derivative_3d.smmod",include_str!("../assets/maker/modules/fields/directional_field_derivative_3d.smmod")),
+    ("coordinates/lattice_interpolation_warp_3d.smmod",include_str!("../assets/maker/modules/coordinates/lattice_interpolation_warp_3d.smmod")),
+    ("geometry/geometric_ray_sample_distribution.smmod",include_str!("../assets/maker/modules/geometry/geometric_ray_sample_distribution.smmod")),
+];
     for (path,src) in official {result.register(path,src,Trust::Official)}
     if let Some(home)=std::env::var_os("HOME"){
         let directory=Path::new(&home).join(".config/screenshaver/maker/modules");

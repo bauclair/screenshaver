@@ -1,0 +1,80 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.color.linear_rgb_gradient",
+  "name": "Linear RGB Gradient",
+  "category": "Color",
+  "created_by": "Screenshaver",
+  "description": "Maps a scalar to a linear interpolation between two editable RGB colors.",
+  "uses": "Nonperiodic palettes, scalar visualization, and color layering.",
+  "notes": "Reversed input ranges reverse the gradient. Equal endpoints use a step at Input Minimum. Extrapolation is available when clamping is disabled. Interpolation operates on numeric RGB components without color-space conversion.",
+  "header_color": "#B46A35",
+  "inputs": [
+    {
+      "id": "value",
+      "name": "Value",
+      "type": "float",
+      "default": "maker_uv.x"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "color",
+      "name": "Color",
+      "type": "vec3",
+      "semantic_role": "color"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "start_color",
+      "name": "Start Color",
+      "type": "color3",
+      "default": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "end_color",
+      "name": "End Color",
+      "type": "color3",
+      "default": [
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "id": "input_min",
+      "name": "Input Minimum",
+      "type": "float",
+      "default": 0,
+      "min": -100,
+      "max": 100
+    },
+    {
+      "id": "input_max",
+      "name": "Input Maximum",
+      "type": "float",
+      "default": 1,
+      "min": -100,
+      "max": 100
+    },
+    {
+      "id": "clamp_interpolation",
+      "name": "Clamp Interpolation",
+      "type": "choice",
+      "default": 1,
+      "min": 0,
+      "max": 1,
+      "options": [
+        "No",
+        "Yes"
+      ]
+    }
+  ],
+  "helpers": "vec3 maker_linear_rgb_gradient(float v, vec3 a, vec3 b, float lo, float hi, float clamp_mode) {\n    float span = hi - lo;\n    float t = 0.0;\n    if (abs(span) < 1e-7) t = step(lo, v);\n    else t = (v - lo) / span;\n    if (clamp_mode >= 0.5) t = clamp(t, 0.0, 1.0);\n    return mix(a, b, t);\n}",
+  "glsl": "maker_linear_rgb_gradient({value},{start_color},{end_color},{input_min},{input_max},{clamp_interpolation})",
+  "terminal": false
+}
