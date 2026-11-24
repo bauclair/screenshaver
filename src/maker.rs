@@ -651,7 +651,7 @@ fn run_inner(coordinator:Option<&crate::application_coordinator::Owner>)->Result
                 let fingerprint=source.bytes().fold(14695981039346656037u64,|h,b|(h^b as u64).wrapping_mul(1099511628211));
                 let result=(||->Result<std::path::PathBuf,String>{
                     let home=std::env::var_os("HOME").ok_or("HOME is not set")?;
-                    let dir=std::path::PathBuf::from(home).join(".config/screenshaver/maker/exports");
+                    let dir=std::path::PathBuf::from(home).join(".config/screenshaver/shaders");
                     std::fs::create_dir_all(&dir).map_err(|e|e.to_string())?;
                     let path=dir.join(format!("maker_candidate_{fingerprint:016x}.glsl"));
                     std::fs::write(&path,source.as_bytes()).map_err(|e|e.to_string())?;

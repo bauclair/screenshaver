@@ -2954,7 +2954,7 @@ impl MakerUi {
                     }
                     Some("export_glsl")=>{
                         let default_dir=std::env::var_os("HOME")
-                            .map(|home|std::path::PathBuf::from(home).join(".config/screenshaver/maker/exports"))
+                            .map(|home|std::path::PathBuf::from(home).join(".config/screenshaver/shaders"))
                             .unwrap_or_else(||std::path::PathBuf::from("."));
                         let filename=format!("{}.glsl",project_name.trim_end_matches(".smprj"));
                         *glsl_export_dialog=Some((default_dir.to_string_lossy().into_owned(),filename,false));
