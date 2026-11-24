@@ -1,0 +1,81 @@
+{
+  "schema_version": 1,
+  "created_by": "Screenshaver",
+  "terminal": false,
+  "id": "screenshaver.fields.euclidean_voronoi_boundary_field_2d",
+  "name": "Euclidean Voronoi Boundary Field 2D",
+  "category": "Fields",
+  "header_color": "#348F8B",
+  "description": "Euclidean nearest-site distance and true Voronoi cell-boundary distance, with an adjustable boundary mask.",
+  "uses": "Cracks, stone cells, cellular patterns, tiling boundaries, irregular organic outlines and procedural masks.",
+  "notes": "Independently implemented standard Euclidean nearest-site and bisector geometry. Deterministic cell hashing; no code from the submitted shader. Distances are measured in scaled cell units. For domain distortion, connect an existing warp to Position. The boundary distance is measured to neighboring bisectors of the nearest site.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "semantic_role": "position2d",
+      "default": "maker_uv"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "nearest",
+      "name": "Nearest Site Distance",
+      "type": "float",
+      "semantic_role": "distance"
+    },
+    {
+      "id": "boundary",
+      "name": "Boundary Distance",
+      "type": "float",
+      "semantic_role": "distance"
+    },
+    {
+      "id": "mask",
+      "name": "Boundary Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "density",
+      "name": "Cell Density",
+      "type": "float",
+      "default": 5.0,
+      "min": 0.1,
+      "max": 30.0
+    },
+    {
+      "id": "jitter",
+      "name": "Site Jitter",
+      "type": "float",
+      "default": 0.75,
+      "min": 0.0,
+      "max": 1.0
+    },
+    {
+      "id": "width",
+      "name": "Boundary Width",
+      "type": "float",
+      "default": 0.06,
+      "min": 0.001,
+      "max": 0.5
+    },
+    {
+      "id": "softness",
+      "name": "Edge Softness",
+      "type": "float",
+      "default": 0.035,
+      "min": 0.001,
+      "max": 0.5
+    }
+  ],
+  "helpers": "vec2 maker_evb_hash(vec2 cell){\n    uvec2 v = floatBitsToUint(cell + vec2(103.7, 271.9));\n    uint a = v.x * 1664525u + v.y * 1013904223u;\n    uint b = v.y * 22695477u + v.x * 1103515245u;\n    a ^= a >> 16; a *= 2246822519u; a ^= a >> 13;\n    b ^= b >> 15; b *= 3266489917u; b ^= b >> 16;\n    return vec2(float(a & 0x00ffffffu), float(b & 0x00ffffffu)) / 16777216.0;\n}\nvec2 maker_evb_site(vec2 cell,float jitter){\n    return cell + vec2(0.5) + (maker_evb_hash(cell)-vec2(0.5))*clamp(jitter,0.0,1.0);\n}\nvec2 maker_evb_sample(vec2 position,float density,float jitter){\n    vec2 p=position*max(density,0.0001);\n    vec2 cell=floor(p);\n    vec2 closest=vec2(0.0);\n    float nearest=1e12;\n    for(int y=-1;y<=1;y++)for(int x=-1;x<=1;x++){\n        vec2 site=maker_evb_site(cell+vec2(float(x),float(y)),jitter);\n        float d=dot(p-site,p-site);\n        if(d<nearest){nearest=d;closest=site;}\n    }\n    float boundary=1e12;\n    for(int y=-2;y<=2;y++)for(int x=-2;x<=2;x++){\n        vec2 site=maker_evb_site(cell+vec2(float(x),float(y)),jitter);\n        vec2 delta=site-closest;\n        float len=length(delta);\n        if(len<0.000001)continue;\n        // Distance from p to the bisector separating the nearest site and this site.\n        float bisector=dot(0.5*(site+closest)-p,delta)/len;\n        boundary=min(boundary,bisector);\n    }\n    return vec2(sqrt(nearest),boundary);\n}",
+  "glsl_outputs": {
+    "nearest": "maker_evb_sample({position},{density},{jitter}).x",
+    "boundary": "maker_evb_sample({position},{density},{jitter}).y",
+    "mask": "(1.0-smoothstep(max({width},0.0001),max({width},0.0001)+max({softness},0.0001),maker_evb_sample({position},{density},{jitter}).y))"
+  }
+}

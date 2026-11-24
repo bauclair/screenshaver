@@ -64,6 +64,7 @@ impl Library {
       ("geometry/rotation_3d.smmod",include_str!("../assets/maker/modules/geometry/rotation_3d.smmod")),
       ("geometry/sdf_sphere.smmod",include_str!("../assets/maker/modules/geometry/sdf_sphere.smmod")),
       ("geometry/sdf_box.smmod",include_str!("../assets/maker/modules/geometry/sdf_box.smmod")),
+      ("geometry/menger_sponge_field_3d.smmod",include_str!("../assets/maker/modules/geometry/menger_sponge_field_3d.smmod")),
       ("geometry/sdf_octahedron.smmod",include_str!("../assets/maker/modules/geometry/sdf_octahedron.smmod")),
       ("geometry/sdf_combine.smmod",include_str!("../assets/maker/modules/geometry/sdf_combine.smmod")),
       ("geometry/sdf_morph.smmod",include_str!("../assets/maker/modules/geometry/sdf_morph.smmod")),
@@ -153,6 +154,7 @@ impl Library {
        ("coordinates/directional_sine_perturbation_3d.smmod",include_str!("../assets/maker/modules/coordinates/directional_sine_perturbation_3d.smmod")),
        ("geometry/perspective_ring_projection.smmod",include_str!("../assets/maker/modules/geometry/perspective_ring_projection.smmod")),
        ("fields/repeated_ring_accumulation.smmod",include_str!("../assets/maker/modules/fields/repeated_ring_accumulation.smmod")),
+       ("fields/euclidean_voronoi_boundary_field_2d.smmod",include_str!("../assets/maker/modules/fields/euclidean_voronoi_boundary_field_2d.smmod")),
     ];
     for (path,src) in official {result.register(path,src,Trust::Official)}
     if let Some(home)=std::env::var_os("HOME"){

@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "created_by": "Screenshaver",
+  "terminal": false,
+  "id": "screenshaver.geometry.menger_sponge_field_3d",
+  "name": "Menger Sponge Field 3D",
+  "category": "Geometry",
+  "header_color": "#557C9C",
+  "description": "Finite cubic fractal formed by recursively subtracting three orthogonal square channels.",
+  "uses": "Fractal solids, porous geometry, recursive structures and callable distance-field rendering.",
+  "notes": "Size is the full outer cube width. Zero iterations produces a solid cube. Opening width is a fraction of each parent cell width; one third gives the classical Menger construction. The CSG result is a conservative distance estimate, not an exact Euclidean distance everywhere. Maker automatically exposes Field 3D.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "default": "vec3(0.0)",
+      "semantic_role": "position3d"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "distance",
+      "name": "Distance",
+      "type": "float",
+      "semantic_role": "distance"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "size",
+      "name": "Size",
+      "type": "float",
+      "default": 2.0,
+      "min": 0.1,
+      "max": 20.0
+    },
+    {
+      "id": "iterations",
+      "name": "Subdivision Iterations",
+      "type": "float",
+      "default": 3.0,
+      "min": 0.0,
+      "max": 5.0
+    },
+    {
+      "id": "opening",
+      "name": "Opening Width",
+      "type": "float",
+      "default": 0.3333333333333333,
+      "min": 0.05,
+      "max": 0.48
+    }
+  ],
+  "helpers": "float maker_menger_box_distance(vec3 p, vec3 halfSize) {\n    vec3 q = abs(p) - halfSize;\n    return length(max(q, vec3(0.0))) + min(max(q.x, max(q.y, q.z)), 0.0);\n}\nfloat maker_menger_sponge_field(vec3 p, float size, float iterations, float opening) {\n    float halfSize = max(size, 0.001) * 0.5;\n    float d = maker_menger_box_distance(p, vec3(halfSize));\n    float cell = 2.0 * halfSize;\n    int levels = int(clamp(floor(iterations + 0.5), 0.0, 5.0));\n    for (int level = 0; level < 5; ++level) {\n        if (level >= levels) break;\n        vec3 local = mod(p + vec3(halfSize), vec3(cell)) - vec3(cell * 0.5);\n        float hole = cell * clamp(opening, 0.05, 0.48) * 0.5;\n        vec3 a = abs(local) - vec3(hole);\n        // Three orthogonal square channels, unbounded along their axes.\n        float xy = length(max(a.xy, vec2(0.0))) + min(max(a.x, a.y), 0.0);\n        float yz = length(max(a.yz, vec2(0.0))) + min(max(a.y, a.z), 0.0);\n        float zx = length(max(a.zx, vec2(0.0))) + min(max(a.z, a.x), 0.0);\n        d = max(d, -min(xy, min(yz, zx)));\n        cell /= 3.0;\n    }\n    return d;\n}",
+  "glsl": "maker_menger_sponge_field({position},{size},{iterations},{opening})"
+}
