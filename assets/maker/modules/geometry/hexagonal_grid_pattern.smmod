@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "created_by": "Screenshaver",
+  "terminal": false,
+  "id": "screenshaver.patterns.hexagonal_grid_pattern",
+  "name": "Hexagonal Grid Pattern",
+  "category": "Patterns",
+  "header_color": "#7B78B4",
+  "description": "Builds hexagonal outline, filled-cell and center-spot masks from a cell-local position.",
+  "uses": "Honeycomb outlines, glowing cell centers and six-sided decorative masks.",
+  "notes": "Connect Local Position from Hexagonal Grid Coordinates 2D. Use the same Cell Radius in both modules. Outline Width and Edge Softness are world-space distances. Outputs are scalar masks in [0,1].",
+  "inputs": [
+    {
+      "id": "local",
+      "name": "Local Position",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "position2d"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "outline",
+      "name": "Outline Mask",
+      "type": "float"
+    },
+    {
+      "id": "fill",
+      "name": "Interior Mask",
+      "type": "float"
+    },
+    {
+      "id": "center",
+      "name": "Center Spot Mask",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "radius",
+      "name": "Cell Radius",
+      "type": "float",
+      "default": 0.2,
+      "min": 0.001,
+      "max": 10
+    },
+    {
+      "id": "width",
+      "name": "Outline Width",
+      "type": "float",
+      "default": 0.018,
+      "min": 0.0001,
+      "max": 1
+    },
+    {
+      "id": "softness",
+      "name": "Edge Softness",
+      "type": "float",
+      "default": 0.004,
+      "min": 0.0001,
+      "max": 0.5
+    },
+    {
+      "id": "spot_radius",
+      "name": "Center Spot Radius",
+      "type": "float",
+      "default": 0.035,
+      "min": 0,
+      "max": 5
+    }
+  ],
+  "helpers": "float maker_hex_boundary_distance(vec2 p,float radius){\n float apothem=0.8660254037844386*max(abs(radius),0.0001);\n float support=max(abs(p.x),0.5*abs(p.x)+0.8660254037844386*abs(p.y));\n return apothem-support;\n}\nfloat maker_hex_outline_mask(vec2 p,float radius,float width,float feather){\n float d=maker_hex_boundary_distance(p,radius);\n float w=max(width,0.00001);\n float f=max(feather,0.00001);\n return 1.0-smoothstep(w-f,w+f,abs(d));\n}",
+  "glsl_outputs": {
+    "outline": "maker_hex_outline_mask({local},{radius},{width},{softness})",
+    "fill": "smoothstep(-max({softness},0.00001),max({softness},0.00001),maker_hex_boundary_distance({local},{radius}))",
+    "center": "1.0-smoothstep(max({spot_radius},0.0),max({spot_radius},0.0)+max({softness},0.00001),length({local}))"
+  }
+}

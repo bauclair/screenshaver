@@ -46,6 +46,7 @@ impl Library {
       ("geometry/tunnel_field.smmod",include_str!("../assets/maker/modules/geometry/tunnel_field.smmod")),
       ("noise/triangle_noise_3d.smmod",include_str!("../assets/maker/modules/noise/triangle_noise_3d.smmod")),
       ("fields/sdf_raymarch.smmod",include_str!("../assets/maker/modules/fields/sdf_raymarch.smmod")),
+       ("fields/adaptive_procedural_ray_traversal.smmod",include_str!("../assets/maker/modules/fields/adaptive_procedural_ray_traversal.smmod")),
       ("lighting/directional_light.smmod",include_str!("../assets/maker/modules/lighting/directional_light.smmod")),
       ("lighting/fresnel_rim.smmod",include_str!("../assets/maker/modules/lighting/fresnel_rim.smmod")),
       ("lighting/ambient_occlusion_shading.smmod",include_str!("../assets/maker/modules/lighting/ambient_occlusion_shading.smmod")),
@@ -102,6 +103,7 @@ impl Library {
       ("geometry/grid_ray_step_3d.smmod",include_str!("../assets/maker/modules/geometry/grid_ray_step_3d.smmod")),
       ("noise/triangular_lattice_field.smmod",include_str!("../assets/maker/modules/noise/triangular_lattice_field.smmod")),
       ("geometry/triangle_edge_mask.smmod",include_str!("../assets/maker/modules/geometry/triangle_edge_mask.smmod")),
+       ("geometry/hexagonal_grid_pattern.smmod",include_str!("../assets/maker/modules/geometry/hexagonal_grid_pattern.smmod")),
       ("math/periodic_pulse_gate.smmod",include_str!("../assets/maker/modules/math/periodic_pulse_gate.smmod")),
       ("fields/scalar_ribbon_mask.smmod",include_str!("../assets/maker/modules/fields/scalar_ribbon_mask.smmod")),
       ("fields/soft_shape_mask_2d.smmod",include_str!("../assets/maker/modules/fields/soft_shape_mask_2d.smmod")),
@@ -125,6 +127,7 @@ impl Library {
       ("compositing/screen_color_blend.smmod",include_str!("../assets/maker/modules/compositing/screen_color_blend.smmod")),
       ("compositing/scalar_field_compositor.smmod",include_str!("../assets/maker/modules/compositing/scalar_field_compositor.smmod")),
       ("coordinates/staggered_grid_coordinates_2d.smmod",include_str!("../assets/maker/modules/coordinates/staggered_grid_coordinates_2d.smmod")),
+       ("coordinates/hexagonal_grid_coordinates_2d.smmod",include_str!("../assets/maker/modules/coordinates/hexagonal_grid_coordinates_2d.smmod")),
       ("fields/randomized_bokeh_disc_field.smmod",include_str!("../assets/maker/modules/fields/randomized_bokeh_disc_field.smmod")),
       ("geometry/sdf_normal_estimation.smmod",include_str!("../assets/maker/modules/geometry/sdf_normal_estimation.smmod")),
        ("geometry/point_segment_distance_2d.smmod",include_str!("../assets/maker/modules/geometry/point_segment_distance_2d.smmod")),
@@ -148,6 +151,8 @@ impl Library {
        ("animation/modulated_travel_time.smmod",include_str!("../assets/maker/modules/animation/modulated_travel_time.smmod")),
        ("geometry/multi_corridor_tunnel_field.smmod",include_str!("../assets/maker/modules/geometry/multi_corridor_tunnel_field.smmod")),
        ("coordinates/directional_sine_perturbation_3d.smmod",include_str!("../assets/maker/modules/coordinates/directional_sine_perturbation_3d.smmod")),
+       ("geometry/perspective_ring_projection.smmod",include_str!("../assets/maker/modules/geometry/perspective_ring_projection.smmod")),
+       ("fields/repeated_ring_accumulation.smmod",include_str!("../assets/maker/modules/fields/repeated_ring_accumulation.smmod")),
     ];
     for (path,src) in official {result.register(path,src,Trust::Official)}
     if let Some(home)=std::env::var_os("HOME"){

@@ -71,6 +71,15 @@ vec3 maker_rotate_3d(vec3 p,float xy,float yz,float xz){
      let c=graph.input_connection(n.id,0).ok_or("Temporal Frequency Layering 3D requires a connected scalar field")?;
      callable.require(c.from,c.from_port,"float")?;
     }
+     "screenshaver.fields.repeated_ring_accumulation" => {
+      for index in 0..2 {
+       let c=graph.input_connection(n.id,index).ok_or("Repeated Ring Accumulation requires connected Path X and Path Y fields")?;
+       let source=graph.node(c.from).ok_or("Repeated ring path source missing")?;
+       let (scalar,dimension)=source.callable_spec().ok_or("Repeated ring path must be a position-dependent scalar field")?;
+       if dimension!="field3d" || c.from_port!=source.definition().outputs.len(){return Err("Repeated Ring Accumulation requires Field 3D callable outputs".into())}
+       callable.require(c.from,scalar,"float")?;
+      }
+     }
     "screenshaver.fields.volume_density_ray_integrator" => {
      let c=graph.input_connection(n.id,0).ok_or("Volume Density Ray Integrator requires a connected density field")?;
      callable.require(c.from,c.from_port,"float")?;
@@ -195,6 +204,89 @@ float maker_temporal_layers_{id}(vec3 position,float layers,float spatialScale,f
  return total/max(weight,1e-8);
 }}
 "#));
+  }
+ }
+  // Independent bounded traversal of a connected, position-dependent scalar field.
+  for n in graph.nodes.iter().filter(|n|reachable.contains(&n.id)) {
+   if n.module_id=="screenshaver.fields.adaptive_procedural_ray_traversal" {
+    let c=graph.input_connection(n.id,0).ok_or("Adaptive Procedural Ray Traversal requires a connected Field 3D")?;
+    let source=graph.node(c.from).ok_or("Adaptive traversal field source missing")?;
+    let (scalar,dimension)=source.callable_spec().ok_or("Adaptive traversal requires a position-dependent scalar Field 3D")?;
+    if dimension!="field3d" || c.from_port!=source.definition().outputs.len() {
+     return Err("Adaptive traversal requires a Field 3D callable output".into());
+    }
+    let field=callable.reference(c.from,scalar,"sample_position","float")?;
+    let id=n.id;
+    src.push_str(&format!(r#"
+void maker_adaptive_traverse_{id}(vec3 origin,vec3 direction,out float intensity,out float travelled,out vec3 endPosition,out float transmission){{
+ intensity=0.0;travelled=0.0;endPosition=origin;transmission=1.0;
+ float dirLen=length(direction);
+ if(dirLen<1e-8)return;
+ vec3 ray=direction/dirLen;
+ float extent=max(u_n{id}_max_distance,0.0);
+ float low=max(u_n{id}_min_step,0.0001);
+ float high=max(u_n{id}_max_step,low);
+ float adapt=clamp(u_n{id}_adaptivity,0.0,1.0);
+ int limit=int(clamp(floor(u_n{id}_max_steps+0.5),1.0,96.0));
+ for(int k=0;k<96;k++){{
+  if(k>=limit || travelled>=extent || transmission<0.001)break;
+  vec3 sample_position=origin+ray*travelled;
+  float sampleValue={field};
+  if(isnan(sampleValue)||isinf(sampleValue))break;
+  float response=exp(-min(abs(sampleValue)*max(u_n{id}_response_sharpness,0.0001),80.0));
+  float desired=mix(high,mix(high,low,response),adapt);
+  float stride=min(clamp(desired,low,high),extent-travelled);
+  if(stride<=0.0)break;
+  float alpha=1.0-exp(-min(max(u_n{id}_opacity_gain,0.0)*response*stride,80.0));
+  intensity+=transmission*alpha;
+  transmission*=1.0-alpha;
+  travelled+=stride;
+ }}
+ endPosition=origin+ray*travelled;
+}}
+"#));
+   }
+  }
+ // Project repeated ring outlines along a connected pair of callable scalar paths.
+ for n in graph.nodes.iter().filter(|n|reachable.contains(&n.id)) {
+  if n.module_id=="screenshaver.fields.repeated_ring_accumulation" {
+   let mut fields=Vec::new();
+   for index in 0..2 {
+    let c=graph.input_connection(n.id,index).ok_or("Repeated Ring Accumulation requires Path X and Path Y")?;
+    let source=graph.node(c.from).ok_or("Repeated ring path source missing")?;
+    let (scalar,dimension)=source.callable_spec().ok_or("Repeated ring path must be a callable scalar field")?;
+    if dimension!="field3d" || c.from_port!=source.definition().outputs.len(){return Err("Repeated ring path must be Field 3D".into())}
+    fields.push(callable.reference(c.from,scalar,"sample_position","float")?);
+   }
+   let id=n.id;
+   src.push_str(&format!(r#"
+void maker_repeated_rings_{id}(vec2 uv,vec3 camera,out vec3 color,out float intensity,out vec2 lastCenter){{
+ color=vec3(0.0);intensity=0.0;lastCenter=vec2(0.0);
+ int count=int(clamp(floor(u_n{id}_ring_count+0.5),1.0,128.0));
+ float spacing=max(u_n{id}_depth_spacing,0.0001);
+ float focal=max(u_n{id}_focal_length,0.0001);
+ float lineWidth=max(u_n{id}_line_width,0.00001);
+ for(int k=0;k<128;k++){{
+  if(k>=count)break;
+  float depth=max(u_n{id}_start_depth,0.0001)+float(k)*spacing;
+  float worldDepth=camera.z+depth;
+  vec3 sample_position=vec3(0.0,0.0,worldDepth);
+  float px={xfield};float py={yfield};
+  if(isnan(px)||isinf(px)||isnan(py)||isinf(py))continue;
+  vec2 projected=(vec2(px,py)-camera.xy)*focal/depth;
+  float projectedRadius=max(u_n{id}_ring_radius,0.0001)*focal/depth;
+  float edge=abs(length(uv-projected)-projectedRadius);
+  float weight=exp(-min(edge/lineWidth,80.0))/(1.0+depth*depth);
+  float phase=worldDepth*0.15;
+  vec3 tint=0.5+0.5*cos(vec3(0.0,2.0943951,4.1887902)+phase);
+  color+=tint*weight*max(u_n{id}_brightness,0.0);
+  intensity+=weight*max(u_n{id}_brightness,0.0);
+  lastCenter=projected;
+ }}
+ color=vec3(1.0)-exp(-max(color,vec3(0.0))*max(u_n{id}_exposure,0.0));
+ intensity=1.0-exp(-max(intensity,0.0)*max(u_n{id}_exposure,0.0));
+}}
+"#,xfield=fields[0],yfield=fields[1]));
   }
  }
  // Generate a bounded Beer-Lambert volume integrator for each connected density field.
@@ -529,6 +621,15 @@ fn emit(graph:&Graph,id:NodeId,emitted:&mut HashSet<NodeId>,src:&mut String)->Re
   src.push_str(&format!("  float v{}_p0=maker_temporal_layers_{}({},u_n{}_layers,u_n{}_spatial_scale,u_n{}_temporal_scale,u_n{}_amplitude_decay,u_n{}_speed);\n",id,id,vars["position"],id,id,id,id,id));
   emitted.insert(id);return Ok(());
  }
+  if m.id=="screenshaver.fields.adaptive_procedural_ray_traversal" {
+   src.push_str(&format!("  float v{}_p0; float v{}_p1; vec3 v{}_p2; float v{}_p3;\n",id,id,id,id));
+   src.push_str(&format!("  maker_adaptive_traverse_{}({},{},v{}_p0,v{}_p1,v{}_p2,v{}_p3);\n",id,vars["origin"],vars["direction"],id,id,id,id));
+   emitted.insert(id);return Ok(());
+  }
+  if m.id=="screenshaver.fields.repeated_ring_accumulation" {
+   src.push_str(&format!("  vec3 v{}_p0; float v{}_p1; vec2 v{}_p2; maker_repeated_rings_{}({},{},v{}_p0,v{}_p1,v{}_p2);\n",id,id,id,id,vars["uv"],vars["camera"],id,id,id));
+   emitted.insert(id);return Ok(());
+  }
  if m.id=="screenshaver.fields.volume_density_ray_integrator" {
   src.push_str(&format!("  vec4 v{}_volume=maker_volume_integrate_{}({},{},{},u_n{}_distance,u_n{}_extinction,u_n{}_emission_gain,u_n{}_samples);\n",id,id,vars["origin"],vars["direction"],vars["emission"],id,id,id,id));
   src.push_str(&format!("  vec3 v{}_p0=v{}_volume.rgb; float v{}_p1=1.0-v{}_volume.a; float v{}_p2=v{}_volume.a;\n",id,id,id,id,id,id));

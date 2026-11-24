@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "created_by": "Screenshaver",
+  "terminal": false,
+  "id": "screenshaver.coordinates.hexagonal_grid_coordinates_2d",
+  "name": "Hexagonal Grid Coordinates 2D",
+  "category": "Coordinates",
+  "header_color": "#627FC2",
+  "description": "Converts planar positions to pointy-top regular hexagon cell indices, centers, and local positions.",
+  "uses": "Honeycomb tilings, cellular motifs, and hexagonal pattern construction.",
+  "notes": "Cell Radius is the center-to-vertex distance. Cell Coordinates are axial q,r indices. Cell Center and Local Position use the same units as Position. Uses cube-coordinate rounding for stable nearest-hex selection.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "position2d"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "local",
+      "name": "Local Position",
+      "type": "vec2",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "cell",
+      "name": "Cell Coordinates",
+      "type": "vec2",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "center",
+      "name": "Cell Center",
+      "type": "vec2",
+      "semantic_role": "position2d"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "radius",
+      "name": "Cell Radius",
+      "type": "float",
+      "default": 0.2,
+      "min": 0.001,
+      "max": 10
+    }
+  ],
+  "helpers": "vec2 maker_hex_axial_cell(vec2 p,float radius){\n float s=max(abs(radius),0.0001);\n vec2 a=vec2((0.5773502691896258*p.x-0.3333333333333333*p.y)/s,0.6666666666666666*p.y/s);\n vec3 c=vec3(a.x,-a.x-a.y,a.y);\n vec3 rounded=floor(c+0.5);\n vec3 err=abs(rounded-c);\n if(err.x>err.y && err.x>err.z)rounded.x=-rounded.y-rounded.z;\n else if(err.y>err.z)rounded.y=-rounded.x-rounded.z;\n else rounded.z=-rounded.x-rounded.y;\n return vec2(rounded.x,rounded.z);\n}\nvec2 maker_hex_center(vec2 cell,float radius){\n float s=max(abs(radius),0.0001);\n return s*vec2(1.7320508075688772*(cell.x+0.5*cell.y),1.5*cell.y);\n}",
+  "glsl_outputs": {
+    "local": "({position}-maker_hex_center(maker_hex_axial_cell({position},{radius}),{radius}))",
+    "cell": "maker_hex_axial_cell({position},{radius})",
+    "center": "maker_hex_center(maker_hex_axial_cell({position},{radius}),{radius})"
+  }
+}

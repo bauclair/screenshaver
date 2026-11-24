@@ -1,0 +1,129 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.repeated_ring_accumulation",
+  "name": "Repeated Ring Accumulation",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "header_color": "#477D9A",
+  "description": "Accumulates projected circular outlines along a camera-relative depth interval, sampling two connected scalar 3D fields for independent horizontal and vertical path offsets.",
+  "uses": "Repeated rings, abstract perspective corridors and depth-layered luminous outlines.",
+  "notes": "Both Path X and Path Y require connected Field 3D callable outputs. They are sampled with vec3(0,0,world_depth) for each ring. Camera position and screen UV are explicit. Up to 128 rings. Output is bounded by optional exposure tonemapping. Unlike a raymarcher, this performs projected ring accumulation.",
+  "inputs": [
+    {
+      "id": "path_x",
+      "name": "Path X Field",
+      "type": "field3d"
+    },
+    {
+      "id": "path_y",
+      "name": "Path Y Field",
+      "type": "field3d"
+    },
+    {
+      "id": "uv",
+      "name": "Screen Position",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "uv"
+    },
+    {
+      "id": "camera",
+      "name": "Camera Position",
+      "type": "vec3",
+      "default": "vec3(0.0)",
+      "semantic_role": "position3d"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "color",
+      "name": "Accumulated Color",
+      "type": "vec3",
+      "semantic_role": "color"
+    },
+    {
+      "id": "intensity",
+      "name": "Accumulated Intensity",
+      "type": "float",
+      "semantic_role": "intensity"
+    },
+    {
+      "id": "last_center",
+      "name": "Farthest Ring Center",
+      "type": "vec2",
+      "semantic_role": "position2d"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "ring_count",
+      "name": "Ring Count",
+      "type": "float",
+      "default": 48,
+      "min": 1,
+      "max": 128
+    },
+    {
+      "id": "depth_spacing",
+      "name": "Depth Spacing",
+      "type": "float",
+      "default": 0.3,
+      "min": 0.01,
+      "max": 5
+    },
+    {
+      "id": "start_depth",
+      "name": "Start Depth",
+      "type": "float",
+      "default": 0.4,
+      "min": 0.01,
+      "max": 20
+    },
+    {
+      "id": "ring_radius",
+      "name": "Ring Radius",
+      "type": "float",
+      "default": 1,
+      "min": 0.001,
+      "max": 10
+    },
+    {
+      "id": "focal_length",
+      "name": "Focal Length",
+      "type": "float",
+      "default": 1,
+      "min": 0.01,
+      "max": 10
+    },
+    {
+      "id": "line_width",
+      "name": "Line Width",
+      "type": "float",
+      "default": 0.015,
+      "min": 0.0005,
+      "max": 0.3
+    },
+    {
+      "id": "brightness",
+      "name": "Brightness",
+      "type": "float",
+      "default": 0.2,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "exposure",
+      "name": "Exposure",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 5
+    }
+  ],
+  "helpers": "",
+  "glsl_outputs": {
+    "color": "vec3(0.0)",
+    "intensity": "0.0",
+    "last_center": "vec2(0.0)"
+  }
+}
