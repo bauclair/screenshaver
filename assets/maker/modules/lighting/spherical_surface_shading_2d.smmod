@@ -99,8 +99,8 @@
   ],
   "helpers": "vec4 maker_sphere_disc_shade(vec2 p,vec2 center,vec3 light,float radius,float softness,float ambient,float diffuse,vec3 baseColor,vec3 highlightColor){float r=max(radius,0.0001);vec2 q=(p-center)/r;float rr=dot(q,q);float mask=1.0-smoothstep(1.0,1.0+max(softness,0.0001)/r,length(q));vec3 n=normalize(vec3(q,sqrt(max(1.0-rr,0.0))));vec3 l=normalize(light+vec3(0.00001));float d=max(dot(n,l),0.0);float amount=clamp(ambient+diffuse*d,0.0,1.0);return vec4(mix(baseColor,highlightColor,amount),mask);}",
   "glsl": "maker_sphere_disc_shade({position},{center},{light_direction},{radius},{edge_softness},{ambient},{diffuse},{base_color},{highlight_color}).rgb",
-  "glsl_outputs": [
-    "maker_sphere_disc_shade({position},{center},{light_direction},{radius},{edge_softness},{ambient},{diffuse},{base_color},{highlight_color}).rgb",
-    "maker_sphere_disc_shade({position},{center},{light_direction},{radius},{edge_softness},{ambient},{diffuse},{base_color},{highlight_color}).a"
-  ]
+  "glsl_outputs": {
+    "color": "maker_sphere_disc_shade({position},{center},{light_direction},{radius},{edge_softness},{ambient},{diffuse},{base_color},{highlight_color}).rgb",
+    "mask": "maker_sphere_disc_shade({position},{center},{light_direction},{radius},{edge_softness},{ambient},{diffuse},{base_color},{highlight_color}).a"
+  }
 }

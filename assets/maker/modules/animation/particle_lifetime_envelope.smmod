@@ -43,7 +43,5 @@
     }
   ],
   "helpers": "",
-  "glsl_outputs": {
-    "envelope": "1.0-smoothstep(min({fade_start},{fade_end}),max(max({fade_start},{fade_end}),min({fade_start},{fade_end})+0.00001),({progress}))"
-  }
+  "glsl": "1.0-smoothstep(min({fade_start},{fade_end}),max(max({fade_start},{fade_end}),min({fade_start},{fade_end})+0.00001),({progress}))"
 }

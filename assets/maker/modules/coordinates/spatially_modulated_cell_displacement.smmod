@@ -35,8 +35,7 @@
     {
       "id": "displacement",
       "name": "Cell Displacement",
-      "type": "vec3",
-      "semantic_role": "offset3d"
+      "type": "vec3"
     }
   ],
   "parameters": [

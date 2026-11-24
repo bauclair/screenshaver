@@ -71,7 +71,5 @@
     }
   ],
   "helpers": "float maker_synthetic_spectrum(float f,float time,float pulse,float low,float mid,float high,float speed){float x=clamp(f,0.0,1.0);float t=time*speed;float bass=pow(1.0-x,1.5)*low+max(pulse,0.0)*exp(-9.0*x)*low;float center=0.4+0.17*sin(t*0.8);float middle=mid*exp(-pow((x-center)/0.09,2.0))*(0.6+0.4*sin(t*5.0+x*35.0));float treble=high*x*(0.5+0.5*sin(t*13.0+x*75.0));return clamp(bass+middle+treble,0.0,1.0);}",
-  "glsl_outputs": {
-    "intensity": "maker_synthetic_spectrum({frequency},{time},{pulse},{low_weight},{mid_weight},{high_weight},{motion_speed})"
-  }
+  "glsl": "maker_synthetic_spectrum({frequency},{time},{pulse},{low_weight},{mid_weight},{high_weight},{motion_speed})"
 }

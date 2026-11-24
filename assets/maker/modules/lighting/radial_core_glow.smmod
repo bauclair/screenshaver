@@ -71,7 +71,5 @@
     }
   ],
   "helpers": "",
-  "glsl_outputs": {
-    "color": "({tint})*max({strength},0.0)*(max({base},0.0)+max({pulse_gain},0.0)*max({pulse},0.0))/(dot(({position}),({position}))+max({softness},0.001)*max({softness},0.001))"
-  }
+  "glsl": "({tint})*max({strength},0.0)*(max({base},0.0)+max({pulse_gain},0.0)*max({pulse},0.0))/(dot(({position}),({position}))+max({softness},0.001)*max({softness},0.001))"
 }
