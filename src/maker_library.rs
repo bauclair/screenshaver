@@ -9,6 +9,9 @@ impl Library {
  fn load()->Self{
     let mut result=Self{modules:BTreeMap::new(),categories:BTreeMap::new(),sources:BTreeMap::new(),errors:Vec::new(),catalog_fingerprint:0xcbf29ce484222325};
     let official=[
+    ("fields/propagating_radial_wavefront_2d.smmod",include_str!("../assets/maker/modules/fields/propagating_radial_wavefront_2d.smmod")),
+    ("coordinates/polar_coordinate_mapping_2d.smmod",include_str!("../assets/maker/modules/coordinates/polar_coordinate_mapping_2d.smmod")),
+      ("fields/scale_compensated_fractal_orbit_field_3d.smmod",include_str!("../assets/maker/modules/fields/scale_compensated_fractal_orbit_field_3d.smmod")),
       ("fields/independent_floating_particle_field_2d.smmod",include_str!("../assets/maker/modules/fields/independent_floating_particle_field_2d.smmod")),
       ("fields/axial_field_displacement_3d.smmod",include_str!("../assets/maker/modules/fields/axial_field_displacement_3d.smmod")),
       ("geometry/ellipsoid_distance_field_3d.smmod",include_str!("../assets/maker/modules/geometry/ellipsoid_distance_field_3d.smmod")),
@@ -22,6 +25,7 @@ impl Library {
       ("fields/animated_layered_particle_field.smmod",include_str!("../assets/maker/modules/fields/animated_layered_particle_field.smmod")),
       ("test/universal_test.smmod",include_str!("../assets/maker/modules/test/universal_test.smmod")),
       ("coordinates/uv_coordinates.smmod",include_str!("../assets/maker/modules/coordinates/uv_coordinates.smmod")),
+      ("coordinates/periodic_vector_wrap_3d.smmod",include_str!("../assets/maker/modules/coordinates/periodic_vector_wrap_3d.smmod")),
       ("coordinates/spherical_direction.smmod",include_str!("../assets/maker/modules/coordinates/spherical_direction.smmod")),
       ("coordinates/log_polar_mapping.smmod",include_str!("../assets/maker/modules/coordinates/log_polar_mapping.smmod")),
       ("fields/sinusoidal_ribbon_field.smmod",include_str!("../assets/maker/modules/fields/sinusoidal_ribbon_field.smmod")),
@@ -30,6 +34,7 @@ impl Library {
       ("fields/procedural_radial_ray_field.smmod",include_str!("../assets/maker/modules/fields/procedural_radial_ray_field.smmod")),
       ("noise/value_noise_2d.smmod",include_str!("../assets/maker/modules/noise/value_noise_2d.smmod")),
       ("math/multiply.smmod",include_str!("../assets/maker/modules/math/multiply.smmod")),
+      ("math/geometric_norm_blend_3d.smmod",include_str!("../assets/maker/modules/math/geometric_norm_blend_3d.smmod")),
       ("color/cosine_palette.smmod",include_str!("../assets/maker/modules/color/cosine_palette.smmod")),
       ("color/smooth_hsv_color.smmod",include_str!("../assets/maker/modules/color/smooth_hsv_color.smmod")),
       ("color/distance_hue_mapping.smmod",include_str!("../assets/maker/modules/color/distance_hue_mapping.smmod")),

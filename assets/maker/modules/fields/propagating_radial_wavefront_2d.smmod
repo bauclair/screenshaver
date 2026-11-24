@@ -1,0 +1,124 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.propagating_radial_wavefront_2d",
+  "name": "Propagating Radial Wavefront 2D",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "description": "Generates a moving circular boundary with independent region masks.",
+  "uses": "Shockwaves, ripples, sonar and turbulent radial effects.",
+  "notes": "Time is externally controlled. Positive displacement expands the local radius; negative displacement contracts it. Current Radius includes displacement and is clamped nonnegative. Interior and Exterior are complementary smooth masks; Front Mask is a separate annular mask. Spatially varying displacement makes Signed Front Distance a radial residual rather than an exact SDF.",
+  "header_color": "#557C9C",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "time",
+      "name": "Time",
+      "type": "float",
+      "default": "u_time",
+      "semantic_role": "time"
+    },
+    {
+      "id": "displacement",
+      "name": "Front Displacement",
+      "type": "float",
+      "default": "0.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "front",
+      "name": "Front Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    },
+    {
+      "id": "interior",
+      "name": "Interior Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    },
+    {
+      "id": "exterior",
+      "name": "Exterior Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    },
+    {
+      "id": "distance",
+      "name": "Signed Front Distance",
+      "type": "float",
+      "semantic_role": "distance"
+    },
+    {
+      "id": "radius",
+      "name": "Current Radius",
+      "type": "float",
+      "semantic_role": "distance"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "center_x",
+      "name": "Center X",
+      "type": "float",
+      "default": 0,
+      "min": -5,
+      "max": 5
+    },
+    {
+      "id": "center_y",
+      "name": "Center Y",
+      "type": "float",
+      "default": 0,
+      "min": -5,
+      "max": 5
+    },
+    {
+      "id": "initial_radius",
+      "name": "Initial Radius",
+      "type": "float",
+      "default": 0,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "speed",
+      "name": "Propagation Speed",
+      "type": "float",
+      "default": 0.5,
+      "min": -5,
+      "max": 5
+    },
+    {
+      "id": "half_width",
+      "name": "Front Half Width",
+      "type": "float",
+      "default": 0.1,
+      "min": 0.001,
+      "max": 2
+    },
+    {
+      "id": "softness",
+      "name": "Edge Softness",
+      "type": "float",
+      "default": 0.05,
+      "min": 0.001,
+      "max": 1
+    }
+  ],
+  "helpers": "float maker_wavefront_radius(float t,float initial,float speed,float displacement){return max(0.0,max(0.0,initial+speed*t)+displacement);}\nfloat maker_wavefront_mask(float d,float w,float s){return 1.0-smoothstep(max(0.0,w),max(0.0,w)+max(s,0.000001),abs(d));}\nfloat maker_wavefront_exterior(float d,float s){s=max(s,0.000001);return smoothstep(-s,s,d);}",
+  "glsl_outputs": {
+    "front": "maker_wavefront_mask((length(({position}-vec2({center_x},{center_y})))-maker_wavefront_radius({time},{initial_radius},{speed},{displacement})),{half_width},{softness})",
+    "interior": "(1.0-maker_wavefront_exterior((length(({position}-vec2({center_x},{center_y})))-maker_wavefront_radius({time},{initial_radius},{speed},{displacement})),{softness}))",
+    "exterior": "maker_wavefront_exterior((length(({position}-vec2({center_x},{center_y})))-maker_wavefront_radius({time},{initial_radius},{speed},{displacement})),{softness})",
+    "distance": "(length(({position}-vec2({center_x},{center_y})))-maker_wavefront_radius({time},{initial_radius},{speed},{displacement}))",
+    "radius": "maker_wavefront_radius({time},{initial_radius},{speed},{displacement})"
+  }
+}

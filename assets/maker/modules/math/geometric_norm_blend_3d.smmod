@@ -1,0 +1,125 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.math.geometric_norm_blend_3d",
+  "name": "Geometric Norm Blend 3D",
+  "category": "Math",
+  "created_by": "Screenshaver",
+  "description": "Blends two independently selected vector metrics.",
+  "uses": "Geometric contours, procedural masks, lattice patterns.",
+  "notes": "Blend is clamped to [0,1]. Each metric is gain times norm plus bias, then optionally inverted as 1 minus that value. Modified metrics need not be norms or signed distances.",
+  "header_color": "#65758B",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "vector",
+      "name": "Vector",
+      "type": "vec3",
+      "default": "vec3(maker_uv,0.0)"
+    },
+    {
+      "id": "blend",
+      "name": "Blend",
+      "type": "float",
+      "default": "0.5"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "metric",
+      "name": "Blended Metric",
+      "type": "float"
+    },
+    {
+      "id": "first",
+      "name": "First Metric",
+      "type": "float"
+    },
+    {
+      "id": "second",
+      "name": "Second Metric",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "first_norm",
+      "name": "First Norm",
+      "type": "choice",
+      "default": 2,
+      "options": [
+        "Manhattan",
+        "Euclidean",
+        "Maximum"
+      ]
+    },
+    {
+      "id": "second_norm",
+      "name": "Second Norm",
+      "type": "choice",
+      "default": 1,
+      "options": [
+        "Manhattan",
+        "Euclidean",
+        "Maximum"
+      ]
+    },
+    {
+      "id": "first_gain",
+      "name": "First Metric Gain",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "second_gain",
+      "name": "Second Metric Gain",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "first_bias",
+      "name": "First Metric Bias",
+      "type": "float",
+      "default": 0,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "second_bias",
+      "name": "Second Metric Bias",
+      "type": "float",
+      "default": 0,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "first_invert",
+      "name": "Invert First Metric",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "No",
+        "Yes"
+      ]
+    },
+    {
+      "id": "second_invert",
+      "name": "Invert Second Metric",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "No",
+        "Yes"
+      ]
+    }
+  ],
+  "helpers": "float maker_norm_metric(vec3 v,float mode,float gain,float bias,float invert){\n vec3 a=abs(v);\n float n=mode<0.5?a.x+a.y+a.z:(mode<1.5?length(v):max(a.x,max(a.y,a.z)));\n float m=gain*n+bias;\n return invert>0.5?1.0-m:m;\n}",
+  "glsl_outputs": {
+    "metric": "mix(maker_norm_metric({vector},{first_norm},{first_gain},{first_bias},{first_invert}),maker_norm_metric({vector},{second_norm},{second_gain},{second_bias},{second_invert}),clamp({blend},0.0,1.0))",
+    "first": "maker_norm_metric({vector},{first_norm},{first_gain},{first_bias},{first_invert})",
+    "second": "maker_norm_metric({vector},{second_norm},{second_gain},{second_bias},{second_invert})"
+  }
+}
