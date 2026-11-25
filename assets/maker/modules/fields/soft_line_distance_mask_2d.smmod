@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.soft_line_distance_mask_2d",
+  "name": "Soft Line Distance Mask 2D",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "header_color": "#4B9A86",
+  "description": "Generates a soft mask around a single infinite straight line in a 2D coordinate plane.",
+  "uses": "Line art, isolated stripes, geometric contours and spatial masks.",
+  "notes": "Orientation is the direction of the line in radians; zero is horizontal. Center is a point on the line. Half Width defines the fully opaque region; Edge Softness extends outward from that region. No repetition or color is applied.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec2",
+      "default": "vec2(0.0)"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "mask",
+      "name": "Line Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "angle",
+      "name": "Orientation",
+      "type": "float",
+      "default": 0,
+      "min": -6.2832,
+      "max": 6.2832
+    },
+    {
+      "id": "half_width",
+      "name": "Half Width",
+      "type": "float",
+      "default": 0.015,
+      "min": 0,
+      "max": 2
+    },
+    {
+      "id": "softness",
+      "name": "Edge Softness",
+      "type": "float",
+      "default": 0.01,
+      "min": 0.0001,
+      "max": 1
+    }
+  ],
+  "helpers": "float maker_soft_line_mask_2d(vec2 p, vec2 center, float angle, float half_width, float softness) {\n    vec2 normal = vec2(-sin(angle), cos(angle));\n    float distance_to_line = abs(dot(p - center, normal));\n    float w = clamp(half_width, 0.0, 2.0);\n    float s = clamp(softness, 0.0001, 1.0);\n    return 1.0 - smoothstep(w, w + s, distance_to_line);\n}",
+  "glsl": "maker_soft_line_mask_2d({position},{center},{angle},{half_width},{softness})",
+  "terminal": false
+}

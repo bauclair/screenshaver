@@ -5,9 +5,9 @@
   "category": "Coordinates",
   "created_by": "Screenshaver",
   "header_color": "#5287B8",
-  "description": "Reflects a 2D position into a repeating angular wedge, producing exact radial mirror symmetry.",
+  "description": "Maps a 2D position into a repeating angular wedge with mirrored or rotational symmetry.",
   "uses": "Kaleidoscopic domain mapping before procedural fields, masks and geometry.",
-  "notes": "Sectors are rounded to an integer from 2 to 32. Rotation animates the fold frame; scale applies after folding.",
+  "notes": "Sectors are rounded to an integer from 2 to 32. Rotation animates the fold frame; scale applies after folding. Mirrored preserves the original fold. Rotational retains the signed sector angle without reflection.",
   "inputs": [
     {
       "id": "position",
@@ -57,9 +57,19 @@
       "default": 1,
       "min": 0.05,
       "max": 8
+    },
+    {
+      "id": "symmetry_mode",
+      "name": "Symmetry Mode",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Mirrored",
+        "Rotational"
+      ]
     }
   ],
-  "helpers": "vec2 maker_kaleidoscopic_sector_fold(vec2 p,float sectors,float rotation,float speed,float scale){\n float n=clamp(floor(sectors+0.5),2.0,32.0);\n float sector=6.28318530718/n;\n float angle=atan(p.y,p.x)-rotation-u_time*speed;\n float folded=abs(mod(angle+0.5*sector,sector)-0.5*sector);\n return vec2(cos(folded),sin(folded))*length(p)*max(scale,0.0001);\n}",
+  "helpers": "vec2 maker_kaleidoscopic_sector_fold(vec2 p,float sectors,float rotation,float speed,float scale,float mode){\n float n=clamp(floor(sectors+0.5),2.0,32.0);\n float sector=6.28318530718/n;\n if(dot(p,p)==0.0) return vec2(0.0);\n float angle=atan(p.y,p.x)-rotation-u_time*speed;\n float folded=abs(mod(angle+0.5*sector,sector)-0.5*sector);\n if(mode>=0.5) folded=mod(angle+0.5*sector,sector)-0.5*sector;\n return vec2(cos(folded),sin(folded))*length(p)*max(scale,0.0001);\n}",
   "terminal": false,
-  "glsl": "maker_kaleidoscopic_sector_fold({position},{sectors},{rotation},{speed},{scale})"
+  "glsl": "maker_kaleidoscopic_sector_fold({position},{sectors},{rotation},{speed},{scale},{symmetry_mode})"
 }

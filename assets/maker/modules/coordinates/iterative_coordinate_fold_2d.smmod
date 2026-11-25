@@ -1,0 +1,199 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.iterative_coordinate_fold_2d",
+  "name": "Iterative Coordinate Fold 2D",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "header_color": "#627FC2",
+  "description": "Repeated planar scaling, rotation and optional coordinate folding with radial statistics.",
+  "uses": "Recursive mosaics, orbit statistics and procedural coordinate distortion.",
+  "notes": "Rotation in degrees; animation speed in radians per second. Each iteration rotates with optional radial twist, scales, folds, then applies angular symmetry. Radii are relative to Fold Center and measured after folding; Folded Position is returned in world coordinates. Response is the mean of exp(-x^e), 1/(1+x^e), or exp(-0.5*(x^e)^2), times gain, where x is radius/width. Coordinates are bounded to one million per component; this is not a signed distance field. Invalid position, center or time returns zero.",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "time",
+      "name": "Time",
+      "type": "float",
+      "default": "u_time",
+      "semantic_role": "time"
+    },
+    {
+      "id": "center",
+      "name": "Fold Center",
+      "type": "vec2",
+      "default": "vec2(0.0)",
+      "semantic_role": "position2d"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "folded",
+      "name": "Folded Position",
+      "type": "vec2",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "final_radius",
+      "name": "Final Radius",
+      "type": "float",
+      "semantic_role": "distance"
+    },
+    {
+      "id": "minimum_radius",
+      "name": "Minimum Radius",
+      "type": "float",
+      "semantic_role": "distance"
+    },
+    {
+      "id": "mean_radius",
+      "name": "Mean Radius",
+      "type": "float",
+      "semantic_role": "distance"
+    },
+    {
+      "id": "accumulated_response",
+      "name": "Accumulated Response",
+      "type": "float",
+      "semantic_role": "intensity"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "iterations",
+      "name": "Iterations",
+      "type": "float",
+      "default": 6,
+      "min": 1,
+      "max": 24
+    },
+    {
+      "id": "iteration_scale",
+      "name": "Iteration Scale",
+      "type": "float",
+      "default": 1.5,
+      "min": 0.25,
+      "max": 5
+    },
+    {
+      "id": "rotation",
+      "name": "Rotation per Iteration",
+      "type": "float",
+      "default": 15,
+      "min": -180,
+      "max": 180
+    },
+    {
+      "id": "speed",
+      "name": "Animation Speed",
+      "type": "float",
+      "default": 0.2,
+      "min": -3,
+      "max": 3
+    },
+    {
+      "id": "fold_mode",
+      "name": "Fold Mode",
+      "type": "choice",
+      "default": 2,
+      "options": [
+        "None",
+        "Absolute",
+        "Periodic",
+        "Mirrored Periodic"
+      ]
+    },
+    {
+      "id": "period",
+      "name": "Fold Period",
+      "type": "float",
+      "default": 1,
+      "min": 0.1,
+      "max": 5
+    },
+    {
+      "id": "symmetry",
+      "name": "Angular Symmetry",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "None",
+        "Rotational",
+        "Mirrored"
+      ]
+    },
+    {
+      "id": "sectors",
+      "name": "Angular Sectors",
+      "type": "float",
+      "default": 6,
+      "min": 2,
+      "max": 24
+    },
+    {
+      "id": "twist",
+      "name": "Radial Twist Strength",
+      "type": "float",
+      "default": 0,
+      "min": -3,
+      "max": 3
+    },
+    {
+      "id": "frequency",
+      "name": "Radial Twist Frequency",
+      "type": "float",
+      "default": 3,
+      "min": 0,
+      "max": 20
+    },
+    {
+      "id": "response",
+      "name": "Response Mode",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Exponential",
+        "Reciprocal",
+        "Gaussian"
+      ]
+    },
+    {
+      "id": "width",
+      "name": "Response Width",
+      "type": "float",
+      "default": 0.1,
+      "min": 0.001,
+      "max": 2
+    },
+    {
+      "id": "exponent",
+      "name": "Response Exponent",
+      "type": "float",
+      "default": 2,
+      "min": 0.25,
+      "max": 8
+    },
+    {
+      "id": "gain",
+      "name": "Accumulation Gain",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 10
+    }
+  ],
+  "helpers": "struct MakerFold2DResult { vec2 folded; float final_radius; float minimum_radius; float mean_radius; float accumulated_response; };\nMakerFold2DResult maker_iterative_coordinate_fold_2d(vec2 p,float t,vec2 center,float iterations,float scale,float rotation,float speed,float foldMode,float period,float symmetry,float sectors,float twist,float frequency,float response,float width,float exponent,float gain){\n MakerFold2DResult result=MakerFold2DResult(vec2(0.0),0.0,0.0,0.0,0.0);\n if(any(isnan(p))||any(isinf(p))||any(isnan(center))||any(isinf(center))||isnan(t)||isinf(t)) return result;\n center=clamp(center,vec2(-1000000.0),vec2(1000000.0));\n vec2 q=clamp(p-center,vec2(-1000000.0),vec2(1000000.0));\n int count=int(clamp(floor(iterations+0.5),1.0,24.0));\n float cell=clamp(period,0.1,5.0), wedge=6.28318530718/clamp(floor(sectors+0.5),2.0,24.0);\n float base=radians(rotation)+mod(t,6.28318530718/max(abs(speed),0.000001))*speed;\n float smallest=2000000.0,total=0.0,acc=0.0,r=0.0;\n for(int i=0;i<24;++i){\n  if(i>=count) break;\n  float a=base+twist*sin(length(q)*frequency);\n  float c=cos(a),s=sin(a);\n  q=clamp(scale*vec2(c*q.x-s*q.y,s*q.x+c*q.y),vec2(-1000000.0),vec2(1000000.0));\n  if(foldMode>=0.5&&foldMode<1.5) q=abs(q);\n  else if(foldMode>=1.5&&foldMode<2.5) q=mod(q+0.5*cell,cell)-0.5*cell;\n  else if(foldMode>=2.5) q=0.5*cell-abs(mod(q+0.5*cell,2.0*cell)-cell);\n  r=length(q);\n  if(symmetry>=0.5&&r>0.0){\n   float phi=mod(atan(q.y,q.x)+0.5*wedge,wedge)-0.5*wedge;\n   if(symmetry>=1.5) phi=abs(phi);\n   q=r*vec2(cos(phi),sin(phi));\n  }\n  smallest=min(smallest,r); total+=r;\n  float x=r/max(width,0.001), e=clamp(exponent,0.25,8.0);\n  float v=pow(min(x,10000.0),e);\n  if(response<0.5) acc+=exp(-min(v,80.0));\n  else if(response<1.5) acc+=1.0/(1.0+v);\n  else acc+=exp(-min(0.5*min(v,20.0)*min(v,20.0),80.0));\n }\n return MakerFold2DResult(q+center,r,smallest,total/float(count),acc/float(count)*clamp(gain,0.0,10.0));\n}",
+  "glsl_outputs": {
+    "folded": "maker_iterative_coordinate_fold_2d({position},{time},{center},{iterations},{iteration_scale},{rotation},{speed},{fold_mode},{period},{symmetry},{sectors},{twist},{frequency},{response},{width},{exponent},{gain}).folded",
+    "final_radius": "maker_iterative_coordinate_fold_2d({position},{time},{center},{iterations},{iteration_scale},{rotation},{speed},{fold_mode},{period},{symmetry},{sectors},{twist},{frequency},{response},{width},{exponent},{gain}).final_radius",
+    "minimum_radius": "maker_iterative_coordinate_fold_2d({position},{time},{center},{iterations},{iteration_scale},{rotation},{speed},{fold_mode},{period},{symmetry},{sectors},{twist},{frequency},{response},{width},{exponent},{gain}).minimum_radius",
+    "mean_radius": "maker_iterative_coordinate_fold_2d({position},{time},{center},{iterations},{iteration_scale},{rotation},{speed},{fold_mode},{period},{symmetry},{sectors},{twist},{frequency},{response},{width},{exponent},{gain}).mean_radius",
+    "accumulated_response": "maker_iterative_coordinate_fold_2d({position},{time},{center},{iterations},{iteration_scale},{rotation},{speed},{fold_mode},{period},{symmetry},{sectors},{twist},{frequency},{response},{width},{exponent},{gain}).accumulated_response"
+  }
+}

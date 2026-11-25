@@ -7,9 +7,9 @@
   "name": "Randomized Bokeh Disc Field",
   "category": "Fields",
   "header_color": "#4B9A86",
-  "description": "Produces a randomized soft disc mask and independent halo intensity for each grid cell.",
+  "description": "Produces a randomized soft disc mask and independent halo intensity for each grid cell. Also provides independently adjustable radial disc brightness.",
   "uses": "Procedural bokeh, glowing light points, soft particle masks and irregular circular motifs.",
-  "notes": "Feed Local Position and Cell Coordinates from Staggered Grid Coordinates 2D. Radius and softness use the same coordinate units as the local position. Per-cell variation is deterministic and does not require textures.",
+  "notes": "Feed Local Position and Cell Coordinates from Staggered Grid Coordinates 2D. Radius and softness use the same coordinate units as the local position. Per-cell variation is deterministic and does not require textures. Disc Intensity multiplies Disc Mask by a smooth radial brightness profile using the randomized elliptical radius. Rim Width is a fraction of that radius; equal center and rim brightness of 1 reproduces Disc Mask. Existing outputs are unaffected.",
   "inputs": [
     {
       "id": "local",
@@ -36,6 +36,12 @@
     {
       "id": "glow",
       "name": "Glow Intensity",
+      "type": "float",
+      "semantic_role": "intensity"
+    },
+    {
+      "id": "disc_intensity",
+      "name": "Disc Intensity",
       "type": "float",
       "semantic_role": "intensity"
     }
@@ -96,11 +102,36 @@
       "default": 0,
       "min": -1000,
       "max": 1000
+    },
+    {
+      "id": "center_brightness",
+      "name": "Center Brightness",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 2
+    },
+    {
+      "id": "rim_brightness",
+      "name": "Rim Brightness",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 2
+    },
+    {
+      "id": "rim_width",
+      "name": "Rim Width",
+      "type": "float",
+      "default": 0.2,
+      "min": 0.01,
+      "max": 1
     }
   ],
-  "helpers": "float maker_bokeh_hash(vec2 p){\n vec2 q=fract(p*vec2(0.1031,0.11369));\n q+=dot(q,q.yx+19.19);\n return fract((q.x+q.y)*q.x);\n}\nvec2 maker_bokeh_disc_data(vec2 p,vec2 cell,float radius,float variation,float shape,float softness,float halo,float strength,float seed){\n float h=maker_bokeh_hash(cell+vec2(seed,seed*0.73));\n float hx=maker_bokeh_hash(cell+vec2(seed+17.0,seed-9.0));\n float hy=maker_bokeh_hash(cell+vec2(seed-23.0,seed+31.0));\n float r=max(radius,0.0001)*max(0.05,1.0+(h*2.0-1.0)*clamp(variation,0.0,1.0));\n vec2 aspect=vec2(1.0+(hx*2.0-1.0)*clamp(shape,0.0,0.95),1.0+(hy*2.0-1.0)*clamp(shape,0.0,0.95));\n float d=length(p/max(aspect,vec2(0.05)))-r;\n float mask=1.0-smoothstep(-max(softness,0.0001),max(softness,0.0001),d);\n float glow=exp(-max(d,0.0)/max(halo,0.0001))*max(strength,0.0)*(1.0-mask);\n return vec2(mask,glow);\n}",
+  "helpers": "float maker_bokeh_hash(vec2 p){\n vec2 q=fract(p*vec2(0.1031,0.11369));\n q+=dot(q,q.yx+19.19);\n return fract((q.x+q.y)*q.x);\n}\nvec2 maker_bokeh_disc_data(vec2 p,vec2 cell,float radius,float variation,float shape,float softness,float halo,float strength,float seed){\n float h=maker_bokeh_hash(cell+vec2(seed,seed*0.73));\n float hx=maker_bokeh_hash(cell+vec2(seed+17.0,seed-9.0));\n float hy=maker_bokeh_hash(cell+vec2(seed-23.0,seed+31.0));\n float r=max(radius,0.0001)*max(0.05,1.0+(h*2.0-1.0)*clamp(variation,0.0,1.0));\n vec2 aspect=vec2(1.0+(hx*2.0-1.0)*clamp(shape,0.0,0.95),1.0+(hy*2.0-1.0)*clamp(shape,0.0,0.95));\n float d=length(p/max(aspect,vec2(0.05)))-r;\n float mask=1.0-smoothstep(-max(softness,0.0001),max(softness,0.0001),d);\n float glow=exp(-max(d,0.0)/max(halo,0.0001))*max(strength,0.0)*(1.0-mask);\n return vec2(mask,glow);\n}\nfloat maker_bokeh_disc_intensity(vec2 p,vec2 cell,float radius,float variation,float shape,float softness,float seed,float center_brightness,float rim_brightness,float rim_width){\n float h=maker_bokeh_hash(cell+vec2(seed,seed*0.73));\n float hx=maker_bokeh_hash(cell+vec2(seed+17.0,seed-9.0));\n float hy=maker_bokeh_hash(cell+vec2(seed-23.0,seed+31.0));\n float r=max(radius,0.0001)*max(0.05,1.0+(h*2.0-1.0)*clamp(variation,0.0,1.0));\n vec2 aspect=vec2(1.0+(hx*2.0-1.0)*clamp(shape,0.0,0.95),1.0+(hy*2.0-1.0)*clamp(shape,0.0,0.95));\n float d=length(p/max(aspect,vec2(0.05)))-r;\n float mask=1.0-smoothstep(-max(softness,0.0001),max(softness,0.0001),d);\n float rho=clamp((d+r)/r,0.0,1.0);\n float w=smoothstep(1.0-clamp(rim_width,0.01,1.0),1.0,rho);\n return mask*mix(clamp(center_brightness,0.0,2.0),clamp(rim_brightness,0.0,2.0),w);\n}",
   "glsl_outputs": {
     "mask": "maker_bokeh_disc_data({local},{cell},{radius},{radius_variation},{shape_variation},{edge_softness},{glow_width},{glow_strength},{seed}).x",
-    "glow": "maker_bokeh_disc_data({local},{cell},{radius},{radius_variation},{shape_variation},{edge_softness},{glow_width},{glow_strength},{seed}).y"
+    "glow": "maker_bokeh_disc_data({local},{cell},{radius},{radius_variation},{shape_variation},{edge_softness},{glow_width},{glow_strength},{seed}).y",
+    "disc_intensity": "maker_bokeh_disc_intensity({local},{cell},{radius},{radius_variation},{shape_variation},{edge_softness},{seed},{center_brightness},{rim_brightness},{rim_width})"
   }
 }

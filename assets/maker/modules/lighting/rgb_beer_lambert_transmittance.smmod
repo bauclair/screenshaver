@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.lighting.rgb_beer_lambert_transmittance",
+  "name": "RGB Beer\u2013Lambert Transmittance",
+  "category": "Lighting",
+  "created_by": "Screenshaver",
+  "description": "Applies independent exponential absorption to RGB channels.",
+  "uses": "Colored glass, fog and wavelength-dependent attenuation.",
+  "notes": "Nonnegative density, distance and extinction. Optical depth is capped at 80. Incident HDR color is not clamped.",
+  "header_color": "#B88655",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "incident",
+      "name": "Incident Color",
+      "type": "vec3",
+      "default": "vec3(1.0)",
+      "semantic_role": "color"
+    },
+    {
+      "id": "extinction",
+      "name": "Extinction Coefficients",
+      "type": "vec3",
+      "default": "vec3(0.2,0.5,1.0)"
+    },
+    {
+      "id": "density",
+      "name": "Density",
+      "type": "float",
+      "default": "1.0"
+    },
+    {
+      "id": "distance",
+      "name": "Travel Distance",
+      "type": "float",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "transmitted",
+      "name": "Transmitted Color",
+      "type": "vec3",
+      "semantic_role": "color"
+    },
+    {
+      "id": "transmittance",
+      "name": "RGB Transmittance",
+      "type": "vec3",
+      "semantic_role": "color"
+    }
+  ],
+  "parameters": [],
+  "helpers": "vec3 maker_rgb_beer_transmission(vec3 extinction, float density, float distanceAlongRay) {\n    if(density<=0.0 || distanceAlongRay<=0.0) return vec3(1.0);\n    vec3 sigma=max(extinction,vec3(0.0));\n    vec3 depth=min((sigma*density)*distanceAlongRay,vec3(80.0));\n    return exp(-depth);\n}",
+  "glsl": "({incident}*maker_rgb_beer_transmission({extinction},{density},{distance}))",
+  "glsl_outputs": {
+    "transmitted": "({incident}*maker_rgb_beer_transmission({extinction},{density},{distance}))",
+    "transmittance": "maker_rgb_beer_transmission({extinction},{density},{distance})"
+  }
+}

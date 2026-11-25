@@ -9,6 +9,9 @@ impl Library {
  fn load()->Self{
     let mut result=Self{modules:BTreeMap::new(),categories:BTreeMap::new(),sources:BTreeMap::new(),errors:Vec::new(),catalog_fingerprint:0xcbf29ce484222325};
     let official=[
+        ("lighting/dielectric_fresnel_response.smmod", include_str!("../assets/maker/modules/lighting/dielectric_fresnel_response.smmod")),
+        ("lighting/rgb_beer_lambert_transmittance.smmod", include_str!("../assets/maker/modules/lighting/rgb_beer_lambert_transmittance.smmod")),
+        ("coordinates/vector_alignment_rotation_3d.smmod", include_str!("../assets/maker/modules/coordinates/vector_alignment_rotation_3d.smmod")),
         ("coordinates/cylindrical_direction_projection.smmod", include_str!("../assets/maker/modules/coordinates/cylindrical_direction_projection.smmod")),
         ("fields/rotated_harmonic_field_3d.smmod", include_str!("../assets/maker/modules/fields/rotated_harmonic_field_3d.smmod")),
         ("fields/gradient_noise_3d.smmod", include_str!("../assets/maker/modules/fields/gradient_noise_3d.smmod")),
@@ -75,8 +78,10 @@ impl Library {
       ("color/smooth_hsv_color.smmod",include_str!("../assets/maker/modules/color/smooth_hsv_color.smmod")),
       ("color/distance_hue_mapping.smmod",include_str!("../assets/maker/modules/color/distance_hue_mapping.smmod")),
       ("coordinates/kaleidoscopic_sector_fold.smmod",include_str!("../assets/maker/modules/coordinates/kaleidoscopic_sector_fold.smmod")),
+      ("coordinates/iterative_coordinate_fold_2d.smmod",include_str!("../assets/maker/modules/coordinates/iterative_coordinate_fold_2d.smmod")),
       ("coordinates/radial_vortex_warp.smmod",include_str!("../assets/maker/modules/coordinates/radial_vortex_warp.smmod")),
       ("fields/procedural_lattice_lines.smmod",include_str!("../assets/maker/modules/fields/procedural_lattice_lines.smmod")),
+      ("fields/soft_line_distance_mask_2d.smmod",include_str!("../assets/maker/modules/fields/soft_line_distance_mask_2d.smmod")),
       ("fields/soft_interference_field.smmod",include_str!("../assets/maker/modules/fields/soft_interference_field.smmod")),
       ("color/primary_spectrum_palette.smmod",include_str!("../assets/maker/modules/color/primary_spectrum_palette.smmod")),
       ("output/output_color.smmod",include_str!("../assets/maker/modules/output/output_color.smmod")),
@@ -128,6 +133,7 @@ impl Library {
       ("fields/vignette_mask.smmod",include_str!("../assets/maker/modules/fields/vignette_mask.smmod")),
       ("color/rgb_to_alpha.smmod",include_str!("../assets/maker/modules/color/rgb_to_alpha.smmod")),
       ("noise/fbm_2d.smmod",include_str!("../assets/maker/modules/noise/fbm_2d.smmod")),
+      ("noise/fbm_3d.smmod",include_str!("../assets/maker/modules/noise/fbm_3d.smmod")),
       ("noise/layered_temporal_noise.smmod",include_str!("../assets/maker/modules/noise/layered_temporal_noise.smmod")),
       ("coordinates/deep_fbm_domain_warp.smmod",include_str!("../assets/maker/modules/coordinates/deep_fbm_domain_warp.smmod")),
       ("fields/four_wave_plasma_field.smmod",include_str!("../assets/maker/modules/fields/four_wave_plasma_field.smmod")),

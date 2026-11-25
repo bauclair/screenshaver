@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.vector_alignment_rotation_3d",
+  "name": "Vector Alignment Rotation 3D",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "description": "Rotates a vector by the shortest rotation aligning two directions.",
+  "uses": "Coordinate orientation, camera alignment and procedural geometry.",
+  "notes": "Zero-length reference directions leave position unchanged. Opposite directions use a deterministic perpendicular axis. Direction magnitudes are ignored.",
+  "header_color": "#557C9C",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "default": "vec3(maker_uv,0.0)",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "source",
+      "name": "Source Direction",
+      "type": "vec3",
+      "default": "vec3(0.0,0.0,1.0)",
+      "semantic_role": "direction3d"
+    },
+    {
+      "id": "target",
+      "name": "Target Direction",
+      "type": "vec3",
+      "default": "vec3(0.0,1.0,0.0)",
+      "semantic_role": "direction3d"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "rotated",
+      "name": "Rotated Position",
+      "type": "vec3",
+      "semantic_role": "position3d"
+    }
+  ],
+  "parameters": [],
+  "helpers": "vec3 maker_align_vector_quaternion(vec3 p, vec3 sourceDir, vec3 targetDir) {\n    float aLen=length(sourceDir), bLen=length(targetDir);\n    if(aLen<=1e-8 || bLen<=1e-8) return p;\n    vec3 a=sourceDir/aLen, b=targetDir/bLen;\n    vec3 axis=cross(a,b);\n    float s=length(axis), c=clamp(dot(a,b),-1.0,1.0);\n    if(s<=1e-7) {\n        if(c>=0.0) return p;\n        vec3 basis=abs(a.x)<=abs(a.y) && abs(a.x)<=abs(a.z) ? vec3(1,0,0) : (abs(a.y)<=abs(a.z) ? vec3(0,1,0) : vec3(0,0,1));\n        vec3 u=normalize(cross(a,basis));\n        return 2.0*u*dot(u,p)-p;\n    }\n    float halfAngle=0.5*atan(s,c);\n    vec3 q=axis/s*sin(halfAngle);\n    return p+2.0*cross(q,cross(q,p)+cos(halfAngle)*p);\n}",
+  "glsl": "maker_align_vector_quaternion({position},{source},{target})"
+}

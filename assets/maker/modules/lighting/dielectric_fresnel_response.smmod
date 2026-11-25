@@ -1,0 +1,68 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.lighting.dielectric_fresnel_response",
+  "name": "Dielectric Fresnel Response",
+  "category": "Lighting",
+  "created_by": "Screenshaver",
+  "description": "Computes unpolarized dielectric interface reflectance and transmission.",
+  "uses": "Transparent materials, optical interfaces and reflection weighting.",
+  "notes": "Incident direction points toward the interface. Normal orientation is immaterial; indices must describe the actual incident and transmitted media. Transmission is power fraction, not radiance scaling. Invalid directions return full transmission. Indices are clamped to [0.0001,10000].",
+  "header_color": "#B88655",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "incident",
+      "name": "Incident Direction",
+      "type": "vec3",
+      "default": "vec3(0.0,0.0,-1.0)",
+      "semantic_role": "direction3d"
+    },
+    {
+      "id": "normal",
+      "name": "Surface Normal",
+      "type": "vec3",
+      "default": "vec3(0.0,0.0,1.0)",
+      "semantic_role": "normal3d"
+    },
+    {
+      "id": "incident_ior",
+      "name": "Incident Refractive Index",
+      "type": "float",
+      "default": "1.0"
+    },
+    {
+      "id": "transmitted_ior",
+      "name": "Transmitted Refractive Index",
+      "type": "float",
+      "default": "1.5"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "reflectance",
+      "name": "Reflectance",
+      "type": "float",
+      "semantic_role": "intensity"
+    },
+    {
+      "id": "transmittance",
+      "name": "Transmittance",
+      "type": "float",
+      "semantic_role": "intensity"
+    },
+    {
+      "id": "tir",
+      "name": "Total Internal Reflection Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    }
+  ],
+  "parameters": [],
+  "helpers": "vec3 maker_dielectric_interface(vec3 incidentDir, vec3 normalDir, float incidentIndex, float transmittedIndex) {\n    float li=length(incidentDir), ln=length(normalDir);\n    if(li<=1e-8 || ln<=1e-8) return vec3(0.0,1.0,0.0);\n    float ni=clamp(incidentIndex,0.0001,10000.0), nt=clamp(transmittedIndex,0.0001,10000.0);\n    if(ni==nt) return vec3(0.0,1.0,0.0);\n    float ci=clamp(abs(dot(incidentDir/li,normalDir/ln)),0.0,1.0);\n    float eta=ni/nt;\n    float st2=eta*eta*max(0.0,1.0-ci*ci);\n    if(st2>=1.0) return vec3(1.0,0.0,1.0);\n    float ct=sqrt(max(0.0,1.0-st2));\n    float rs=(ni*ci-nt*ct)/(ni*ci+nt*ct);\n    float rp=(nt*ci-ni*ct)/(nt*ci+ni*ct);\n    float r=clamp(0.5*(rs*rs+rp*rp),0.0,1.0);\n    return vec3(r,1.0-r,0.0);\n}",
+  "glsl": "maker_dielectric_interface({incident},{normal},{incident_ior},{transmitted_ior}).x",
+  "glsl_outputs": {
+    "reflectance": "maker_dielectric_interface({incident},{normal},{incident_ior},{transmitted_ior}).x",
+    "transmittance": "maker_dielectric_interface({incident},{normal},{incident_ior},{transmitted_ior}).y",
+    "tir": "maker_dielectric_interface({incident},{normal},{incident_ior},{transmitted_ior}).z"
+  }
+}

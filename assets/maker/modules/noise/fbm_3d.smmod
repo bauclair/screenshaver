@@ -1,0 +1,125 @@
+{
+  "schema_version": 1,
+  "created_by": "Screenshaver",
+  "terminal": false,
+  "id": "screenshaver.noise.fbm_3d",
+  "name": "FBM Noise 3D",
+  "category": "Noise",
+  "header_color": "#5B789C",
+  "description": "Normalized multi-octave three-dimensional lattice value noise.",
+  "uses": "Clouds, terrain, volumetric density and organic spatial fields.",
+  "notes": "Eight octave ceiling. Coordinates wrap on a 65536-cell periodic lattice before integer conversion; animation translates the domain before octave scaling. Turbulence and ridged modes transform each octave before accumulation. Octaves and seed are rounded to integers. Nonfinite position or time returns zero.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "default": "vec3(maker_uv,0.0)",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "time",
+      "name": "Time",
+      "type": "float",
+      "default": "u_time",
+      "semantic_role": "time"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "field",
+      "name": "Field",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "scale",
+      "name": "Scale",
+      "type": "float",
+      "default": 3,
+      "min": 0.01,
+      "max": 50
+    },
+    {
+      "id": "octaves",
+      "name": "Octaves",
+      "type": "float",
+      "default": 4,
+      "min": 1,
+      "max": 8
+    },
+    {
+      "id": "persistence",
+      "name": "Persistence",
+      "type": "float",
+      "default": 0.5,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "lacunarity",
+      "name": "Lacunarity",
+      "type": "float",
+      "default": 2,
+      "min": 1,
+      "max": 4
+    },
+    {
+      "id": "seed",
+      "name": "Seed",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 65535
+    },
+    {
+      "id": "speed_x",
+      "name": "X Animation Speed",
+      "type": "float",
+      "default": 0,
+      "min": -3,
+      "max": 3
+    },
+    {
+      "id": "speed_y",
+      "name": "Y Animation Speed",
+      "type": "float",
+      "default": 0,
+      "min": -3,
+      "max": 3
+    },
+    {
+      "id": "speed_z",
+      "name": "Z Animation Speed",
+      "type": "float",
+      "default": 0.2,
+      "min": -3,
+      "max": 3
+    },
+    {
+      "id": "interpolation",
+      "name": "Interpolation",
+      "type": "choice",
+      "options": [
+        "Linear",
+        "Smooth",
+        "Quintic"
+      ],
+      "default": 1
+    },
+    {
+      "id": "noise_mode",
+      "name": "Noise Mode",
+      "type": "choice",
+      "options": [
+        "Standard",
+        "Turbulence",
+        "Ridged"
+      ],
+      "default": 0
+    }
+  ],
+  "helpers": "uint maker_fbm3_mix(uint v){\n v^=v>>16; v*=0x7feb352du; v^=v>>15; v*=0x846ca68bu; return v^(v>>16);\n}\nfloat maker_fbm3_hash(ivec3 cell,uint seed){\n uvec3 c=uvec3(cell)&uvec3(65535u);\n uint h=maker_fbm3_mix(c.x*0x9e3779b9u ^ c.y*0x85ebca6bu ^ c.z*0xc2b2ae35u ^ maker_fbm3_mix(seed));\n return float(h&0x00ffffffu)/16777215.0;\n}\nfloat maker_fbm3_lattice(vec3 p,uint seed,int interpolation){\n ivec3 b=ivec3(floor(p)); vec3 f=fract(p); vec3 w=f;\n if(interpolation==1) w=f*f*(3.0-2.0*f);\n if(interpolation==2) w=f*f*f*(f*(6.0*f-15.0)+10.0);\n float a=mix(maker_fbm3_hash(b,seed),maker_fbm3_hash(b+ivec3(1,0,0),seed),w.x);\n float c=mix(maker_fbm3_hash(b+ivec3(0,1,0),seed),maker_fbm3_hash(b+ivec3(1,1,0),seed),w.x);\n float d=mix(maker_fbm3_hash(b+ivec3(0,0,1),seed),maker_fbm3_hash(b+ivec3(1,0,1),seed),w.x);\n float e=mix(maker_fbm3_hash(b+ivec3(0,1,1),seed),maker_fbm3_hash(b+ivec3(1,1,1),seed),w.x);\n return mix(mix(a,c,w.y),mix(d,e,w.y),w.z);\n}\nfloat maker_fbm3_eval(vec3 position,float time,float scale,float octaves,float persistence,float lacunarity,float seed,vec3 speed,float interpolation,float mode){\n if(any(isnan(position))||any(isinf(position))||isnan(time)||isinf(time))return 0.0;\n vec3 p=(position+time*speed)*scale;\n if(any(isnan(p))||any(isinf(p)))return 0.0;\n\n int count=int(clamp(floor(octaves+0.5),1.0,8.0));\n uint key=uint(clamp(floor(seed+0.5),0.0,65535.0));\n int interp=int(clamp(floor(interpolation+0.5),0.0,2.0));\n int kind=int(clamp(floor(mode+0.5),0.0,2.0));\n float sum=0.0,weight=0.0,amplitude=1.0;\n for(int j=0;j<8;j++){\n  if(j>=count||amplitude<=0.0)break;\n  float n=maker_fbm3_lattice(mod(p,65536.0),key,interp);\n  if(kind!=0){n=abs(2.0*n-1.0);if(kind==2)n=1.0-n;}\n  sum+=amplitude*n;weight+=amplitude;\n  p*=lacunarity; if(any(isinf(p))||any(isnan(p)))break;amplitude*=persistence;\n }\n return clamp(sum/max(weight,0.0001),0.0,1.0);\n}",
+  "glsl": "maker_fbm3_eval({position},{time},{scale},{octaves},{persistence},{lacunarity},{seed},vec3({speed_x},{speed_y},{speed_z}),{interpolation},{noise_mode})"
+}
