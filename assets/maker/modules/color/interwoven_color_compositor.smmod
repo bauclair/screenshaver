@@ -1,0 +1,152 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.color.interwoven_color_compositor",
+  "name": "Interwoven Color Compositor",
+  "category": "Color",
+  "created_by": "Screenshaver",
+  "description": "Composites two masked RGB layers with spatially variable foreground priority.",
+  "uses": "Woven ribbons, interlocking rings and alternating layer priority.",
+  "notes": "Ordering Mask 1 places A above B. Intersection darkening attenuates the lower layer in proportion to upper coverage. Continuous mode uses the clamped ordering field after frequency and phase.",
+  "header_color": "#429F91",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "color_a",
+      "name": "Color A",
+      "type": "vec3",
+      "default": "vec3(0.8,0.5,0.2)",
+      "semantic_role": "color"
+    },
+    {
+      "id": "color_b",
+      "name": "Color B",
+      "type": "vec3",
+      "default": "vec3(0.2,0.6,0.8)",
+      "semantic_role": "color"
+    },
+    {
+      "id": "mask_a",
+      "name": "Mask A",
+      "type": "float",
+      "default": "1.0",
+      "semantic_role": "mask"
+    },
+    {
+      "id": "mask_b",
+      "name": "Mask B",
+      "type": "float",
+      "default": "1.0",
+      "semantic_role": "mask"
+    },
+    {
+      "id": "ordering",
+      "name": "Ordering Field",
+      "type": "float",
+      "default": "maker_uv.x",
+      "semantic_role": ""
+    },
+    {
+      "id": "background",
+      "name": "Background Color",
+      "type": "vec3",
+      "default": "vec3(0.0)",
+      "semantic_role": "color"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "color",
+      "name": "Color",
+      "type": "vec3",
+      "semantic_role": "color"
+    },
+    {
+      "id": "combined",
+      "name": "Combined Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    },
+    {
+      "id": "overlap",
+      "name": "Overlap Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    },
+    {
+      "id": "order_mask",
+      "name": "Ordering Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "mode",
+      "name": "Ordering Mode",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Alternating",
+        "Threshold",
+        "Continuous"
+      ]
+    },
+    {
+      "id": "frequency",
+      "name": "Ordering Frequency",
+      "type": "float",
+      "default": 1,
+      "min": 0.1,
+      "max": 32
+    },
+    {
+      "id": "phase",
+      "name": "Ordering Phase",
+      "type": "float",
+      "default": 0,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "threshold",
+      "name": "Ordering Threshold",
+      "type": "float",
+      "default": 0.5,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "reverse",
+      "name": "Reverse Ordering",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "No",
+        "Yes"
+      ]
+    },
+    {
+      "id": "softness",
+      "name": "Transition Softness",
+      "type": "float",
+      "default": 0,
+      "min": 0,
+      "max": 0.5
+    },
+    {
+      "id": "darkening",
+      "name": "Intersection Darkening",
+      "type": "float",
+      "default": 0.15,
+      "min": 0,
+      "max": 1
+    }
+  ],
+  "helpers": "float maker_weave_order(float field,float mode,float frequency,float phase,float threshold,float reverse_order,float softness){\n float x=field*frequency+phase; float s=clamp(softness,0.0,0.5); float w;\n if(mode<0.5){float a=fract(x);w=s<=0.0?step(0.5,a):clamp(smoothstep(0.5-s,0.5+s,a)*(1.0-smoothstep(1.0-s,1.0,a))+0.5*(1.0-smoothstep(0.0,s,a))+0.5*smoothstep(1.0-s,1.0,a),0.0,1.0);}\n else if(mode<1.5){w=s<=0.0?step(threshold,x):smoothstep(threshold-s,threshold+s,x);}\n else w=clamp(x,0.0,1.0);\n return reverse_order>0.5?1.0-w:w;\n}\nvec3 maker_weave_color(vec3 a,vec3 b,vec3 bg,float ma,float mb,float w,float darkening){\n ma=clamp(ma,0.0,1.0);mb=clamp(mb,0.0,1.0);float d=clamp(darkening,0.0,1.0);\n vec3 atop=a*ma+b*mb*(1.0-ma)*(1.0-d*ma)+bg*(1.0-ma)*(1.0-mb);\n vec3 btop=b*mb+a*ma*(1.0-mb)*(1.0-d*mb)+bg*(1.0-ma)*(1.0-mb);\n return mix(btop,atop,w);\n}",
+  "glsl_outputs": {
+    "color": "maker_weave_color({color_a},{color_b},{background},{mask_a},{mask_b},maker_weave_order({ordering},{mode},{frequency},{phase},{threshold},{reverse},{softness}),{darkening})",
+    "combined": "1.0-(1.0-clamp({mask_a},0.0,1.0))*(1.0-clamp({mask_b},0.0,1.0))",
+    "overlap": "clamp({mask_a},0.0,1.0)*clamp({mask_b},0.0,1.0)",
+    "order_mask": "maker_weave_order({ordering},{mode},{frequency},{phase},{threshold},{reverse},{softness})"
+  }
+}

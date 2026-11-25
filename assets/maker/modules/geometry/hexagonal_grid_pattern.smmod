@@ -8,7 +8,7 @@
   "header_color": "#7B78B4",
   "description": "Builds hexagonal outline, filled-cell and center-spot masks from a cell-local position.",
   "uses": "Honeycomb outlines, glowing cell centers and six-sided decorative masks.",
-  "notes": "Connect Local Position from Hexagonal Grid Coordinates 2D. Use the same Cell Radius in both modules. Outline Width and Edge Softness are world-space distances. Outputs are scalar masks in [0,1].",
+  "notes": "Connect Local Position from Hexagonal Grid Coordinates 2D. Use the same Cell Radius in both modules. Outline Width and Edge Softness are world-space distances. Outputs are scalar masks in [0,1]. Boundary Distance is the signed supporting-plane margin (not exact Euclidean distance outside corners). Normalized Radius is unbounded outside the cell. Sector zero begins at 30 degrees; origin returns zero.",
   "inputs": [
     {
       "id": "local",
@@ -32,6 +32,26 @@
     {
       "id": "center",
       "name": "Center Spot Mask",
+      "type": "float"
+    },
+    {
+      "id": "boundary_distance",
+      "name": "Boundary Distance",
+      "type": "float"
+    },
+    {
+      "id": "normalized_radius",
+      "name": "Normalized Radius",
+      "type": "float"
+    },
+    {
+      "id": "axis_distance",
+      "name": "Symmetry Axis Distance",
+      "type": "float"
+    },
+    {
+      "id": "sector_index",
+      "name": "Sector Index",
       "type": "float"
     }
   ],
@@ -69,10 +89,14 @@
       "max": 5
     }
   ],
-  "helpers": "float maker_hex_boundary_distance(vec2 p,float radius){\n float apothem=0.8660254037844386*max(abs(radius),0.0001);\n float support=max(abs(p.x),0.5*abs(p.x)+0.8660254037844386*abs(p.y));\n return apothem-support;\n}\nfloat maker_hex_outline_mask(vec2 p,float radius,float width,float feather){\n float d=maker_hex_boundary_distance(p,radius);\n float w=max(width,0.00001);\n float f=max(feather,0.00001);\n return 1.0-smoothstep(w-f,w+f,abs(d));\n}",
+  "helpers": "float maker_hex_boundary_distance(vec2 p,float radius){\n float apothem=0.8660254037844386*max(abs(radius),0.0001);\n float support=max(abs(p.x),0.5*abs(p.x)+0.8660254037844386*abs(p.y));\n return apothem-support;\n}\nfloat maker_hex_outline_mask(vec2 p,float radius,float width,float feather){\n float d=maker_hex_boundary_distance(p,radius);\n float w=max(width,0.00001);\n float f=max(feather,0.00001);\n return 1.0-smoothstep(w-f,w+f,abs(d));\n}\nfloat maker_hex_axis_distance(vec2 p){return min(abs(p.x),min(abs(dot(p,vec2(0.5,0.8660254037844386))),abs(dot(p,vec2(0.5,-0.8660254037844386)))));}\nfloat maker_hex_sector_index(vec2 p){if(dot(p,p)<1e-16)return 0.0;return min(5.0,floor(mod(atan(p.y,p.x)-0.5235987755982988,6.283185307179586)/1.0471975511965976));}",
   "glsl_outputs": {
     "outline": "maker_hex_outline_mask({local},{radius},{width},{softness})",
     "fill": "smoothstep(-max({softness},0.00001),max({softness},0.00001),maker_hex_boundary_distance({local},{radius}))",
-    "center": "1.0-smoothstep(max({spot_radius},0.0),max({spot_radius},0.0)+max({softness},0.00001),length({local}))"
+    "center": "1.0-smoothstep(max({spot_radius},0.0),max({spot_radius},0.0)+max({softness},0.00001),length({local}))",
+    "boundary_distance": "maker_hex_boundary_distance({local},{radius})",
+    "normalized_radius": "1.0-maker_hex_boundary_distance({local},{radius})/(0.8660254037844386*max(abs({radius}),0.0001))",
+    "axis_distance": "maker_hex_axis_distance({local})",
+    "sector_index": "maker_hex_sector_index({local})"
   }
 }

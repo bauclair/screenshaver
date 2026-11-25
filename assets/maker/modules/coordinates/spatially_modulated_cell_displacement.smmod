@@ -8,7 +8,7 @@
   "header_color": "#627FC2",
   "description": "Translate every point in a discrete 3D cell by the same time-varying displacement, preserving local shape.",
   "uses": "Coherent per-cell motion for tiled 3D geometry and animated voxel fields.",
-  "notes": "Independently designed. Cell identity is computed from the original input position, so this is a coordinate warp rather than an object-instance transform. When feeding a repeated SDF, use displaced sample positions consistently with cell repetition. Boundary discontinuities are intentional. External anchors are used directly as phase coordinates (not divided by Cell Size).",
+  "notes": "Independently designed. Cell identity is computed from the original input position, so this is a coordinate warp rather than an object-instance transform. When feeding a repeated SDF, use displaced sample positions consistently with cell repetition. Boundary discontinuities are intentional. External anchors are used directly as phase coordinates (not divided by Cell Size). Radial expansion uses the internal cell center (floor(position/size)+0.5)*size or the external anchor interpreted as a world-space center. Proportional expansion is dimensionless; Constant Distance is in world units and contraction is capped at 90% of the center distance. Amplitude Multiplier affects animated displacement only. Radial displacement is added to the sampling coordinate; apparent object movement may be opposite when used as an inverse coordinate warp. This is not a neighbor-aware object-instance SDF.",
   "inputs": [
     {
       "id": "position",
@@ -35,6 +35,13 @@
       "name": "Amplitude Multiplier",
       "type": "float",
       "default": "1.0"
+    },
+    {
+      "id": "expansion_center",
+      "name": "Expansion Center",
+      "type": "vec3",
+      "default": "vec3(0.0)",
+      "semantic_role": "position3d"
     }
   ],
   "outputs": [
@@ -116,11 +123,40 @@
         "Internal",
         "External"
       ]
+    },
+    {
+      "id": "radial_expansion",
+      "name": "Radial Expansion",
+      "type": "float",
+      "default": 0,
+      "min": -0.9,
+      "max": 4
+    },
+    {
+      "id": "expansion_mode",
+      "name": "Expansion Mode",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Proportional",
+        "Constant Distance"
+      ]
+    },
+    {
+      "id": "displacement_combination",
+      "name": "Displacement Combination",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Combined",
+        "Radial Only",
+        "Animated Only"
+      ]
     }
   ],
-  "helpers": "vec3 maker_cell_displacement(vec3 p,float t,float cellSize,vec3 amplitude,float frequency,float speed,float phase,vec3 anchor,float multiplier,float source){\n vec3 cell=floor(p/max(abs(cellSize),0.0001));\n if(source>=0.5)cell=anchor;\n float theta=dot(cell,vec3(0.754877666,1.324717957,0.569840291))*frequency+t*speed+phase;\n return multiplier*amplitude*vec3(sin(theta),sin(theta+2.094395102),sin(theta+4.188790205));\n}",
+  "helpers": "vec3 maker_cell_displacement(vec3 p,float t,float cellSize,vec3 amplitude,float frequency,float speed,float phase,vec3 anchor,float multiplier,float source){\n vec3 cell=floor(p/max(abs(cellSize),0.0001));\n if(source>=0.5)cell=anchor;\n float theta=dot(cell,vec3(0.754877666,1.324717957,0.569840291))*frequency+t*speed+phase;\n return multiplier*amplitude*vec3(sin(theta),sin(theta+2.094395102),sin(theta+4.188790205));\n}\nvec3 maker_cell_displacement_extended(vec3 p,float t,float cellSize,vec3 amplitude,float frequency,float speed,float phase,vec3 anchor,float multiplier,float source,vec3 center,float expansion,float mode,float combination){\n vec3 animated=vec3(0.0);\n if(combination<0.5 || combination>=1.5) animated=maker_cell_displacement(p,t,cellSize,amplitude,frequency,speed,phase,anchor,multiplier,source);\n if(combination>=1.5 || expansion==0.0) return animated;\n float size=max(abs(cellSize),0.0001);\n vec3 cellCenter=(floor(p/size)+vec3(0.5))*size;\n if(source>=0.5) cellCenter=anchor;\n vec3 delta=cellCenter-center;\n float e=clamp(expansion,-0.9,4.0);\n vec3 radial=delta*e;\n if(mode>=0.5){\n  float r=length(delta);\n  radial=vec3(0.0);\n  if(r>0.000001) radial=(delta/r)*max(e,-0.9*r);\n }\n return animated+radial;\n}",
   "glsl_outputs": {
-    "position": "({position}+maker_cell_displacement({position},{time},{cell_size},vec3({amplitude_x},{amplitude_y},{amplitude_z}),{spatial_frequency},{speed},{phase},{external_cell_anchor},{amplitude_multiplier},{anchor_source}))",
-    "displacement": "maker_cell_displacement({position},{time},{cell_size},vec3({amplitude_x},{amplitude_y},{amplitude_z}),{spatial_frequency},{speed},{phase},{external_cell_anchor},{amplitude_multiplier},{anchor_source})"
+    "position": "({position}+maker_cell_displacement_extended({position},{time},{cell_size},vec3({amplitude_x},{amplitude_y},{amplitude_z}),{spatial_frequency},{speed},{phase},{external_cell_anchor},{amplitude_multiplier},{anchor_source},{expansion_center},{radial_expansion},{expansion_mode},{displacement_combination}))",
+    "displacement": "maker_cell_displacement_extended({position},{time},{cell_size},vec3({amplitude_x},{amplitude_y},{amplitude_z}),{spatial_frequency},{speed},{phase},{external_cell_anchor},{amplitude_multiplier},{anchor_source},{expansion_center},{radial_expansion},{expansion_mode},{displacement_combination})"
   }
 }

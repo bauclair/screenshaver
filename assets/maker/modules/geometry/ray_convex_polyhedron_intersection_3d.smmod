@@ -1,0 +1,125 @@
+{
+  "schema_version": 1,
+  "created_by": "Screenshaver",
+  "terminal": false,
+  "id": "screenshaver.geometry.ray_convex_polyhedron_intersection_3d",
+  "name": "Ray–Convex Polyhedron Intersection 3D",
+  "category": "Geometry",
+  "header_color": "#557C9C",
+  "description": "Analytical ray clipping against regular convex solids.",
+  "uses": "Procedural geometry and analytical spatial queries.",
+  "notes": "Direction is normalized internally; distances are world units. Entry may be negative for inside origins. Hit is nearest forward boundary; maximum distance applies to hit only. Miss returns -1 distances and face, zero vectors and hit mask; inside mask is independent. Face indices are zero-based and shape-specific.",
+  "inputs": [
+    {
+      "id": "origin",
+      "name": "Ray Origin",
+      "type": "vec3",
+      "default": "vec3(0.0,0.0,-4.0)"
+    },
+    {
+      "id": "direction",
+      "name": "Ray Direction",
+      "type": "vec3",
+      "default": "normalize(vec3(maker_uv,1.5))"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec3",
+      "default": "vec3(0.0)"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "hit",
+      "name": "Hit Distance",
+      "type": "float"
+    },
+    {
+      "id": "entry",
+      "name": "Entry Distance",
+      "type": "float"
+    },
+    {
+      "id": "exit",
+      "name": "Exit Distance",
+      "type": "float"
+    },
+    {
+      "id": "position",
+      "name": "Hit Position",
+      "type": "vec3"
+    },
+    {
+      "id": "normal",
+      "name": "Surface Normal",
+      "type": "vec3"
+    },
+    {
+      "id": "face",
+      "name": "Face Index",
+      "type": "float"
+    },
+    {
+      "id": "mask",
+      "name": "Hit Mask",
+      "type": "float"
+    },
+    {
+      "id": "inside",
+      "name": "Inside Mask",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "solid",
+      "name": "Polyhedron",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Dodecahedron",
+        "Tetrahedron",
+        "Cube",
+        "Octahedron",
+        "Icosahedron"
+      ]
+    },
+    {
+      "id": "radius",
+      "name": "Inradius",
+      "type": "float",
+      "default": 1,
+      "min": 0.01,
+      "max": 10
+    },
+    {
+      "id": "limit",
+      "name": "Maximum Ray Distance",
+      "type": "float",
+      "default": 50,
+      "min": 0.1,
+      "max": 1000
+    },
+    {
+      "id": "tolerance",
+      "name": "Intersection Tolerance",
+      "type": "float",
+      "default": 0.0001,
+      "min": 1e-05,
+      "max": 0.01
+    }
+  ],
+  "helpers": "vec3 maker_convex_face_normal(int shape,int i){\n if(shape==0){\n  if(i==0)return vec3(0.000000000,-0.525731112,-0.850650808);\n  if(i==1)return vec3(-0.525731112,-0.850650808,0.000000000);\n  if(i==2)return vec3(-0.850650808,0.000000000,-0.525731112);\n  if(i==3)return vec3(0.000000000,-0.525731112,0.850650808);\n  if(i==4)return vec3(-0.525731112,0.850650808,0.000000000);\n  if(i==5)return vec3(0.850650808,0.000000000,-0.525731112);\n  if(i==6)return vec3(0.000000000,0.525731112,-0.850650808);\n  if(i==7)return vec3(0.525731112,-0.850650808,0.000000000);\n  if(i==8)return vec3(-0.850650808,0.000000000,0.525731112);\n  if(i==9)return vec3(0.000000000,0.525731112,0.850650808);\n  if(i==10)return vec3(0.525731112,0.850650808,0.000000000);\n  if(i==11)return vec3(0.850650808,0.000000000,0.525731112);\n }\n if(shape==1){\n  if(i==0)return vec3(-0.577350269,-0.577350269,0.577350269);\n  if(i==1)return vec3(-0.577350269,0.577350269,-0.577350269);\n  if(i==2)return vec3(0.577350269,-0.577350269,-0.577350269);\n  if(i==3)return vec3(0.577350269,0.577350269,0.577350269);\n }\n if(shape==2){\n  if(i==0)return vec3(-1.000000000,0.000000000,0.000000000);\n  if(i==1)return vec3(1.000000000,0.000000000,0.000000000);\n  if(i==2)return vec3(0.000000000,-1.000000000,0.000000000);\n  if(i==3)return vec3(0.000000000,1.000000000,0.000000000);\n  if(i==4)return vec3(0.000000000,0.000000000,-1.000000000);\n  if(i==5)return vec3(0.000000000,0.000000000,1.000000000);\n }\n if(shape==3){\n  if(i==0)return vec3(-0.577350269,-0.577350269,-0.577350269);\n  if(i==1)return vec3(-0.577350269,-0.577350269,0.577350269);\n  if(i==2)return vec3(-0.577350269,0.577350269,-0.577350269);\n  if(i==3)return vec3(-0.577350269,0.577350269,0.577350269);\n  if(i==4)return vec3(0.577350269,-0.577350269,-0.577350269);\n  if(i==5)return vec3(0.577350269,-0.577350269,0.577350269);\n  if(i==6)return vec3(0.577350269,0.577350269,-0.577350269);\n  if(i==7)return vec3(0.577350269,0.577350269,0.577350269);\n }\n if(shape==4){\n  if(i==0)return vec3(-0.577350269,-0.577350269,-0.577350269);\n  if(i==1)return vec3(-0.577350269,-0.577350269,0.577350269);\n  if(i==2)return vec3(-0.577350269,0.577350269,-0.577350269);\n  if(i==3)return vec3(-0.577350269,0.577350269,0.577350269);\n  if(i==4)return vec3(0.577350269,-0.577350269,-0.577350269);\n  if(i==5)return vec3(0.577350269,-0.577350269,0.577350269);\n  if(i==6)return vec3(0.577350269,0.577350269,-0.577350269);\n  if(i==7)return vec3(0.577350269,0.577350269,0.577350269);\n  if(i==8)return vec3(0.000000000,-0.356822090,-0.934172359);\n  if(i==9)return vec3(-0.356822090,-0.934172359,0.000000000);\n  if(i==10)return vec3(-0.934172359,0.000000000,-0.356822090);\n  if(i==11)return vec3(0.000000000,-0.356822090,0.934172359);\n  if(i==12)return vec3(-0.356822090,0.934172359,0.000000000);\n  if(i==13)return vec3(0.934172359,0.000000000,-0.356822090);\n  if(i==14)return vec3(0.000000000,0.356822090,-0.934172359);\n  if(i==15)return vec3(0.356822090,-0.934172359,0.000000000);\n  if(i==16)return vec3(-0.934172359,0.000000000,0.356822090);\n  if(i==17)return vec3(0.000000000,0.356822090,0.934172359);\n  if(i==18)return vec3(0.356822090,0.934172359,0.000000000);\n  if(i==19)return vec3(0.934172359,0.000000000,0.356822090);\n }\n return vec3(0.0,0.0,1.0);\n}\nstruct MakerConvexHit {float hit;float entry;float exit;vec3 position;vec3 normal;float face;float mask;float inside;};\nMakerConvexHit maker_convex_intersect(vec3 origin,vec3 direction,vec3 center,float solid,float radius,float limit,float tolerance){\n MakerConvexHit result=MakerConvexHit(-1.0,-1.0,-1.0,vec3(0.0),vec3(0.0),-1.0,0.0,0.0);\n int shape=int(clamp(floor(solid+0.5),0.0,4.0)); int count=shape==0?12:shape==1?4:shape==2?6:shape==3?8:20;\n vec3 o=origin-center; float len=length(direction); float eps=clamp(tolerance,0.00001,0.01); float lo=-1e30,hi=1e30; int enter=-1,leave=-1; bool inside=true; bool miss=false;\n vec3 d=direction/max(len,1e-12);\n for(int i=0;i<20;i++){if(i>=count)break; vec3 n=maker_convex_face_normal(shape,i); float gap=radius-dot(n,o); if(gap<0.0)inside=false; float slope=dot(n,d);\n if(abs(slope)<eps*0.001){if(gap<0.0)miss=true;continue;} float t=gap/slope;\n if(slope<0.0){if(t>lo){lo=t;enter=i;}}else{if(t<hi){hi=t;leave=i;}}\n }\n result.inside=inside?1.0:0.0; if(len<1e-12||miss||lo>hi||hi<0.0)return result;\n float t=inside?hi:lo; int face=inside?leave:enter; if(t<0.0||t>limit||face<0)return result;\n result.hit=t; result.entry=lo; result.exit=hi; result.position=origin+d*t; result.normal=maker_convex_face_normal(shape,face); result.face=float(face); result.mask=1.0; return result;\n}",
+  "glsl": "maker_convex_intersect({origin},{direction},{center},{solid},{radius},{limit},{tolerance}).hit",
+  "glsl_outputs": {
+    "hit": "maker_convex_intersect({origin},{direction},{center},{solid},{radius},{limit},{tolerance}).hit",
+    "entry": "maker_convex_intersect({origin},{direction},{center},{solid},{radius},{limit},{tolerance}).entry",
+    "exit": "maker_convex_intersect({origin},{direction},{center},{solid},{radius},{limit},{tolerance}).exit",
+    "position": "maker_convex_intersect({origin},{direction},{center},{solid},{radius},{limit},{tolerance}).position",
+    "normal": "maker_convex_intersect({origin},{direction},{center},{solid},{radius},{limit},{tolerance}).normal",
+    "face": "maker_convex_intersect({origin},{direction},{center},{solid},{radius},{limit},{tolerance}).face",
+    "mask": "maker_convex_intersect({origin},{direction},{center},{solid},{radius},{limit},{tolerance}).mask",
+    "inside": "maker_convex_intersect({origin},{direction},{center},{solid},{radius},{limit},{tolerance}).inside"
+  }
+}

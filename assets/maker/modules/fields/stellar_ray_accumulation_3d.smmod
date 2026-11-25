@@ -1,0 +1,166 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.stellar_ray_accumulation_3d",
+  "name": "Stellar Ray Accumulation 3D",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "terminal": false,
+  "header_color": "#477D9A",
+  "description": "Accumulates luminous points and chromatic trails across cyclic depth planes.",
+  "uses": "Procedural starfields, depth motion and luminous particle trails.",
+  "notes": "World XY depth planes; rays parallel to the planes return zero. Depth is measured along the signed Z axis from the ray origin. One seeded candidate per sampled cell; trails are local to that cell and may clip at cell boundaries. Color is linear and unclamped; intensity is luminance of the tinted result; mask is peak coverage before gain. No external callable inputs.",
+  "inputs": [
+    {
+      "id": "origin",
+      "name": "Ray Origin",
+      "type": "vec3",
+      "semantic_role": "position3d",
+      "default": "vec3(0.0)"
+    },
+    {
+      "id": "direction",
+      "name": "Ray Direction",
+      "type": "vec3",
+      "semantic_role": "direction3d",
+      "default": "vec3(maker_uv,1.0)"
+    },
+    {
+      "id": "time",
+      "name": "Time",
+      "type": "float",
+      "semantic_role": "time",
+      "default": "u_time"
+    },
+    {
+      "id": "tint",
+      "name": "Star Color",
+      "type": "vec3",
+      "semantic_role": "color",
+      "default": "vec3(1.0)"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "color",
+      "name": "Color",
+      "type": "vec3",
+      "semantic_role": "color"
+    },
+    {
+      "id": "intensity",
+      "name": "Intensity",
+      "type": "float",
+      "semantic_role": "intensity"
+    },
+    {
+      "id": "mask",
+      "name": "Star Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "samples",
+      "name": "Sample Count",
+      "type": "float",
+      "default": 12,
+      "min": 1,
+      "max": 32
+    },
+    {
+      "id": "density",
+      "name": "Cell Density",
+      "type": "float",
+      "default": 2,
+      "min": 0.25,
+      "max": 16
+    },
+    {
+      "id": "probability",
+      "name": "Star Probability",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "depth",
+      "name": "Depth Range",
+      "type": "float",
+      "default": 50,
+      "min": 1,
+      "max": 200
+    },
+    {
+      "id": "speed",
+      "name": "Animation Speed",
+      "type": "float",
+      "default": 0.3,
+      "min": -3,
+      "max": 3
+    },
+    {
+      "id": "radius",
+      "name": "Star Radius",
+      "type": "float",
+      "default": 0.125,
+      "min": 0.01,
+      "max": 0.5
+    },
+    {
+      "id": "falloff",
+      "name": "Falloff Exponent",
+      "type": "float",
+      "default": 2,
+      "min": 0.5,
+      "max": 8
+    },
+    {
+      "id": "trail",
+      "name": "Trail Length",
+      "type": "float",
+      "default": 2,
+      "min": 0.01,
+      "max": 10
+    },
+    {
+      "id": "separation",
+      "name": "Chromatic Separation",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 5
+    },
+    {
+      "id": "attenuation",
+      "name": "Depth Attenuation",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 4
+    },
+    {
+      "id": "gain",
+      "name": "Intensity Gain",
+      "type": "float",
+      "default": 1.5,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "seed",
+      "name": "Seed",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 65535
+    }
+  ],
+  "helpers": "// Independent depth-plane sampling with integer modular hashing.\nuint maker_stellar_hash(uint x){\n x ^= x >> 16u; x *= 0x7feb352du; x ^= x >> 15u;\n x *= 0x846ca68bu; return x ^ (x >> 16u);\n}\nfloat maker_stellar_unit(uint x){return float(maker_stellar_hash(x) & 0x00ffffffu)/16777216.0;}\nvec4 maker_stellar_planes(vec3 origin,vec3 direction,float time,vec3 tint,float samples,float density,float probability,float depth,float speed,float radius,float falloff,float trail,float separation,float attenuation,float gain,float seed){\n if(any(isnan(origin))||any(isinf(origin))||any(isnan(direction))||any(isinf(direction))||isnan(time)||isinf(time))return vec4(0.0);\n float m=max(max(abs(direction.x),abs(direction.y)),abs(direction.z));\n if(m<1e-8)return vec4(0.0);\n vec3 ray=normalize(direction/m);\n if(abs(ray.z)<0.001)return vec4(0.0);\n int n=int(clamp(floor(samples+0.5),1.0,32.0));\n float range=clamp(depth,1.0,200.0), spacing=range/float(n);\n float den=clamp(density,0.25,16.0), rad=clamp(radius,0.01,0.5);\n float phase=fract(time*clamp(speed,-3.0,3.0));\n vec2 slope=ray.xy/abs(ray.z)*den;\n float slope2=dot(slope,slope);\n vec3 sum=vec3(0.0); float mask=0.0;\n for(int i=0;i<32;++i){\n  if(i>=n)break;\n  float z=spacing*(float(i)+0.5-phase);\n  z=mod(z,range);\n  vec2 p=origin.xy*den+slope*z;\n  if(any(greaterThan(abs(p),vec2(1000000.0))))continue;\n  ivec2 cell=ivec2(floor(p));\n  uint key=maker_stellar_hash(uint(cell.x))^maker_stellar_hash(uint(cell.y)+1u)^maker_stellar_hash(uint(i)+2u)^maker_stellar_hash(uint(clamp(seed,0.0,65535.0))+3u);\n  if(maker_stellar_unit(key)>=clamp(probability,0.0,1.0))continue;\n  vec2 center=vec2(0.5)+(vec2(maker_stellar_unit(key+1u),maker_stellar_unit(key+2u))-0.5)*(1.0-2.0*rad);\n  vec2 delta=fract(p)-center;\n  float halfTrail=clamp(trail,0.01,10.0)*0.5;\n  float shift=clamp(separation,0.0,5.0)*0.1*halfTrail;\n  float along=slope2>1e-8?-dot(delta,slope)/slope2:0.0;\n  float closest=clamp(along,-halfTrail-shift,halfTrail+shift);\n  float radial=pow(max(0.0,1.0-length(delta+slope*closest)/rad),clamp(falloff,0.5,8.0));\n  vec3 profile=max(vec3(0.0),vec3(1.0)-abs(vec3(closest)+vec3(-shift,0.0,shift))/halfTrail);\n  float fade=smoothstep(0.0,0.08,z/range)*(1.0-smoothstep(0.92,1.0,z/range));\n  float weight=radial*fade*pow(max(1e-6,1.0-z/range),clamp(attenuation,0.0,4.0));\n  sum+=profile*weight; mask=max(mask,radial*max(max(profile.r,profile.g),profile.b)*fade);\n }\n return vec4(sum*max(tint,vec3(0.0))*clamp(gain,0.0,10.0),clamp(mask,0.0,1.0));\n}",
+  "glsl_outputs": {
+    "color": "maker_stellar_planes({origin},{direction},{time},{tint},{samples},{density},{probability},{depth},{speed},{radius},{falloff},{trail},{separation},{attenuation},{gain},{seed}).rgb",
+    "intensity": "dot(maker_stellar_planes({origin},{direction},{time},{tint},{samples},{density},{probability},{depth},{speed},{radius},{falloff},{trail},{separation},{attenuation},{gain},{seed}).rgb,vec3(0.2126,0.7152,0.0722))",
+    "mask": "maker_stellar_planes({origin},{direction},{time},{tint},{samples},{density},{probability},{depth},{speed},{radius},{falloff},{trail},{separation},{attenuation},{gain},{seed}).a"
+  }
+}

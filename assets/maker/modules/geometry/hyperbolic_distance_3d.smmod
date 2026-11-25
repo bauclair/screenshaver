@@ -1,0 +1,94 @@
+{
+  "schema_version": 1,
+  "created_by": "Screenshaver",
+  "terminal": false,
+  "id": "screenshaver.geometry.hyperbolic_distance_3d",
+  "name": "Hyperbolic Distance 3D",
+  "category": "Geometry",
+  "header_color": "#557C9C",
+  "description": "Distance in Klein or Poincare ball coordinates.",
+  "uses": "Procedural geometry and analytical spatial queries.",
+  "notes": "Unit curvature; domain radius normalizes coordinates, distance scale controls metric units. Invalid points return maximum distance and zero validity. Valid points near boundary are radially regularized.",
+  "inputs": [
+    {
+      "id": "a",
+      "name": "Position A",
+      "type": "vec3",
+      "default": "vec3(0.0)"
+    },
+    {
+      "id": "b",
+      "name": "Position B",
+      "type": "vec3",
+      "default": "vec3(maker_uv*0.5,0.0)"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "distance",
+      "name": "Hyperbolic Distance",
+      "type": "float"
+    },
+    {
+      "id": "euclidean",
+      "name": "Euclidean Distance",
+      "type": "float"
+    },
+    {
+      "id": "valid",
+      "name": "Validity Mask",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "model",
+      "name": "Coordinate Model",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Klein",
+        "Poincaré"
+      ]
+    },
+    {
+      "id": "radius",
+      "name": "Domain Radius",
+      "type": "float",
+      "default": 1,
+      "min": 0.1,
+      "max": 10
+    },
+    {
+      "id": "scale",
+      "name": "Distance Scale",
+      "type": "float",
+      "default": 1,
+      "min": 0.01,
+      "max": 10
+    },
+    {
+      "id": "margin",
+      "name": "Boundary Margin",
+      "type": "float",
+      "default": 0.001,
+      "min": 0.0001,
+      "max": 0.1
+    },
+    {
+      "id": "cap",
+      "name": "Maximum Distance",
+      "type": "float",
+      "default": 20,
+      "min": 1,
+      "max": 100
+    }
+  ],
+  "helpers": "vec3 maker_hyperbolic_distance(vec3 a,vec3 b,float model,float radius,float scale,float margin,float cap){\n float r=max(radius,0.1); vec3 u=a/r,v=b/r; float uu=dot(u,u),vv=dot(v,v); float eu=length(a-b); float valid=(uu<1.0&&vv<1.0)?1.0:0.0;\n if(valid==0.0)return vec3(cap,eu,0.0);\n float bound=1.0-clamp(margin,0.0001,0.1); u*=min(1.0,bound/max(length(u),1e-8)); v*=min(1.0,bound/max(length(v),1e-8));\n float den=max((1.0-dot(u,u))*(1.0-dot(v,v)),1e-12); float x=model<0.5?(1.0-dot(u,v))/sqrt(den):1.0+2.0*dot(u-v,u-v)/den;\n x=max(x,1.0); float d=log(x+sqrt(max((x-1.0)*(x+1.0),0.0))); return vec3(min(cap,d*scale),eu,valid);\n}",
+  "glsl": "maker_hyperbolic_distance({a},{b},{model},{radius},{scale},{margin},{cap}).x",
+  "glsl_outputs": {
+    "distance": "maker_hyperbolic_distance({a},{b},{model},{radius},{scale},{margin},{cap}).x",
+    "euclidean": "maker_hyperbolic_distance({a},{b},{model},{radius},{scale},{margin},{cap}).y",
+    "valid": "maker_hyperbolic_distance({a},{b},{model},{radius},{scale},{margin},{cap}).z"
+  }
+}

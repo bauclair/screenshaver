@@ -1,0 +1,200 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.parametric_ring_accumulation_2d",
+  "name": "Parametric Ring Accumulation 2D",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "header_color": "#477D9A",
+  "description": "Accumulates soft circular outlines along animated planar parametric trajectories.",
+  "uses": "Rosettes, harmonic ring distributions, geometric patterns and luminous outlines.",
+  "notes": "Independent implementation of general parametric geometry. Phase Offset input is radians; phase and rotation parameters are degrees. Line Width is full width. Periodic mode uses symmetric repeated radial contours. Radius multiplier is bounded to 0\u201316. Maximum 64 rings. Normalized and union outputs exclude gain.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position 2D",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec2",
+      "default": "vec2(0.0)",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "time",
+      "name": "Time",
+      "type": "float",
+      "default": "u_time",
+      "semantic_role": "time"
+    },
+    {
+      "id": "radius_multiplier",
+      "name": "Radius Multiplier",
+      "type": "float",
+      "default": "1.0",
+      "semantic_role": ""
+    },
+    {
+      "id": "phase_offset",
+      "name": "Phase Offset",
+      "type": "float",
+      "default": "0.0",
+      "semantic_role": "angle"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "intensity",
+      "name": "Intensity",
+      "type": "float",
+      "semantic_role": "intensity"
+    },
+    {
+      "id": "normalized",
+      "name": "Normalized Intensity",
+      "type": "float",
+      "semantic_role": "intensity"
+    },
+    {
+      "id": "union_mask",
+      "name": "Union Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "ring_count",
+      "name": "Ring Count",
+      "type": "float",
+      "default": 16,
+      "min": 1,
+      "max": 64
+    },
+    {
+      "id": "distribution_radius",
+      "name": "Distribution Radius",
+      "type": "float",
+      "default": 0.45,
+      "min": 0,
+      "max": 5
+    },
+    {
+      "id": "ring_radius",
+      "name": "Ring Radius",
+      "type": "float",
+      "default": 0.25,
+      "min": 0.001,
+      "max": 5
+    },
+    {
+      "id": "line_width",
+      "name": "Line Width",
+      "type": "float",
+      "default": 0.015,
+      "min": 0.001,
+      "max": 0.5
+    },
+    {
+      "id": "softness",
+      "name": "Edge Softness",
+      "type": "float",
+      "default": 0.008,
+      "min": 0.0001,
+      "max": 0.5
+    },
+    {
+      "id": "frequency_x",
+      "name": "Horizontal Frequency",
+      "type": "float",
+      "default": 1,
+      "min": -8,
+      "max": 8
+    },
+    {
+      "id": "frequency_y",
+      "name": "Vertical Frequency",
+      "type": "float",
+      "default": 1,
+      "min": -8,
+      "max": 8
+    },
+    {
+      "id": "frequency_radial",
+      "name": "Radial Frequency",
+      "type": "float",
+      "default": 2,
+      "min": -8,
+      "max": 8
+    },
+    {
+      "id": "modulation",
+      "name": "Radial Modulation",
+      "type": "float",
+      "default": 0.5,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "speed",
+      "name": "Animation Speed",
+      "type": "float",
+      "default": 0.3,
+      "min": -5,
+      "max": 5
+    },
+    {
+      "id": "phase",
+      "name": "Initial Phase",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "rotation",
+      "name": "Rotation per Ring",
+      "type": "float",
+      "default": 0,
+      "min": -180,
+      "max": 180
+    },
+    {
+      "id": "mode",
+      "name": "Distance Mode",
+      "type": "choice",
+      "default": 0,
+      "min": 0,
+      "max": 1,
+      "options": [
+        "Absolute",
+        "Periodic"
+      ]
+    },
+    {
+      "id": "period",
+      "name": "Radial Period",
+      "type": "float",
+      "default": 0.5,
+      "min": 0.01,
+      "max": 5
+    },
+    {
+      "id": "gain",
+      "name": "Intensity Gain",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 10
+    }
+  ],
+  "helpers": "vec3 maker_parametric_ring_accumulation(vec2 position, vec2 center, float time, float radiusMultiplier, float phaseOffset, float count, float spread, float radius, float width, float softness, float fx, float fy, float fr, float modulation, float speed, float phase, float rotation, float mode, float period, float gain) {\n    int n = int(clamp(floor(count + 0.5), 1.0, 64.0));\n    float stepAngle = 6.283185307179586 / float(n);\n    float animation = time * speed + radians(phase) + phaseOffset;\n    float turn = radians(rotation);\n    float ringRadius = max(radius * clamp(radiusMultiplier, 0.0, 16.0), 0.001);\n    float halfWidth = max(width, 0.001) * 0.5;\n    float edge = max(softness, 0.0001);\n    float repeatDistance = max(period, 0.01);\n    float sum = 0.0;\n    float coverage = 0.0;\n    for(int j=0;j<64;j++) {\n        if(j >= n) break;\n        float angle = stepAngle * float(j);\n        float envelope = spread * mix(1.0, sin(fr * angle + animation), clamp(modulation, 0.0, 1.0));\n        vec2 offset = envelope * vec2(cos(fx * angle + animation), sin(fy * angle + animation));\n        float a = turn * float(j);\n        float c = cos(a), s = sin(a);\n        vec2 ringCenter = center + vec2(c * offset.x - s * offset.y, s * offset.x + c * offset.y);\n        float delta = length(position - ringCenter) - ringRadius;\n        float distanceToRing = abs(delta);\n        if(mode >= 0.5) distanceToRing = abs(mod(delta + 0.5 * repeatDistance, repeatDistance) - 0.5 * repeatDistance);\n        float mask = 1.0 - smoothstep(halfWidth, halfWidth + edge, distanceToRing);\n        sum += mask;\n        coverage = max(coverage, mask);\n    }\n    return vec3(sum * gain, sum / float(n), coverage);\n}",
+  "glsl_outputs": {
+    "intensity": "maker_parametric_ring_accumulation({position},{center},{time},{radius_multiplier},{phase_offset},{ring_count},{distribution_radius},{ring_radius},{line_width},{softness},{frequency_x},{frequency_y},{frequency_radial},{modulation},{speed},{phase},{rotation},{mode},{period},{gain}).x",
+    "normalized": "maker_parametric_ring_accumulation({position},{center},{time},{radius_multiplier},{phase_offset},{ring_count},{distribution_radius},{ring_radius},{line_width},{softness},{frequency_x},{frequency_y},{frequency_radial},{modulation},{speed},{phase},{rotation},{mode},{period},{gain}).y",
+    "union_mask": "maker_parametric_ring_accumulation({position},{center},{time},{radius_multiplier},{phase_offset},{ring_count},{distribution_radius},{ring_radius},{line_width},{softness},{frequency_x},{frequency_y},{frequency_radial},{modulation},{speed},{phase},{rotation},{mode},{period},{gain}).z"
+  }
+}

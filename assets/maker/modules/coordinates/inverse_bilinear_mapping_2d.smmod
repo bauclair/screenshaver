@@ -1,0 +1,131 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.inverse_bilinear_mapping_2d",
+  "name": "Inverse Bilinear Mapping 2D",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "description": "Inverts a planar bilinear mapping for a strictly convex quadrilateral.",
+  "uses": "Procedural quadrilateral warps, irregular tiles and local area distortion.",
+  "notes": "Corners must be cyclically ordered, clockwise or counterclockwise. Invalid or ambiguous mappings return zero outputs. Extrapolation accepts the orientation-preserving branch only. Inside uses the raw UV and Interior Tolerance; error and signed world-space Jacobian refer to the raw inverse before outside handling. Clamp and Zero change only UV outputs. Very large coordinates or inverse coordinates are rejected for numerical safety. Numerical Tolerance is relative to the largest edge length.",
+  "header_color": "#627FC2",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "a",
+      "name": "Corner A",
+      "type": "vec2",
+      "default": "vec2(-1.0,-1.0)",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "b",
+      "name": "Corner B",
+      "type": "vec2",
+      "default": "vec2(1.0,-1.0)",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "c",
+      "name": "Corner C",
+      "type": "vec2",
+      "default": "vec2(1.0,1.0)",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "d",
+      "name": "Corner D",
+      "type": "vec2",
+      "default": "vec2(-1.0,1.0)",
+      "semantic_role": "position2d"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "uv",
+      "name": "Mapped UV",
+      "type": "vec2",
+      "semantic_role": "uv"
+    },
+    {
+      "id": "u",
+      "name": "U Coordinate",
+      "type": "float"
+    },
+    {
+      "id": "v",
+      "name": "V Coordinate",
+      "type": "float"
+    },
+    {
+      "id": "inside",
+      "name": "Inside Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    },
+    {
+      "id": "valid",
+      "name": "Validity Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    },
+    {
+      "id": "error",
+      "name": "Reconstruction Error",
+      "type": "float",
+      "semantic_role": "distance"
+    },
+    {
+      "id": "jac",
+      "name": "Jacobian Determinant",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "outside",
+      "name": "Outside Handling",
+      "type": "choice",
+      "default": 0,
+      "min": 0,
+      "max": 2,
+      "options": [
+        "Extrapolate",
+        "Clamp",
+        "Zero"
+      ]
+    },
+    {
+      "id": "tolerance",
+      "name": "Numerical Tolerance",
+      "type": "float",
+      "default": 1e-05,
+      "min": 1e-06,
+      "max": 0.001
+    },
+    {
+      "id": "interior",
+      "name": "Interior Tolerance",
+      "type": "float",
+      "default": 0.0001,
+      "min": 0,
+      "max": 0.01
+    }
+  ],
+  "helpers": "struct MakerIBResult { vec2 uv; float inside; float valid; float error; float jac; };\nfloat maker_ib_det(vec2 a,vec2 b){return a.x*b.y-a.y*b.x;}\nbool maker_ib_finite(vec2 p){return !any(isnan(p))&&!any(isinf(p));}\nMakerIBResult maker_ib_candidate(float u,vec2 x,vec2 e,vec2 f,vec2 g,float orientation,float eps,float interior,float scale){\n MakerIBResult r=MakerIBResult(vec2(0),0.0,0.0,0.0,0.0);\n vec2 axis=f+u*g; float den=dot(axis,axis);\n if(isnan(u)||isinf(u)||abs(u)>1e6||den<eps*eps)return r;\n float v=dot(x-u*e,axis)/den; vec2 uv=vec2(u,v);\n if(!maker_ib_finite(uv)||abs(v)>1e6)return r;\n float j=maker_ib_det(e+v*g,axis); float err=length(u*e+v*axis-x);\n if(j*orientation<=eps||err>eps*max(1.0,length(x))*8.0)return r;\n r.uv=uv; r.valid=1.0; r.inside=all(greaterThanEqual(uv,vec2(-interior)))&&all(lessThanEqual(uv,vec2(1.0+interior)))?1.0:0.0;\n r.error=err*scale; r.jac=j*scale*scale; return r;\n}\nMakerIBResult maker_ib_solve(vec2 p,vec2 a,vec2 b,vec2 c,vec2 d,float mode,float tolerance,float interior){\n MakerIBResult bad=MakerIBResult(vec2(0),0.0,0.0,0.0,0.0);\n if(!maker_ib_finite(p)||!maker_ib_finite(a)||!maker_ib_finite(b)||!maker_ib_finite(c)||!maker_ib_finite(d))return bad;\n if(max(max(length(a),length(b)),max(max(length(c),length(d)),length(p)))>1e12)return bad;\n float eps=clamp(tolerance,1e-6,1e-3);\n float s=max(max(length(b-a),length(c-b)),max(length(d-c),length(a-d)));\n if(s<1e-12)return bad;\n vec2 e=(b-a)/s,f=(d-a)/s,g=(c-b-d+a)/s,x=(p-a)/s;\n if(!maker_ib_finite(x)||length(x)>1e6)return bad;\n float j0=maker_ib_det(e,f),orient=sign(j0);\n if(abs(j0)<=eps||orient*maker_ib_det(e,f+g)<=eps||orient*maker_ib_det(e+g,f)<=eps||orient*maker_ib_det(e+g,f+g)<=eps)return bad;\n // Eliminate v from x-u*e = v*(f+u*g).\n float qa=-maker_ib_det(e,g),qb=maker_ib_det(x,g)-maker_ib_det(e,f),qc=maker_ib_det(x,f);\n MakerIBResult r=bad;\n if(abs(qa)<=eps*max(abs(qb),1e-6)){\n   if(abs(qb)<=eps)return bad;\n   r=maker_ib_candidate(-qc/qb,x,e,f,g,orient,eps,interior,s);\n }else{\n   float disc=qb*qb-4.0*qa*qc;\n   if(disc<0.0)return bad;\n   float q=-0.5*(qb+(qb>=0.0?1.0:-1.0)*sqrt(disc));\n   MakerIBResult r1=maker_ib_candidate(q/qa,x,e,f,g,orient,eps,interior,s);\n   MakerIBResult r2=bad;\n   if(abs(q)>1e-20)r2=maker_ib_candidate(qc/q,x,e,f,g,orient,eps,interior,s);\n   if(r1.valid>0.5&&r2.valid>0.5&&length(r1.uv-r2.uv)>eps*8.0){\n      if(r1.inside==r2.inside)return bad;\n      if(r1.inside>r2.inside)r=r1;else r=r2;\n   }else {if(r1.valid>0.5)r=r1;else r=r2;}\n }\n if(r.valid<0.5)return bad;\n if(mode>=0.5&&mode<1.5)r.uv=clamp(r.uv,0.0,1.0);\n else if(mode>=1.5&&r.inside<0.5)r.uv=vec2(0);\n return r;\n}",
+  "glsl_outputs": {
+    "uv": "maker_ib_solve({position},{a},{b},{c},{d},{outside},{tolerance},{interior}).uv",
+    "u": "maker_ib_solve({position},{a},{b},{c},{d},{outside},{tolerance},{interior}).uv.x",
+    "v": "maker_ib_solve({position},{a},{b},{c},{d},{outside},{tolerance},{interior}).uv.y",
+    "inside": "maker_ib_solve({position},{a},{b},{c},{d},{outside},{tolerance},{interior}).inside",
+    "valid": "maker_ib_solve({position},{a},{b},{c},{d},{outside},{tolerance},{interior}).valid",
+    "error": "maker_ib_solve({position},{a},{b},{c},{d},{outside},{tolerance},{interior}).error",
+    "jac": "maker_ib_solve({position},{a},{b},{c},{d},{outside},{tolerance},{interior}).jac"
+  }
+}
