@@ -1,0 +1,106 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.concentric_ring_coordinates_2d",
+  "name": "Concentric Ring Coordinates 2D",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "description": "Partition radial space into indexed concentric rings.",
+  "uses": "Partition radial space into indexed concentric rings.",
+  "notes": "Spacing multiplier scales spacing directly; nonpositive values use the minimum spacing 0.0001. Index is nonnegative, ties select the outer ring. Normalized offset is signed offset divided by spacing, not clamped. Angular coordinate is radians; center uses positive X.",
+  "header_color": "#627FC2",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec2",
+      "default": "vec2(0.0)"
+    },
+    {
+      "id": "spacing_multiplier",
+      "name": "Spacing Multiplier",
+      "type": "float",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "ring_index",
+      "name": "Ring Index",
+      "type": "float"
+    },
+    {
+      "id": "ring_radius",
+      "name": "Ring Radius",
+      "type": "float",
+      "semantic_role": "distance"
+    },
+    {
+      "id": "local_offset",
+      "name": "Local Radial Offset",
+      "type": "float"
+    },
+    {
+      "id": "normalized_offset",
+      "name": "Normalized Radial Offset",
+      "type": "float"
+    },
+    {
+      "id": "ring_anchor",
+      "name": "Ring Anchor",
+      "type": "vec2",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "angle",
+      "name": "Angular Coordinate",
+      "type": "float",
+      "semantic_role": "angle"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "spacing",
+      "name": "Ring Spacing",
+      "type": "float",
+      "default": 0.1,
+      "min": 0.001,
+      "max": 10
+    },
+    {
+      "id": "first_radius",
+      "name": "First Ring Radius",
+      "type": "float",
+      "default": 0,
+      "min": 0,
+      "max": 20
+    },
+    {
+      "id": "selection",
+      "name": "Index Selection",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Nearest",
+        "Inner",
+        "Outer"
+      ]
+    }
+  ],
+  "helpers": "struct MakerConcentricRing {float index;float radius;float offset;float normalized;vec2 anchor;float angle;};\nMakerConcentricRing maker_concentric_ring(vec2 p,vec2 c,float spacing,float multiplier,float first,float mode){\n float s=clamp(spacing*max(multiplier,0.0),0.0001,10000.0);vec2 q=p-c;float r=length(q),u=(r-first)/s;\n float n=max(0.0,mode<0.5?floor(u+0.5):mode<1.5?floor(u):ceil(u));float rn=first+n*s,d=r-rn;\n vec2 dir=r>1e-8?q/r:vec2(1.0,0.0);float a=dir.x==0.0?sign(dir.y)*1.5707963267948966:atan(dir.y,dir.x);\n return MakerConcentricRing(n,rn,d,d/s,c+rn*dir,a);\n}",
+  "glsl_outputs": {
+    "ring_index": "maker_concentric_ring({position},{center},{spacing},{spacing_multiplier},{first_radius},{selection}).index",
+    "ring_radius": "maker_concentric_ring({position},{center},{spacing},{spacing_multiplier},{first_radius},{selection}).radius",
+    "local_offset": "maker_concentric_ring({position},{center},{spacing},{spacing_multiplier},{first_radius},{selection}).offset",
+    "normalized_offset": "maker_concentric_ring({position},{center},{spacing},{spacing_multiplier},{first_radius},{selection}).normalized",
+    "ring_anchor": "maker_concentric_ring({position},{center},{spacing},{spacing_multiplier},{first_radius},{selection}).anchor",
+    "angle": "maker_concentric_ring({position},{center},{spacing},{spacing_multiplier},{first_radius},{selection}).angle"
+  }
+}

@@ -9,6 +9,11 @@ impl Library {
  fn load()->Self{
     let mut result=Self{modules:BTreeMap::new(),categories:BTreeMap::new(),sources:BTreeMap::new(),errors:Vec::new(),catalog_fingerprint:0xcbf29ce484222325};
     let official=[
+      ("coordinates/concentric_ring_coordinates_2d.smmod",include_str!("../assets/maker/modules/coordinates/concentric_ring_coordinates_2d.smmod")),
+      ("geometry/circular_arc_distance_2d.smmod",include_str!("../assets/maker/modules/geometry/circular_arc_distance_2d.smmod")),
+      ("geometry/cyclic_spline_path_3d.smmod",include_str!("../assets/maker/modules/geometry/cyclic_spline_path_3d.smmod")),
+      ("animation/cyclic_scalar_spline.smmod",include_str!("../assets/maker/modules/animation/cyclic_scalar_spline.smmod")),
+      ("geometry/sdf_rounded_hexagonal_prism.smmod",include_str!("../assets/maker/modules/geometry/sdf_rounded_hexagonal_prism.smmod")),
       ("animation/cyclic_three_state_blend.smmod",include_str!("../assets/maker/modules/animation/cyclic_three_state_blend.smmod")),
       ("fields/radial_panel_field_3d.smmod",include_str!("../assets/maker/modules/fields/radial_panel_field_3d.smmod")),
       ("fields/geodesic_dual_cell_field_3d.smmod",include_str!("../assets/maker/modules/fields/geodesic_dual_cell_field_3d.smmod")),

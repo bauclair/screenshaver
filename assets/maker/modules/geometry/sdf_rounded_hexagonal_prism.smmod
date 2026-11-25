@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.geometry.sdf_rounded_hexagonal_prism",
+  "name": "SDF Rounded Hexagonal Prism",
+  "category": "Geometry",
+  "created_by": "Screenshaver",
+  "description": "Finite rounded regular hexagonal prism.",
+  "uses": "Finite rounded regular hexagonal prism.",
+  "notes": "Apothem and half height are outer dimensions. Component distances describe rounded cross-section and axial extent; their extrusion alone does not reproduce the rounded 3D corners.",
+  "header_color": "#477D9A",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "default": "vec3(maker_uv,0.0)",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "radius_modulation",
+      "name": "Radius Modulation",
+      "type": "float",
+      "default": "0.0"
+    },
+    {
+      "id": "height_modulation",
+      "name": "Height Modulation",
+      "type": "float",
+      "default": "0.0"
+    },
+    {
+      "id": "rounding_modulation",
+      "name": "Rounding Modulation",
+      "type": "float",
+      "default": "0.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "distance",
+      "name": "Distance",
+      "type": "float",
+      "semantic_role": "distance"
+    },
+    {
+      "id": "cross_section",
+      "name": "Cross-section Distance",
+      "type": "float",
+      "semantic_role": "distance"
+    },
+    {
+      "id": "axial",
+      "name": "Axial Distance",
+      "type": "float",
+      "semantic_role": "distance"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "radius",
+      "name": "Radius (apothem)",
+      "type": "float",
+      "default": 0.5,
+      "min": 0.01,
+      "max": 20
+    },
+    {
+      "id": "half_height",
+      "name": "Half Height",
+      "type": "float",
+      "default": 1,
+      "min": 0.01,
+      "max": 20
+    },
+    {
+      "id": "rounding",
+      "name": "Rounding Radius",
+      "type": "float",
+      "default": 0.05,
+      "min": 0,
+      "max": 5
+    },
+    {
+      "id": "axis",
+      "name": "Axis",
+      "type": "choice",
+      "default": 1,
+      "options": [
+        "X",
+        "Y",
+        "Z"
+      ]
+    },
+    {
+      "id": "rotation",
+      "name": "Cross-section Rotation",
+      "type": "float",
+      "default": 0,
+      "min": -180,
+      "max": 180
+    }
+  ],
+  "helpers": "vec3 maker_rounded_hex_prism(vec3 p,float r,float h,float roundness,float axis,float rotation){\n r=clamp(r,0.01,20.0); h=clamp(h,0.01,20.0); float k=clamp(roundness,0.0,min(r,h));\n int ax=int(clamp(floor(axis+0.5),0.0,2.0)); vec2 q=ax==0?p.yz:(ax==1?p.xz:p.xy); float z=ax==0?p.x:(ax==1?p.y:p.z);\n float a=radians(rotation); q=mat2(cos(a),-sin(a),sin(a),cos(a))*q;\n float cr=(r-k)/cos(0.5235987756); float md=length(q); bool inside=true;\n if(cr>0.0000001){md=1e30; for(int j=0;j<6;j++){float b=float(j)*1.0471975512; vec2 v=cr*vec2(cos(b),sin(b)); vec2 w=cr*vec2(cos(b+1.0471975512),sin(b+1.0471975512)); vec2 e=w-v; vec2 u=q-v; md=min(md,length(u-e*clamp(dot(u,e)/max(dot(e,e),1e-20),0.0,1.0))); inside=inside&&(e.x*u.y-e.y*u.x>=0.0); } if(inside)md=-md; }\n float dz=abs(z)-(h-k); vec2 d=vec2(md,dz); return vec3(length(max(d,0.0))+min(max(d.x,d.y),0.0)-k,md-k,dz-k);\n}",
+  "glsl_outputs": {
+    "distance": "maker_rounded_hex_prism({position},{radius}+{radius_modulation},{half_height}+{height_modulation},{rounding}+{rounding_modulation},{axis},{rotation}).x",
+    "cross_section": "maker_rounded_hex_prism({position},{radius}+{radius_modulation},{half_height}+{height_modulation},{rounding}+{rounding_modulation},{axis},{rotation}).y",
+    "axial": "maker_rounded_hex_prism({position},{radius}+{radius_modulation},{half_height}+{height_modulation},{rounding}+{rounding_modulation},{axis},{rotation}).z"
+  }
+}

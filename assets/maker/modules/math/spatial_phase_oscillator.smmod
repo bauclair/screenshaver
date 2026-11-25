@@ -7,7 +7,7 @@
   "header_color": "#688C91",
   "description": "Bounded scalar oscillation with phase driven by three-dimensional position and time.",
   "uses": "Spatially coordinated motion, pulsating material values and connected size modulation.",
-  "notes": "Independently designed. Output can connect to the Finite Cube Cluster Field Size Modulation port. A connected value is evaluated at the graph sample position, not separately for each cluster cell.",
+  "notes": "Independently designed. Output can connect to the Finite Cube Cluster Field Size Modulation port. A connected value is evaluated at the graph sample position, not separately for each cluster cell. Spatial origin is subtracted from position. Spatial scale multiplier is signed; phase modulation is in radians. Directional mode retains the original diagonal projection. Output endpoints are sorted as before.",
   "inputs": [
     {
       "id": "position",
@@ -22,6 +22,24 @@
       "type": "float",
       "default": "u_time",
       "semantic_role": "time"
+    },
+    {
+      "id": "spatial_origin",
+      "name": "Spatial Origin",
+      "type": "vec3",
+      "default": "vec3(0.0)"
+    },
+    {
+      "id": "spatial_scale_multiplier",
+      "name": "Spatial Scale Multiplier",
+      "type": "float",
+      "default": "1.0"
+    },
+    {
+      "id": "phase_modulation",
+      "name": "Phase Modulation",
+      "type": "float",
+      "default": "0.0"
     }
   ],
   "outputs": [
@@ -71,9 +89,21 @@
       "default": 0,
       "min": -6.283,
       "max": 6.283
+    },
+    {
+      "id": "spatial_phase_mode",
+      "name": "Spatial Phase Mode",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Directional",
+        "Euclidean radial",
+        "Manhattan radial",
+        "Maximum-component radial"
+      ]
     }
   ],
-  "helpers": "float maker_spatial_phase_oscillator(vec3 p,float t,float frequency,float spatialScale,float lo,float hi,float offset){\n float phase=t*frequency+dot(p,vec3(0.57735027,0.57735027,0.57735027))*spatialScale+offset;\n float v=0.5+0.5*sin(phase);\n return mix(min(lo,hi),max(lo,hi),v);\n}",
-  "glsl": "maker_spatial_phase_oscillator({position},{time},{frequency},{spatial_scale},{minimum},{maximum},{phase_offset})",
+  "helpers": "float maker_spatial_phase_oscillator(vec3 p,float t,float frequency,float spatialScale,float lo,float hi,float offset,vec3 origin,float multiplier,float modulation,float mode){\n vec3 q=p-origin;\n float metric=dot(q,vec3(0.57735027,0.57735027,0.57735027));\n if(mode>=2.5)metric=max(abs(q.x),max(abs(q.y),abs(q.z)));\n else if(mode>=1.5)metric=dot(abs(q),vec3(1.0));\n else if(mode>=0.5)metric=length(q);\n float phase=t*frequency+metric*(spatialScale*multiplier)+offset+modulation;\n float v=0.5+0.5*sin(phase);\n return mix(min(lo,hi),max(lo,hi),v);\n}",
+  "glsl": "maker_spatial_phase_oscillator({position},{time},{frequency},{spatial_scale},{minimum},{maximum},{phase_offset},{spatial_origin},{spatial_scale_multiplier},{phase_modulation},{spatial_phase_mode})",
   "terminal": false
 }

@@ -2,20 +2,26 @@
   "schema_version": 1,
   "created_by": "Screenshaver",
   "terminal": false,
-  "helpers": "",
+  "helpers": "float maker_distance_glow_response(float d,float r,float strength,float multiplier,float mode,float epsilon,float exponent){\n d=max(d,0.0);r=max(r,0.00001);float s=strength*max(multiplier,0.0);epsilon=max(epsilon,0.0001);\n if(mode<0.5)return s/(1.0+pow(d/r,2.0));\n if(mode<1.5)return s*pow(epsilon/max(d,epsilon),exponent);\n return s*exp(-pow(d/r,exponent));\n}",
   "id": "screenshaver.lighting.distance_glow_falloff",
   "name": "Distance Glow Falloff",
   "category": "Lighting",
   "header_color": "#B58A49",
   "description": "Convert a nonnegative distance into a bounded, smooth glow intensity.",
   "uses": "Soft highlights around procedural segments, curves, distance fields and outlines.",
-  "notes": "Standard rational falloff: intensity / (1 + (distance/radius)^2). Finite at zero distance; no original third-party code.",
+  "notes": "Standard rational falloff: intensity / (1 + (distance/radius)^2). Finite at zero distance; no original third-party code. Smooth retains rational response. Reciprocal uses normalized distance floor; exponential uses radius. Negative strength multiplier is clamped to zero. Negative distances are treated as zero.",
   "inputs": [
     {
       "id": "distance",
       "name": "Distance",
       "type": "float",
       "default": "length(maker_uv)"
+    },
+    {
+      "id": "strength_multiplier",
+      "name": "Strength Multiplier",
+      "type": "float",
+      "default": "1.0"
     }
   ],
   "outputs": [
@@ -42,7 +48,34 @@
       "default": 1.0,
       "min": 0.0,
       "max": 10.0
+    },
+    {
+      "id": "falloff_mode",
+      "name": "Falloff Mode",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Smooth",
+        "Reciprocal",
+        "Exponential"
+      ]
+    },
+    {
+      "id": "distance_floor",
+      "name": "Distance Floor",
+      "type": "float",
+      "default": 0.001,
+      "min": 0.0001,
+      "max": 1
+    },
+    {
+      "id": "falloff_exponent",
+      "name": "Falloff Exponent",
+      "type": "float",
+      "default": 1,
+      "min": 0.25,
+      "max": 8
     }
   ],
-  "glsl": "({strength}/(1.0+pow(max({distance},0.0)/max({radius},0.00001),2.0)))"
+  "glsl": "maker_distance_glow_response({distance},{radius},{strength},{strength_multiplier},{falloff_mode},{distance_floor},{falloff_exponent})"
 }

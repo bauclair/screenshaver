@@ -8,7 +8,7 @@
   "header_color": "#627FC2",
   "description": "Converts planar positions to pointy-top regular hexagon cell indices, centers, and local positions.",
   "uses": "Honeycomb tilings, cellular motifs, and hexagonal pattern construction.",
-  "notes": "Cell Radius is the center-to-vertex distance. Cell Coordinates are axial q,r indices. Cell Center and Local Position use the same units as Position. Uses cube-coordinate rounding for stable nearest-hex selection. Cube Coordinates exposes continuous unrounded (q,r,s) with s=-q-r.",
+  "notes": "Cell Radius is the center-to-vertex distance. Cell Coordinates are axial q,r indices. Cell Center and Local Position use the same units as Position. Uses cube-coordinate rounding for stable nearest-hex selection. Cube Coordinates exposes continuous unrounded (q,r,s) with s=-q-r. Frequency Multiplier scales inverse cell radius. Nonpositive values collapse cell, center and cube to zero and leave local position unchanged. Positive effective radius is floored at 0.0001; frequency denominator is floored at 1e-20.",
   "inputs": [
     {
       "id": "position",
@@ -16,6 +16,12 @@
       "type": "vec2",
       "default": "maker_uv",
       "semantic_role": "position2d"
+    },
+    {
+      "id": "frequency_multiplier",
+      "name": "Frequency Multiplier",
+      "type": "float",
+      "default": "1.0"
     }
   ],
   "outputs": [
@@ -53,11 +59,11 @@
       "max": 10
     }
   ],
-  "helpers": "vec2 maker_hex_axial_cell(vec2 p,float radius){\n float s=max(abs(radius),0.0001);\n vec2 a=vec2((0.5773502691896258*p.x-0.3333333333333333*p.y)/s,0.6666666666666666*p.y/s);\n vec3 c=vec3(a.x,-a.x-a.y,a.y);\n vec3 rounded=floor(c+0.5);\n vec3 err=abs(rounded-c);\n if(err.x>err.y && err.x>err.z)rounded.x=-rounded.y-rounded.z;\n else if(err.y>err.z)rounded.y=-rounded.x-rounded.z;\n else rounded.z=-rounded.x-rounded.y;\n return vec2(rounded.x,rounded.z);\n}\nvec2 maker_hex_center(vec2 cell,float radius){\n float s=max(abs(radius),0.0001);\n return s*vec2(1.7320508075688772*(cell.x+0.5*cell.y),1.5*cell.y);\n}\nvec3 maker_hex_continuous_cube(vec2 p,float radius){\n float scale=max(abs(radius),0.0001);\n float q=(p.x/sqrt(3.0)-p.y/3.0)/scale;\n float r=(2.0*p.y/3.0)/scale;\n return vec3(q,r,-q-r);\n}",
+  "helpers": "vec2 maker_hex_axial_cell(vec2 p,float radius){\n float s=max(abs(radius),0.0001);\n vec2 a=vec2((0.5773502691896258*p.x-0.3333333333333333*p.y)/s,0.6666666666666666*p.y/s);\n vec3 c=vec3(a.x,-a.x-a.y,a.y);\n vec3 rounded=floor(c+0.5);\n vec3 err=abs(rounded-c);\n if(err.x>err.y && err.x>err.z)rounded.x=-rounded.y-rounded.z;\n else if(err.y>err.z)rounded.y=-rounded.x-rounded.z;\n else rounded.z=-rounded.x-rounded.y;\n return vec2(rounded.x,rounded.z);\n}\nvec2 maker_hex_center(vec2 cell,float radius){\n float s=max(abs(radius),0.0001);\n return s*vec2(1.7320508075688772*(cell.x+0.5*cell.y),1.5*cell.y);\n}\nvec3 maker_hex_continuous_cube(vec2 p,float radius){\n float scale=max(abs(radius),0.0001);\n float q=(p.x/sqrt(3.0)-p.y/3.0)/scale;\n float r=(2.0*p.y/3.0)/scale;\n return vec3(q,r,-q-r);\n}\nfloat maker_hex_effective_radius(float radius,float frequency){\n return max(max(abs(radius),0.0001)/max(frequency,1e-20),0.0001);\n}\nvec2 maker_hex_modulated_cell(vec2 p,float radius,float frequency){\n if(frequency<=0.0)return vec2(0.0);\n return maker_hex_axial_cell(p,maker_hex_effective_radius(radius,frequency));\n}\nvec2 maker_hex_modulated_center(vec2 p,float radius,float frequency){\n if(frequency<=0.0)return vec2(0.0);\n float r=maker_hex_effective_radius(radius,frequency);\n return maker_hex_center(maker_hex_axial_cell(p,r),r);\n}\nvec3 maker_hex_modulated_cube(vec2 p,float radius,float frequency){\n if(frequency<=0.0)return vec3(0.0);\n return maker_hex_continuous_cube(p,maker_hex_effective_radius(radius,frequency));\n}",
   "glsl_outputs": {
-    "local": "({position}-maker_hex_center(maker_hex_axial_cell({position},{radius}),{radius}))",
-    "cell": "maker_hex_axial_cell({position},{radius})",
-    "center": "maker_hex_center(maker_hex_axial_cell({position},{radius}),{radius})",
-    "cube": "maker_hex_continuous_cube({position},{radius})"
+    "local": "({position}-maker_hex_modulated_center({position},{radius},{frequency_multiplier}))",
+    "cell": "maker_hex_modulated_cell({position},{radius},{frequency_multiplier})",
+    "center": "maker_hex_modulated_center({position},{radius},{frequency_multiplier})",
+    "cube": "maker_hex_modulated_cube({position},{radius},{frequency_multiplier})"
   }
 }

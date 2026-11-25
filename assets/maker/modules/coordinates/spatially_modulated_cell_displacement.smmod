@@ -8,7 +8,7 @@
   "header_color": "#627FC2",
   "description": "Translate every point in a discrete 3D cell by the same time-varying displacement, preserving local shape.",
   "uses": "Coherent per-cell motion for tiled 3D geometry and animated voxel fields.",
-  "notes": "Independently designed. Cell identity is computed from the original input position, so this is a coordinate warp rather than an object-instance transform. When feeding a repeated SDF, use displaced sample positions consistently with cell repetition. Boundary discontinuities are intentional.",
+  "notes": "Independently designed. Cell identity is computed from the original input position, so this is a coordinate warp rather than an object-instance transform. When feeding a repeated SDF, use displaced sample positions consistently with cell repetition. Boundary discontinuities are intentional. External anchors are used directly as phase coordinates (not divided by Cell Size).",
   "inputs": [
     {
       "id": "position",
@@ -23,6 +23,18 @@
       "type": "float",
       "default": "u_time",
       "semantic_role": "time"
+    },
+    {
+      "id": "external_cell_anchor",
+      "name": "External Cell Anchor",
+      "type": "vec3",
+      "default": "vec3(0.0)"
+    },
+    {
+      "id": "amplitude_multiplier",
+      "name": "Amplitude Multiplier",
+      "type": "float",
+      "default": "1.0"
     }
   ],
   "outputs": [
@@ -94,11 +106,21 @@
       "default": 0.0,
       "min": -6.283,
       "max": 6.283
+    },
+    {
+      "id": "anchor_source",
+      "name": "Cell Anchor Source",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Internal",
+        "External"
+      ]
     }
   ],
-  "helpers": "vec3 maker_cell_displacement(vec3 p,float t,float cellSize,vec3 amplitude,float frequency,float speed,float phase){\n vec3 cell=floor(p/max(abs(cellSize),0.0001));\n float theta=dot(cell,vec3(0.754877666,1.324717957,0.569840291))*frequency+t*speed+phase;\n return amplitude*vec3(sin(theta),sin(theta+2.094395102),sin(theta+4.188790205));\n}",
+  "helpers": "vec3 maker_cell_displacement(vec3 p,float t,float cellSize,vec3 amplitude,float frequency,float speed,float phase,vec3 anchor,float multiplier,float source){\n vec3 cell=floor(p/max(abs(cellSize),0.0001));\n if(source>=0.5)cell=anchor;\n float theta=dot(cell,vec3(0.754877666,1.324717957,0.569840291))*frequency+t*speed+phase;\n return multiplier*amplitude*vec3(sin(theta),sin(theta+2.094395102),sin(theta+4.188790205));\n}",
   "glsl_outputs": {
-    "position": "({position}+maker_cell_displacement({position},{time},{cell_size},vec3({amplitude_x},{amplitude_y},{amplitude_z}),{spatial_frequency},{speed},{phase}))",
-    "displacement": "maker_cell_displacement({position},{time},{cell_size},vec3({amplitude_x},{amplitude_y},{amplitude_z}),{spatial_frequency},{speed},{phase})"
+    "position": "({position}+maker_cell_displacement({position},{time},{cell_size},vec3({amplitude_x},{amplitude_y},{amplitude_z}),{spatial_frequency},{speed},{phase},{external_cell_anchor},{amplitude_multiplier},{anchor_source}))",
+    "displacement": "maker_cell_displacement({position},{time},{cell_size},vec3({amplitude_x},{amplitude_y},{amplitude_z}),{spatial_frequency},{speed},{phase},{external_cell_anchor},{amplitude_multiplier},{anchor_source})"
   }
 }

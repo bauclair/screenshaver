@@ -1,0 +1,126 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.geometry.circular_arc_distance_2d",
+  "name": "Circular Arc Distance 2D",
+  "category": "Geometry",
+  "created_by": "Screenshaver",
+  "description": "Nearest point and distance to a finite circular arc.",
+  "uses": "Nearest point and distance to a finite circular arc.",
+  "notes": "Angles and modulation are degrees. Center samples select the middle angle; antipodal ties select the starting endpoint. Zero extent has progress zero. Stroke distance is distance to centerline minus half width.",
+  "header_color": "#477D9A",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec2",
+      "default": "vec2(0.0)"
+    },
+    {
+      "id": "radius_modulation",
+      "name": "Radius Modulation",
+      "type": "float",
+      "default": "0.0"
+    },
+    {
+      "id": "orientation_modulation",
+      "name": "Orientation Modulation",
+      "type": "float",
+      "default": "0.0"
+    },
+    {
+      "id": "extent_modulation",
+      "name": "Extent Modulation",
+      "type": "float",
+      "default": "0.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "arc_distance",
+      "name": "Arc Distance",
+      "type": "float",
+      "semantic_role": "distance"
+    },
+    {
+      "id": "stroke_distance",
+      "name": "Stroke Distance",
+      "type": "float",
+      "semantic_role": "distance"
+    },
+    {
+      "id": "closest_point",
+      "name": "Closest Point",
+      "type": "vec2",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "arc_progress",
+      "name": "Arc Progress",
+      "type": "float"
+    },
+    {
+      "id": "stroke_mask",
+      "name": "Stroke Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "radius",
+      "name": "Radius",
+      "type": "float",
+      "default": 0.5,
+      "min": 0,
+      "max": 20
+    },
+    {
+      "id": "orientation",
+      "name": "Orientation",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "extent",
+      "name": "Angular Extent",
+      "type": "float",
+      "default": 180,
+      "min": 0,
+      "max": 360
+    },
+    {
+      "id": "half_width",
+      "name": "Stroke Half Width",
+      "type": "float",
+      "default": 0.01,
+      "min": 0,
+      "max": 2
+    },
+    {
+      "id": "softness",
+      "name": "Edge Softness",
+      "type": "float",
+      "default": 0.005,
+      "min": 0.0001,
+      "max": 0.5
+    }
+  ],
+  "helpers": "struct MakerFiniteArc {float distance; vec2 point; float progress;};\nMakerFiniteArc maker_finite_arc(vec2 p,vec2 c,float radius,float orientation,float extent){\n float r=clamp(radius,0.0,20.0), a=radians(mod(orientation,360.0)), w=radians(clamp(extent,0.0,360.0));\n vec2 q=p-c; float delta=0.0;\n if(length(q)>1e-8){float theta=q.x==0.0?sign(q.y)*1.5707963267948966:atan(q.y,q.x);delta=mod(theta-a+3.141592653589793,6.283185307179586)-3.141592653589793;}\n float b=clamp(delta,-0.5*w,0.5*w);vec2 s=c+r*vec2(cos(a+b),sin(a+b));\n return MakerFiniteArc(length(p-s),s,w>0.0?clamp(b/w+0.5,0.0,1.0):0.0);\n}",
+  "glsl_outputs": {
+    "arc_distance": "maker_finite_arc({position},{center},{radius}+{radius_modulation},{orientation}+{orientation_modulation},{extent}+{extent_modulation}).distance",
+    "stroke_distance": "(maker_finite_arc({position},{center},{radius}+{radius_modulation},{orientation}+{orientation_modulation},{extent}+{extent_modulation}).distance-{half_width})",
+    "closest_point": "maker_finite_arc({position},{center},{radius}+{radius_modulation},{orientation}+{orientation_modulation},{extent}+{extent_modulation}).point",
+    "arc_progress": "maker_finite_arc({position},{center},{radius}+{radius_modulation},{orientation}+{orientation_modulation},{extent}+{extent_modulation}).progress",
+    "stroke_mask": "(1.0-smoothstep(0.0,{softness},maker_finite_arc({position},{center},{radius}+{radius_modulation},{orientation}+{orientation_modulation},{extent}+{extent_modulation}).distance-{half_width}))"
+  }
+}
