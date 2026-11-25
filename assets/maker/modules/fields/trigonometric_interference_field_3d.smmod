@@ -1,0 +1,172 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.trigonometric_interference_field_3d",
+  "name": "Trigonometric Interference Field 3D",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "header_color": "#398F94",
+  "description": "Combines two independently parameterized harmonic vectors into a bounded deterministic interference field.",
+  "uses": "Procedural materials, geometry displacement, interference textures and density modulation.",
+  "notes": "Not stochastic noise. Euler rotation applies X then Y then Z. Shared uses the same unrotated position for both vectors; Independent rotates the secondary position; Counter-Rotated rotates the primary and applies the inverse rotation to the secondary. Phase modulation is in radians and affects the secondary vector; speeds are radians per second. Frequency multiplier is signed. Components are signed products; scalar field is their arithmetic mean.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "default": "vec3(maker_uv,0.0)",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "time",
+      "name": "Time",
+      "type": "float",
+      "default": "u_time",
+      "semantic_role": "time"
+    },
+    {
+      "id": "frequency_multiplier",
+      "name": "Frequency Multiplier",
+      "type": "float",
+      "default": "1.0",
+      "semantic_role": ""
+    },
+    {
+      "id": "phase_modulation",
+      "name": "Phase Modulation",
+      "type": "float",
+      "default": "0.0",
+      "semantic_role": "angle"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "field",
+      "name": "Signed Field",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "normalized",
+      "name": "Normalized Field",
+      "type": "float",
+      "semantic_role": "intensity"
+    },
+    {
+      "id": "magnitude",
+      "name": "Magnitude",
+      "type": "float",
+      "semantic_role": "intensity"
+    },
+    {
+      "id": "components",
+      "name": "Interference Components",
+      "type": "vec3",
+      "semantic_role": ""
+    }
+  ],
+  "parameters": [
+    {
+      "id": "primary_frequency",
+      "name": "Primary Frequency",
+      "type": "float",
+      "default": 1,
+      "min": 0.01,
+      "max": 64
+    },
+    {
+      "id": "secondary_frequency",
+      "name": "Secondary Frequency",
+      "type": "float",
+      "default": 1.5,
+      "min": 0.01,
+      "max": 64
+    },
+    {
+      "id": "primary_function",
+      "name": "Primary Function",
+      "type": "choice",
+      "default": 1,
+      "options": [
+        "Sine",
+        "Cosine"
+      ]
+    },
+    {
+      "id": "secondary_function",
+      "name": "Secondary Function",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Sine",
+        "Cosine"
+      ]
+    },
+    {
+      "id": "rotation_x",
+      "name": "Rotation X",
+      "type": "float",
+      "default": 30,
+      "min": -180,
+      "max": 180
+    },
+    {
+      "id": "rotation_y",
+      "name": "Rotation Y",
+      "type": "float",
+      "default": 45,
+      "min": -180,
+      "max": 180
+    },
+    {
+      "id": "rotation_z",
+      "name": "Rotation Z",
+      "type": "float",
+      "default": 15,
+      "min": -180,
+      "max": 180
+    },
+    {
+      "id": "primary_speed",
+      "name": "Primary Speed",
+      "type": "float",
+      "default": 0,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "secondary_speed",
+      "name": "Secondary Speed",
+      "type": "float",
+      "default": 0.2,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "phase_offset",
+      "name": "Phase Offset",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "coordinate_relationship",
+      "name": "Coordinate Relationship",
+      "type": "choice",
+      "default": 1,
+      "options": [
+        "Shared",
+        "Independent",
+        "Counter-Rotated"
+      ]
+    }
+  ],
+  "terminal": false,
+  "helpers": "vec3 maker_interference_rx(vec3 p,float a){float c=cos(a),s=sin(a);return vec3(p.x,c*p.y-s*p.z,s*p.y+c*p.z);}\nvec3 maker_interference_ry(vec3 p,float a){float c=cos(a),s=sin(a);return vec3(c*p.x+s*p.z,p.y,-s*p.x+c*p.z);}\nvec3 maker_interference_rz(vec3 p,float a){float c=cos(a),s=sin(a);return vec3(c*p.x-s*p.y,s*p.x+c*p.y,p.z);}\nvec3 maker_interference_components(vec3 p,float t,float fm,float pm,float f1,float f2,float m1,float m2,float rx,float ry,float rz,float s1,float s2,float phase,float relationship){\n  vec3 r=radians(vec3(rx,ry,rz));\n  vec3 a=p,b=p;\n  if(relationship>=0.5){\n    vec3 rotated=maker_interference_rz(maker_interference_ry(maker_interference_rx(p,r.x),r.y),r.z);\n    if(relationship<1.5) b=rotated;\n    else {a=rotated;b=maker_interference_rx(maker_interference_ry(maker_interference_rz(p,-r.z),-r.y),-r.x);}\n  }\n  vec3 u=a*(f1*fm)+vec3(t*s1),v=b*(f2*fm)+vec3(t*s2+radians(phase)+pm);\n  return (m1<0.5?sin(u):cos(u))*(m2<0.5?sin(v):cos(v));\n}\nfloat maker_interference_mean(vec3 c){return clamp((c.x+c.y+c.z)/3.0,-1.0,1.0);}",
+  "glsl_outputs": {
+    "field": "maker_interference_mean(maker_interference_components({position},{time},{frequency_multiplier},{phase_modulation},{primary_frequency},{secondary_frequency},{primary_function},{secondary_function},{rotation_x},{rotation_y},{rotation_z},{primary_speed},{secondary_speed},{phase_offset},{coordinate_relationship}))",
+    "normalized": "(0.5+0.5*maker_interference_mean(maker_interference_components({position},{time},{frequency_multiplier},{phase_modulation},{primary_frequency},{secondary_frequency},{primary_function},{secondary_function},{rotation_x},{rotation_y},{rotation_z},{primary_speed},{secondary_speed},{phase_offset},{coordinate_relationship})))",
+    "magnitude": "abs(maker_interference_mean(maker_interference_components({position},{time},{frequency_multiplier},{phase_modulation},{primary_frequency},{secondary_frequency},{primary_function},{secondary_function},{rotation_x},{rotation_y},{rotation_z},{primary_speed},{secondary_speed},{phase_offset},{coordinate_relationship})))",
+    "components": "maker_interference_components({position},{time},{frequency_multiplier},{phase_modulation},{primary_frequency},{secondary_frequency},{primary_function},{secondary_function},{rotation_x},{rotation_y},{rotation_z},{primary_speed},{secondary_speed},{phase_offset},{coordinate_relationship})"
+  }
+}

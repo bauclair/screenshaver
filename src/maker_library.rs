@@ -9,6 +9,12 @@ impl Library {
  fn load()->Self{
     let mut result=Self{modules:BTreeMap::new(),categories:BTreeMap::new(),sources:BTreeMap::new(),errors:Vec::new(),catalog_fingerprint:0xcbf29ce484222325};
     let official=[
+        ("coordinates/cylindrical_direction_projection.smmod", include_str!("../assets/maker/modules/coordinates/cylindrical_direction_projection.smmod")),
+        ("fields/rotated_harmonic_field_3d.smmod", include_str!("../assets/maker/modules/fields/rotated_harmonic_field_3d.smmod")),
+        ("fields/gradient_noise_3d.smmod", include_str!("../assets/maker/modules/fields/gradient_noise_3d.smmod")),
+        ("lighting/henyey_greenstein_scattering.smmod", include_str!("../assets/maker/modules/lighting/henyey_greenstein_scattering.smmod")),
+        ("fields/animated_spatial_network_field_2d.smmod", include_str!("../assets/maker/modules/fields/animated_spatial_network_field_2d.smmod")),
+
       ("animation/phased_step_cycle.smmod",include_str!("../assets/maker/modules/animation/phased_step_cycle.smmod")),
       ("geometry/two_bone_joint_solver_3d.smmod",include_str!("../assets/maker/modules/geometry/two_bone_joint_solver_3d.smmod")),
       ("coordinates/geometric_sequence_coordinates.smmod",include_str!("../assets/maker/modules/coordinates/geometric_sequence_coordinates.smmod")),
@@ -120,6 +126,7 @@ impl Library {
       ("fields/vignette_mask.smmod",include_str!("../assets/maker/modules/fields/vignette_mask.smmod")),
       ("color/rgb_to_alpha.smmod",include_str!("../assets/maker/modules/color/rgb_to_alpha.smmod")),
       ("noise/fbm_2d.smmod",include_str!("../assets/maker/modules/noise/fbm_2d.smmod")),
+      ("noise/layered_temporal_noise.smmod",include_str!("../assets/maker/modules/noise/layered_temporal_noise.smmod")),
       ("coordinates/deep_fbm_domain_warp.smmod",include_str!("../assets/maker/modules/coordinates/deep_fbm_domain_warp.smmod")),
       ("fields/four_wave_plasma_field.smmod",include_str!("../assets/maker/modules/fields/four_wave_plasma_field.smmod")),
       ("fields/neon_filament_extractor.smmod",include_str!("../assets/maker/modules/fields/neon_filament_extractor.smmod")),
@@ -208,6 +215,8 @@ impl Library {
     ("coordinates/randomized_cell_transform_2d.smmod",include_str!("../assets/maker/modules/coordinates/randomized_cell_transform_2d.smmod")),
     ("fields/cross_shape_field_2d.smmod",include_str!("../assets/maker/modules/fields/cross_shape_field_2d.smmod")),
     ("coordinates/iterative_rotational_fold_3d.smmod",include_str!("../assets/maker/modules/coordinates/iterative_rotational_fold_3d.smmod")),
+    ("fields/trigonometric_interference_field_3d.smmod",include_str!("../assets/maker/modules/fields/trigonometric_interference_field_3d.smmod")),
+        ("fields/tapered_trail_field_2d.smmod",include_str!("../assets/maker/modules/fields/tapered_trail_field_2d.smmod")),
 ];
     for (path,src) in official {result.register(path,src,Trust::Official)}
     if let Some(home)=std::env::var_os("HOME"){

@@ -6,7 +6,7 @@
   "created_by": "Screenshaver",
   "description": "Applies right-handed rotations directly to a three-dimensional coordinate.",
   "uses": "Animated sampling coordinates, spherical projections and procedural geometry.",
-  "notes": "Angles are degrees; animation speeds are degrees per second. Fixed rotation order X then Y then Z. Rotates around the origin. Rotation Modulation adds per-axis angles in degrees before conversion to radians.",
+  "notes": "Angles are degrees; animation speeds are degrees per second. Fixed rotation order X then Y then Z. Rotates around the origin. Rotation Modulation adds per-axis angles in degrees before conversion to radians. Axis-Angle mode uses a normalized axis, ignores Euler controls and returns the input unchanged for a zero axis. Angle modulation is in degrees.",
   "header_color": "#557C9C",
   "terminal": false,
   "inputs": [
@@ -29,6 +29,19 @@
       "name": "Rotation Modulation",
       "type": "vec3",
       "default": "vec3(0.0)"
+    },
+    {
+      "id": "rotation_axis",
+      "name": "Rotation Axis",
+      "type": "vec3",
+      "default": "vec3(0.0,1.0,0.0)",
+      "semantic_role": "direction3d"
+    },
+    {
+      "id": "angle_modulation",
+      "name": "Angle Modulation",
+      "type": "float",
+      "default": "0.0"
     }
   ],
   "outputs": [
@@ -87,8 +100,34 @@
       "default": 0,
       "min": -360,
       "max": 360
+    },
+    {
+      "id": "rotation_mode",
+      "name": "Rotation Mode",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Euler",
+        "Axis-Angle"
+      ]
+    },
+    {
+      "id": "axis_angle",
+      "name": "Axis Angle",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "axis_speed",
+      "name": "Axis Speed",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
     }
   ],
-  "helpers": "vec3 maker_coordinate_rotation_xyz(vec3 p,vec3 angles){\n vec3 c=cos(angles),s=sin(angles);\n p=vec3(p.x,c.x*p.y-s.x*p.z,s.x*p.y+c.x*p.z);\n p=vec3(c.y*p.x+s.y*p.z,p.y,-s.y*p.x+c.y*p.z);\n return vec3(c.z*p.x-s.z*p.y,s.z*p.x+c.z*p.y,p.z);\n}",
-  "glsl": "maker_coordinate_rotation_xyz({position},radians(vec3({angle_x},{angle_y},{angle_z})+{time}*vec3({speed_x},{speed_y},{speed_z})+{rotation_modulation}))"
+  "helpers": "vec3 maker_coordinate_rotation_xyz(vec3 p,vec3 angles){\n vec3 c=cos(angles),s=sin(angles);\n p=vec3(p.x,c.x*p.y-s.x*p.z,s.x*p.y+c.x*p.z);\n p=vec3(c.y*p.x+s.y*p.z,p.y,-s.y*p.x+c.y*p.z);\n return vec3(c.z*p.x-s.z*p.y,s.z*p.x+c.z*p.y,p.z);\n}\nvec3 maker_axis_angle_rotation(vec3 v,vec3 axis,float angle){float n=length(axis);if(n<=1e-8)return v;vec3 a=axis/n;float c=cos(angle),s=sin(angle);return c*v+s*cross(a,v)+(1.0-c)*a*dot(a,v);}",
+  "glsl": "({rotation_mode}<0.5?maker_coordinate_rotation_xyz({position},radians(vec3({angle_x},{angle_y},{angle_z})+{time}*vec3({speed_x},{speed_y},{speed_z})+{rotation_modulation})):maker_axis_angle_rotation({position},{rotation_axis},radians({axis_angle}+{time}*{axis_speed}+{angle_modulation})))"
 }

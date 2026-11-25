@@ -7,9 +7,9 @@
   "name": "Staggered Grid Coordinates 2D",
   "category": "Coordinates",
   "header_color": "#627FC2",
-  "description": "Maps a 2D position into local coordinates and integer cell indices of a row-staggered grid.",
+  "description": "Maps a 2D position into local coordinates and integer cell indices of a staggered grid.",
   "uses": "Offset-row dot arrangements, repeating motifs, procedural bokeh layouts and staggered tiling.",
-  "notes": "Rows are offset by a fraction of cell width. Cell Coordinates are the unshifted integer column and row indices after staggering. This is an independent implementation of a common offset-row lattice technique.",
+  "notes": "Rows are offset by a fraction of cell width. Cell Coordinates are the unshifted integer column and row indices after staggering. This is an independent implementation of a common offset-row lattice technique. Column mode transposes the grid. Random offsets are stable per row or column, repeating every 1048576 indices. Progressive mode uses fract(index * offset) in cell units; seed is ignored. Very large indices lose fractional precision.",
   "inputs": [
     {
       "id": "position",
@@ -57,11 +57,44 @@
       "default": 0.5,
       "min": -1,
       "max": 1
+    },
+    {
+      "id": "stagger_axis",
+      "name": "Stagger Axis",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Rows",
+        "Columns"
+      ],
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "stagger_mode",
+      "name": "Stagger Mode",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Alternating",
+        "Randomized",
+        "Progressive"
+      ],
+      "min": 0,
+      "max": 2
+    },
+    {
+      "id": "random_seed",
+      "name": "Random Seed",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 65535
     }
   ],
-  "helpers": "vec2 maker_bokeh_grid_cell(vec2 p,vec2 size,float offset){\n vec2 s=max(abs(size),vec2(0.0001));\n float row=floor(p.y/s.y+0.5);\n float shift=mod(row,2.0)*offset*s.x;\n return vec2(floor((p.x-shift)/s.x+0.5),row);\n}\nvec2 maker_bokeh_grid_local(vec2 p,vec2 size,float offset){\n vec2 s=max(abs(size),vec2(0.0001));\n vec2 cell=maker_bokeh_grid_cell(p,s,offset);\n float shift=mod(cell.y,2.0)*offset*s.x;\n return p-vec2(cell.x*s.x+shift,cell.y*s.y);\n}",
+  "helpers": "vec2 maker_bokeh_grid_cell(vec2 p,vec2 size,float offset){\n vec2 s=max(abs(size),vec2(0.0001));\n float row=floor(p.y/s.y+0.5);\n float shift=mod(row,2.0)*offset*s.x;\n return vec2(floor((p.x-shift)/s.x+0.5),row);\n}\nvec2 maker_bokeh_grid_local(vec2 p,vec2 size,float offset){\n vec2 s=max(abs(size),vec2(0.0001));\n vec2 cell=maker_bokeh_grid_cell(p,s,offset);\n float shift=mod(cell.y,2.0)*offset*s.x;\n return p-vec2(cell.x*s.x+shift,cell.y*s.y);\n}\nfloat maker_stagger_shift(float i,float mode,float seed){\n if(mode<0.5)return mod(i,2.0);\n uint h=uint(mod(i,1048576.0))+uint(clamp(floor(seed+0.5),0.0,65535.0))*747796405u;\n h=(h^(h>>16u))*2246822519u;h=(h^(h>>13u))*3266489917u;h^=h>>16u;\n return float(h>>8u)/16777216.0;\n}\nvec2 maker_stagger_extended(vec2 p,vec2 size,float offset,float axis,float mode,float seed,bool local){\n if(axis<0.5&&mode<0.5)return local?maker_bokeh_grid_local(p,size,offset):maker_bokeh_grid_cell(p,size,offset);\n bool flip=axis>=0.5;vec2 q=flip?p.yx:p;vec2 s=max(abs(flip?size.yx:size),vec2(0.0001));\n float row=floor(q.y/s.y+0.5);float shift=maker_stagger_shift(row,mode,seed)*offset*s.x;\n vec2 cell=vec2(floor((q.x-shift)/s.x+0.5),row);vec2 v=local?q-vec2(cell.x*s.x+shift,cell.y*s.y):cell;return flip?v.yx:v;\n}\nvec2 maker_stagger_progressive(vec2 p,vec2 size,float offset,float axis,float mode,float seed,bool local){\n if(mode<1.5)return maker_stagger_extended(p,size,offset,axis,mode,seed,local);\n bool flip=axis>=0.5;\n vec2 q=flip?p.yx:p;\n vec2 s=max(abs(flip?size.yx:size),vec2(0.0001));\n float row=floor(q.y/s.y+0.5);\n float shift=fract(row*offset)*s.x;\n vec2 cell=vec2(floor((q.x-shift)/s.x+0.5),row);\n vec2 v=local?q-vec2(cell.x*s.x+shift,cell.y*s.y):cell;\n return flip?v.yx:v;\n}",
   "glsl_outputs": {
-    "local": "maker_bokeh_grid_local({position},vec2({cell_width},{cell_height}),{row_offset})",
-    "cell": "maker_bokeh_grid_cell({position},vec2({cell_width},{cell_height}),{row_offset})"
+    "local": "maker_stagger_progressive({position},vec2({cell_width},{cell_height}),{row_offset},{stagger_axis},{stagger_mode},{random_seed},true)",
+    "cell": "maker_stagger_progressive({position},vec2({cell_width},{cell_height}),{row_offset},{stagger_axis},{stagger_mode},{random_seed},false)"
   }
 }

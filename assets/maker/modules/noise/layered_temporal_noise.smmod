@@ -1,0 +1,113 @@
+{
+  "schema_version": 1,
+  "created_by": "Screenshaver",
+  "terminal": false,
+  "id": "screenshaver.noise.layered_temporal_noise",
+  "name": "Layered Temporal Noise",
+  "category": "Noise",
+  "header_color": "#596D85",
+  "description": "Deterministic layered one-dimensional lattice noise with three independent channels.",
+  "uses": "Temporal modulation of procedural parameters, colors and coordinates.",
+  "notes": "Independent integer hash and normalized equal-weight layers. Time is bounded by periodic wrapping; output range may be reversed. Eight layers maximum.",
+  "inputs": [
+    {
+      "id": "time",
+      "name": "Time",
+      "type": "float",
+      "semantic_role": "time",
+      "default": "u_time"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "noise_vector",
+      "name": "Noise Vector",
+      "type": "vec3"
+    },
+    {
+      "id": "noise_x",
+      "name": "Noise X",
+      "type": "float"
+    },
+    {
+      "id": "noise_y",
+      "name": "Noise Y",
+      "type": "float"
+    },
+    {
+      "id": "noise_z",
+      "name": "Noise Z",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "speed",
+      "name": "Animation Speed",
+      "type": "float",
+      "default": 0.25,
+      "min": 0,
+      "max": 5
+    },
+    {
+      "id": "layers",
+      "name": "Layers",
+      "type": "float",
+      "default": 4,
+      "min": 1,
+      "max": 8
+    },
+    {
+      "id": "spacing",
+      "name": "Layer Spacing",
+      "type": "float",
+      "default": 7.5,
+      "min": 0.1,
+      "max": 100
+    },
+    {
+      "id": "seed",
+      "name": "Seed",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 65535
+    },
+    {
+      "id": "interpolation",
+      "name": "Interpolation",
+      "type": "choice",
+      "default": 1,
+      "min": 0,
+      "max": 2,
+      "options": [
+        "Linear",
+        "Smooth",
+        "Quintic"
+      ]
+    },
+    {
+      "id": "minimum",
+      "name": "Output Minimum",
+      "type": "float",
+      "default": 0,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "maximum",
+      "name": "Output Maximum",
+      "type": "float",
+      "default": 1,
+      "min": -10,
+      "max": 10
+    }
+  ],
+  "helpers": "uint maker_temporal_hash(uint x){\n x ^= x >> 16u; x *= 0x7feb352du; x ^= x >> 15u; x *= 0x846ca68bu; return x ^ (x >> 16u);\n}\nvec3 maker_temporal_lattice(uint i,uint seed){\n uint k=i+seed*0x9e3779b9u;\n return vec3(float(maker_temporal_hash(k ^ 0x68bc21ebu)>>8u),float(maker_temporal_hash(k ^ 0x02e5be93u)>>8u),float(maker_temporal_hash(k ^ 0x967a889bu)>>8u))/16777215.0;\n}\nvec3 maker_layered_temporal(float t,float speed,float layers,float spacing,float seed,float mode,float lo,float hi){\n int n=int(clamp(floor(layers+0.5),1.0,8.0));\n uint s=uint(clamp(floor(seed+0.5),0.0,65535.0));\n float base=mod(t*clamp(speed,0.0,5.0),65536.0);\n vec3 sum=vec3(0.0);\n for(int j=0;j<8;++j){\n  if(j>=n)break;\n  float x=mod(base+float(j)*clamp(spacing,0.1,100.0),65536.0);\n  uint i=uint(floor(x)); float f=fract(x);\n  if(mode>=1.5)f=f*f*f*(f*(f*6.0-15.0)+10.0);\n  else if(mode>=0.5)f=f*f*(3.0-2.0*f);\n  uint layer_seed=s+uint(j)*0x85ebca6bu;\n  sum+=mix(maker_temporal_lattice(i,layer_seed),maker_temporal_lattice((i+1u)&65535u,layer_seed),f);\n }\n return mix(vec3(clamp(lo,-10.0,10.0)),vec3(clamp(hi,-10.0,10.0)),clamp(sum/float(n),0.0,1.0));\n}",
+  "glsl_outputs": {
+    "noise_vector": "maker_layered_temporal({time},{speed},{layers},{spacing},{seed},{interpolation},{minimum},{maximum})",
+    "noise_x": "maker_layered_temporal({time},{speed},{layers},{spacing},{seed},{interpolation},{minimum},{maximum}).x",
+    "noise_y": "maker_layered_temporal({time},{speed},{layers},{spacing},{seed},{interpolation},{minimum},{maximum}).y",
+    "noise_z": "maker_layered_temporal({time},{speed},{layers},{spacing},{seed},{interpolation},{minimum},{maximum}).z"
+  }
+}

@@ -1,0 +1,120 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.lighting.henyey_greenstein_scattering",
+  "name": "Henyey–Greenstein Scattering",
+  "category": "Lighting",
+  "created_by": "Screenshaver",
+  "description": "Evaluates single or dual angular scattering phase functions.",
+  "uses": "Fog, clouds, dust and directional volumetric illumination.",
+  "notes": "Incident direction is light propagation toward the sample; outgoing direction points from sample toward viewer. Zero directions return zero scattering and cosine. Physical normalization integrates to one before intensity scaling; relative omits 4 pi. HDR output is intentional.",
+  "header_color": "#C49842",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "incident_direction",
+      "name": "Incident Direction",
+      "type": "vec3",
+      "default": "vec3(0.0,0.0,1.0)",
+      "semantic_role": "direction3d"
+    },
+    {
+      "id": "outgoing_direction",
+      "name": "Outgoing Direction",
+      "type": "vec3",
+      "default": "vec3(0.0,0.0,1.0)",
+      "semantic_role": "direction3d"
+    },
+    {
+      "id": "light_color",
+      "name": "Light Color",
+      "type": "vec3",
+      "default": "vec3(1.0)",
+      "semantic_role": "color"
+    },
+    {
+      "id": "intensity_multiplier",
+      "name": "Intensity Multiplier",
+      "type": "float",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "scattering",
+      "name": "Scattering",
+      "type": "float",
+      "semantic_role": "intensity"
+    },
+    {
+      "id": "scattered_color",
+      "name": "Scattered Color",
+      "type": "vec3",
+      "semantic_role": "color"
+    },
+    {
+      "id": "scattering_cosine",
+      "name": "Scattering Cosine",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "scattering_mode",
+      "name": "Scattering Mode",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Single",
+        "Dual"
+      ]
+    },
+    {
+      "id": "primary_anisotropy",
+      "name": "Primary Anisotropy",
+      "type": "float",
+      "default": 0.3,
+      "min": -0.95,
+      "max": 0.95
+    },
+    {
+      "id": "secondary_anisotropy",
+      "name": "Secondary Anisotropy",
+      "type": "float",
+      "default": -0.2,
+      "min": -0.95,
+      "max": 0.95
+    },
+    {
+      "id": "secondary_weight",
+      "name": "Secondary Weight",
+      "type": "float",
+      "default": 0.25,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "normalization",
+      "name": "Normalization",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Physical",
+        "Relative"
+      ]
+    },
+    {
+      "id": "intensity",
+      "name": "Intensity",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 10
+    }
+  ],
+  "helpers": "float maker_hg_cos(vec3 a,vec3 b){float x=length(a),y=length(b);return x>1e-8&&y>1e-8?clamp(dot(a/x,b/y),-1.0,1.0):0.0;}\nfloat maker_hg_lobe(float mu,float g){g=clamp(g,-0.95,0.95);return (1.0-g*g)/pow(max(1.0+g*g-2.0*g*mu,0.0025),1.5);}\nfloat maker_hg_eval(vec3 a,vec3 b,float mode,float g,float g2,float w,float norm,float intensity,float mult){if(length(a)<=1e-8||length(b)<=1e-8)return 0.0;float mu=maker_hg_cos(a,b);float v=maker_hg_lobe(mu,g);if(mode>=0.5)v=mix(v,maker_hg_lobe(mu,g2),clamp(w,0.0,1.0));return v*(norm<0.5?0.0795774715459477:1.0)*max(intensity*max(mult,0.0),0.0);}",
+  "glsl_outputs": {
+    "scattering": "maker_hg_eval({incident_direction},{outgoing_direction},{scattering_mode},{primary_anisotropy},{secondary_anisotropy},{secondary_weight},{normalization},{intensity},{intensity_multiplier})",
+    "scattered_color": "{light_color}*maker_hg_eval({incident_direction},{outgoing_direction},{scattering_mode},{primary_anisotropy},{secondary_anisotropy},{secondary_weight},{normalization},{intensity},{intensity_multiplier})",
+    "scattering_cosine": "maker_hg_cos({incident_direction},{outgoing_direction})"
+  }
+}

@@ -83,7 +83,7 @@ fn maker_last_discovery_settings()->(usize,usize,usize,usize){
     let Some(path)=maker_state_path() else{return fallback};
     let Ok(contents)=std::fs::read_to_string(&path) else{return fallback};
     let Ok(root)=serde_json::from_str::<serde_json::Value>(&contents) else{
-        eprintln!("[MAKER STATE] Invalid Maker state JSON; using wire defaults");
+        crate::maker::operational_log(format_args!("[MAKER STATE] Invalid Maker state JSON; using wire defaults"));
         return fallback;
     };
     let Some(range)=root.pointer("/maker/discovery") else{return fallback};
@@ -446,7 +446,247 @@ pub(crate) fn graph_source_cost(graph:&Graph)->u64 {
 
 // Single admission policy used by both CPU discovery and the isolated GPU worker.
 // These estimates are conservative screening heuristics, not proof of GPU safety.
+// Initial structural screening profiles, based on the 206-module catalog.
+// Relative units only: no claim of a hardware-independent execution bound.
+fn safety_profile(id:&str)->Option<(u64,u64)> {
+    Some(match id {
+        "screenshaver.animation.beat_phase_envelope" => (8, 1),
+        "screenshaver.animation.cyclic_scalar_spline" => (40, 1),
+        "screenshaver.animation.cyclic_three_state_blend" => (27, 1),
+        "screenshaver.animation.easing_curve" => (8, 1),
+        "screenshaver.animation.interpolated_procedural_sequence" => (32, 1),
+        "screenshaver.animation.looping_time_controller" => (8, 1),
+        "screenshaver.animation.modulated_travel_time" => (9, 1),
+        "screenshaver.animation.particle_lifetime_envelope" => (16, 1),
+        "screenshaver.animation.phased_step_cycle" => (38, 1),
+        "screenshaver.animation.ping_pong_oscillator" => (11, 1),
+        "screenshaver.animation.staggered_emission_phase" => (9, 1),
+        "screenshaver.camera.look_at_camera_direction" => (18, 1),
+        "screenshaver.camera.sinusoidal_path" => (8, 1),
+        "screenshaver.color.alternating_3d_cell_color" => (10, 1),
+        "screenshaver.color.angular_wave_background" => (18, 1),
+        "screenshaver.color.cosine_palette" => (15, 1),
+        "screenshaver.color.distance_hue_mapping" => (8, 1),
+        "screenshaver.color.field_accumulation" => (8, 1),
+        "screenshaver.color.filmic_tonemapping" => (8, 1),
+        "screenshaver.color.linear_rgb_gradient" => (9, 1),
+        "screenshaver.color.multi_stop_rgb_gradient" => (1168, 1),
+        "screenshaver.color.primary_spectrum_palette" => (12, 1),
+        "screenshaver.color.procedural_sine_rgb" => (25, 1),
+        "screenshaver.color.radial_edge_hue_blend" => (9, 1),
+        "screenshaver.color.rgb_channel_remap" => (8, 1),
+        "screenshaver.color.rgb_power_colorizer" => (10, 1),
+        "screenshaver.color.rgb_to_alpha" => (8, 1),
+        "screenshaver.color.smooth_hsv_color" => (8, 1),
+        "screenshaver.color.thermal_emission_palette" => (16, 1),
+        "screenshaver.color.three_color_cycling_palette" => (8, 1),
+        "screenshaver.color.weighted_rgb_colorizer" => (9, 1),
+        "screenshaver.compositing.masked_color_blend" => (8, 1),
+        "screenshaver.compositing.rgb_color_compositor" => (14, 1),
+        "screenshaver.compositing.scalar_field_compositor" => (21, 1),
+        "screenshaver.compositing.screen_color_blend" => (8, 1),
+        "screenshaver.coordinates.axial_rational_compression_3d" => (17, 1),
+        "screenshaver.coordinates.axial_twist_and_pulse_warp" => (35, 1),
+        "screenshaver.coordinates.axis_plane_projection_3d" => (8, 1),
+        "screenshaver.coordinates.concentric_ring_coordinates_2d" => (33, 1),
+        "screenshaver.coordinates.coordinate_feedback_warp" => (600, 1),
+        "screenshaver.coordinates.coordinate_rotation_3d" => (17, 1),
+        "screenshaver.coordinates.cross_axis_sine_warp" => (2170, 1),
+        "screenshaver.coordinates.cylindrical_direction_projection" => (53, 1),
+        "screenshaver.coordinates.deep_fbm_domain_warp" => (264, 1),
+        "screenshaver.coordinates.depth_gated_axis_warp" => (11, 1),
+        "screenshaver.coordinates.directional_sine_perturbation_3d" => (13, 1),
+        "screenshaver.coordinates.geodesic_triangle_coordinates_3d" => (33, 1),
+        "screenshaver.coordinates.geometric_sequence_coordinates" => (37, 1),
+        "screenshaver.coordinates.hexagonal_grid_coordinates_2d" => (46, 1),
+        "screenshaver.coordinates.icosahedral_face_coordinates_3d" => (1020, 1),
+        "screenshaver.coordinates.iterative_inversion_fold_3d" => (6144, 1),
+        "screenshaver.coordinates.iterative_rotational_fold_3d" => (2016, 1),
+        "screenshaver.coordinates.iterative_sinusoidal_wave_fold" => (112, 1),
+        "screenshaver.coordinates.kaleidoscopic_sector_fold" => (10, 1),
+        "screenshaver.coordinates.lattice_interpolation_warp_3d" => (8, 1),
+        "screenshaver.coordinates.log_polar_mapping" => (8, 1),
+        "screenshaver.coordinates.multi_scale_flow_warp" => (13, 1),
+        "screenshaver.coordinates.organic_coordinate_mutation_3d" => (8, 1),
+        "screenshaver.coordinates.periodic_mirror_tile_3d" => (8, 1),
+        "screenshaver.coordinates.periodic_vector_wrap_3d" => (27, 1),
+        "screenshaver.coordinates.polar_coordinate_mapping_2d" => (48, 1),
+        "screenshaver.coordinates.radial_vortex_warp" => (8, 1),
+        "screenshaver.coordinates.randomized_cell_transform_2d" => (53, 1),
+        "screenshaver.coordinates.rectangular_grid_coordinates_2d" => (30, 1),
+        "screenshaver.coordinates.sinusoidal_tunnel_path_3d" => (26, 1),
+        "screenshaver.coordinates.spatially_modulated_cell_displacement" => (21, 1),
+        "screenshaver.coordinates.spherical_direction" => (8, 1),
+        "screenshaver.coordinates.staggered_grid_coordinates_2d" => (50, 1),
+        "screenshaver.coordinates.traveling_axial_coordinate_3d" => (13, 1),
+        "screenshaver.coordinates.tunnel_wall_uv_mapping" => (8, 1),
+        "screenshaver.coordinates.uv" => (8, 1),
+        "screenshaver.fields.2nd_order_distance_extractor" => (8, 1),
+        "screenshaver.fields.adaptive_procedural_ray_traversal" => (768, 96),
+        "screenshaver.fields.animated_layered_particle_field" => (224, 1),
+        "screenshaver.fields.animated_spatial_network_field_2d" => (44820, 1),
+        "screenshaver.fields.axial_field_displacement_3d" => (13, 2),
+        "screenshaver.fields.chebyshev_voronoi_edge_2d" => (351, 1),
+        "screenshaver.fields.cross_shape_field_2d" => (21, 1),
+        "screenshaver.fields.directional_field_derivative_3d" => (18, 3),
+        "screenshaver.fields.euclidean_voronoi_boundary_field_2d" => (1394, 1),
+        "screenshaver.fields.exponential_edge_attenuation_2d" => (10, 1),
+        "screenshaver.fields.fibonacci_spherical_lattice_field_3d" => (376740, 1),
+        "screenshaver.fields.four_wave_plasma_field" => (8, 1),
+        "screenshaver.fields.fractal_orbit_variation_field" => (992, 1),
+        "screenshaver.fields.geodesic_dual_cell_field_3d" => (180, 1),
+        "screenshaver.fields.gradient_noise_3d" => (248, 1),
+        "screenshaver.fields.harmonic_polar_curve_field_2d" => (16, 1),
+        "screenshaver.fields.harmonic_radial_curve_accumulation" => (1472, 1),
+        "screenshaver.fields.icosahedral_truncated_face_field_3d" => (18, 1),
+        "screenshaver.fields.independent_floating_particle_field_2d" => (12544, 1),
+        "screenshaver.fields.iterative_plasma_field" => (640, 1),
+        "screenshaver.fields.iterative_radial_field" => (104, 1),
+        "screenshaver.fields.iterative_spiral_field" => (576, 1),
+        "screenshaver.fields.logarithmic_radial_field_3d" => (8, 1),
+        "screenshaver.fields.morphing" => (288, 1),
+        "screenshaver.fields.neon_filament_extractor" => (8, 1),
+        "screenshaver.fields.procedural_lattice_lines" => (16, 1),
+        "screenshaver.fields.procedural_radial_ray_field" => (21, 1),
+        "screenshaver.fields.procedural_spectrum_envelope" => (12, 1),
+        "screenshaver.fields.propagating_radial_wavefront_2d" => (27, 1),
+        "screenshaver.fields.radial_panel_field_3d" => (28, 1),
+        "screenshaver.fields.randomized_bokeh_disc_field" => (28, 1),
+        "screenshaver.fields.repeated_ring_accumulation" => (1024, 128),
+        "screenshaver.fields.rotated_harmonic_field_3d" => (1824, 1),
+        "screenshaver.fields.scalar_ribbon_mask" => (8, 1),
+        "screenshaver.fields.scale_compensated_fractal_orbit_field_3d" => (576, 1),
+        "screenshaver.fields.sdf_raymarch" => (8192, 1024),
+        "screenshaver.fields.second_order_cellular_field_3d" => (675, 1),
+        "screenshaver.fields.segmented_radial_ring" => (16, 1),
+        "screenshaver.fields.sinusoidal_ribbon_field" => (10, 1),
+        "screenshaver.fields.soft_interference_field" => (12, 1),
+        "screenshaver.fields.soft_shape_mask_2d" => (41, 1),
+        "screenshaver.fields.sparse_random_cell_field_2d" => (22, 1),
+        "screenshaver.fields.spherical_great_circle_field_3d" => (23, 1),
+        "screenshaver.fields.spiral_wave_field_2d" => (26, 1),
+        "screenshaver.fields.tapered_trail_field_2d" => (55, 1),
+        "screenshaver.fields.temporal_frequency_layering_3d" => (64, 8),
+        "screenshaver.fields.traversal" => (496, 16),
+        "screenshaver.fields.trigonometric_interference_field_3d" => (58, 1),
+        "screenshaver.fields.tunnel" => (16, 1),
+        "screenshaver.fields.vignette_mask" => (8, 1),
+        "screenshaver.fields.volume_density_ray_integrator" => (512, 64),
+        "screenshaver.geometry.3d_cellular_tile_field" => (8, 1),
+        "screenshaver.geometry.animated_polygon_sector_mask" => (39, 1),
+        "screenshaver.geometry.animated_radial_shell_field" => (13, 1),
+        "screenshaver.geometry.bilinear_surface_intersection" => (124, 1),
+        "screenshaver.geometry.circular_arc_distance_2d" => (36, 1),
+        "screenshaver.geometry.cyclic_spline_path_3d" => (49, 1),
+        "screenshaver.geometry.damped_ballistic_motion_2d" => (11, 1),
+        "screenshaver.geometry.domain_fold_3d" => (64, 1),
+        "screenshaver.geometry.domain_repeat_3d" => (8, 1),
+        "screenshaver.geometry.ellipsoid_distance_field_3d" => (8, 1),
+        "screenshaver.geometry.fibonacci_sphere_point_distribution" => (13, 1),
+        "screenshaver.geometry.finite_cube_cluster_field" => (1600, 1),
+        "screenshaver.geometry.geometric_ray_sample_distribution" => (6400, 1),
+        "screenshaver.geometry.grid_ray_step_3d" => (17, 1),
+        "screenshaver.geometry.gyroid_surface_field_3d" => (14, 1),
+        "screenshaver.geometry.height_field_normal_2d" => (19, 4),
+        "screenshaver.geometry.menger_sponge_field_3d" => (145, 1),
+        "screenshaver.geometry.multi_corridor_tunnel_field" => (13, 1),
+        "screenshaver.geometry.periodic_slice_field_3d" => (11, 1),
+        "screenshaver.geometry.perspective_ring_projection" => (9, 1),
+        "screenshaver.geometry.point_segment_distance_2d" => (8, 1),
+        "screenshaver.geometry.procedural_sphere_distribution" => (11, 1),
+        "screenshaver.geometry.ray_box_intersection_3d" => (69, 1),
+        "screenshaver.geometry.ray_plane_intersection" => (8, 1),
+        "screenshaver.geometry.ray_sphere_intersection" => (17, 1),
+        "screenshaver.geometry.rectangular_tunnel_intersection" => (27, 1),
+        "screenshaver.geometry.rotation_3d" => (8, 1),
+        "screenshaver.geometry.sdf_box" => (8, 1),
+        "screenshaver.geometry.sdf_capsule" => (17, 1),
+        "screenshaver.geometry.sdf_combine" => (8, 1),
+        "screenshaver.geometry.sdf_icosahedron" => (3040, 1),
+        "screenshaver.geometry.sdf_morph" => (8, 1),
+        "screenshaver.geometry.sdf_normal_estimation" => (18, 6),
+        "screenshaver.geometry.sdf_octahedron" => (8, 1),
+        "screenshaver.geometry.sdf_rounded_hexagonal_prism" => (204, 1),
+        "screenshaver.geometry.sdf_sequential_morph" => (8, 1),
+        "screenshaver.geometry.sdf_sphere" => (8, 1),
+        "screenshaver.geometry.sdf_torus" => (8, 1),
+        "screenshaver.geometry.sdf_triangular_prism" => (8, 1),
+        "screenshaver.geometry.sdf_twisted_ring" => (8, 1),
+        "screenshaver.geometry.spherical_aperture_mask" => (1024, 1),
+        "screenshaver.geometry.spherical_inversion_3d" => (8, 1),
+        "screenshaver.geometry.spherical_orbital_path_3d" => (55, 1),
+        "screenshaver.geometry.triangle_edge_mask" => (15, 1),
+        "screenshaver.geometry.two_bone_joint_solver_3d" => (46, 1),
+        "screenshaver.geometry.warped_plane_field" => (8, 1),
+        "screenshaver.lighting.ambient_occlusion_shading" => (8, 1),
+        "screenshaver.lighting.analytical_box_soft_shadow" => (408, 1),
+        "screenshaver.lighting.beer_lambert_transmittance" => (8, 1),
+        "screenshaver.lighting.curvature_shading" => (8, 1),
+        "screenshaver.lighting.directional_light" => (8, 1),
+        "screenshaver.lighting.distance_attenuated_point_light" => (22, 1),
+        "screenshaver.lighting.distance_fog" => (8, 1),
+        "screenshaver.lighting.distance_glow_falloff" => (12, 1),
+        "screenshaver.lighting.fresnel_rim" => (8, 1),
+        "screenshaver.lighting.henyey_greenstein_scattering" => (27, 1),
+        "screenshaver.lighting.lattice_crossing_highlight" => (8, 1),
+        "screenshaver.lighting.layered_refractive_boundary_traversal" => (2048, 256),
+        "screenshaver.lighting.luminous_edge_extraction" => (8, 1),
+        "screenshaver.lighting.procedural_environment_reflection" => (16, 1),
+        "screenshaver.lighting.radial_core_glow" => (8, 1),
+        "screenshaver.lighting.ray_glow" => (8, 1),
+        "screenshaver.lighting.refractive_surface" => (3840, 480),
+        "screenshaver.lighting.secondary_sdf_reflection_trace" => (512, 64),
+        "screenshaver.lighting.spherical_surface_shading_2d" => (23, 1),
+        "screenshaver.math.animated_vertical_oscillator" => (8, 1),
+        "screenshaver.math.cosine_range_oscillator" => (8, 1),
+        "screenshaver.math.coupled_trigonometric_field_3d" => (24, 1),
+        "screenshaver.math.geometric_norm_blend_3d" => (22, 1),
+        "screenshaver.math.multiply" => (8, 1),
+        "screenshaver.math.periodic_pulse_gate" => (8, 1),
+        "screenshaver.math.rotation2d" => (8, 1),
+        "screenshaver.math.scalar_response_shaping" => (63, 1),
+        "screenshaver.math.spatial_phase_oscillator" => (18, 1),
+        "screenshaver.math.vector_magnitude_2d" => (8, 1),
+        "screenshaver.noise.dot3d" => (17, 1),
+        "screenshaver.noise.fbm_2d" => (200, 1),
+        "screenshaver.noise.layered_temporal_noise" => (8192, 1),
+        "screenshaver.noise.triangle3d" => (8, 1),
+        "screenshaver.noise.triangular_lattice_field" => (26, 1),
+        "screenshaver.noise.value2d" => (13, 1),
+        "screenshaver.output.color" => (8, 1),
+        "screenshaver.patterns.hexagonal_grid_pattern" => (18, 1),
+        "screenshaver.test.universal_test" => (25, 8),
+        _ => return None,
+    })
+}
+fn safety_work(graph:&Graph)->u64 {
+    fn visit(graph:&Graph,id:NodeId,cache:&mut HashMap<NodeId,u64>,active:&mut std::collections::HashSet<NodeId>)->u64 {
+        if let Some(&v)=cache.get(&id){return v}
+        if !active.insert(id){return u64::MAX}
+        let Some(n)=graph.node(id) else{return u64::MAX};
+        let Some((local,multiplier))=safety_profile(&n.module_id) else{return u64::MAX};
+        let mut work=local;
+        for c in graph.connections.iter().filter(|c|c.to==id){
+            work=work.saturating_add(visit(graph,c.from,cache,active).saturating_mul(multiplier));
+        }
+        active.remove(&id);cache.insert(id,work);work
+    }
+    graph.nodes.iter().find(|n|n.definition().terminal).map(|n|visit(graph,n.id,&mut HashMap::new(),&mut std::collections::HashSet::new())).unwrap_or(u64::MAX)
+}
+// Provisional conservative threshold; calibration requires real GPU measurements.
+const MAX_FRAME_WORK:u64=500_000_000;
+pub(crate) fn rendering_admission(graph:&Graph,w:i32,h:i32)->Result<(),String>{
+    graph.validate_renderable()?;
+    if w<=0 || h<=0{return Err("Preview dimensions unavailable".into())}
+    if graph_source_cost(graph)>MAX_COMPILE_COST{return Err("Rendering deferred: source complexity budget".into())}
+    let work=safety_work(graph);
+    let frame=work.saturating_mul(w as u64).saturating_mul(h as u64);
+    if frame>MAX_FRAME_WORK{return Err(format!("Rendering deferred: estimated frame work {frame} exceeds {MAX_FRAME_WORK} ({}x{}); reduce complexity or preview size",w,h))}
+    Ok(())
+}
+
 pub(crate) fn candidate_admission(graph:&Graph)->Result<(),String> {
+    rendering_admission(graph,192,108)?;
     graph.validate_renderable()?;
     if graph.output_reachable_ids().iter().any(|id| graph.node(*id).is_some_and(|n| n.definition().category.eq_ignore_ascii_case("Test"))) { return Err("Test modules are excluded from shader candidate enumeration".into()); }
     let source_cost=graph_source_cost(graph);
@@ -893,7 +1133,7 @@ impl ConnectionSearch {
         let cpu=(discovery_cpu_seconds()-self.cpu_started).max(0.0);
         let line=format!("{}: input={} output={} wall={:.3}s cpu={:.3}s peak_observed_rss={} KiB workers={}",
             self.stage.name(),input,output,wall,cpu,self.peak_rss_kib,self.workers);
-        eprintln!("[MAKER DISCOVERY STAGE] {line}");self.reports.push(line);
+        crate::maker::operational_log(format_args!("[MAKER DISCOVERY STAGE] {line}"));self.reports.push(line);
         self.stage=next;self.cursor=0;self.started=Instant::now();
         self.cpu_started=discovery_cpu_seconds();self.peak_rss_kib=discovery_rss_kib();
     }
@@ -902,14 +1142,14 @@ impl ConnectionSearch {
             DiscoveryStage::Feasibility=>{
                 let Some(base)=self.base.take() else {return};
                 let index=ConnectionFeasibility::build(&base,self.output);
-                eprintln!("[MAKER FEASIBILITY] raw_pairs={} type_compatible={} feasible={} reachable_nodes={} excluded_nodes={}",
-                    index.raw_pairs,index.typed_pairs,index.feasible_pairs,index.reachable_nodes,index.excluded_nodes);
+                crate::maker::operational_log(format_args!("[MAKER FEASIBILITY] raw_pairs={} type_compatible={} feasible={} reachable_nodes={} excluded_nodes={}",
+                    index.raw_pairs,index.typed_pairs,index.feasible_pairs,index.reachable_nodes,index.excluded_nodes));
                 let input=index.raw_pairs;let output=index.feasible_pairs;
                 match maker_discovery::ProductionEnumeration::open(base,self.min_wire_connections,self.max_wire_connections) {
                     Ok((canonical,resumed))=>{
                         self.enumeration_start=canonical.examined();
-                        eprintln!("[MAKER DISCOVERY] canonical enumeration {} from state={} digest={:016x}",
-                            if resumed {"resumed"} else {"started"},self.enumeration_start,canonical.digest());
+                        crate::maker::operational_log(format_args!("[MAKER DISCOVERY] canonical enumeration {} from state={} digest={:016x}",
+                            if resumed {"resumed"} else {"started"},self.enumeration_start,canonical.digest()));
                         self.canonical=Some(canonical);
                         self.transition(DiscoveryStage::Enumerate,input,output);
                     }
@@ -968,8 +1208,8 @@ impl ConnectionSearch {
                     // Merge callable snapshots before validation, deduplicating in the normal stage.
                     let callable_stored=self.callable_raw.len();
                     self.raw.append(&mut self.callable_raw);
-                    eprintln!("[MAKER CALLABLE ENUMERATION] emitted={} output_connected={} callable_seen={} callable_stored={}",
-                        self.examined,self.raw_seen,self.callable_seen,callable_stored);
+                    crate::maker::operational_log(format_args!("[MAKER CALLABLE ENUMERATION] emitted={} output_connected={} callable_seen={} callable_stored={}",
+                        self.examined,self.raw_seen,self.callable_seen,callable_stored));
                     let input=self.examined;let output=self.raw.len();
                     self.canonical=None;
                     self.transition(DiscoveryStage::Validate,input,output);
@@ -1015,16 +1255,16 @@ impl ConnectionSearch {
                 }
                 self.cursor=end;
                 if end==self.raw.len(){
-                    eprintln!("[MAKER DISCOVERY COMPLEXITY] qualified={} deferred={} max_source_cost={} max_runtime_work={} source_range={}..{} runtime_range={}..{}",
+                    crate::maker::operational_log(format_args!("[MAKER DISCOVERY COMPLEXITY] qualified={} deferred={} max_source_cost={} max_runtime_work={} source_range={}..{} runtime_range={}..{}",
                         self.scores.len(),self.deferred_complexity,MAX_COMPILE_COST,MAX_ESTIMATED_RUNTIME_WORK,
                         if self.min_source_cost==u64::MAX {0}else{self.min_source_cost},self.max_source_cost,
-                        if self.min_runtime_cost==u64::MAX {0}else{self.min_runtime_cost},self.max_runtime_cost);
+                        if self.min_runtime_cost==u64::MAX {0}else{self.min_runtime_cost},self.max_runtime_cost));
                     let constant_normal_candidates=self.scores.iter().filter(|(_,_,index)|
                         callable_sampling_penalty(&self.raw[*index])>0).count();
                     let callable_time_hints=self.scores.iter().filter(|(_,_,index)|
                         graph_has_callable_edge(&self.raw[*index]) && graph_time_dependency_hint(&self.raw[*index])).count();
-                    eprintln!("[MAKER CALLABLE QUALITY] admissible_constant_normal={} admissible_time_hint={} (time hint is not measured motion)",
-                        constant_normal_candidates,callable_time_hints);
+                    crate::maker::operational_log(format_args!("[MAKER CALLABLE QUALITY] admissible_constant_normal={} admissible_time_hint={} (time hint is not measured motion)",
+                        constant_normal_candidates,callable_time_hints));
                     // Preserve the semantic score and hash ordering as a deterministic
                     // shortlist, then select distinct graph structures for GPU work.
                     self.scores.sort_unstable_by(|a,b|a.0.cmp(&b.0).then_with(||a.1.cmp(&b.1)).then_with(||a.2.cmp(&b.2)));
@@ -1039,8 +1279,8 @@ impl ConnectionSearch {
                         if !chosen.contains(&index) {chosen.push(index);}
                     }
                     let callable_selected=chosen.iter().filter(|&&i|graph_has_callable_edge(&self.raw[i])).count();
-                    eprintln!("[MAKER CALLABLE PIPELINE] enumerated={} preflight_passed={} admission_passed={} gpu_selected={}",
-                        self.callable_seen,self.callable_qualified,self.callable_admissible,callable_selected);
+                    crate::maker::operational_log(format_args!("[MAKER CALLABLE PIPELINE] enumerated={} preflight_passed={} admission_passed={} gpu_selected={}",
+                        self.callable_seen,self.callable_qualified,self.callable_admissible,callable_selected));
                     let selected=chosen.len();
                     let mut counts=std::collections::BTreeMap::<usize,usize>::new();
                     let mut overlap_sum=0usize;
@@ -1050,9 +1290,9 @@ impl ConnectionSearch {
                         if position>0 {overlap_sum+=selected_keys[..position].iter()
                             .map(|key|shared_connection_count(key,&selected_keys[position])).max().unwrap_or(0);}
                     }
-                    eprintln!("[MAKER DISCOVERY SAMPLE] output_connected={} reservoir={} admissible={} gpu_selected={} selected_wire_counts={:?} max_prior_overlap_mean={:.2}",
+                    crate::maker::operational_log(format_args!("[MAKER DISCOVERY SAMPLE] output_connected={} reservoir={} admissible={} gpu_selected={} selected_wire_counts={:?} max_prior_overlap_mean={:.2}",
                         self.raw_seen,self.raw.len(),self.scores.len(),selected,counts,
-                        overlap_sum as f32/(selected.saturating_sub(1).max(1) as f32));
+                        overlap_sum as f32/(selected.saturating_sub(1).max(1) as f32)));
                     // Reverse push order because next_candidate_job() pops from the end.
                     for &index in chosen.iter().rev(){
                         let graph=self.raw[index].clone();
@@ -1761,8 +2001,8 @@ impl MakerUi {
         if job.connection_candidate && (visual.contrast<0.018 || visual.entropy<0.055 || visual.interest<0.045) {
             self.candidate_rejections+=1;
             self.candidate_uniform+=1;
-            eprintln!("[MAKER VISUAL REJECT] {} contrast={:.4} entropy={:.4} interest={:.4}",
-                job.name,visual.contrast,visual.entropy,visual.interest);
+            crate::maker::operational_log(format_args!("[MAKER VISUAL REJECT] {} contrast={:.4} entropy={:.4} interest={:.4}",
+                job.name,visual.contrast,visual.entropy,visual.interest));
             return;
         }
         // Mark only candidates with an actual callable-field wire, not merely
@@ -1884,11 +2124,11 @@ impl MakerUi {
                 Ok(score)=>{
                     candidate.motion=Some(score.clamp(0.0,1.0));
                     if candidate.connection_candidate {
-                        eprintln!("[MAKER TEMPORAL QUALIFY] {} motion={:.5} status={}",
-                            candidate.name,score,if score<0.003 {"static"} else {"animated"});
+                        crate::maker::operational_log(format_args!("[MAKER TEMPORAL QUALIFY] {} motion={:.5} status={}",
+                            candidate.name,score,if score<0.003 {"static"} else {"animated"}));
                     }
                 },
-                Err(error)=>{candidate.motion_failed=true;eprintln!("[MAKER MOTION] {}: {}",candidate.name,error);}
+                Err(error)=>{candidate.motion_failed=true;crate::maker::operational_log(format_args!("[MAKER MOTION] {}: {}",candidate.name,error));}
             }
         }
     }
@@ -2014,10 +2254,10 @@ impl MakerUi {
                     self.connection_search=Some(search);
                 } else if self.candidate_glsl_capable>=self.max_candidates {
                     self.candidate_notice=format!("GLSL target reached: {} / {} capable; {} thumbnails retained",self.candidate_glsl_capable,self.max_candidates,self.candidates.len());
-                    eprintln!("[MAKER DISCOVERY TARGET] reached capable={} retained={}",self.candidate_glsl_capable,self.candidates.len());
+                    crate::maker::operational_log(format_args!("[MAKER DISCOVERY TARGET] reached capable={} retained={}",self.candidate_glsl_capable,self.candidates.len()));
                 } else if search.examined<search.max_enumerations {
                     self.candidate_notice=format!("Canonical enumeration exhausted after {} GLSL-capable candidates",self.candidate_glsl_capable);
-                    eprintln!("[MAKER DISCOVERY TARGET] exhausted capable={}",self.candidate_glsl_capable);
+                    crate::maker::operational_log(format_args!("[MAKER DISCOVERY TARGET] exhausted capable={}",self.candidate_glsl_capable));
                 } else if search.generated==0 && search.examined==0 {
                     self.candidate_notice="Discovery stopped: no progress in last batch".into();
                 } else if let Some(base)=self.candidate_base.as_ref(){
@@ -3143,7 +3383,7 @@ impl MakerUi {
                         *connection_search=None;*candidate_evaluated=0;*candidate_glsl_capable=0;*candidate_rejections=0;*candidate_uniform=0;*candidate_glsl_errors=0;*candidate_render_errors=0;
                         if *candidate_mode==2 {
                             if let Err(error)=maker_save_discovery_settings(*min_wire_connections,*max_wire_connections,*max_enumerations,*max_candidates){
-                                eprintln!("[MAKER STATE] Unable to save last discovery settings: {error}");
+                                crate::maker::operational_log(format_args!("[MAKER STATE] Unable to save last discovery settings: {error}"));
                             }
                             maker_discovery::set_production_wire_limit(*max_wire_connections);
                             *connection_search=ConnectionSearch::new(graph,*max_enumerations,*min_wire_connections,*max_wire_connections);
@@ -3434,7 +3674,7 @@ impl MakerUi {
                     // never rewrite state.json on every rendered frame.
                     if divider_response.drag_stopped() {
                         if let Err(error)=maker_save_preview_height(*desired_height) {
-                            eprintln!("[MAKER STATE] Could not save preview height: {error}");
+                            crate::maker::operational_log(format_args!("[MAKER STATE] Could not save preview height: {error}"));
                         }
                     }
                     ui.strong("Live Shader Preview");

@@ -1,0 +1,166 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.tapered_trail_field_2d",
+  "name": "Tapered Trail Field 2D",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "header_color": "#398F94",
+  "terminal": false,
+  "description": "Finite directional soft trail with variable half-width and longitudinal attenuation.",
+  "uses": "Particle streaks, condensation trails, beams and comet tails.",
+  "notes": "Direction points from anchor toward trail end. Widths are half-widths in position units. End Softness is a fraction of length, fading inward at both ends. Invalid direction or length returns zero outputs. Progress and width clamp to endpoints outside the trail.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "anchor",
+      "name": "Anchor",
+      "type": "vec2",
+      "default": "vec2(0.0)",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "direction",
+      "name": "Direction",
+      "type": "vec2",
+      "default": "vec2(0.0,1.0)",
+      "semantic_role": "direction2d"
+    },
+    {
+      "id": "length_multiplier",
+      "name": "Length Multiplier",
+      "type": "float",
+      "default": "1.0"
+    },
+    {
+      "id": "width_multiplier",
+      "name": "Width Multiplier",
+      "type": "float",
+      "default": "1.0"
+    },
+    {
+      "id": "intensity_multiplier",
+      "name": "Intensity Multiplier",
+      "type": "float",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "trail_mask",
+      "name": "Trail Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    },
+    {
+      "id": "trail_intensity",
+      "name": "Trail Intensity",
+      "type": "float",
+      "semantic_role": "intensity"
+    },
+    {
+      "id": "longitudinal_progress",
+      "name": "Longitudinal Progress",
+      "type": "float"
+    },
+    {
+      "id": "transverse_distance",
+      "name": "Transverse Distance",
+      "type": "float",
+      "semantic_role": "distance"
+    },
+    {
+      "id": "local_width",
+      "name": "Local Width",
+      "type": "float",
+      "semantic_role": "distance"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "trail_length",
+      "name": "Trail Length",
+      "type": "float",
+      "default": 0.5,
+      "min": 0.001,
+      "max": 10
+    },
+    {
+      "id": "start_width",
+      "name": "Start Width",
+      "type": "float",
+      "default": 0.08,
+      "min": 0,
+      "max": 2
+    },
+    {
+      "id": "end_width",
+      "name": "End Width",
+      "type": "float",
+      "default": 0.01,
+      "min": 0,
+      "max": 2
+    },
+    {
+      "id": "taper_exponent",
+      "name": "Taper Exponent",
+      "type": "float",
+      "default": 1,
+      "min": 0.1,
+      "max": 8
+    },
+    {
+      "id": "edge_softness",
+      "name": "Edge Softness",
+      "type": "float",
+      "default": 0.01,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "longitudinal_fade",
+      "name": "Longitudinal Fade",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "fade_exponent",
+      "name": "Fade Exponent",
+      "type": "float",
+      "default": 1,
+      "min": 0.1,
+      "max": 8
+    },
+    {
+      "id": "end_softness",
+      "name": "End Softness",
+      "type": "float",
+      "default": 0.05,
+      "min": 0,
+      "max": 0.5
+    },
+    {
+      "id": "intensity",
+      "name": "Intensity",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 10
+    }
+  ],
+  "helpers": "float maker_tapered_trail(vec2 p,vec2 anchor,vec2 dir,float lm,float wm,float im,float len,float w0,float w1,float taper,float soft,float fade,float fe,float es,float intensity,int outputIndex){\n float dl=length(dir),L=len*max(lm,0.0);if(dl<=0.000001||L<=0.0)return 0.0;\n vec2 n=dir/dl,q=p-anchor;float s=dot(q,n),r=abs(dot(q,vec2(-n.y,n.x))),u=clamp(s/L,0.0,1.0);\n float w=max(wm,0.0)*mix(max(w0,0.0),max(w1,0.0),pow(u,max(taper,0.1)));\n if(outputIndex==2)return u;if(outputIndex==3)return r;if(outputIndex==4)return w;\n float m=0.0;if(s>=0.0&&s<=L&&w>0.0){float edge=soft>0.0?1.0-smoothstep(max(0.0,w-soft),w+soft,r):1.0-step(w,r);float e=clamp(es,0.0,0.5);float ends=e>0.0?smoothstep(0.0,e,u)*smoothstep(0.0,e,1.0-u):1.0;m=clamp(edge*ends,0.0,1.0);}\n return outputIndex==0?m:m*(1.0-clamp(fade,0.0,1.0)*pow(u,max(fe,0.1)))*max(intensity,0.0)*max(im,0.0);\n}",
+  "glsl_outputs": {
+    "trail_mask": "maker_tapered_trail({position},{anchor},{direction},{length_multiplier},{width_multiplier},{intensity_multiplier},{trail_length},{start_width},{end_width},{taper_exponent},{edge_softness},{longitudinal_fade},{fade_exponent},{end_softness},{intensity},0)",
+    "trail_intensity": "maker_tapered_trail({position},{anchor},{direction},{length_multiplier},{width_multiplier},{intensity_multiplier},{trail_length},{start_width},{end_width},{taper_exponent},{edge_softness},{longitudinal_fade},{fade_exponent},{end_softness},{intensity},1)",
+    "longitudinal_progress": "maker_tapered_trail({position},{anchor},{direction},{length_multiplier},{width_multiplier},{intensity_multiplier},{trail_length},{start_width},{end_width},{taper_exponent},{edge_softness},{longitudinal_fade},{fade_exponent},{end_softness},{intensity},2)",
+    "transverse_distance": "maker_tapered_trail({position},{anchor},{direction},{length_multiplier},{width_multiplier},{intensity_multiplier},{trail_length},{start_width},{end_width},{taper_exponent},{edge_softness},{longitudinal_fade},{fade_exponent},{end_softness},{intensity},3)",
+    "local_width": "maker_tapered_trail({position},{anchor},{direction},{length_multiplier},{width_multiplier},{intensity_multiplier},{trail_length},{start_width},{end_width},{taper_exponent},{edge_softness},{longitudinal_fade},{fade_exponent},{end_softness},{intensity},4)"
+  }
+}

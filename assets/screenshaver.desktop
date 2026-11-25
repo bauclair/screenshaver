@@ -11,7 +11,7 @@ Categories=Graphics;
 Keywords=screensaver;shader;GLSL;Wayland;OpenGL;desktop;
 StartupNotify=false
 StartupWMClass=Screenshaver
-Actions=Start;Stop;
+Actions=Start;Stop;Maker;
 
 [Desktop Action Start]
 Name=Start Screenshaver
@@ -20,3 +20,7 @@ Exec=screenshaver --start
 [Desktop Action Stop]
 Name=Stop Screenshaver
 Exec=screenshaver --stop
+
+[Desktop Action Maker]
+Name=Start Maker
+Exec=screenshaver --maker

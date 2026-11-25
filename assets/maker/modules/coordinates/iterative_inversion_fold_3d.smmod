@@ -8,7 +8,7 @@
   "header_color": "#627FC2",
   "description": "Iteratively applies a centered absolute fold, regularized reciprocal-radius scaling, and translation to a 3D point.",
   "uses": "Fractal coordinate transforms, crystalline distortions and procedural orbit construction.",
-  "notes": "Independently designed transform. Uses a positive denominator floor to avoid singularities; output is a position, not a distance estimator. Scale outputs report nominal reciprocal scaling, not an exact derivative under regularization or clamping. Accumulated scale saturates at exp(\u00b180); zero gain returns zero and a logarithmic sentinel of -80. Additive modulation is clamped to the effective parameter ranges. Absolute First computes the denominator before a second absolute fold. All outputs share the same transformation helper. Initial reflection is applied once before iteration.",
+  "notes": "Independently designed transform. Uses a positive denominator floor to avoid singularities; output is a position, not a distance estimator. Scale outputs report nominal reciprocal scaling, not an exact derivative under regularization or clamping. Accumulated scale saturates at exp(\u00b180); zero gain returns zero and a logarithmic sentinel of -80. Additive modulation is clamped to the effective parameter ranges. Absolute First computes the denominator before a second absolute fold. All outputs share the same transformation helper. Initial reflection is applied once before iteration. Inversion First uses the current coordinate directly, then translates and folds; Fold Center and Fold Convention apply only to Existing Fold First. Axis Translation is additive to the existing signed translation, Axis Gain is applied after the fold/translation. Scale outputs exclude axis gain and permutation. Defaults preserve the previous recurrence.",
   "inputs": [
     {
       "id": "position",
@@ -34,6 +34,18 @@
       "name": "Translation Modulation",
       "type": "float",
       "default": "0.0"
+    },
+    {
+      "id": "axis_gain",
+      "name": "Axis Gain",
+      "type": "vec3",
+      "default": "vec3(1.0)"
+    },
+    {
+      "id": "axis_translation",
+      "name": "Axis Translation",
+      "type": "vec3",
+      "default": "vec3(0.0)"
     }
   ],
   "outputs": [
@@ -131,12 +143,40 @@
         "Positive",
         "Negative"
       ]
+    },
+    {
+      "id": "transform_order",
+      "name": "Transformation Order",
+      "type": "choice",
+      "default": 0,
+      "min": 0,
+      "max": 1,
+      "options": [
+        "Existing Fold First",
+        "Inversion First"
+      ]
+    },
+    {
+      "id": "permutation",
+      "name": "Component Permutation",
+      "type": "choice",
+      "default": 0,
+      "min": 0,
+      "max": 5,
+      "options": [
+        "XYZ",
+        "XZY",
+        "YXZ",
+        "YZX",
+        "ZXY",
+        "ZYX"
+      ]
     }
   ],
-  "helpers": "struct MakerInversionResult { vec3 position; float scale; float log_scale; };\nMakerInversionResult maker_modulated_inversion(vec3 p,float count,float center,float gain,float radius_floor,float shift,float cm,float gm,float tm,float convention,float profile,float reflection){\n float c=clamp(center+cm,-3.0,3.0),g=clamp(gain+gm,0.0,10.0),b=clamp(shift+tm,-10.0,10.0);\n float rf=clamp(radius_floor,0.001,2.0);\n vec3 q=reflection<0.5?p:(reflection<1.5?abs(p):-abs(p));\n vec3 translation=profile<0.5?vec3(b,b*0.73,b*1.19):vec3(b);\n float ls=0.0;\n int n=int(clamp(floor(count+0.5),1.0,32.0));\n for(int i=0;i<32;++i){\n  if(i>=n)break;\n  vec3 v=convention<0.5?abs(q-vec3(c)):abs(q)-vec3(c);\n  float factor=g/max(dot(v,v),rf*rf);\n  ls+=log(max(factor,1e-35));\n  q=clamp(abs(v)*factor-translation,vec3(-10000.0),vec3(10000.0));\n }\n return MakerInversionResult(q,g<=0.0?0.0:exp(clamp(ls,-80.0,80.0)),g<=0.0?-80.0:ls);\n}",
+  "helpers": "struct MakerInversionResult { vec3 position; float scale; float log_scale; };\nMakerInversionResult maker_modulated_inversion(vec3 p,float count,float center,float gain,float radius_floor,float shift,float cm,float gm,float tm,float convention,float profile,float reflection,vec3 axis_gain,vec3 axis_translation,float transform_order,float permutation){\n float c=clamp(center+cm,-3.0,3.0),g=clamp(gain+gm,0.0,10.0),b=clamp(shift+tm,-10.0,10.0);\n float rf=clamp(radius_floor,0.001,2.0);\n vec3 q=reflection<0.5?p:(reflection<1.5?abs(p):-abs(p));\n vec3 translation=profile<0.5?vec3(b,b*0.73,b*1.19):vec3(b);\n float ls=0.0;\n int n=int(clamp(floor(count+0.5),1.0,32.0));\n for(int i=0;i<32;++i){\n  if(i>=n)break;\n  vec3 v=convention<0.5?abs(q-vec3(c)):abs(q)-vec3(c);\n  if(transform_order>=0.5)v=q;\n  float factor=g/max(dot(v,v),rf*rf);\n  ls+=log(max(factor,1e-35));\n  vec3 delta=clamp(axis_translation,vec3(-10.0),vec3(10.0));\n  vec3 next=transform_order<0.5?abs(v)*factor-translation+delta:abs(v*factor-translation+delta);\n  next*=clamp(axis_gain,vec3(-10.0),vec3(10.0));\n  int perm=int(clamp(floor(permutation+0.5),0.0,5.0));\n  if(perm==1)next=next.xzy;\n  else if(perm==2)next=next.yxz;\n  else if(perm==3)next=next.yzx;\n  else if(perm==4)next=next.zxy;\n  else if(perm==5)next=next.zyx;\n  q=clamp(next,vec3(-10000.0),vec3(10000.0));\n }\n return MakerInversionResult(q,g<=0.0?0.0:exp(clamp(ls,-80.0,80.0)),g<=0.0?-80.0:ls);\n}",
   "glsl_outputs": {
-    "folded": "maker_modulated_inversion({position},{iterations},{fold_center},{inversion},{radius_floor},{offset},{center_modulation},{gain_modulation},{translation_modulation},{fold_convention},{translation_profile},{initial_reflection}).position",
-    "accumulated_scale": "maker_modulated_inversion({position},{iterations},{fold_center},{inversion},{radius_floor},{offset},{center_modulation},{gain_modulation},{translation_modulation},{fold_convention},{translation_profile},{initial_reflection}).scale",
-    "logarithmic_scale": "maker_modulated_inversion({position},{iterations},{fold_center},{inversion},{radius_floor},{offset},{center_modulation},{gain_modulation},{translation_modulation},{fold_convention},{translation_profile},{initial_reflection}).log_scale"
+    "folded": "maker_modulated_inversion({position},{iterations},{fold_center},{inversion},{radius_floor},{offset},{center_modulation},{gain_modulation},{translation_modulation},{fold_convention},{translation_profile},{initial_reflection},{axis_gain},{axis_translation},{transform_order},{permutation}).position",
+    "accumulated_scale": "maker_modulated_inversion({position},{iterations},{fold_center},{inversion},{radius_floor},{offset},{center_modulation},{gain_modulation},{translation_modulation},{fold_convention},{translation_profile},{initial_reflection},{axis_gain},{axis_translation},{transform_order},{permutation}).scale",
+    "logarithmic_scale": "maker_modulated_inversion({position},{iterations},{fold_center},{inversion},{radius_floor},{offset},{center_modulation},{gain_modulation},{translation_modulation},{fold_convention},{translation_profile},{initial_reflection},{axis_gain},{axis_translation},{transform_order},{permutation}).log_scale"
   }
 }

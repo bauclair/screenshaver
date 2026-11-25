@@ -9,7 +9,7 @@
   "header_color": "#557C9C",
   "description": "Estimate the surface normal of a height field from four samples of a connected callable 2D scalar field.",
   "uses": "Bump lighting on procedural scalar height fields, including warped noise and periodic patterns.",
-  "notes": "Central finite differences of a callable 2D field; output is a normalized vec3 normal for z=h(x,y). Requires a Field 2D connection. Unlike SDF Normal Estimation, this samples a two-dimensional height function.",
+  "notes": "Central finite differences of a callable 2D field; output is a normalized vec3 normal for z=h(x,y). Requires a Field 2D connection. Unlike SDF Normal Estimation, this samples a two-dimensional height function. Gradient is unscaled by Bump Strength. Each output may independently sample the field.",
   "inputs": [
     {
       "id": "field",
@@ -30,6 +30,16 @@
       "name": "Normal",
       "type": "vec3",
       "semantic_role": "normal3d"
+    },
+    {
+      "id": "gradient",
+      "name": "Gradient",
+      "type": "vec2"
+    },
+    {
+      "id": "gradient_magnitude",
+      "name": "Gradient Magnitude",
+      "type": "float"
     }
   ],
   "parameters": [
@@ -50,5 +60,9 @@
       "max": 10.0
     }
   ],
-  "glsl": "normalize(vec3(-{strength}*({field}({position}+vec2({epsilon},0.0))-{field}({position}-vec2({epsilon},0.0)))/(2.0*max({epsilon},0.00001)),-{strength}*({field}({position}+vec2(0.0,{epsilon}))-{field}({position}-vec2(0.0,{epsilon})))/(2.0*max({epsilon},0.00001)),1.0))"
+  "glsl_outputs": {
+    "normal": "normalize(vec3(-{strength}*({field}({position}+vec2({epsilon},0.0))-{field}({position}-vec2({epsilon},0.0)))/(2.0*max({epsilon},0.00001)),-{strength}*({field}({position}+vec2(0.0,{epsilon}))-{field}({position}-vec2(0.0,{epsilon})))/(2.0*max({epsilon},0.00001)),1.0))",
+    "gradient": "vec2(({field}({position}+vec2({epsilon},0.0))-{field}({position}-vec2({epsilon},0.0)))/(2.0*max({epsilon},0.00001)),({field}({position}+vec2(0.0,{epsilon}))-{field}({position}-vec2(0.0,{epsilon})))/(2.0*max({epsilon},0.00001)))",
+    "gradient_magnitude": "length(vec2(({field}({position}+vec2({epsilon},0.0))-{field}({position}-vec2({epsilon},0.0)))/(2.0*max({epsilon},0.00001)),({field}({position}+vec2(0.0,{epsilon}))-{field}({position}-vec2(0.0,{epsilon})))/(2.0*max({epsilon},0.00001))))"
+  }
 }

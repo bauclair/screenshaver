@@ -4,9 +4,9 @@
   "name": "Scalar Field Compositor",
   "category": "Compositing",
   "created_by": "Screenshaver",
-  "description": "Combines two scalar fields using selectable arithmetic operations.",
+  "description": "Combines two scalar fields using arithmetic or Boolean mask operations.",
   "uses": "Field layering, mask intersections, procedural blending, and modulation.",
-  "notes": "Modes are Add, Multiply, Maximum, Minimum, and Subtract (A-B). Clamp Output limits the result to 0..1.",
+  "notes": "Modes are Add, Multiply, Maximum, Minimum, and Subtract (A-B). Clamp Output limits the result to 0..1. Absolute Difference preserves continuous values unless Clamp Output is enabled. Boolean operations classify each input as true when it is greater than or equal to Boolean Threshold and return exactly zero or one.",
   "header_color": "#429F91",
   "inputs": [
     {
@@ -36,13 +36,20 @@
       "type": "choice",
       "default": 0,
       "min": 0,
-      "max": 4,
+      "max": 11,
       "options": [
         "Add",
         "Multiply",
         "Maximum",
         "Minimum",
-        "Subtract"
+        "Subtract",
+        "Absolute Difference",
+        "AND",
+        "OR",
+        "XOR",
+        "NAND",
+        "NOR",
+        "XNOR"
       ]
     },
     {
@@ -56,9 +63,17 @@
         "No",
         "Yes"
       ]
+    },
+    {
+      "id": "boolean_threshold",
+      "name": "Boolean Threshold",
+      "type": "float",
+      "default": 0.5,
+      "min": 0,
+      "max": 1
     }
   ],
-  "helpers": "float maker_comp_scalar(float a,float b,float mode,float clamp_output){\n float v=a+b;\n if(mode>=0.5&&mode<1.5)v=a*b;\n else if(mode>=1.5&&mode<2.5)v=max(a,b);\n else if(mode>=2.5&&mode<3.5)v=min(a,b);\n else if(mode>=3.5)v=a-b;\n return clamp_output>=0.5?clamp(v,0.0,1.0):v;\n}",
+  "helpers": "float maker_comp_scalar(float a,float b,float mode,float clamp_output){\n float v=a+b;\n if(mode>=0.5&&mode<1.5)v=a*b;\n else if(mode>=1.5&&mode<2.5)v=max(a,b);\n else if(mode>=2.5&&mode<3.5)v=min(a,b);\n else if(mode>=3.5)v=a-b;\n return clamp_output>=0.5?clamp(v,0.0,1.0):v;\n}\nfloat maker_extended_comp_scalar(float a,float b,float mode,float clamp_output,float threshold){\n if(mode<4.5)return maker_comp_scalar(a,b,mode,clamp_output);\n if(mode<5.5){float v=abs(a-b);return clamp_output>=0.5?clamp(v,0.0,1.0):v;}\n bool aa=a>=threshold,bb=b>=threshold,result=false;\n if(mode<6.5)result=aa&&bb;\n else if(mode<7.5)result=aa||bb;\n else if(mode<8.5)result=aa!=bb;\n else if(mode<9.5)result=!(aa&&bb);\n else if(mode<10.5)result=!(aa||bb);\n else result=aa==bb;\n return result?1.0:0.0;\n}",
   "terminal": false,
-  "glsl": "maker_comp_scalar({field_a},{field_b},{mode},{clamp_output})"
+  "glsl": "maker_extended_comp_scalar({field_a},{field_b},{mode},{clamp_output},{boolean_threshold})"
 }

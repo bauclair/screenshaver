@@ -1,0 +1,168 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.rotated_harmonic_field_3d",
+  "name": "Rotated Harmonic Field 3D",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "description": "Accumulates three-axis harmonic signals across rotated frequency layers.",
+  "uses": "Structured turbulence, density fields and abstract spatial textures.",
+  "notes": "Rotation is around the origin; zero axis disables rotation. Animation speed is phase radians per second. Maximum and Minimum compare amplitude-weighted active layers; zero-weight layers are excluded. Normalized sum divides by weight sum; normalized output rescales Sum by weight sum and maps signed responses to 0–1. Alternating polarity starts positive and flips each layer; normalization uses absolute weights and signed mapping for all alternating responses. Interlayer rotation uses zero-based layer index or the positive frequency progression ratio (independent of external multiplier, including zero). Angles wrap before trigonometry; scaling applies even with a zero rotation axis. Large frequencies and scales may alias or lose precision.",
+  "header_color": "#398F94",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "default": "vec3(maker_uv,0.0)",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "time",
+      "name": "Time",
+      "type": "float",
+      "default": "u_time",
+      "semantic_role": "time"
+    },
+    {
+      "id": "rotation_axis",
+      "name": "Rotation Axis",
+      "type": "vec3",
+      "default": "vec3(0.0,1.0,0.0)",
+      "semantic_role": "direction3d"
+    },
+    {
+      "id": "frequency_multiplier",
+      "name": "Frequency Multiplier",
+      "type": "float",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "field",
+      "name": "Field",
+      "type": "float"
+    },
+    {
+      "id": "normalized_field",
+      "name": "Normalized Field",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "layers",
+      "name": "Layers",
+      "type": "float",
+      "default": 5,
+      "min": 1,
+      "max": 12
+    },
+    {
+      "id": "initial_frequency",
+      "name": "Initial Frequency",
+      "type": "float",
+      "default": 1,
+      "min": 0.05,
+      "max": 20
+    },
+    {
+      "id": "frequency_progression",
+      "name": "Frequency Progression",
+      "type": "float",
+      "default": 1.8,
+      "min": 1,
+      "max": 3
+    },
+    {
+      "id": "amplitude_decay",
+      "name": "Amplitude Decay",
+      "type": "float",
+      "default": 0.6,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "rotation_per_layer",
+      "name": "Rotation Per Layer",
+      "type": "float",
+      "default": 35,
+      "min": -180,
+      "max": 180
+    },
+    {
+      "id": "animation_speed",
+      "name": "Animation Speed",
+      "type": "float",
+      "default": 0.5,
+      "min": -5,
+      "max": 5
+    },
+    {
+      "id": "wave_response",
+      "name": "Wave Response",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Signed",
+        "Absolute",
+        "Ridge"
+      ]
+    },
+    {
+      "id": "accumulation",
+      "name": "Accumulation",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Normalized Sum",
+        "Sum",
+        "Maximum",
+        "Minimum"
+      ]
+    },
+    {
+      "id": "amplitude_polarity",
+      "name": "Amplitude Polarity",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Positive",
+        "Alternating"
+      ]
+    },
+    {
+      "id": "rotation_progression",
+      "name": "Rotation Progression",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Constant",
+        "Layer Dependent",
+        "Frequency Dependent"
+      ]
+    },
+    {
+      "id": "rotation_progression_rate",
+      "name": "Rotation Progression Rate",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 3
+    },
+    {
+      "id": "rotation_scale",
+      "name": "Rotation Scale",
+      "type": "float",
+      "default": 1,
+      "min": 0.5,
+      "max": 2
+    }
+  ],
+  "helpers": "vec2 maker_rhf_eval(vec3 pos,float time,vec3 axis,float mult,float layers,float freq,float progression,float decay,float angle,float speed,float response,float accumulation){float n=length(axis);vec3 a=n>1e-8?axis/n:vec3(0.0);float theta=radians(angle),cs=cos(theta),sn=sin(theta);vec3 q=pos;float f=freq*mult,w=1.0,total=0.0,weights=0.0,lo=1e20,hi=-1e20;int count=clamp(int(layers+0.5),1,12);for(int i=0;i<12;i++){if(i>=count)break;vec3 v=sin(q*f+vec3(time*speed));float x=(v.x+v.y+v.z)/3.0;if(response>=1.5)x=1.0-abs(x);else if(response>=0.5)x=abs(x);if(w>0.0){float y=w*x;total+=y;weights+=w;lo=min(lo,y);hi=max(hi,y);}if(n>1e-8)q=q*cs+cross(a,q)*sn+a*dot(a,q)*(1.0-cs);f*=progression;w*=decay;}float raw=accumulation<0.5?total/max(weights,1e-8):accumulation<1.5?total:accumulation<2.5?hi:lo;float normalized=accumulation>=0.5&&accumulation<1.5?raw/max(weights,1e-8):raw;return vec2(raw,clamp(response<0.5?0.5+0.5*normalized:normalized,0.0,1.0));}\nvec2 maker_rhf_progressive(vec3 pos,float time,vec3 axis,float mult,float layers,float freq,float progression,float decay,float angle,float speed,float response,float accumulation,float polarity,float rotationMode,float rate,float scale){\n if(polarity<0.5 && rotationMode<0.5 && scale==1.0)return maker_rhf_eval(pos,time,axis,mult,layers,freq,progression,decay,angle,speed,response,accumulation);\n float n=length(axis);vec3 a=n>1e-8?axis/n:vec3(0.0);vec3 q=pos;\n float f=freq*mult,w=1.0,total=0.0,weights=0.0,lo=1e20,hi=-1e20,ratio=1.0;\n int count=clamp(int(layers+0.5),1,12);\n for(int i=0;i<12;i++){\n  if(i>=count)break;\n  vec3 v=sin(q*f+vec3(time*speed));float x=(v.x+v.y+v.z)/3.0;\n  if(response>=1.5)x=1.0-abs(x);else if(response>=0.5)x=abs(x);\n  if(abs(w)>0.0){float y=w*x;total+=y;weights+=abs(w);lo=min(lo,y);hi=max(hi,y);}\n  if(i+1>=count)break;\n  if(n>1e-8){float factor=rotationMode<0.5?1.0:rotationMode<1.5?1.0+rate*float(i):pow(ratio,rate);\n   float theta=radians(mod(angle*factor,360.0)),cs=cos(theta),sn=sin(theta);\n   q=q*cs+cross(a,q)*sn+a*dot(a,q)*(1.0-cs);}\n  q*=scale;f*=progression;ratio*=progression;w*=decay*(polarity>=0.5?-1.0:1.0);\n }\n float raw=accumulation<0.5?total/max(weights,1e-8):accumulation<1.5?total:accumulation<2.5?hi:lo;\n float normalized=accumulation>=0.5&&accumulation<1.5?raw/max(weights,1e-8):raw;\n return vec2(raw,clamp(response<0.5||polarity>=0.5?0.5+0.5*normalized:normalized,0.0,1.0));\n}",
+  "glsl_outputs": {
+    "field": "maker_rhf_progressive({position},{time},{rotation_axis},{frequency_multiplier},{layers},{initial_frequency},{frequency_progression},{amplitude_decay},{rotation_per_layer},{animation_speed},{wave_response},{accumulation},{amplitude_polarity},{rotation_progression},{rotation_progression_rate},{rotation_scale}).x",
+    "normalized_field": "maker_rhf_progressive({position},{time},{rotation_axis},{frequency_multiplier},{layers},{initial_frequency},{frequency_progression},{amplitude_decay},{rotation_per_layer},{animation_speed},{wave_response},{accumulation},{amplitude_polarity},{rotation_progression},{rotation_progression_rate},{rotation_scale}).y"
+  }
+}

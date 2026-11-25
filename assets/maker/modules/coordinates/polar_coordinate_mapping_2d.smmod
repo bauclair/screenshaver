@@ -4,9 +4,9 @@
   "name": "Polar Coordinate Mapping 2D",
   "category": "Coordinates",
   "created_by": "Screenshaver",
-  "description": "Maps Cartesian positions to linear polar sampling coordinates.",
+  "description": "Maps Cartesian positions to selectable nonlinear polar sampling coordinates.",
   "uses": "Radial turbulence, circular textures and moving radial patterns.",
-  "notes": "Radius and Angle are unanimated geometric measurements; Angle is in radians. Angular Speed is radians per time unit; Angular Offset is degrees. Circular Direction represents the raw geometric angle, with (1,0) at the center. Polar Coordinates have an angular seam.",
+  "notes": "Radius and Angle are unanimated geometric measurements; Angle is in radians. Angular Speed is radians per time unit; Angular Offset is degrees. Circular Direction represents the raw geometric angle, with (1,0) at the center. Polar Coordinates have an angular seam. Radial mapping precedes scaling and animation. Half-turn wraps the raw angle to [-pi/2,pi/2). Mapped Radius and Mapped Angle equal the components of Polar Coordinates. Reciprocal mapping is bounded by Radius Floor but may alias.",
   "header_color": "#627FC2",
   "terminal": false,
   "inputs": [
@@ -48,6 +48,16 @@
       "name": "Circular Direction",
       "type": "vec2",
       "semantic_role": "direction2d"
+    },
+    {
+      "id": "mapped_radius",
+      "name": "Mapped Radius",
+      "type": "float"
+    },
+    {
+      "id": "mapped_angle",
+      "name": "Mapped Angle",
+      "type": "float"
     }
   ],
   "parameters": [
@@ -106,13 +116,57 @@
       "default": 0,
       "min": -360,
       "max": 360
+    },
+    {
+      "id": "radial_mapping",
+      "name": "Radial Mapping",
+      "type": "choice",
+      "default": 0,
+      "min": 0,
+      "max": 3,
+      "options": [
+        "Linear",
+        "Reciprocal",
+        "Logarithmic",
+        "Power"
+      ]
+    },
+    {
+      "id": "radius_floor",
+      "name": "Radius Floor",
+      "type": "float",
+      "default": 0.01,
+      "min": 0.0001,
+      "max": 1
+    },
+    {
+      "id": "radial_exponent",
+      "name": "Radial Exponent",
+      "type": "float",
+      "default": 1,
+      "min": 0.1,
+      "max": 8
+    },
+    {
+      "id": "angular_mapping",
+      "name": "Angular Mapping",
+      "type": "choice",
+      "default": 0,
+      "min": 0,
+      "max": 1,
+      "options": [
+        "Full Circle",
+        "Half-Turn Repetition"
+      ]
     }
   ],
-  "helpers": "float maker_linear_polar_angle(vec2 v){\n if(dot(v,v)<1e-16)return 0.0;\n if(v.x==0.0)return sign(v.y)*1.5707963267948966;\n return atan(v.y,v.x);\n}\nvec2 maker_linear_polar_direction(vec2 v){float r=length(v);return r<1e-8?vec2(1.0,0.0):v/r;}\nvec2 maker_linear_polar_map(vec2 v,float t,float rs,float ascale,float rv,float av,float offset){\n return vec2(rs*length(v)-rv*t,ascale*maker_linear_polar_angle(v)-av*t+radians(offset));\n}",
+  "helpers": "float maker_linear_polar_angle(vec2 v){\n if(dot(v,v)<1e-16)return 0.0;\n if(v.x==0.0)return sign(v.y)*1.5707963267948966;\n return atan(v.y,v.x);\n}\nvec2 maker_linear_polar_direction(vec2 v){float r=length(v);return r<1e-8?vec2(1.0,0.0):v/r;}\nvec2 maker_linear_polar_map(vec2 v,float t,float rs,float ascale,float rv,float av,float offset){\n return vec2(rs*length(v)-rv*t,ascale*maker_linear_polar_angle(v)-av*t+radians(offset));\n}\nvec2 maker_extended_polar_map(vec2 v,float t,float rs,float ascale,float rv,float av,float offset,float rm,float eps,float exponent,float am){\n if(rm<0.5 && am<0.5)return maker_linear_polar_map(v,t,rs,ascale,rv,av,offset);\n float r=length(v), a=maker_linear_polar_angle(v);\n if(rm>=0.5 && rm<1.5)r=1.0/max(r,max(eps,0.0001));\n else if(rm>=1.5 && rm<2.5)r=log(1.0+r);\n else if(rm>=2.5)r=pow(r,max(exponent,0.1));\n if(am>=0.5)a=mod(a+1.5707963267948966,3.141592653589793)-1.5707963267948966;\n return vec2(rs*r-rv*t,ascale*a-av*t+radians(offset));\n}",
   "glsl_outputs": {
-    "polar": "maker_linear_polar_map(({position}-vec2({center_x},{center_y})),{time},{radial_scale},{angular_scale},{radial_speed},{angular_speed},{angular_offset})",
+    "polar": "maker_extended_polar_map(({position}-vec2({center_x},{center_y})),{time},{radial_scale},{angular_scale},{radial_speed},{angular_speed},{angular_offset},{radial_mapping},{radius_floor},{radial_exponent},{angular_mapping})",
     "radius": "length(({position}-vec2({center_x},{center_y})))",
     "angle": "maker_linear_polar_angle(({position}-vec2({center_x},{center_y})))",
-    "direction": "maker_linear_polar_direction(({position}-vec2({center_x},{center_y})))"
+    "direction": "maker_linear_polar_direction(({position}-vec2({center_x},{center_y})))",
+    "mapped_radius": "maker_extended_polar_map(({position}-vec2({center_x},{center_y})),{time},{radial_scale},{angular_scale},{radial_speed},{angular_speed},{angular_offset},{radial_mapping},{radius_floor},{radial_exponent},{angular_mapping}).x",
+    "mapped_angle": "maker_extended_polar_map(({position}-vec2({center_x},{center_y})),{time},{radial_scale},{angular_scale},{radial_speed},{angular_speed},{angular_offset},{radial_mapping},{radius_floor},{radial_exponent},{angular_mapping}).y"
   }
 }

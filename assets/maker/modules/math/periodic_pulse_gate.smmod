@@ -8,13 +8,31 @@
   "header_color": "#108FCC",
   "description": "Produces narrow, nonnegative periodic pulses with adjustable frequency, phase, and peak sharpness.",
   "uses": "Rhythmic modulation, flashing masks, scanning effects, and intermittent field activation.",
-  "notes": "Frequency is in cycles per unit of Time; Phase is measured in cycles. Output ranges from 0 to 1. Increasing Sharpness narrows each pulse without changing its repetition rate.",
+  "notes": "Frequency is in cycles per unit of Time; Phase is measured in cycles. Output ranges from 0 to 1. Increasing Sharpness narrows each pulse without changing its repetition rate. Phase modulation is in cycles. Frequency multiplier may reverse time progression. Floor is applied before nonnegative amplitude scaling; output may exceed one.",
   "inputs": [
     {
       "id": "time",
       "name": "Time",
       "type": "float",
       "default": "u_time"
+    },
+    {
+      "id": "phase_modulation",
+      "name": "Phase Modulation",
+      "type": "float",
+      "default": "0.0"
+    },
+    {
+      "id": "frequency_multiplier",
+      "name": "Frequency Multiplier",
+      "type": "float",
+      "default": "1.0"
+    },
+    {
+      "id": "amplitude_multiplier",
+      "name": "Amplitude Multiplier",
+      "type": "float",
+      "default": "1.0"
     }
   ],
   "outputs": [
@@ -48,8 +66,16 @@
       "default": 16.0,
       "min": 1.0,
       "max": 128.0
+    },
+    {
+      "id": "pulse_floor",
+      "name": "Pulse Floor",
+      "type": "float",
+      "default": 0,
+      "min": 0,
+      "max": 1
     }
   ],
   "helpers": "",
-  "glsl": "pow(max(cos(6.283185307179586*(({time})*{frequency}+{phase})),0.0),max({sharpness},1.0))"
+  "glsl": "max({amplitude_multiplier},0.0)*mix({pulse_floor},1.0,pow(max(cos(6.283185307179586*(({time})*{frequency}*{frequency_multiplier}+{phase}+{phase_modulation})),0.0),max({sharpness},1.0)))"
 }

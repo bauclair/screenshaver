@@ -1,0 +1,181 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.cylindrical_direction_projection",
+  "name": "Cylindrical Direction Projection",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "header_color": "#627FC2",
+  "description": "Projects a centered ray direction onto an infinite cylindrical surface.",
+  "uses": "Procedural tunnels, cylindrical sampling and perspective patterns.",
+  "notes": "Angular units are revolutions; angular offset is degrees. Axial units are spatial units. Cyclic axis permutations preserve handedness. Near-axis distances are regularized and validity is zero below the radial floor. Zero direction returns zero outputs. Angular seam is not wrapped after modulation.",
+  "terminal": false,
+  "attributed_to": [],
+  "inputs": [
+    {
+      "id": "direction",
+      "name": "Direction",
+      "type": "vec3",
+      "semantic_role": "direction3d",
+      "default": "vec3(maker_uv, 1.0)"
+    },
+    {
+      "id": "time",
+      "name": "Time",
+      "type": "float",
+      "semantic_role": "time",
+      "default": "u_time"
+    },
+    {
+      "id": "angular_modulation",
+      "name": "Angular Modulation",
+      "type": "float",
+      "semantic_role": "",
+      "default": "0.0"
+    },
+    {
+      "id": "axial_modulation",
+      "name": "Axial Modulation",
+      "type": "float",
+      "semantic_role": "",
+      "default": "0.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "projected",
+      "name": "Projected Coordinates",
+      "type": "vec2",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "angular",
+      "name": "Angular Coordinate",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "axial",
+      "name": "Axial Coordinate",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "radial",
+      "name": "Radial Component",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "projection_distance",
+      "name": "Projection Distance",
+      "type": "float",
+      "semantic_role": "distance"
+    },
+    {
+      "id": "validity",
+      "name": "Validity Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "projection_axis",
+      "name": "Projection Axis",
+      "type": "choice",
+      "default": 2,
+      "min": 0,
+      "max": 2,
+      "options": [
+        "X",
+        "Y",
+        "Z"
+      ]
+    },
+    {
+      "id": "cylinder_radius",
+      "name": "Cylinder Radius",
+      "type": "float",
+      "default": 1,
+      "min": 0.01,
+      "max": 20
+    },
+    {
+      "id": "angular_scale",
+      "name": "Angular Scale",
+      "type": "float",
+      "default": 1,
+      "min": 0.01,
+      "max": 20
+    },
+    {
+      "id": "axial_scale",
+      "name": "Axial Scale",
+      "type": "float",
+      "default": 1,
+      "min": 0.01,
+      "max": 20
+    },
+    {
+      "id": "angular_speed",
+      "name": "Angular Speed",
+      "type": "float",
+      "default": 0,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "axial_speed",
+      "name": "Axial Speed",
+      "type": "float",
+      "default": 0,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "angular_offset",
+      "name": "Angular Offset",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "axial_offset",
+      "name": "Axial Offset",
+      "type": "float",
+      "default": 0,
+      "min": -20,
+      "max": 20
+    },
+    {
+      "id": "radial_floor",
+      "name": "Radial Floor",
+      "type": "float",
+      "default": 0.001,
+      "min": 0.0001,
+      "max": 0.1
+    },
+    {
+      "id": "axial_mapping",
+      "name": "Axial Mapping",
+      "type": "choice",
+      "default": 0,
+      "min": 0,
+      "max": 1,
+      "options": [
+        "Signed",
+        "Absolute"
+      ]
+    }
+  ],
+  "helpers": "\nvec3 maker_cdp_direction(vec3 d){\n float m=max(max(abs(d.x),abs(d.y)),abs(d.z));\n if(m<=0.0)return vec3(0.0);\n vec3 q=d/m;return q/length(q);\n}\nvec3 maker_cdp_axes(vec3 d,float axis){\n vec3 q=maker_cdp_direction(d);\n return axis<0.5?q.yzx:(axis<1.5?q.zxy:q);\n}\nvec4 maker_cdp_geometry(vec3 d,float axis,float radius,float floor_r){\n vec3 q=maker_cdp_axes(d,axis);\n float r=length(q.xy),eps=clamp(floor_r,0.0001,0.1);\n if(dot(q,q)==0.0)return vec4(0.0);\n float s=max(radius,0.0)/max(r,eps);\n float u=r>0.0?atan(q.y,q.x)/6.283185307179586+0.5:0.5;\n return vec4(u,s*q.z,r,s);\n}\nvec2 maker_cdp_project(vec3 d,float t,float am,float zm,float axis,float radius,float ascale,float zscale,float aspeed,float zspeed,float aoffset,float zoffset,float floor_r,float mapping){\n vec4 g=maker_cdp_geometry(d,axis,radius,floor_r);\n if(g.w==0.0)return vec2(0.0);\n float z=mapping>=0.5?abs(g.y):g.y;\n return vec2(g.x*ascale+aoffset/360.0+t*aspeed+am,z*zscale+zoffset+t*zspeed+zm);\n}\nfloat maker_cdp_valid(vec3 d,float axis,float floor_r){\n return step(clamp(floor_r,0.0001,0.1),length(maker_cdp_axes(d,axis).xy));\n}",
+  "glsl_outputs": {
+    "projected": "maker_cdp_project({direction},{time},{angular_modulation},{axial_modulation},{projection_axis},{cylinder_radius},{angular_scale},{axial_scale},{angular_speed},{axial_speed},{angular_offset},{axial_offset},{radial_floor},{axial_mapping})",
+    "angular": "maker_cdp_project({direction},{time},{angular_modulation},{axial_modulation},{projection_axis},{cylinder_radius},{angular_scale},{axial_scale},{angular_speed},{axial_speed},{angular_offset},{axial_offset},{radial_floor},{axial_mapping}).x",
+    "axial": "maker_cdp_project({direction},{time},{angular_modulation},{axial_modulation},{projection_axis},{cylinder_radius},{angular_scale},{axial_scale},{angular_speed},{axial_speed},{angular_offset},{axial_offset},{radial_floor},{axial_mapping}).y",
+    "radial": "maker_cdp_geometry({direction},{projection_axis},{cylinder_radius},{radial_floor}).z",
+    "projection_distance": "maker_cdp_geometry({direction},{projection_axis},{cylinder_radius},{radial_floor}).w",
+    "validity": "maker_cdp_valid({direction},{projection_axis},{radial_floor})"
+  }
+}

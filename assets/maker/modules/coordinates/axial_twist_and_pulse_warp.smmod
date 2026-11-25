@@ -7,7 +7,7 @@
   "header_color": "#287C9B",
   "description": "Rotates and smoothly scales XY coordinates as functions of depth and animation time while preserving Z.",
   "uses": "Animated crystalline tunnels, twisting columns, depth-varying repeated geometry, and pulsing 3D coordinate domains.",
-  "notes": "Independent implementation of axial rotation and bounded periodic radial scaling. This is a coordinate transformation, not an SDF; nonuniform or varying scaling can affect exact signed-distance properties.",
+  "notes": "Independent implementation of axial rotation and bounded periodic radial scaling. This is a coordinate transformation, not an SDF; nonuniform or varying scaling can affect exact signed-distance properties. Twist modulation is in radians. Mapping frequencies are radians per coordinate unit. Sinusoidal mapping precedes rotation; pulse depth is clamped after nonnegative external modulation. Z is unchanged.",
   "inputs": [
     {
       "id": "position",
@@ -22,6 +22,20 @@
       "type": "float",
       "default": "u_time",
       "semantic_role": "time"
+    },
+    {
+      "id": "twist_modulation",
+      "name": "Twist Modulation",
+      "type": "float",
+      "default": "0.0",
+      "semantic_role": "angle"
+    },
+    {
+      "id": "pulse_depth_multiplier",
+      "name": "Pulse Depth Multiplier",
+      "type": "float",
+      "default": "1.0",
+      "semantic_role": ""
     }
   ],
   "outputs": [
@@ -80,9 +94,51 @@
       "default": 0.2,
       "min": 0.05,
       "max": 1
+    },
+    {
+      "id": "coordinate_mapping",
+      "name": "Coordinate Mapping",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Linear",
+        "Sinusoidal"
+      ]
+    },
+    {
+      "id": "x_mapping_frequency",
+      "name": "X Mapping Frequency",
+      "type": "float",
+      "default": 1,
+      "min": 0.01,
+      "max": 20
+    },
+    {
+      "id": "y_mapping_frequency",
+      "name": "Y Mapping Frequency",
+      "type": "float",
+      "default": 1,
+      "min": 0.01,
+      "max": 20
+    },
+    {
+      "id": "mapping_amplitude",
+      "name": "Mapping Amplitude",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "mapping_influence",
+      "name": "Mapping Influence",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 1
     }
   ],
-  "helpers": "vec3 maker_axial_twist_and_pulse_warp(vec3 p,float time,float twist_rate,float twist_speed,float pulse_frequency,float pulse_depth,float pulse_speed,float minimum_scale){\n  float angle=p.z*twist_rate+time*twist_speed;\n  float cs=cos(angle),sn=sin(angle);\n  vec2 rotated=vec2(cs*p.x-sn*p.y,sn*p.x+cs*p.y);\n  float depth=clamp(pulse_depth,0.0,0.9);\n  float scale=1.0+depth*sin(p.z*pulse_frequency+time*pulse_speed);\n  scale=max(scale,max(minimum_scale,0.05));\n  return vec3(rotated*scale,p.z);\n}",
-  "glsl": "maker_axial_twist_and_pulse_warp({position},{time},{twist_rate},{twist_speed},{pulse_frequency},{pulse_depth},{pulse_speed},{minimum_scale})",
+  "helpers": "vec3 maker_axial_twist_and_pulse_warp(vec3 p,float time,float twist_rate,float twist_speed,float pulse_frequency,float pulse_depth,float pulse_speed,float minimum_scale){\n  float angle=p.z*twist_rate+time*twist_speed;\n  float cs=cos(angle),sn=sin(angle);\n  vec2 rotated=vec2(cs*p.x-sn*p.y,sn*p.x+cs*p.y);\n  float depth=clamp(pulse_depth,0.0,0.9);\n  float scale=1.0+depth*sin(p.z*pulse_frequency+time*pulse_speed);\n  scale=max(scale,max(minimum_scale,0.05));\n  return vec3(rotated*scale,p.z);\n}\nvec3 maker_axial_twist_extended(vec3 p,float t,float tr,float ts,float pf,float pd,float ps,float ms,float tm,float dm,float mode,float fx,float fy,float amp,float influence){\n  if(mode<0.5 && tm==0.0 && dm==1.0) return maker_axial_twist_and_pulse_warp(p,t,tr,ts,pf,pd,ps,ms);\n  vec2 q=p.xy;\n  if(mode>=0.5) q=mix(q,amp*sin(q*vec2(fx,fy)),clamp(influence,0.0,1.0));\n  float angle=p.z*tr+t*ts+tm;\n  float cs=cos(angle),sn=sin(angle);\n  vec2 rotated=vec2(cs*q.x-sn*q.y,sn*q.x+cs*q.y);\n  float depth=clamp(pd*max(dm,0.0),0.0,0.9);\n  float scale=max(1.0+depth*sin(p.z*pf+t*ps),max(ms,0.05));\n  return vec3(rotated*scale,p.z);\n}",
+  "glsl": "maker_axial_twist_extended({position},{time},{twist_rate},{twist_speed},{pulse_frequency},{pulse_depth},{pulse_speed},{minimum_scale},{twist_modulation},{pulse_depth_multiplier},{coordinate_mapping},{x_mapping_frequency},{y_mapping_frequency},{mapping_amplitude},{mapping_influence})",
   "terminal": false
 }

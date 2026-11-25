@@ -8,7 +8,7 @@
   "header_color": "#B477C7",
   "description": "Smoothly attenuates an effect between two normalized lifetime thresholds.",
   "uses": "Particle fading, timed opacity and staged effect decay.",
-  "notes": "Progress normally ranges from zero to one; thresholds are clamped and ordered to avoid a degenerate smoothstep.",
+  "notes": "Progress normally ranges from zero to one; thresholds are clamped and ordered to avoid a degenerate smoothstep. Fade In-Out multiplies attack and release; equal thresholds use a step. Original nondegenerate smooth Fade Out is retained.",
   "inputs": [
     {
       "id": "progress",
@@ -40,8 +40,49 @@
       "default": 0.85,
       "min": 0,
       "max": 1
+    },
+    {
+      "id": "envelope_mode",
+      "name": "Envelope Mode",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Fade Out",
+        "Fade In-Out"
+      ],
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "attack_start",
+      "name": "Attack Start",
+      "type": "float",
+      "default": 0,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "attack_end",
+      "name": "Attack End",
+      "type": "float",
+      "default": 0.15,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "envelope_curve",
+      "name": "Envelope Curve",
+      "type": "choice",
+      "default": 1,
+      "options": [
+        "Linear",
+        "Smoothstep",
+        "Smootherstep"
+      ],
+      "min": 0,
+      "max": 2
     }
   ],
-  "helpers": "",
-  "glsl": "1.0-smoothstep(min({fade_start},{fade_end}),max(max({fade_start},{fade_end}),min({fade_start},{fade_end})+0.00001),({progress}))"
+  "helpers": "float maker_lifetime_stage(float p,float a,float b,float curve){float lo=min(a,b),hi=max(a,b);if(hi==lo)return step(lo,p);float u=clamp((p-lo)/(hi-lo),0.0,1.0);if(curve<0.5)return u;if(curve<1.5)return u*u*(3.0-2.0*u);return u*u*u*(10.0+u*(-15.0+6.0*u));}",
+  "glsl": "(({envelope_mode}<0.5&&{envelope_curve}>0.5&&{envelope_curve}<1.5&&{fade_start}!={fade_end})?(1.0-smoothstep(min({fade_start},{fade_end}),max(max({fade_start},{fade_end}),min({fade_start},{fade_end})+0.00001),({progress}))):(({envelope_mode}<0.5?1.0:maker_lifetime_stage({progress},{attack_start},{attack_end},{envelope_curve}))*(1.0-maker_lifetime_stage({progress},{fade_start},{fade_end},{envelope_curve}))))"
 }

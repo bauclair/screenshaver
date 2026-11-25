@@ -197,7 +197,8 @@ fn read_wire_line(reader:&mut impl std::io::BufRead)->Result<serde_json::Value,S
 // A worker killed by the watchdog or SIGSEGV cannot write a postmortem report.
 fn preserve_candidate_source(graph:&Graph, source:&str)->Result<(),String>{
     use std::io::Write;
-    let fingerprint=source.bytes().fold(14695981039346656037u64,
+    let graph_bytes=serde_json::to_vec(&graph_to_wire(graph)).map_err(|e|e.to_string())?;
+    let fingerprint=source.bytes().chain(graph_bytes.iter().copied()).fold(14695981039346656037u64,
         |h,b|(h^b as u64).wrapping_mul(1099511628211));
     let home=std::env::var_os("HOME").ok_or("HOME not set")?;
     let dir=std::path::PathBuf::from(home).join(".config/screenshaver/maker/diagnostics/candidates");
@@ -217,21 +218,21 @@ fn preserve_candidate_source(graph:&Graph, source:&str)->Result<(),String>{
             .open(&graph_path).map_err(|e|e.to_string())?;
         f.write_all(&data).map_err(|e|e.to_string())?;
     }
-    eprintln!("[MAKER GLSL SNAPSHOT] fingerprint={fingerprint:016x} bytes={} source={} graph={}",
-        source.len(),source_path.display(),graph_path.display());
+    crate::maker::operational_log(format_args!("[MAKER GLSL SNAPSHOT] fingerprint={fingerprint:016x} bytes={} source={} graph={}",
+        source.len(),source_path.display(),graph_path.display()));
     Ok(())
 }
 
 // Conservative structural complexity guard. Byte size is not a proxy for
 // compiler work; repeated field sampling and callable fan-out also matter.
-fn candidate_complexity_gate(source:&str)->Result<(),String>{
+pub(crate) fn candidate_complexity_gate(source:&str)->Result<(),String>{
     let callables=source.matches("(vec3 maker_position){").count();
     let loop_sites=source.matches("for(int ").count();
     let sdf_marchers=source.matches("for(int i=0;i<128;i++)").count();
     let optical_marchers=source.matches("for(int k=0;k<96;k++)").count();
     let layered_marchers=source.matches("for(int boundary=0;boundary<4;boundary++)").count();
-    eprintln!("[MAKER GLSL PREFLIGHT] bytes={} callable_definitions={} loop_sites={} sdf_marchers={} optical_marchers={} layered_marchers={}",
-        source.len(),callables,loop_sites,sdf_marchers,optical_marchers,layered_marchers);
+    crate::maker::operational_log(format_args!("[MAKER GLSL PREFLIGHT] bytes={} callable_definitions={} loop_sites={} sdf_marchers={} optical_marchers={} layered_marchers={}",
+        source.len(),callables,loop_sites,sdf_marchers,optical_marchers,layered_marchers));
     if source.len()>64*1024 {return Err(format!("GLSL source budget exceeded: {} bytes",source.len()))}
     // Conservative hard ceilings; these are safety budgets, not visual-quality filters.
     if callables>96 || loop_sites>24 || sdf_marchers+optical_marchers+layered_marchers>4 {
@@ -259,7 +260,7 @@ fn spawn_candidate_worker() -> (SyncSender<WorkerRequest>,Receiver<WorkerReply>,
             impl Drop for ReapChild {fn drop(&mut self){let _=self.0.kill();let _=self.0.wait();}}
             let mut child=ReapChild(child);
             thread_pid.store(child.0.id(),Ordering::SeqCst);
-            eprintln!("[MAKER WORKER] spawned child pid={} (4 GiB address-space limit; 15s watchdog)",child.0.id());
+            crate::maker::operational_log(format_args!("[MAKER WORKER] spawned child pid={} (4 GiB address-space limit; 15s watchdog)",child.0.id()));
             // A detached watchdog never calls GL or blocks the UI.  It kills
             // this exact worker if startup or a request exceeds its deadline.
             let pending=std::sync::Arc::new(std::sync::Mutex::new(Some(Instant::now())));
@@ -271,7 +272,7 @@ fn spawn_candidate_worker() -> (SyncSender<WorkerRequest>,Receiver<WorkerReply>,
                     if watch_pid.load(Ordering::SeqCst)==0 {break}
                     let overdue=watch_pending.lock().map(|p|p.map(|t|t.elapsed()>Duration::from_secs(15)).unwrap_or(false)).unwrap_or(true);
                     if overdue {
-                        eprintln!("[MAKER WORKER] 15s deadline exceeded; killing worker pid={}",watch_pid.load(Ordering::SeqCst));
+                        crate::maker::operational_log(format_args!("[MAKER WORKER] 15s deadline exceeded; killing worker pid={}",watch_pid.load(Ordering::SeqCst)));
                         worker_limits::terminate(watch_pid.load(Ordering::SeqCst));
                         break;
                     }
@@ -296,7 +297,7 @@ fn spawn_candidate_worker() -> (SyncSender<WorkerRequest>,Receiver<WorkerReply>,
                 let response=match response {
                     Ok(value)=>value,
                     Err(error)=>{
-                        eprintln!("[MAKER WORKER] interrupted request: {error}");
+                        crate::maker::operational_log(format_args!("[MAKER WORKER] interrupted request: {error}"));
                         let exit_detail=match child.0.try_wait() {
                             Ok(Some(status))=>format!("; child exit status: {status}"),
                             Ok(None)=>"; child status not yet available".to_owned(),
@@ -335,7 +336,7 @@ fn spawn_candidate_worker() -> (SyncSender<WorkerRequest>,Receiver<WorkerReply>,
         })();
         thread_pid.store(0,Ordering::SeqCst);
         if let Err(error)=result {
-            eprintln!("[MAKER WORKER] process failed: {error}");
+            crate::maker::operational_log(format_args!("[MAKER WORKER] process failed: {error}"));
             let _=replies_tx.try_send(WorkerReply::Failed(error));
         }
     }).expect("Failed to start Maker IPC thread");
@@ -345,6 +346,7 @@ fn spawn_candidate_worker() -> (SyncSender<WorkerRequest>,Receiver<WorkerReply>,
 // Called only in a separate process, before normal argument parsing.
 pub fn run_candidate_worker()->Result<(),String>{
     use std::io::{BufRead,BufReader,Write};
+    operational_log(format_args!("[MAKER WORKER] startup"));
     worker_limits::child_setup()?;
     let sdl=sdl2::init()?;
     let video=sdl.video()?;
@@ -353,6 +355,7 @@ pub fn run_candidate_worker()->Result<(),String>{
         .hidden().opengl().build().map_err(|e|e.to_string())?;
     let _context=window.gl_create_context()?;
     gl::load_with(|name|video.gl_get_proc_address(name) as *const _);
+    log_graphics();
     crate::maker_library::initialize()?;
     let mut preview=crate::maker_preview::Preview::new()?;
     let stdout=std::io::stdout();let mut output=stdout.lock();
@@ -367,7 +370,7 @@ pub fn run_candidate_worker()->Result<(),String>{
             match request["kind"].as_str().ok_or("Missing request kind")? {
                 "candidate"=>{
                 if let Err(reason)=crate::maker_ui::candidate_admission(&graph) {
-                    eprintln!("[MAKER GRAPH COMPLEXITY] {reason}");
+                    crate::maker::operational_log(format_args!("[MAKER GRAPH COMPLEXITY] {reason}"));
                     Ok(serde_json::json!({"glsl_error":reason}))
                 } else {match crate::maker_compiler::fragment_source(&graph){
                     Err(e)=>Ok(serde_json::json!({"glsl_error":e})),
@@ -412,6 +415,7 @@ pub fn run_for_transition(owner:&crate::application_coordinator::Owner)->Result<
 }
 
 fn run_inner(coordinator:Option<&crate::application_coordinator::Owner>)->Result<bool,String>{
+    operational_log(format_args!("[MAKER] startup version={} desktop={:?}",env!("CARGO_PKG_VERSION"),std::env::var("XDG_CURRENT_DESKTOP")));
     if std::env::var("SCREENSHAVER_MAKER_DISCOVERY_TEST").ok().as_deref()==Some("1"){
         crate::maker_library::initialize()?;
         return crate::maker_ui::run_discovery_test().map(|_| false);
@@ -423,7 +427,9 @@ fn run_inner(coordinator:Option<&crate::application_coordinator::Owner>)->Result
     let _=video.gl_set_swap_interval(sdl2::video::SwapInterval::VSync);
     gl::load_with(|s|video.gl_get_proc_address(s) as *const _);
     crate::maker_library::initialize()?;
-    for error in &crate::maker_library::get().errors { eprintln!("[MAKER MODULE] {error}"); }
+    log_graphics();
+    operational_log(format_args!("[MAKER LIBRARY] modules={}",crate::maker_library::get().modules.len()));
+    for error in &crate::maker_library::get().errors { crate::maker::operational_log(format_args!("[MAKER MODULE] {error}")); }
     let mut ui=crate::maker_ui::MakerUi::new(&video)?;
     // Maker owns its SDL2 event loop; egui clipboard requests are not
     // automatically forwarded to the native system clipboard.
@@ -441,7 +447,7 @@ fn run_inner(coordinator:Option<&crate::application_coordinator::Owner>)->Result
     let mut next_restart=Instant::now();
     let mut events=sdl.event_pump()?;let start=Instant::now();
     let mut diagnostic_frame: u64=0;
-    eprintln!("[MAKER TIMING] enabled; slow stage threshold 100 ms; GL compile/readback start/end markers");
+    crate::maker::operational_log(format_args!("[MAKER TIMING] enabled; slow stage threshold 100 ms; GL compile/readback start/end markers"));
     let mut pending_control_switch = false;
     'running:loop{
         // Drain activation messages on the UI thread. Cross-editor switches
@@ -461,9 +467,9 @@ fn run_inner(coordinator:Option<&crate::application_coordinator::Owner>)->Result
                         pending_control_switch = true;
                         ui.request_application_close();
                     }
-                    Ok(Some(request)) => eprintln!("[MAKER COORDINATOR] Unexpected request: {request:?}"),
+                    Ok(Some(request)) => crate::maker::operational_log(format_args!("[MAKER COORDINATOR] Unexpected request: {request:?}")),
                     Ok(None) => break,
-                    Err(error) => { eprintln!("[MAKER COORDINATOR] {error}"); break; }
+                    Err(error) => { crate::maker::operational_log(format_args!("[MAKER COORDINATOR] {error}")); break; }
                 }
             }
         }
@@ -503,11 +509,11 @@ fn run_inner(coordinator:Option<&crate::application_coordinator::Owner>)->Result
                                     Ok(Some(pixels))=>{ui.candidate_glsl_capable();ui.receive_candidate(job,pixels,192,108)},
                                     Ok(None)=>{ui.candidate_glsl_capable();ui.candidate_rejected_uniform()},
                                     Err(WorkerError::Glsl(e))=>{
-                                        eprintln!("[MAKER CANDIDATE GLSL] {}: {}",job.name,e);
+                                        crate::maker::operational_log(format_args!("[MAKER CANDIDATE GLSL] {}: {}",job.name,e));
                                         ui.candidate_rejected_glsl();
                                     }
                                     Err(WorkerError::Render(e))=>{
-                                        eprintln!("[MAKER CANDIDATE RENDER] {}: {}",job.name,e);
+                                        crate::maker::operational_log(format_args!("[MAKER CANDIDATE RENDER] {}: {}",job.name,e));
                                         ui.candidate_rejected_render();
                                     }
                                 }
@@ -520,10 +526,10 @@ fn run_inner(coordinator:Option<&crate::application_coordinator::Owner>)->Result
                             ui.with_candidate_epoch(epoch,|ui|ui.receive_analysis(index,result));
                         }
                         WorkerReply::Interrupted{request,error}=>{
-                            eprintln!("[MAKER WORKER] request interrupted; quarantining request: {error}");
+                            crate::maker::operational_log(format_args!("[MAKER WORKER] request interrupted; quarantining request: {error}"));
                             consecutive_interruptions+=1;
                             {
-                                eprintln!("[MAKER WORKER] abandoning interrupted request without replay");
+                                crate::maker::operational_log(format_args!("[MAKER WORKER] abandoning interrupted request without replay"));
                                 match request {
                                     WorkerRequest::Candidate{epoch,..}=>{ui.with_candidate_epoch(epoch,|ui|ui.candidate_rejected_render());},
                                     WorkerRequest::Motion{epoch,index,..}=>{ui.with_candidate_epoch(epoch,|ui|ui.receive_motion_score(index,Err("Worker resource limit or timeout exceeded".into())));},
@@ -534,11 +540,11 @@ fn run_inner(coordinator:Option<&crate::application_coordinator::Owner>)->Result
                             worker_failed=true;
                             if consecutive_interruptions>=MAX_CONSECUTIVE_INTERRUPTS {
                                 gpu_circuit_open=true;
-                                eprintln!("[MAKER WORKER] GPU CIRCUIT OPEN after {consecutive_interruptions} consecutive interruptions; pending candidates retained; restart Maker to reset");
+                                crate::maker::operational_log(format_args!("[MAKER WORKER] GPU CIRCUIT OPEN after {consecutive_interruptions} consecutive interruptions; pending candidates retained; restart Maker to reset"));
                             }
                         }
                         WorkerReply::Failed(error)=>{
-                            eprintln!("[MAKER WORKER] unavailable: {error}");
+                            crate::maker::operational_log(format_args!("[MAKER WORKER] unavailable: {error}"));
                             worker_failed=true;
                         }
                     }
@@ -559,7 +565,7 @@ fn run_inner(coordinator:Option<&crate::application_coordinator::Owner>)->Result
             worker_busy=false;
             restarts+=1;
             next_restart=Instant::now()+Duration::from_secs(2);
-            eprintln!("[MAKER WORKER] restarting worker ({restarts}/{MAX_WORKER_RESTARTS})");
+            crate::maker::operational_log(format_args!("[MAKER WORKER] restarting worker ({restarts}/{MAX_WORKER_RESTARTS})"));
         }
         if !worker_busy && !worker_failed && !gpu_circuit_open {
             let epoch=ui.candidate_epoch();
@@ -583,7 +589,7 @@ fn run_inner(coordinator:Option<&crate::application_coordinator::Owner>)->Result
                     Ok(())=>worker_busy=true,
                     Err(mpsc::TrySendError::Full(_))=>{
                         // Single-flight protocol makes this unreachable.
-                        eprintln!("[MAKER WORKER] request channel unexpectedly full");
+                        crate::maker::operational_log(format_args!("[MAKER WORKER] request channel unexpectedly full"));
                         worker_busy=true;
                     }
                     Err(mpsc::TrySendError::Disconnected(request))=>{
@@ -594,8 +600,8 @@ fn run_inner(coordinator:Option<&crate::application_coordinator::Owner>)->Result
             }
         }
         let preview_started=Instant::now();
+        preview.poll_completion();
         if ui.preview_active() {
-            preview.update(ui.graph());
             preview.render(dw as i32,dh as i32,scale,ui.preview_rect(),start.elapsed().as_secs_f32(),ui.graph());
         } else {
             // Stopping the shader does not erase pixels already in the SDL
@@ -675,12 +681,70 @@ fn run_inner(coordinator:Option<&crate::application_coordinator::Owner>)->Result
     // remain able to exit. Dropping the sender requests shutdown when idle.
     drop(worker_tx);
     drop(worker_process_guard);
-    ui.destroy();preview.destroy();Ok(pending_control_switch)
+    ui.destroy();preview.destroy();operational_log(format_args!("[MAKER] normal shutdown"));Ok(pending_control_switch)
 }
 
 fn maker_timing(stage:&str,frame:u64,start:Instant){
     let elapsed=start.elapsed();
     if elapsed>=Duration::from_millis(100){
-        eprintln!("[MAKER TIMING] frame={frame} stage={stage} elapsed_ms={:.1}",elapsed.as_secs_f64()*1000.0);
+        // Preserve the first slow presentation event, then sample at most once per 5s.
+        if stage=="swap" || stage=="whole-frame" {
+            use std::sync::{Mutex,OnceLock};
+            static LAST:OnceLock<Mutex<std::collections::HashMap<String,Instant>>>=OnceLock::new();
+            if let Ok(mut last)=LAST.get_or_init(||Mutex::new(std::collections::HashMap::new())).lock(){
+                if last.get(stage).is_some_and(|t|t.elapsed().as_secs()<5){return}
+                last.insert(stage.to_owned(),Instant::now());
+            }
+        }
+        crate::maker::operational_log(format_args!("[MAKER TIMING] frame={frame} stage={stage} elapsed_ms={:.1}",elapsed.as_secs_f64()*1000.0));
+    }
+}
+
+// Bounded latest activation record for each rendering role. Written before GL.
+pub(crate) fn record_activation(role:&str,stage:&str,graph:&Graph,source:&str,w:i32,h:i32,time:f32)->Result<(),String>{
+    use std::io::Write;
+    let home=std::env::var_os("HOME").ok_or("HOME not set")?;
+    let dir=std::path::PathBuf::from(home).join(".config/screenshaver/maker/diagnostics");
+    std::fs::create_dir_all(&dir).map_err(|e|e.to_string())?;
+    let path=dir.join(format!("latest-{role}.json"));
+    let tmp=dir.join(format!("latest-{role}-{}.tmp",std::process::id()));
+    let record=serde_json::json!({"stage":stage,"pid":std::process::id(),"unix_ms":std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as u64,"width":w,"height":h,"time":time,"graph":graph_to_wire(graph),"glsl":source});
+    let mut f=std::fs::File::create(&tmp).map_err(|e|e.to_string())?;
+    f.write_all(&serde_json::to_vec_pretty(&record).map_err(|e|e.to_string())?).map_err(|e|e.to_string())?;
+    f.sync_all().map_err(|e|e.to_string())?;
+    std::fs::rename(tmp,path).map_err(|e|e.to_string())?;
+    operational_log(format_args!("[MAKER ACTIVATION] role={role} stage={stage} revision={} size={w}x{h} time={time}",graph.revision));
+    Ok(())
+}
+
+// Separate lock inode remains stable across rotation; both processes cooperate.
+pub(crate) fn operational_log(args:std::fmt::Arguments<'_>){
+    use std::io::Write;
+    use std::os::fd::AsRawFd;
+    unsafe extern "C" { fn flock(fd:i32,operation:i32)->i32; }
+    let message=args.to_string();
+    let result=(||->std::io::Result<()>{
+        let home=std::env::var_os("HOME").ok_or_else(||std::io::Error::other("HOME not set"))?;
+        let dir=std::path::PathBuf::from(home).join(".config/screenshaver");
+        std::fs::create_dir_all(&dir)?;
+        let lock=std::fs::OpenOptions::new().create(true).write(true).open(dir.join(".maker-log.lock"))?;
+        // Nonblocking: diagnostics must never wait indefinitely on another process.
+        if unsafe{flock(lock.as_raw_fd(),2|4)}!=0{return Err(std::io::Error::last_os_error())}
+        let path=dir.join("maker.log");
+        let now=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis();
+        let clean=message.replace('\n',"\\n").replace('\r',"\\r");
+        let line=format!("unix_ms={now} pid={} {clean}\n",std::process::id());
+        if std::fs::metadata(&path).map(|m|m.len()).unwrap_or(0)+line.len() as u64>10*1024*1024{
+            std::fs::rename(&path,dir.join("maker.log.1"))?;
+        }
+        let mut file=std::fs::OpenOptions::new().create(true).append(true).open(path)?;
+        file.write_all(line.as_bytes())?;file.flush()?;
+        Ok(()) // dropping lock closes fd and releases flock
+    })();
+    if let Err(e)=result{eprintln!("[MAKER LOG FALLBACK] {e}: {message}");}
+}
+fn log_graphics(){
+    for (label,key) in [("vendor",gl::VENDOR),("renderer",gl::RENDERER),("version",gl::VERSION)]{
+        unsafe{let p=gl::GetString(key);if !p.is_null(){operational_log(format_args!("[MAKER GL] {label}={}",std::ffi::CStr::from_ptr(p.cast()).to_string_lossy()));}}
     }
 }

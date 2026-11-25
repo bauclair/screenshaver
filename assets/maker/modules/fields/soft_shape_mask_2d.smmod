@@ -7,7 +7,7 @@
   "header_color": "#4B9A86",
   "description": "Generates soft disks, rings, diamonds, rectangles and elliptical petals from 2D coordinates.",
   "uses": "Soft shape layering, kaleidoscopic ornaments, geometric masks and procedural patterns.",
-  "notes": "Shape index: 0 Disk, 1 Ring, 2 Diamond, 3 Box, 4 Petal. Position and Center are in the same coordinate space. Angle is in radians; Size X/Y control box and petal proportions.",
+  "notes": "Shape index: 0 Disk, 1 Ring, 2 Diamond, 3 Box, 4 Petal. Position and Center are in the same coordinate space. Angle is in radians; Size X/Y control box and petal proportions. Ellipse and Heart use Radius times Size X/Y as semi-axis scales. Heart is a soft union of lobes and tapered body, not an exact SDF. Existing Petal is already elliptical; Ellipse adds radius scaling.",
   "inputs": [
     {
       "id": "position",
@@ -43,10 +43,12 @@
         "Ring",
         "Diamond",
         "Box",
-        "Petal"
+        "Petal",
+        "Ellipse",
+        "Heart"
       ],
       "min": 0,
-      "max": 4
+      "max": 6
     },
     {
       "id": "radius",
@@ -87,9 +89,25 @@
       "default": 0,
       "min": -6.2832,
       "max": 6.2832
+    },
+    {
+      "id": "heart_indentation",
+      "name": "Heart Indentation",
+      "type": "float",
+      "default": 0.3,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "heart_taper",
+      "name": "Heart Taper",
+      "type": "float",
+      "default": 0.5,
+      "min": 0,
+      "max": 1
     }
   ],
-  "helpers": "float maker_soft_shape_2d(vec2 p,vec2 center,float shape,float radius,float softness,float sx,float sy,float angle){\n vec2 q=p-center;float ca=cos(angle),sa=sin(angle);q=mat2(ca,-sa,sa,ca)*q;\n float r=max(radius,0.00001),s=max(softness,0.00001);float d=0.0;\n if(shape<0.5){d=length(q)-r;}\n else if(shape<1.5){d=abs(length(q)-r)-s*0.5;return 1.0-smoothstep(-s*0.25,s*0.5,d);}\n else if(shape<2.5){d=(abs(q.x)+abs(q.y)-r)*0.70710678;}\n else if(shape<3.5){vec2 b=abs(q)-vec2(max(sx,0.00001),max(sy,0.00001));d=length(max(b,vec2(0.0)))+min(max(b.x,b.y),0.0);}\n else {vec2 e=q/vec2(max(sx,0.00001),max(sy,0.00001));d=(length(e)-1.0)*min(sx,sy);}\n return 1.0-smoothstep(-s,s,d);\n}",
+  "helpers": "float maker_soft_shape_2d(vec2 p,vec2 center,float shape,float radius,float softness,float sx,float sy,float angle){\n vec2 q=p-center;float ca=cos(angle),sa=sin(angle);q=mat2(ca,-sa,sa,ca)*q;\n float r=max(radius,0.00001),s=max(softness,0.00001);float d=0.0;\n if(shape<0.5){d=length(q)-r;}\n else if(shape<1.5){d=abs(length(q)-r)-s*0.5;return 1.0-smoothstep(-s*0.25,s*0.5,d);}\n else if(shape<2.5){d=(abs(q.x)+abs(q.y)-r)*0.70710678;}\n else if(shape<3.5){vec2 b=abs(q)-vec2(max(sx,0.00001),max(sy,0.00001));d=length(max(b,vec2(0.0)))+min(max(b.x,b.y),0.0);}\n else {vec2 e=q/vec2(max(sx,0.00001),max(sy,0.00001));d=(length(e)-1.0)*min(sx,sy);}\n return 1.0-smoothstep(-s,s,d);\n}\nfloat maker_soft_shape_extended(vec2 p,vec2 center,float shape,float radius,float softness,float sx,float sy,float angle,float indent,float taper){\n if(shape<4.5)return maker_soft_shape_2d(p,center,shape,radius,softness,sx,sy,angle);\n if(radius<=0.0||sx<=0.0||sy<=0.0)return 0.0;\n float ca=cos(angle),sa=sin(angle);vec2 axes=radius*vec2(sx,sy);vec2 q=(mat2(ca,-sa,sa,ca)*(p-center))/axes;\n float d=length(q)-1.0;\n if(shape>=5.5){\n  float k=clamp(indent,0.0,1.0),t=clamp(taper,0.0,1.0);\n  // Union of two upper lobes and a tapered lower body, in normalized coordinates.\n  float shift=0.22+0.23*k;float rad=1.0-shift;\n  float lobes=length(vec2(abs(q.x)-shift,q.y-0.28))-rad;\n  float body=max(abs(q.x)-(0.82*(1.0-t*0.85*clamp(-q.y,0.0,1.0))),max(-q.y-1.0,q.y-0.28));\n  d=min(lobes,body);\n }\n float s=max(softness,0.00001);return 1.0-smoothstep(-s,s,d*min(axes.x,axes.y));\n}",
   "terminal": false,
-  "glsl": "maker_soft_shape_2d({position},{center},{shape},{radius},{softness},{size_x},{size_y},{angle})"
+  "glsl": "maker_soft_shape_extended({position},{center},{shape},{radius},{softness},{size_x},{size_y},{angle},{heart_indentation},{heart_taper})"
 }

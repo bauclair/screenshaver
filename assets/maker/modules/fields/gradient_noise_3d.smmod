@@ -1,0 +1,103 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.gradient_noise_3d",
+  "name": "Gradient Noise 3D",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "description": "Interpolates directional lattice contributions in three dimensions.",
+  "uses": "Procedural density, material variation and displacement.",
+  "notes": "Eight unit diagonal gradients; conservative signed amplitude bound, normalized output is 0.5+0.5*signed. Coordinates repeat after 1048576 lattice units to keep integer conversion bounded. Animation translates the sampling domain in lattice units per second.",
+  "header_color": "#398F94",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "default": "vec3(maker_uv,0.0)",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "time",
+      "name": "Time",
+      "type": "float",
+      "default": "u_time",
+      "semantic_role": "time"
+    },
+    {
+      "id": "frequency_multiplier",
+      "name": "Frequency Multiplier",
+      "type": "float",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "signed_noise",
+      "name": "Signed Noise",
+      "type": "float"
+    },
+    {
+      "id": "normalized_noise",
+      "name": "Normalized Noise",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "frequency",
+      "name": "Frequency",
+      "type": "float",
+      "default": 1,
+      "min": 0.01,
+      "max": 50
+    },
+    {
+      "id": "seed",
+      "name": "Seed",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 65535
+    },
+    {
+      "id": "x_animation_speed",
+      "name": "X Animation Speed",
+      "type": "float",
+      "default": 0,
+      "min": -5,
+      "max": 5
+    },
+    {
+      "id": "y_animation_speed",
+      "name": "Y Animation Speed",
+      "type": "float",
+      "default": 0,
+      "min": -5,
+      "max": 5
+    },
+    {
+      "id": "z_animation_speed",
+      "name": "Z Animation Speed",
+      "type": "float",
+      "default": 0.2,
+      "min": -5,
+      "max": 5
+    },
+    {
+      "id": "interpolation",
+      "name": "Interpolation",
+      "type": "choice",
+      "default": 1,
+      "options": [
+        "Cubic",
+        "Quintic"
+      ]
+    }
+  ],
+  "helpers": "uint maker_gn3_mix(uint x){x^=x>>17u;x*=0xed5ad4bbu;x^=x>>11u;x*=0xac4c1b51u;x^=x>>15u;x*=0x31848babu;return x^(x>>14u);}\nvec3 maker_gn3_gradient(ivec3 i,uint seed){uint h=maker_gn3_mix(uint(i.x)+maker_gn3_mix(uint(i.y)+maker_gn3_mix(uint(i.z)+seed)));vec3 g=vec3((h&1u)==0u?1.0:-1.0,(h&2u)==0u?1.0:-1.0,(h&4u)==0u?1.0:-1.0);return g*0.57735026919;}\nfloat maker_gn3_eval(vec3 pos,float time,float mult,float freq,float seed,vec3 speed,float interpolation){vec3 q=pos*freq*mult+time*speed; q=mod(q,1048576.0);ivec3 cell=ivec3(floor(q));vec3 f=fract(q);vec3 w=interpolation<0.5?f*f*(3.0-2.0*f):f*f*f*(f*(6.0*f-15.0)+10.0);float sum=0.0;for(int j=0;j<8;j++){ivec3 o=ivec3(j&1,(j>>1)&1,(j>>2)&1);vec3 v=vec3(o);vec3 a=mix(1.0-w,w,v);ivec3 key=(cell+o)%1048576;sum+=a.x*a.y*a.z*dot(maker_gn3_gradient(key,uint(clamp(seed,0.0,65535.0))),f-v);}return clamp(sum*0.57735026919,-1.0,1.0);}",
+  "glsl_outputs": {
+    "signed_noise": "maker_gn3_eval({position},{time},{frequency_multiplier},{frequency},{seed},vec3({x_animation_speed},{y_animation_speed},{z_animation_speed}),{interpolation})",
+    "normalized_noise": "0.5+0.5*maker_gn3_eval({position},{time},{frequency_multiplier},{frequency},{seed},vec3({x_animation_speed},{y_animation_speed},{z_animation_speed}),{interpolation})"
+  }
+}

@@ -1,0 +1,221 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.animated_spatial_network_field_2d",
+  "name": "Animated Spatial Network Field 2D",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "header_color": "#398F94",
+  "description": "Deterministic moving lattice vertices and finite connecting segments with pulsed point intensity.",
+  "uses": "Animated networks, constellations, geometric meshes and luminous grids.",
+  "notes": "Widths and radii are in cell units; distances are in input units. Displacement is capped at 0.45 cell per axis. Point glow tapers to zero between 1.5 and 2 cells to ensure finite support. Pulse multiplier scales point intensity. Bounded neighborhood evaluation; multiple connected outputs may repeat computation.",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "time",
+      "name": "Time",
+      "type": "float",
+      "default": "u_time",
+      "semantic_role": "time"
+    },
+    {
+      "id": "displacement_multiplier",
+      "name": "Displacement Multiplier",
+      "type": "float",
+      "default": "1.0"
+    },
+    {
+      "id": "pulse_multiplier",
+      "name": "Pulse Multiplier",
+      "type": "float",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "network_intensity",
+      "name": "Network Intensity",
+      "type": "float",
+      "semantic_role": "intensity"
+    },
+    {
+      "id": "line_intensity",
+      "name": "Line Intensity",
+      "type": "float",
+      "semantic_role": "intensity"
+    },
+    {
+      "id": "point_intensity",
+      "name": "Point Intensity",
+      "type": "float",
+      "semantic_role": "intensity"
+    },
+    {
+      "id": "nearest_point_distance",
+      "name": "Nearest Point Distance",
+      "type": "float",
+      "semantic_role": "distance"
+    },
+    {
+      "id": "nearest_segment_distance",
+      "name": "Nearest Segment Distance",
+      "type": "float",
+      "semantic_role": "distance"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "cell_size",
+      "name": "Cell Size",
+      "type": "float",
+      "default": 0.2,
+      "min": 0.01,
+      "max": 5
+    },
+    {
+      "id": "seed",
+      "name": "Seed",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 65535
+    },
+    {
+      "id": "x_displacement",
+      "name": "X Displacement",
+      "type": "float",
+      "default": 0.25,
+      "min": 0,
+      "max": 0.45
+    },
+    {
+      "id": "y_displacement",
+      "name": "Y Displacement",
+      "type": "float",
+      "default": 0.25,
+      "min": 0,
+      "max": 0.45
+    },
+    {
+      "id": "motion_frequency",
+      "name": "Motion Frequency",
+      "type": "float",
+      "default": 0.5,
+      "min": 0,
+      "max": 5
+    },
+    {
+      "id": "frequency_variation",
+      "name": "Frequency Variation",
+      "type": "float",
+      "default": 0.5,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "connection_topology",
+      "name": "Connection Topology",
+      "type": "choice",
+      "default": 1,
+      "options": [
+        "Cardinal",
+        "Diagonal",
+        "Extended"
+      ]
+    },
+    {
+      "id": "line_width",
+      "name": "Line Width",
+      "type": "float",
+      "default": 0.015,
+      "min": 0.001,
+      "max": 0.2
+    },
+    {
+      "id": "line_softness",
+      "name": "Line Softness",
+      "type": "float",
+      "default": 0.01,
+      "min": 0.001,
+      "max": 0.2
+    },
+    {
+      "id": "line_strength",
+      "name": "Line Strength",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 5
+    },
+    {
+      "id": "length_attenuation",
+      "name": "Length Attenuation",
+      "type": "float",
+      "default": 0.5,
+      "min": 0,
+      "max": 5
+    },
+    {
+      "id": "point_radius",
+      "name": "Point Radius",
+      "type": "float",
+      "default": 0.025,
+      "min": 0.001,
+      "max": 0.5
+    },
+    {
+      "id": "point_strength",
+      "name": "Point Strength",
+      "type": "float",
+      "default": 0.75,
+      "min": 0,
+      "max": 5
+    },
+    {
+      "id": "point_falloff_exponent",
+      "name": "Point Falloff Exponent",
+      "type": "float",
+      "default": 2,
+      "min": 0.5,
+      "max": 8
+    },
+    {
+      "id": "pulse_frequency",
+      "name": "Pulse Frequency",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "pulse_depth",
+      "name": "Pulse Depth",
+      "type": "float",
+      "default": 0.75,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "pulse_sharpness",
+      "name": "Pulse Sharpness",
+      "type": "float",
+      "default": 3,
+      "min": 0.25,
+      "max": 16
+    }
+  ],
+  "helpers": "\nuint maker_net_hash(uint x){x^=x>>16u;x*=0x7feb352du;x^=x>>15u;x*=0x846ca68bu;return x^(x>>16u);}\nfloat maker_net_rand(uint h){return float(maker_net_hash(h)>>8u)/16777216.0;}\nuint maker_net_key(vec2 c,float seed){ivec2 i=ivec2(clamp(c,vec2(-1e9),vec2(1e9)));return maker_net_hash(uint(i.x)^maker_net_hash(uint(i.y))^maker_net_hash(uint(seed)));}\nvec2 maker_net_vertex(vec2 c,float seed,float t,vec2 a,float f,float v){uint h=maker_net_key(c,seed);vec2 phase=vec2(maker_net_rand(h+1u),maker_net_rand(h+2u));vec2 rate=f*(1.0+v*(2.0*vec2(maker_net_rand(h+3u),maker_net_rand(h+4u))-1.0));return c+0.5+a*sin(6.28318530718*(rate*t+phase));}\nstruct MakerNetResult{float total;float lines;float points;float point_distance;float segment_distance;};\nMakerNetResult maker_net_eval(vec2 pos,float t,float dm,float pm,float size,float seed,vec2 amp,float freq,float variation,float topology,float width,float softness,float ls,float atten,float radius,float ps,float exponent,float pf,float depth,float sharp){\n float s=max(size,0.01);vec2 q=pos/s;vec2 base=floor(q);vec2 a=clamp(amp*max(dm,0.0),vec2(0.0),vec2(0.45));\n vec2 verts[121];for(int y=0;y<11;y++)for(int x=0;x<11;x++){vec2 cell=base+vec2(x-5,y-5);verts[y*11+x]=maker_net_vertex(cell,seed,t,a,freq,variation)-base;}\n vec2 local=q-base;float lines=0.0,points=0.0,pd=1e10,sd=1e10;\n const ivec2 offsets[6]=ivec2[6](ivec2(1,0),ivec2(0,1),ivec2(1,1),ivec2(-1,1),ivec2(2,0),ivec2(0,2));\n int count=topology<0.5?2:(topology<1.5?4:6);\n for(int y=2;y<9;y++)for(int x=2;x<9;x++){\n vec2 v=verts[y*11+x];float dist=length(local-v);pd=min(pd,dist);\n if(dist<2.0){float phase=maker_net_rand(maker_net_key(base+vec2(x-5,y-5),seed)+5u);float pulse=mix(1.0,pow(0.5+0.5*cos(6.28318530718*(pf*t+phase)),max(sharp,0.25)),clamp(depth,0.0,1.0));points+=ps*max(pm,0.0)*pulse*(1.0-smoothstep(1.5,2.0,dist))/(1.0+pow(dist/max(radius,0.001),max(exponent,0.5)));}\n for(int j=0;j<6;j++){if(j>=count)break;ivec2 b=ivec2(x,y)+offsets[j];if(any(lessThan(b,ivec2(0)))||any(greaterThan(b,ivec2(10))))continue;vec2 e=verts[b.y*11+b.x]-v;float l2=dot(e,e);float u=l2>1e-12?clamp(dot(local-v,e)/l2,0.0,1.0):0.0;float d=length(local-v-u*e);sd=min(sd,d);lines+=ls*(1.0-smoothstep(width,width+max(softness,0.001),d))/(1.0+atten*l2);}\n }\n return MakerNetResult(lines+points,lines,points,pd*s,sd*s);\n}",
+  "glsl_outputs": {
+    "network_intensity": "maker_net_eval({position},{time},{displacement_multiplier},{pulse_multiplier},{cell_size},{seed},vec2({x_displacement},{y_displacement}),{motion_frequency},{frequency_variation},{connection_topology},{line_width},{line_softness},{line_strength},{length_attenuation},{point_radius},{point_strength},{point_falloff_exponent},{pulse_frequency},{pulse_depth},{pulse_sharpness}).total",
+    "line_intensity": "maker_net_eval({position},{time},{displacement_multiplier},{pulse_multiplier},{cell_size},{seed},vec2({x_displacement},{y_displacement}),{motion_frequency},{frequency_variation},{connection_topology},{line_width},{line_softness},{line_strength},{length_attenuation},{point_radius},{point_strength},{point_falloff_exponent},{pulse_frequency},{pulse_depth},{pulse_sharpness}).lines",
+    "point_intensity": "maker_net_eval({position},{time},{displacement_multiplier},{pulse_multiplier},{cell_size},{seed},vec2({x_displacement},{y_displacement}),{motion_frequency},{frequency_variation},{connection_topology},{line_width},{line_softness},{line_strength},{length_attenuation},{point_radius},{point_strength},{point_falloff_exponent},{pulse_frequency},{pulse_depth},{pulse_sharpness}).points",
+    "nearest_point_distance": "maker_net_eval({position},{time},{displacement_multiplier},{pulse_multiplier},{cell_size},{seed},vec2({x_displacement},{y_displacement}),{motion_frequency},{frequency_variation},{connection_topology},{line_width},{line_softness},{line_strength},{length_attenuation},{point_radius},{point_strength},{point_falloff_exponent},{pulse_frequency},{pulse_depth},{pulse_sharpness}).point_distance",
+    "nearest_segment_distance": "maker_net_eval({position},{time},{displacement_multiplier},{pulse_multiplier},{cell_size},{seed},vec2({x_displacement},{y_displacement}),{motion_frequency},{frequency_variation},{connection_topology},{line_width},{line_softness},{line_strength},{length_attenuation},{point_radius},{point_strength},{point_falloff_exponent},{pulse_frequency},{pulse_depth},{pulse_sharpness}).segment_distance"
+  }
+}
