@@ -1,0 +1,129 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.math.coupled_trigonometric_field_3d",
+  "name": "Coupled Trigonometric Field 3D",
+  "category": "Math",
+  "created_by": "Screenshaver",
+  "description": "Generates cyclically coupled spatial trigonometric components and their scalar mean.",
+  "uses": "Procedural masks, coordinate modulation, interference and material variation.",
+  "notes": "Forward coupling uses YZX; reverse uses ZXY. Spatial and coupling frequencies are angular frequencies in radians per coordinate unit. Animation speed is radians per second; phase offset is degrees. Scalar outputs are bounded for finite ordinary inputs.",
+  "header_color": "#C49A55",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "default": "vec3(maker_uv,0.0)",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "time",
+      "name": "Time",
+      "type": "float",
+      "default": "u_time",
+      "semantic_role": "time"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "signed",
+      "name": "Signed Value",
+      "type": "float"
+    },
+    {
+      "id": "normalized",
+      "name": "Normalized Value",
+      "type": "float"
+    },
+    {
+      "id": "components",
+      "name": "Component Values",
+      "type": "vec3"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "frequency",
+      "name": "Spatial Frequency",
+      "type": "float",
+      "default": 4,
+      "min": 0,
+      "max": 64
+    },
+    {
+      "id": "coupling",
+      "name": "Coupling Strength",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "coupling_frequency",
+      "name": "Coupling Frequency",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 16
+    },
+    {
+      "id": "speed",
+      "name": "Animation Speed",
+      "type": "float",
+      "default": 0,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "phase",
+      "name": "Phase Offset",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "outer_function",
+      "name": "Outer Function",
+      "type": "choice",
+      "default": 0,
+      "min": 0,
+      "max": 1,
+      "options": [
+        "Sine",
+        "Cosine"
+      ]
+    },
+    {
+      "id": "inner_function",
+      "name": "Inner Function",
+      "type": "choice",
+      "default": 0,
+      "min": 0,
+      "max": 1,
+      "options": [
+        "Sine",
+        "Cosine"
+      ]
+    },
+    {
+      "id": "direction",
+      "name": "Coupling Direction",
+      "type": "choice",
+      "default": 0,
+      "min": 0,
+      "max": 1,
+      "options": [
+        "Forward",
+        "Reverse"
+      ]
+    }
+  ],
+  "helpers": "vec3 maker_coupled_trig(vec3 p,float t,float k,float a,float h,float speed,float phase,float outer_mode,float inner_mode,float direction){\n vec3 neighbor=direction<0.5?p.yzx:p.zxy;\n vec3 inner=inner_mode<0.5?sin(h*neighbor):cos(h*neighbor);\n vec3 angle=k*p+a*inner+vec3(radians(phase)+speed*t);\n return outer_mode<0.5?sin(angle):cos(angle);\n}\nfloat maker_coupled_trig_mean(vec3 q){return clamp(dot(q,vec3(1.0/3.0)),-1.0,1.0);}\n",
+  "glsl_outputs": {
+    "signed": "maker_coupled_trig_mean(maker_coupled_trig({position},{time},{frequency},{coupling},{coupling_frequency},{speed},{phase},{outer_function},{inner_function},{direction}))",
+    "normalized": "(0.5+0.5*maker_coupled_trig_mean(maker_coupled_trig({position},{time},{frequency},{coupling},{coupling_frequency},{speed},{phase},{outer_function},{inner_function},{direction})))",
+    "components": "maker_coupled_trig({position},{time},{frequency},{coupling},{coupling_frequency},{speed},{phase},{outer_function},{inner_function},{direction})"
+  }
+}

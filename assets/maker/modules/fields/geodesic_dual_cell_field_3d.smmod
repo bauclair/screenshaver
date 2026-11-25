@@ -1,0 +1,102 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.geodesic_dual_cell_field_3d",
+  "name": "Geodesic Dual Cell Field 3D",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "description": "Local three-vertex angular partition; not exact global Voronoi. Metric in radians, negative inside, gap is total separation. Local index is not a global cell ID.",
+  "uses": "Procedural geometry and animation compositions.",
+  "notes": "Local three-vertex angular partition; not exact global Voronoi. Metric in radians, negative inside, gap is total separation. Local index is not a global cell ID.",
+  "header_color": "#568B78",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "default": "vec3(maker_uv,0.0)",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "a",
+      "name": "Triangle Vertex A",
+      "type": "vec3",
+      "default": "vec3(1,0,0)"
+    },
+    {
+      "id": "b",
+      "name": "Triangle Vertex B",
+      "type": "vec3",
+      "default": "vec3(0,1,0)"
+    },
+    {
+      "id": "c",
+      "name": "Triangle Vertex C",
+      "type": "vec3",
+      "default": "vec3(0,0,1)"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "center",
+      "name": "Cell Center Direction",
+      "type": "vec3"
+    },
+    {
+      "id": "metric",
+      "name": "Boundary Metric",
+      "type": "float"
+    },
+    {
+      "id": "interior",
+      "name": "Interior Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    },
+    {
+      "id": "boundary",
+      "name": "Boundary Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    },
+    {
+      "id": "index",
+      "name": "Local Vertex Index",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "gap",
+      "name": "Angular Gap",
+      "type": "float",
+      "default": 0.5,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "width",
+      "name": "Boundary Half Width",
+      "type": "float",
+      "default": 0.5,
+      "min": 0.01,
+      "max": 10
+    },
+    {
+      "id": "softness",
+      "name": "Edge Softness",
+      "type": "float",
+      "default": 0.25,
+      "min": 0.01,
+      "max": 5
+    }
+  ],
+  "helpers": "struct MakerGeoDual {vec3 center;float metric;float interior;float boundary;float index;};\nvec3 maker_geo_dual_unit(vec3 p){float l=length(p);return l>1e-8?p/l:vec3(0,0,1);}\nMakerGeoDual maker_geo_dual(vec3 p,vec3 a,vec3 b,vec3 c,float gap,float width,float softness){\n vec3 q=maker_geo_dual_unit(p);vec3 vv[3]=vec3[3](maker_geo_dual_unit(a),maker_geo_dual_unit(b),maker_geo_dual_unit(c));int best=0;\n for(int i=1;i<3;i++)if(dot(q,vv[i])>dot(q,vv[best]))best=i;\n float clearance=1.57079632679;int valid=0;for(int i=0;i<3;i++){if(i==best)continue;vec3 delta=vv[best]-vv[i];float l=length(delta);if(l>1e-8){clearance=min(clearance,asin(clamp(dot(q,delta/l),0.0,1.0)));valid++;}}\n if(valid==0)return MakerGeoDual(vv[best],1.57079632679,0.0,0.0,float(best));\n float metric=radians(gap)*0.5-clearance;float soft=max(radians(softness),1e-6);float interior=1.0-smoothstep(-soft,soft,metric);float boundary=1.0-smoothstep(radians(width),radians(width)+soft,abs(metric));return MakerGeoDual(vv[best],metric,interior,boundary,float(best));\n}",
+  "glsl_outputs": {
+    "center": "maker_geo_dual({position},{a},{b},{c},{gap},{width},{softness}).center",
+    "metric": "maker_geo_dual({position},{a},{b},{c},{gap},{width},{softness}).metric",
+    "interior": "maker_geo_dual({position},{a},{b},{c},{gap},{width},{softness}).interior",
+    "boundary": "maker_geo_dual({position},{a},{b},{c},{gap},{width},{softness}).boundary",
+    "index": "maker_geo_dual({position},{a},{b},{c},{gap},{width},{softness}).index"
+  }
+}

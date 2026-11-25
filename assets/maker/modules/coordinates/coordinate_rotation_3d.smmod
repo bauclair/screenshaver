@@ -6,7 +6,7 @@
   "created_by": "Screenshaver",
   "description": "Applies right-handed rotations directly to a three-dimensional coordinate.",
   "uses": "Animated sampling coordinates, spherical projections and procedural geometry.",
-  "notes": "Angles are degrees; animation speeds are degrees per second. Fixed rotation order X then Y then Z. Rotates around the origin.",
+  "notes": "Angles are degrees; animation speeds are degrees per second. Fixed rotation order X then Y then Z. Rotates around the origin. Rotation Modulation adds per-axis angles in degrees before conversion to radians.",
   "header_color": "#557C9C",
   "terminal": false,
   "inputs": [
@@ -23,6 +23,12 @@
       "type": "float",
       "semantic_role": "time",
       "default": "u_time"
+    },
+    {
+      "id": "rotation_modulation",
+      "name": "Rotation Modulation",
+      "type": "vec3",
+      "default": "vec3(0.0)"
     }
   ],
   "outputs": [
@@ -84,5 +90,5 @@
     }
   ],
   "helpers": "vec3 maker_coordinate_rotation_xyz(vec3 p,vec3 angles){\n vec3 c=cos(angles),s=sin(angles);\n p=vec3(p.x,c.x*p.y-s.x*p.z,s.x*p.y+c.x*p.z);\n p=vec3(c.y*p.x+s.y*p.z,p.y,-s.y*p.x+c.y*p.z);\n return vec3(c.z*p.x-s.z*p.y,s.z*p.x+c.z*p.y,p.z);\n}",
-  "glsl": "maker_coordinate_rotation_xyz({position},radians(vec3({angle_x},{angle_y},{angle_z})+{time}*vec3({speed_x},{speed_y},{speed_z})))"
+  "glsl": "maker_coordinate_rotation_xyz({position},radians(vec3({angle_x},{angle_y},{angle_z})+{time}*vec3({speed_x},{speed_y},{speed_z})+{rotation_modulation}))"
 }

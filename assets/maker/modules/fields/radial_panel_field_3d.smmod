@@ -1,0 +1,105 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.radial_panel_field_3d",
+  "name": "Radial Panel Field 3D",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "description": "Radial shell intersected with angular boundary estimate in radians. Negative inside. Smooth maximum rounds the intersection inward; not an exact SDF. Depth zero at outer radius, one at inner radius.",
+  "uses": "Procedural geometry and animation compositions.",
+  "notes": "Radial shell intersected with angular boundary estimate in radians. Negative inside. Smooth maximum rounds the intersection inward; not an exact SDF. Depth zero at outer radius, one at inner radius.",
+  "header_color": "#568B78",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "default": "vec3(maker_uv,0.0)",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "angular",
+      "name": "Angular Boundary Metric",
+      "type": "float",
+      "default": "-1.5707963"
+    },
+    {
+      "id": "radius_mod",
+      "name": "Radius Modulation",
+      "type": "float",
+      "default": "0.0"
+    },
+    {
+      "id": "thickness_mod",
+      "name": "Thickness Modulation",
+      "type": "float",
+      "default": "0.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "distance",
+      "name": "Panel Distance",
+      "type": "float",
+      "semantic_role": "distance"
+    },
+    {
+      "id": "radial",
+      "name": "Radial Distance",
+      "type": "float",
+      "semantic_role": "distance"
+    },
+    {
+      "id": "depth",
+      "name": "Depth Fraction",
+      "type": "float"
+    },
+    {
+      "id": "edge",
+      "name": "Edge Proximity",
+      "type": "float",
+      "semantic_role": "mask"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "radius",
+      "name": "Outer Radius",
+      "type": "float",
+      "default": 2,
+      "min": 0.01,
+      "max": 20
+    },
+    {
+      "id": "thickness",
+      "name": "Thickness",
+      "type": "float",
+      "default": 0.2,
+      "min": 0.001,
+      "max": 20
+    },
+    {
+      "id": "rounding",
+      "name": "Edge Rounding",
+      "type": "float",
+      "default": 0.025,
+      "min": 0,
+      "max": 0.5
+    },
+    {
+      "id": "highlight",
+      "name": "Edge Highlight Width",
+      "type": "float",
+      "default": 0.05,
+      "min": 0.001,
+      "max": 1
+    }
+  ],
+  "helpers": "struct MakerRadialPanel {float distance;float radial;float depth;float edge;};\nMakerRadialPanel maker_radial_panel(vec3 p,float angular,float rm,float tm,float radius,float thickness,float rounding,float highlight){\n float r=clamp(radius+rm,0.01,20.0),t=clamp(thickness+tm,0.001,r),l=length(p);float dr=max(l-r,r-t-l);if(t>=r)dr=l-r;\n float da=l*sin(clamp(angular,-1.57079632679,1.57079632679));float dist=max(dr,da);if(rounding>0.0){float h=max(rounding-abs(dr-da),0.0)/rounding;dist+=0.25*rounding*h*h;}\n return MakerRadialPanel(dist,dr,clamp((r-l)/t,0.0,1.0),1.0-smoothstep(0.0,max(highlight,0.001),abs(da)));\n}",
+  "glsl_outputs": {
+    "distance": "maker_radial_panel({position},{angular},{radius_mod},{thickness_mod},{radius},{thickness},{rounding},{highlight}).distance",
+    "radial": "maker_radial_panel({position},{angular},{radius_mod},{thickness_mod},{radius},{thickness},{rounding},{highlight}).radial",
+    "depth": "maker_radial_panel({position},{angular},{radius_mod},{thickness_mod},{radius},{thickness},{rounding},{highlight}).depth",
+    "edge": "maker_radial_panel({position},{angular},{radius_mod},{thickness_mod},{radius},{thickness},{rounding},{highlight}).edge"
+  }
+}

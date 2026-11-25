@@ -1,0 +1,83 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.geodesic_triangle_coordinates_3d",
+  "name": "Geodesic Triangle Coordinates 3D",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "description": "Integer planar subdivision followed by radial projection. Local barycentric weights refer to the planar subdivision before projection. Boundary ties use the lower triangle where possible.",
+  "uses": "Procedural geometry and animation compositions.",
+  "notes": "Integer planar subdivision followed by radial projection. Local barycentric weights refer to the planar subdivision before projection. Boundary ties use the lower triangle where possible.",
+  "header_color": "#627FC2",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "a",
+      "name": "Vertex A",
+      "type": "vec3",
+      "default": "vec3(1,0,0)"
+    },
+    {
+      "id": "b",
+      "name": "Vertex B",
+      "type": "vec3",
+      "default": "vec3(0,1,0)"
+    },
+    {
+      "id": "c",
+      "name": "Vertex C",
+      "type": "vec3",
+      "default": "vec3(0,0,1)"
+    },
+    {
+      "id": "bary",
+      "name": "Barycentric Coordinates",
+      "type": "vec3",
+      "default": "vec3(0.33333333)"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "va",
+      "name": "Subdivision Vertex A",
+      "type": "vec3"
+    },
+    {
+      "id": "vb",
+      "name": "Subdivision Vertex B",
+      "type": "vec3"
+    },
+    {
+      "id": "vc",
+      "name": "Subdivision Vertex C",
+      "type": "vec3"
+    },
+    {
+      "id": "center",
+      "name": "Triangle Center Direction",
+      "type": "vec3"
+    },
+    {
+      "id": "local",
+      "name": "Local Barycentric Coordinates",
+      "type": "vec3"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "frequency",
+      "name": "Subdivision Frequency",
+      "type": "float",
+      "default": 4,
+      "min": 1,
+      "max": 32
+    }
+  ],
+  "helpers": "struct MakerGeoTri {vec3 a;vec3 b;vec3 c;vec3 center;vec3 local;};\nvec3 maker_geo_unit(vec3 p){float l=length(p);return l>1e-8?p/l:vec3(0,0,1);}\nvec3 maker_geo_vertex(vec3 a,vec3 b,vec3 c,vec2 q,float n){return maker_geo_unit(a*(1.0-(q.x+q.y)/n)+b*q.x/n+c*q.y/n);}\nMakerGeoTri maker_geo_triangle(vec3 a,vec3 b,vec3 c,vec3 bary,float freq){\n float n=clamp(floor(freq+0.5),1.0,32.0);vec3 w=max(bary,vec3(0));float s=w.x+w.y+w.z;w=s>1e-8?w/s:vec3(1,0,0);\n vec2 q=w.yz*n;vec2 ij=min(floor(q),vec2(n-1.0));if(ij.x+ij.y>=n){if(ij.x>0.0)ij.x-=1.0;else ij.y-=1.0;}\n vec2 f=q-ij;vec2 u=ij,v=ij+vec2(1,0),z=ij+vec2(0,1);vec3 local=vec3(1.0-f.x-f.y,f.x,f.y);\n if(f.x+f.y>1.0 && ij.x+ij.y<n-1.0){u=ij+vec2(1,1);v=ij+vec2(0,1);z=ij+vec2(1,0);local=vec3(f.x+f.y-1.0,1.0-f.x,1.0-f.y);}\n vec3 aa=maker_geo_vertex(a,b,c,u,n),bb=maker_geo_vertex(a,b,c,v,n),cc=maker_geo_vertex(a,b,c,z,n);local=max(local,vec3(0));local/=max(dot(local,vec3(1)),1e-8);\n return MakerGeoTri(aa,bb,cc,maker_geo_unit(aa+bb+cc),local);\n}",
+  "glsl_outputs": {
+    "va": "maker_geo_triangle({a},{b},{c},{bary},{frequency}).a",
+    "vb": "maker_geo_triangle({a},{b},{c},{bary},{frequency}).b",
+    "vc": "maker_geo_triangle({a},{b},{c},{bary},{frequency}).c",
+    "center": "maker_geo_triangle({a},{b},{c},{bary},{frequency}).center",
+    "local": "maker_geo_triangle({a},{b},{c},{bary},{frequency}).local"
+  }
+}

@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.icosahedral_truncated_face_field_3d",
+  "name": "Icosahedral Truncated Face Field 3D",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "description": "Constructs a corner-truncated triangular region from barycentric coordinates.",
+  "uses": "Procedural spherical geometry and surface decoration.",
+  "notes": "Input should sum to one. Metric is signed dimensionless constraint violation, not an exact distance. Interior includes softened exterior; corner mask covers removed corners within the triangle.",
+  "header_color": "#568B78",
+  "inputs": [
+    {
+      "id": "barycentric",
+      "name": "Barycentric Coordinates",
+      "type": "vec3",
+      "default": "vec3(0.333333333)"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "interior",
+      "name": "Interior Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    },
+    {
+      "id": "boundary",
+      "name": "Boundary Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    },
+    {
+      "id": "corner",
+      "name": "Corner Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    },
+    {
+      "id": "metric",
+      "name": "Boundary Metric",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "truncation",
+      "name": "Corner Truncation",
+      "type": "float",
+      "default": 0.3333333333333333,
+      "min": 0,
+      "max": 0.49
+    },
+    {
+      "id": "width",
+      "name": "Boundary Half Width",
+      "type": "float",
+      "default": 0.015,
+      "min": 0.001,
+      "max": 0.2
+    },
+    {
+      "id": "softness",
+      "name": "Edge Softness",
+      "type": "float",
+      "default": 0.01,
+      "min": 0.001,
+      "max": 0.1
+    }
+  ],
+  "helpers": "vec4 maker_truncated_face(vec3 b,float cut,float width,float softness){\n float lo=min(b.x,min(b.y,b.z)),hi=max(b.x,max(b.y,b.z));\n float d=max(-lo,hi-(1.0-cut));float interior=1.0-smoothstep(0.0,softness,d);\n float boundary=1.0-smoothstep(width,width+softness,abs(d));\n float corner=smoothstep(1.0-cut,1.0-cut+softness,hi)*(1.0-smoothstep(0.0,softness,-lo));\n return vec4(interior,boundary,corner,d);\n}",
+  "glsl_outputs": {
+    "interior": "maker_truncated_face({barycentric},{truncation},{width},{softness}).x",
+    "boundary": "maker_truncated_face({barycentric},{truncation},{width},{softness}).y",
+    "corner": "maker_truncated_face({barycentric},{truncation},{width},{softness}).z",
+    "metric": "maker_truncated_face({barycentric},{truncation},{width},{softness}).w"
+  },
+  "terminal": false
+}

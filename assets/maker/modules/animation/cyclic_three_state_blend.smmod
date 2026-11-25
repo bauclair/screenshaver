@@ -1,0 +1,108 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.animation.cyclic_three_state_blend",
+  "name": "Cyclic Three-State Blend",
+  "category": "Animation",
+  "created_by": "Screenshaver",
+  "description": "Stateless three-state cycle. Transition occurs at end of each state. Progress is raw transition fraction; weights use selected easing. Negative time wraps.",
+  "uses": "Procedural geometry and animation compositions.",
+  "notes": "Stateless three-state cycle. Transition occurs at end of each state. Progress is raw transition fraction; weights use selected easing. Negative time wraps.",
+  "header_color": "#B477C7",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "time",
+      "name": "Time",
+      "type": "float",
+      "default": "u_time",
+      "semantic_role": "time"
+    },
+    {
+      "id": "a",
+      "name": "State A",
+      "type": "float",
+      "default": "0.0"
+    },
+    {
+      "id": "b",
+      "name": "State B",
+      "type": "float",
+      "default": "0.5"
+    },
+    {
+      "id": "c",
+      "name": "State C",
+      "type": "float",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "value",
+      "name": "Blended Value",
+      "type": "float"
+    },
+    {
+      "id": "index",
+      "name": "Active State Index",
+      "type": "float"
+    },
+    {
+      "id": "progress",
+      "name": "Transition Progress",
+      "type": "float"
+    },
+    {
+      "id": "weights",
+      "name": "State Weights",
+      "type": "vec3"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "duration",
+      "name": "State Duration",
+      "type": "float",
+      "default": 6,
+      "min": 0.1,
+      "max": 120
+    },
+    {
+      "id": "transition",
+      "name": "Transition Duration",
+      "type": "float",
+      "default": 2,
+      "min": 0,
+      "max": 120
+    },
+    {
+      "id": "offset",
+      "name": "Time Offset",
+      "type": "float",
+      "default": 0,
+      "min": -120,
+      "max": 120
+    },
+    {
+      "id": "interpolation",
+      "name": "Interpolation",
+      "type": "choice",
+      "default": 3,
+      "min": 0,
+      "max": 3,
+      "options": [
+        "Linear",
+        "Smooth",
+        "Smoother",
+        "Cosine"
+      ]
+    }
+  ],
+  "helpers": "struct MakerCyclicBlend {float value;float index;float progress;vec3 weights;};\nMakerCyclicBlend maker_cyclic_blend(float t,float a,float b,float c,float duration,float transition,float offset,float mode){\n float d=max(duration,0.1),f=clamp(transition,0.0,d),phase=mod(t+offset,3.0*d);int i=int(clamp(floor(phase/d),0.0,2.0));float local=phase-float(i)*d;float u=f>0.0?clamp((local-d+f)/f,0.0,1.0):0.0;float w=u;\n if(mode>=2.5)w=0.5-0.5*cos(3.14159265359*u);else if(mode>=1.5)w=u*u*u*(u*(6.0*u-15.0)+10.0);else if(mode>=0.5)w=u*u*(3.0-2.0*u);\n vec3 weights=vec3(0);weights[i]=1.0-w;weights[(i+1)%3]=w;return MakerCyclicBlend(dot(weights,vec3(a,b,c)),float(i),u,weights);\n}",
+  "glsl_outputs": {
+    "value": "maker_cyclic_blend({time},{a},{b},{c},{duration},{transition},{offset},{interpolation}).value",
+    "index": "maker_cyclic_blend({time},{a},{b},{c},{duration},{transition},{offset},{interpolation}).index",
+    "progress": "maker_cyclic_blend({time},{a},{b},{c},{duration},{transition},{offset},{interpolation}).progress",
+    "weights": "maker_cyclic_blend({time},{a},{b},{c},{duration},{transition},{offset},{interpolation}).weights"
+  }
+}

@@ -1,0 +1,91 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.spherical_great_circle_field_3d",
+  "name": "Spherical Great-Circle Field 3D",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "description": "Evaluates angular distance to a great circle or its minor arc.",
+  "uses": "Procedural spherical geometry and surface decoration.",
+  "notes": "Angles returned in radians. Signed angle always refers to supporting circle. Invalid zero or parallel endpoints and zero position return zero distances and zero mask.",
+  "header_color": "#568B78",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "default": "vec3(maker_uv,0.0)",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "direction_a",
+      "name": "Direction A",
+      "type": "vec3",
+      "default": "vec3(1.0,0.0,0.0)",
+      "semantic_role": "direction3d"
+    },
+    {
+      "id": "direction_b",
+      "name": "Direction B",
+      "type": "vec3",
+      "default": "vec3(0.0,1.0,0.0)",
+      "semantic_role": "direction3d"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "signed_angle",
+      "name": "Signed Angular Distance",
+      "type": "float",
+      "semantic_role": "angle"
+    },
+    {
+      "id": "angle",
+      "name": "Angular Distance",
+      "type": "float",
+      "semantic_role": "angle"
+    },
+    {
+      "id": "mask",
+      "name": "Line Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "width",
+      "name": "Angular Half Width",
+      "type": "float",
+      "default": 2,
+      "min": 0.01,
+      "max": 45
+    },
+    {
+      "id": "softness",
+      "name": "Edge Softness",
+      "type": "float",
+      "default": 1,
+      "min": 0.01,
+      "max": 30
+    },
+    {
+      "id": "extent",
+      "name": "Line Extent",
+      "type": "choice",
+      "default": 0,
+      "min": 0,
+      "max": 1,
+      "options": [
+        "Full Circle",
+        "Minor Arc"
+      ]
+    }
+  ],
+  "helpers": "vec3 maker_great_circle(vec3 p,vec3 a,vec3 b,float width,float softness,float extent){\n float lp=length(p),la=length(a),lb=length(b);if(min(lp,min(la,lb))<1e-8)return vec3(0.0);\n p/=lp;a/=la;b/=lb;vec3 n=cross(a,b);float ln=length(n);if(ln<1e-6)return vec3(0.0);n/=ln;\n float sd=asin(clamp(dot(p,n),-1.0,1.0)),d=abs(sd);\n if(extent>=0.5){vec3 proj=p-n*dot(p,n);float l=length(proj);d=min(acos(clamp(dot(p,a),-1.0,1.0)),acos(clamp(dot(p,b),-1.0,1.0)));if(l>1e-6){vec3 q=proj/l;if(dot(cross(a,q),n)>=-1e-6&&dot(cross(q,b),n)>=-1e-6)d=abs(sd);}}\n return vec3(sd,d,1.0-smoothstep(radians(width),radians(width+softness),d));\n}",
+  "glsl_outputs": {
+    "signed_angle": "maker_great_circle({position},{direction_a},{direction_b},{width},{softness},{extent}).x",
+    "angle": "maker_great_circle({position},{direction_a},{direction_b},{width},{softness},{extent}).y",
+    "mask": "maker_great_circle({position},{direction_a},{direction_b},{width},{softness},{extent}).z"
+  },
+  "terminal": false
+}

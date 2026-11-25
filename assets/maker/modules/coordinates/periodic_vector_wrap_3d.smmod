@@ -6,7 +6,7 @@
   "created_by": "Screenshaver",
   "description": "Wraps vector components into independently periodic intervals.",
   "uses": "Lattice interference, repeated textures and coordinate patterns.",
-  "notes": "Cell Index is floor(Vector / Period) in every mode. Centered outputs shift each positive fractional interval by half a period; they do not use nearest-cell rounding. Independent wrapping does not preserve the cube-coordinate zero-sum constraint.",
+  "notes": "Cell Index is floor(Vector / Period) in every mode. Centered outputs shift each positive fractional interval by half a period; they do not use nearest-cell rounding. Independent wrapping does not preserve the cube-coordinate zero-sum constraint. Unselected axes pass through unchanged in all modes and have zero cell indices.",
   "header_color": "#627FC2",
   "terminal": false,
   "inputs": [
@@ -65,11 +65,29 @@
         "Positive normalized",
         "Centered normalized"
       ]
+    },
+    {
+      "id": "wrap_axes",
+      "name": "Wrap Axes",
+      "type": "choice",
+      "default": 7,
+      "min": 0,
+      "max": 7,
+      "options": [
+        "None",
+        "X",
+        "Y",
+        "Z",
+        "XY",
+        "XZ",
+        "YZ",
+        "XYZ"
+      ]
     }
   ],
-  "helpers": "vec3 maker_periodic_vector_period(vec3 p){return max(abs(p),vec3(0.001));}\nvec3 maker_periodic_vector_cell(vec3 v,vec3 p){return floor(v/maker_periodic_vector_period(p));}\nvec3 maker_periodic_vector_wrap(vec3 v,vec3 p,float mode){\n p=maker_periodic_vector_period(p);\n vec3 f=fract(v/p);\n if(mode<0.5)return f*p;\n if(mode<1.5)return (f-0.5)*p;\n if(mode<2.5)return f;\n return 2.0*f-1.0;\n}",
+  "helpers": "vec3 maker_periodic_vector_period(vec3 p){return max(abs(p),vec3(0.001));}\nvec3 maker_periodic_vector_cell(vec3 v,vec3 p){return floor(v/maker_periodic_vector_period(p));}\nvec3 maker_periodic_vector_wrap(vec3 v,vec3 p,float mode){\n p=maker_periodic_vector_period(p);\n vec3 f=fract(v/p);\n if(mode<0.5)return f*p;\n if(mode<1.5)return (f-0.5)*p;\n if(mode<2.5)return f;\n return 2.0*f-1.0;\n}\nbvec3 maker_periodic_wrap_axes(float axes){\n int m=int(clamp(floor(axes+0.5),0.0,7.0));\n return bvec3(m==1||m==4||m==5||m==7,m==2||m==4||m==6||m==7,m==3||m==5||m==6||m==7);\n}\nvec3 maker_periodic_wrap_selected(vec3 v,vec3 p,float mode,float axes){\n return mix(v,maker_periodic_vector_wrap(v,p,mode),maker_periodic_wrap_axes(axes));\n}\nvec3 maker_periodic_cell_selected(vec3 v,vec3 p,float axes){\n return mix(vec3(0.0),maker_periodic_vector_cell(v,p),maker_periodic_wrap_axes(axes));\n}",
   "glsl_outputs": {
-    "wrapped": "maker_periodic_vector_wrap({vector},vec3({period_x},{period_y},{period_z}),{range})",
-    "cell": "maker_periodic_vector_cell({vector},vec3({period_x},{period_y},{period_z}))"
+    "wrapped": "maker_periodic_wrap_selected({vector},vec3({period_x},{period_y},{period_z}),{range},{wrap_axes})",
+    "cell": "maker_periodic_cell_selected({vector},vec3({period_x},{period_y},{period_z}),{wrap_axes})"
   }
 }

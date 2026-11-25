@@ -1,0 +1,67 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.icosahedral_face_coordinates_3d",
+  "name": "Icosahedral Face Coordinates 3D",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "description": "Partitions directions into the twenty triangular faces of a regular icosahedron.",
+  "uses": "Procedural spherical geometry and surface decoration.",
+  "notes": "Unit vertices, outward face ordering, zero-based face index. Zero position uses +Y. Exact score ties retain first face; floating point near boundaries can select either adjacent face. Barycentric coordinates describe planar ray intersection, not spherical area.",
+  "header_color": "#627FC2",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "default": "vec3(maker_uv,0.0)",
+      "semantic_role": "position3d"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "face_center",
+      "name": "Face Center Direction",
+      "type": "vec3",
+      "semantic_role": "direction3d"
+    },
+    {
+      "id": "vertex_a",
+      "name": "Vertex A",
+      "type": "vec3",
+      "semantic_role": "direction3d"
+    },
+    {
+      "id": "vertex_b",
+      "name": "Vertex B",
+      "type": "vec3",
+      "semantic_role": "direction3d"
+    },
+    {
+      "id": "vertex_c",
+      "name": "Vertex C",
+      "type": "vec3",
+      "semantic_role": "direction3d"
+    },
+    {
+      "id": "face_index",
+      "name": "Face Index",
+      "type": "float"
+    },
+    {
+      "id": "barycentric",
+      "name": "Barycentric Coordinates",
+      "type": "vec3"
+    }
+  ],
+  "parameters": [],
+  "helpers": "struct MakerIcosaFace { vec3 center; vec3 a; vec3 b; vec3 c; float index; vec3 bary; };\nMakerIcosaFace maker_icosa_face(vec3 p){\n const vec3 vertices[12]=vec3[12](vec3(0.0000000000,-0.5257311121,-0.8506508084),\nvec3(0.0000000000,-0.5257311121,0.8506508084),\nvec3(0.0000000000,0.5257311121,-0.8506508084),\nvec3(0.0000000000,0.5257311121,0.8506508084),\nvec3(-0.5257311121,-0.8506508084,0.0000000000),\nvec3(-0.5257311121,0.8506508084,0.0000000000),\nvec3(0.5257311121,-0.8506508084,0.0000000000),\nvec3(0.5257311121,0.8506508084,0.0000000000),\nvec3(-0.8506508084,0.0000000000,-0.5257311121),\nvec3(0.8506508084,0.0000000000,-0.5257311121),\nvec3(-0.8506508084,0.0000000000,0.5257311121),\nvec3(0.8506508084,0.0000000000,0.5257311121));\n const ivec3 faces[20]=ivec3[20](ivec3(0,2,9),\nivec3(0,4,8),\nivec3(0,6,4),\nivec3(0,8,2),\nivec3(0,9,6),\nivec3(1,3,10),\nivec3(1,4,6),\nivec3(1,6,11),\nivec3(1,10,4),\nivec3(1,11,3),\nivec3(2,5,7),\nivec3(2,7,9),\nivec3(2,8,5),\nivec3(3,5,10),\nivec3(3,7,5),\nivec3(3,11,7),\nivec3(4,10,8),\nivec3(5,8,10),\nivec3(6,9,11),\nivec3(7,11,9));\n float m=max(abs(p.x),max(abs(p.y),abs(p.z))); vec3 q=m>0.0?normalize(p/m):vec3(0.0,1.0,0.0);\n float best=-2.0; int idx=0; vec3 n=vec3(0.0);\n for(int i=0;i<20;++i){ivec3 f=faces[i];vec3 cn=normalize(vertices[f.x]+vertices[f.y]+vertices[f.z]);float s=dot(q,cn);if(s>best){best=s;idx=i;n=cn;}}\n ivec3 f=faces[idx];vec3 a=vertices[f.x],b=vertices[f.y],c=vertices[f.z];\n vec3 x=q*(dot(n,a)/max(best,0.000001));vec3 e=b-a,g=c-a,r=x-a;\n float ee=dot(e,e),eg=dot(e,g),gg=dot(g,g),re=dot(r,e),rg=dot(r,g),den=ee*gg-eg*eg;\n float u=(gg*re-eg*rg)/den,w=(ee*rg-eg*re)/den;\n vec3 bary=max(vec3(1.0-u-w,u,w),vec3(0.0));bary/=max(bary.x+bary.y+bary.z,0.000001);\n return MakerIcosaFace(n,a,b,c,float(idx),bary);\n}",
+  "glsl_outputs": {
+    "face_center": "maker_icosa_face({position}).center",
+    "vertex_a": "maker_icosa_face({position}).a",
+    "vertex_b": "maker_icosa_face({position}).b",
+    "vertex_c": "maker_icosa_face({position}).c",
+    "face_index": "maker_icosa_face({position}).index",
+    "barycentric": "maker_icosa_face({position}).bary"
+  },
+  "terminal": false
+}

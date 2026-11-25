@@ -9,6 +9,14 @@ impl Library {
  fn load()->Self{
     let mut result=Self{modules:BTreeMap::new(),categories:BTreeMap::new(),sources:BTreeMap::new(),errors:Vec::new(),catalog_fingerprint:0xcbf29ce484222325};
     let official=[
+      ("animation/cyclic_three_state_blend.smmod",include_str!("../assets/maker/modules/animation/cyclic_three_state_blend.smmod")),
+      ("fields/radial_panel_field_3d.smmod",include_str!("../assets/maker/modules/fields/radial_panel_field_3d.smmod")),
+      ("fields/geodesic_dual_cell_field_3d.smmod",include_str!("../assets/maker/modules/fields/geodesic_dual_cell_field_3d.smmod")),
+      ("coordinates/geodesic_triangle_coordinates_3d.smmod",include_str!("../assets/maker/modules/coordinates/geodesic_triangle_coordinates_3d.smmod")),
+      ("math/coupled_trigonometric_field_3d.smmod",include_str!("../assets/maker/modules/math/coupled_trigonometric_field_3d.smmod")),
+      ("fields/icosahedral_truncated_face_field_3d.smmod",include_str!("../assets/maker/modules/fields/icosahedral_truncated_face_field_3d.smmod")),
+      ("fields/spherical_great_circle_field_3d.smmod",include_str!("../assets/maker/modules/fields/spherical_great_circle_field_3d.smmod")),
+      ("coordinates/icosahedral_face_coordinates_3d.smmod",include_str!("../assets/maker/modules/coordinates/icosahedral_face_coordinates_3d.smmod")),
       ("animation/interpolated_procedural_sequence.smmod",include_str!("../assets/maker/modules/animation/interpolated_procedural_sequence.smmod")),
        ("coordinates/traveling_axial_coordinate_3d.smmod",include_str!("../assets/maker/modules/coordinates/traveling_axial_coordinate_3d.smmod")),
        ("coordinates/axial_rational_compression_3d.smmod",include_str!("../assets/maker/modules/coordinates/axial_rational_compression_3d.smmod")),

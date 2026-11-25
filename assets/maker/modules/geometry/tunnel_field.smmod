@@ -6,9 +6,9 @@
   "name": "Tunnel Field",
   "category": "Fields",
   "header_color": "#477D9A",
-  "description": "Signed-distance-like interior corridor field with square, round, and rounded-square cross-sections and an optional floor.",
+  "description": "Signed-distance-like interior corridor field with square, round, rounded-square, and hexagonal cross-sections and an optional floor.",
   "uses": "Procedural tunnels and caves, especially with triangle-noise displacement.",
-  "notes": "Port inputs provide a one-position field evaluation. The floor is min(wallDistance, y + floorHeight); floorHeight >= 2 disables the visible floor for the original proportions. Mode: square/round/rounded-square. For faithful ray marching, evaluate this field recursively at each sample position.",
+  "notes": "Port inputs provide a one-position field evaluation. The floor is min(wallDistance, y + floorHeight); floorHeight >= 2 disables the visible floor for the original proportions. Mode: square/round/rounded-square. For faithful ray marching, evaluate this field recursively at each sample position. Hexagonal mode uses maximum of the six normalized supporting-plane projections in scaled XY coordinates; radius is the apothem. Positive clearance inside; not exact exterior Euclidean distance.",
   "inputs": [
     {
       "id": "position",
@@ -43,11 +43,12 @@
       "type": "choice",
       "default": 0,
       "min": 0,
-      "max": 2,
+      "max": 3,
       "options": [
         "Square",
         "Round",
-        "Rounded square"
+        "Rounded square",
+        "Hexagonal"
       ]
     },
     {
@@ -91,6 +92,6 @@
       "max": 3
     }
   ],
-  "helpers": "float maker_corridor_tunnel(vec3 p,vec2 path,float noise,float crossSection,float sx,float sy,float radius,float floorHeight,float roughness){vec2 q=abs(p.xy-path)*vec2(sx,sy);float square=max(q.x,q.y);float roundShape=length(q);float rounded=pow(pow(q.x,4.0)+pow(q.y,4.0),0.25);float section=mix(mix(square,roundShape,step(0.5,crossSection)),rounded,step(1.5,crossSection));float wall=radius-section+(0.5-noise)*roughness;return min(wall,p.y+floorHeight);}",
+  "helpers": "float maker_corridor_tunnel(vec3 p,vec2 path,float noise,float crossSection,float sx,float sy,float radius,float floorHeight,float roughness){vec2 q=abs(p.xy-path)*vec2(sx,sy);float square=max(q.x,q.y);float roundShape=length(q);float rounded=pow(pow(q.x,4.0)+pow(q.y,4.0),0.25);float section=mix(mix(square,roundShape,step(0.5,crossSection)),rounded,step(1.5,crossSection));if(crossSection>=2.5){section=max(q.y,0.866025403784*q.x+0.5*q.y);}float wall=radius-section+(0.5-noise)*roughness;return min(wall,p.y+floorHeight);}",
   "glsl": "maker_corridor_tunnel({position},{path},{noise},{cross_section},{width_scale},{height_scale},{radius},{floor_height},{roughness})"
 }
