@@ -9,6 +9,12 @@ impl Library {
  fn load()->Self{
     let mut result=Self{modules:BTreeMap::new(),categories:BTreeMap::new(),sources:BTreeMap::new(),errors:Vec::new(),catalog_fingerprint:0xcbf29ce484222325};
     let official=[
+      ("animation/phased_step_cycle.smmod",include_str!("../assets/maker/modules/animation/phased_step_cycle.smmod")),
+      ("geometry/two_bone_joint_solver_3d.smmod",include_str!("../assets/maker/modules/geometry/two_bone_joint_solver_3d.smmod")),
+      ("coordinates/geometric_sequence_coordinates.smmod",include_str!("../assets/maker/modules/coordinates/geometric_sequence_coordinates.smmod")),
+      ("geometry/spherical_orbital_path_3d.smmod",include_str!("../assets/maker/modules/geometry/spherical_orbital_path_3d.smmod")),
+      ("geometry/sdf_capsule.smmod",include_str!("../assets/maker/modules/geometry/sdf_capsule.smmod")),
+      ("geometry/sdf_icosahedron.smmod",include_str!("../assets/maker/modules/geometry/sdf_icosahedron.smmod")),
       ("coordinates/concentric_ring_coordinates_2d.smmod",include_str!("../assets/maker/modules/coordinates/concentric_ring_coordinates_2d.smmod")),
       ("geometry/circular_arc_distance_2d.smmod",include_str!("../assets/maker/modules/geometry/circular_arc_distance_2d.smmod")),
       ("geometry/cyclic_spline_path_3d.smmod",include_str!("../assets/maker/modules/geometry/cyclic_spline_path_3d.smmod")),
@@ -30,7 +36,7 @@ impl Library {
        ("fields/sparse_random_cell_field_2d.smmod",include_str!("../assets/maker/modules/fields/sparse_random_cell_field_2d.smmod")),
       ("coordinates/rectangular_grid_coordinates_2d.smmod",include_str!("../assets/maker/modules/coordinates/rectangular_grid_coordinates_2d.smmod")),
       ("math/scalar_response_shaping.smmod",include_str!("../assets/maker/modules/math/scalar_response_shaping.smmod")),
-      ("color/three_stop_rgb_gradient.smmod",include_str!("../assets/maker/modules/color/three_stop_rgb_gradient.smmod")),
+      ("color/multi_stop_rgb_gradient.smmod",include_str!("../assets/maker/modules/color/multi_stop_rgb_gradient.smmod")),
 
     ("fields/propagating_radial_wavefront_2d.smmod",include_str!("../assets/maker/modules/fields/propagating_radial_wavefront_2d.smmod")),
     ("coordinates/polar_coordinate_mapping_2d.smmod",include_str!("../assets/maker/modules/coordinates/polar_coordinate_mapping_2d.smmod")),

@@ -5,9 +5,9 @@
   "category": "Color",
   "created_by": "Screenshaver",
   "header_color": "#B46A35",
-  "description": "Generates three phase-shifted sinusoidal color channels from a 2D position.",
+  "description": "Generates phase-wheel or independently configurable directional sinusoidal RGB channels.",
   "uses": "Psychedelic color patterns and coordinate-driven palettes.",
-  "notes": "Phase-wheel color design. Channel values are in [0,1] before brightness scaling.",
+  "notes": "Phase Wheel retains original behavior. Independent mode uses shared frequency and phase plus channel-specific directional frequencies and phases (degrees). Wave response precedes channel gain and bias, then shared brightness. Signed and HDR intermediate values are not clipped.",
   "inputs": [
     {
       "id": "position",
@@ -47,9 +47,151 @@
       "default": 0,
       "min": -6.283,
       "max": 6.283
+    },
+    {
+      "id": "channel_mode",
+      "name": "Channel Mode",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Phase Wheel",
+        "Independent"
+      ]
+    },
+    {
+      "id": "wave_response",
+      "name": "Wave Response",
+      "type": "choice",
+      "default": 2,
+      "options": [
+        "Signed",
+        "Normalized",
+        "Absolute",
+        "Squared"
+      ]
+    },
+    {
+      "id": "red_x_frequency",
+      "name": "Red X Frequency",
+      "type": "float",
+      "default": 1,
+      "min": -20,
+      "max": 20
+    },
+    {
+      "id": "red_y_frequency",
+      "name": "Red Y Frequency",
+      "type": "float",
+      "default": 0,
+      "min": -20,
+      "max": 20
+    },
+    {
+      "id": "red_phase",
+      "name": "Red Phase",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "red_gain",
+      "name": "Red Gain",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 5
+    },
+    {
+      "id": "red_bias",
+      "name": "Red Bias",
+      "type": "float",
+      "default": 0,
+      "min": -2,
+      "max": 2
+    },
+    {
+      "id": "green_x_frequency",
+      "name": "Green X Frequency",
+      "type": "float",
+      "default": 0,
+      "min": -20,
+      "max": 20
+    },
+    {
+      "id": "green_y_frequency",
+      "name": "Green Y Frequency",
+      "type": "float",
+      "default": 1,
+      "min": -20,
+      "max": 20
+    },
+    {
+      "id": "green_phase",
+      "name": "Green Phase",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "green_gain",
+      "name": "Green Gain",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 5
+    },
+    {
+      "id": "green_bias",
+      "name": "Green Bias",
+      "type": "float",
+      "default": 0,
+      "min": -2,
+      "max": 2
+    },
+    {
+      "id": "blue_x_frequency",
+      "name": "Blue X Frequency",
+      "type": "float",
+      "default": 1,
+      "min": -20,
+      "max": 20
+    },
+    {
+      "id": "blue_y_frequency",
+      "name": "Blue Y Frequency",
+      "type": "float",
+      "default": 1,
+      "min": -20,
+      "max": 20
+    },
+    {
+      "id": "blue_phase",
+      "name": "Blue Phase",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "blue_gain",
+      "name": "Blue Gain",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 5
+    },
+    {
+      "id": "blue_bias",
+      "name": "Blue Bias",
+      "type": "float",
+      "default": 0,
+      "min": -2,
+      "max": 2
     }
   ],
-  "helpers": "vec3 maker_sine_color_wheel(vec2 q,float f,float gain,float phase){float a=f*(q.x+0.35*q.y)+phase;float b=f*(q.y-0.25*q.x)+phase;return gain*(vec3(1.0)+sin(vec3(a,b,0.5*(a+b))+vec3(0.0,2.0943951,4.1887902)))*0.5;}",
-  "glsl": "maker_sine_color_wheel({position},{frequency},{brightness},{phase})",
+  "helpers": "vec3 maker_sine_color_wheel(vec2 q,float f,float gain,float phase){float a=f*(q.x+0.35*q.y)+phase;float b=f*(q.y-0.25*q.x)+phase;return gain*(vec3(1.0)+sin(vec3(a,b,0.5*(a+b))+vec3(0.0,2.0943951,4.1887902)))*0.5;}\nvec3 maker_sine_rgb_modes(vec2 p,float f,float brightness,float phase,float mode,float response,vec2 kr,vec2 kg,vec2 kb,vec3 phases,vec3 gains,vec3 biases){\n if(mode<0.5)return maker_sine_color_wheel(p,f,brightness,phase);\n vec3 wave=sin(f*vec3(dot(kr,p),dot(kg,p),dot(kb,p))+vec3(phase)+radians(phases));\n if(response>=2.5)wave*=wave;\n else if(response>=1.5)wave=abs(wave);\n else if(response>=0.5)wave=0.5+0.5*wave;\n return brightness*(gains*wave+biases);\n}\n",
+  "glsl": "maker_sine_rgb_modes({position},{frequency},{brightness},{phase},{channel_mode},{wave_response},vec2({red_x_frequency},{red_y_frequency}),vec2({green_x_frequency},{green_y_frequency}),vec2({blue_x_frequency},{blue_y_frequency}),vec3({red_phase},{green_phase},{blue_phase}),vec3({red_gain},{green_gain},{blue_gain}),vec3({red_bias},{green_bias},{blue_bias}))",
   "terminal": false
 }

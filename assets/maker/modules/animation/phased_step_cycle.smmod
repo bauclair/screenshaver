@@ -1,0 +1,145 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.animation.phased_step_cycle",
+  "name": "Phased Step Cycle",
+  "category": "Animation",
+  "created_by": "Screenshaver",
+  "description": "Phased Step Cycle procedural geometry and animation utility.",
+  "uses": "Phased Step Cycle procedural geometry and animation utility.",
+  "notes": "Phase in cycles. Travel extent is half range. Positive index lag delays phase. Signed amplitude scales both offsets.",
+  "header_color": "#627FC2",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "time",
+      "name": "Time",
+      "type": "float",
+      "default": "u_time",
+      "semantic_role": "time"
+    },
+    {
+      "id": "index",
+      "name": "Index",
+      "type": "float",
+      "default": "0.0"
+    },
+    {
+      "id": "phase_modulation",
+      "name": "Phase Modulation",
+      "type": "float",
+      "default": "0.0"
+    },
+    {
+      "id": "amplitude_multiplier",
+      "name": "Amplitude Multiplier",
+      "type": "float",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "travel_offset",
+      "name": "Travel Offset",
+      "type": "float"
+    },
+    {
+      "id": "lift_offset",
+      "name": "Lift Offset",
+      "type": "float"
+    },
+    {
+      "id": "cycle_phase",
+      "name": "Cycle Phase",
+      "type": "float"
+    },
+    {
+      "id": "grounded_mask",
+      "name": "Grounded Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    },
+    {
+      "id": "recovery_progress",
+      "name": "Recovery Progress",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "frequency",
+      "name": "Cycle Frequency",
+      "type": "float",
+      "default": 1,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "phase_offset",
+      "name": "Phase Offset",
+      "type": "float",
+      "default": 0,
+      "min": -1,
+      "max": 1
+    },
+    {
+      "id": "index_lag",
+      "name": "Per-Index Phase Lag",
+      "type": "float",
+      "default": 0.1,
+      "min": -1,
+      "max": 1
+    },
+    {
+      "id": "duty",
+      "name": "Grounded Duty Cycle",
+      "type": "float",
+      "default": 0.6,
+      "min": 0.01,
+      "max": 0.99
+    },
+    {
+      "id": "travel",
+      "name": "Travel Extent",
+      "type": "float",
+      "default": 0.5,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "lift",
+      "name": "Lift Height",
+      "type": "float",
+      "default": 0.25,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "recovery_interpolation",
+      "name": "Recovery Interpolation",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Linear",
+        "Smooth"
+      ]
+    },
+    {
+      "id": "lift_profile",
+      "name": "Lift Profile",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Sine",
+        "Squared Sine"
+      ]
+    }
+  ],
+  "helpers": "struct MakerStep {float travel;float lift;float phase;float grounded;float recovery;};\nMakerStep maker_step(float t,float idx,float pm,float amp,float freq,float phase,float lag,float duty,float extent,float height,float interp,float profile){float p=fract(t*freq+phase-idx*lag+pm);bool ground=p<duty;float r=ground?0.0:(p-duty)/(1.0-duty);float u=interp<0.5?r:r*r*(3.0-2.0*r);float x=ground?mix(-extent,extent,p/duty):mix(extent,-extent,u);float y=ground?0.0:sin(3.14159265359*r);if(profile>0.5)y*=y;return MakerStep(x*amp,y*height*amp,p,ground?1.0:0.0,r);}",
+  "glsl_outputs": {
+    "travel_offset": "maker_step({time},{index},{phase_modulation},{amplitude_multiplier},{frequency},{phase_offset},{index_lag},{duty},{travel},{lift},{recovery_interpolation},{lift_profile}).travel",
+    "lift_offset": "maker_step({time},{index},{phase_modulation},{amplitude_multiplier},{frequency},{phase_offset},{index_lag},{duty},{travel},{lift},{recovery_interpolation},{lift_profile}).lift",
+    "cycle_phase": "maker_step({time},{index},{phase_modulation},{amplitude_multiplier},{frequency},{phase_offset},{index_lag},{duty},{travel},{lift},{recovery_interpolation},{lift_profile}).phase",
+    "grounded_mask": "maker_step({time},{index},{phase_modulation},{amplitude_multiplier},{frequency},{phase_offset},{index_lag},{duty},{travel},{lift},{recovery_interpolation},{lift_profile}).grounded",
+    "recovery_progress": "maker_step({time},{index},{phase_modulation},{amplitude_multiplier},{frequency},{phase_offset},{index_lag},{duty},{travel},{lift},{recovery_interpolation},{lift_profile}).recovery"
+  }
+}

@@ -1,0 +1,142 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.geometry.spherical_orbital_path_3d",
+  "name": "Spherical Orbital Path 3D",
+  "category": "Geometry",
+  "created_by": "Screenshaver",
+  "description": "Spherical Orbital Path 3D procedural geometry and animation utility.",
+  "uses": "Spherical Orbital Path 3D procedural geometry and animation utility.",
+  "notes": "Angles in degrees, angular speeds degrees/second, wobble frequency Hz. Velocity holds other inputs fixed. No constant speed or closure guarantee.",
+  "header_color": "#477D9A",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "time",
+      "name": "Time",
+      "type": "float",
+      "default": "u_time",
+      "semantic_role": "time"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec3",
+      "default": "vec3(0.0)"
+    },
+    {
+      "id": "time_offset",
+      "name": "Time Offset",
+      "type": "float",
+      "default": "0.0"
+    },
+    {
+      "id": "radius_modulation",
+      "name": "Radius Modulation",
+      "type": "float",
+      "default": "0.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "radial_direction",
+      "name": "Radial Direction",
+      "type": "vec3",
+      "semantic_role": "direction3d"
+    },
+    {
+      "id": "tangent_direction",
+      "name": "Tangent Direction",
+      "type": "vec3",
+      "semantic_role": "direction3d"
+    },
+    {
+      "id": "velocity",
+      "name": "Velocity",
+      "type": "vec3"
+    },
+    {
+      "id": "lateral_direction",
+      "name": "Lateral Direction",
+      "type": "vec3",
+      "semantic_role": "direction3d"
+    },
+    {
+      "id": "speed",
+      "name": "Speed",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "radius",
+      "name": "Radius",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 20
+    },
+    {
+      "id": "inclination",
+      "name": "Inclination",
+      "type": "float",
+      "default": 30,
+      "min": -180,
+      "max": 180
+    },
+    {
+      "id": "orbital_speed",
+      "name": "Orbital Speed",
+      "type": "float",
+      "default": 45,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "precession_speed",
+      "name": "Precession Speed",
+      "type": "float",
+      "default": 5,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "wobble_amplitude",
+      "name": "Wobble Amplitude",
+      "type": "float",
+      "default": 5,
+      "min": 0,
+      "max": 90
+    },
+    {
+      "id": "wobble_frequency",
+      "name": "Wobble Frequency",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "initial_phase",
+      "name": "Initial Phase",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    }
+  ],
+  "helpers": "struct MakerOrbit {vec3 p;vec3 radial;vec3 tangent;vec3 velocity;vec3 lateral;float speed;};\nvec3 maker_orbit_rx(vec3 p,float a){return vec3(p.x,cos(a)*p.y-sin(a)*p.z,sin(a)*p.y+cos(a)*p.z);}\nvec3 maker_orbit_rz(vec3 p,float a){return vec3(cos(a)*p.x-sin(a)*p.y,sin(a)*p.x+cos(a)*p.y,p.z);}\nMakerOrbit maker_orbit(float t,vec3 c,float r,float inc,float os,float ps,float wa,float wf,float phase){r=clamp(r,0.0,20.0);float w=radians(os),v=radians(ps),k=6.28318530718*wf,a=w*t+radians(phase),b=radians(wa)*sin(k*t),bd=radians(wa)*k*cos(k*t);vec3 u=vec3(cos(a)*cos(b),sin(a)*cos(b),sin(b));vec3 du=w*vec3(-sin(a)*cos(b),cos(a)*cos(b),0.0)+bd*vec3(-cos(a)*sin(b),-sin(a)*sin(b),cos(b));vec3 n=maker_orbit_rz(maker_orbit_rx(u,radians(inc)),v*t);vec3 vel=r*(maker_orbit_rz(maker_orbit_rx(du,radians(inc)),v*t)+v*cross(vec3(0,0,1),n));float s=length(vel);vec3 tangent=s>1e-8?vel/s:normalize(cross(abs(n.z)<0.9?vec3(0,0,1):vec3(1,0,0),n));return MakerOrbit(c+r*n,n,tangent,vel,normalize(cross(n,tangent)),s);}",
+  "glsl_outputs": {
+    "position": "maker_orbit({time}+{time_offset},{center},{radius}+{radius_modulation},{inclination},{orbital_speed},{precession_speed},{wobble_amplitude},{wobble_frequency},{initial_phase}).p",
+    "radial_direction": "maker_orbit({time}+{time_offset},{center},{radius}+{radius_modulation},{inclination},{orbital_speed},{precession_speed},{wobble_amplitude},{wobble_frequency},{initial_phase}).radial",
+    "tangent_direction": "maker_orbit({time}+{time_offset},{center},{radius}+{radius_modulation},{inclination},{orbital_speed},{precession_speed},{wobble_amplitude},{wobble_frequency},{initial_phase}).tangent",
+    "velocity": "maker_orbit({time}+{time_offset},{center},{radius}+{radius_modulation},{inclination},{orbital_speed},{precession_speed},{wobble_amplitude},{wobble_frequency},{initial_phase}).velocity",
+    "lateral_direction": "maker_orbit({time}+{time_offset},{center},{radius}+{radius_modulation},{inclination},{orbital_speed},{precession_speed},{wobble_amplitude},{wobble_frequency},{initial_phase}).lateral",
+    "speed": "maker_orbit({time}+{time_offset},{center},{radius}+{radius_modulation},{inclination},{orbital_speed},{precession_speed},{wobble_amplitude},{wobble_frequency},{initial_phase}).speed"
+  }
+}

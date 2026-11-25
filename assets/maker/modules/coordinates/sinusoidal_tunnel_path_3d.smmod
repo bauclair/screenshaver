@@ -6,9 +6,9 @@
   "name": "Sinusoidal Tunnel Path 3D",
   "category": "Coordinates",
   "header_color": "#627FC2",
-  "description": "Bends 3D positions along an independently configurable two-axis sinusoidal centerline.",
+  "description": "Bends 3D positions along a sinusoidal, linear or combined two-axis centerline.",
   "uses": "Curved procedural tunnels, winding volumetric structures and camera-path coordinate offsets.",
-  "notes": "Independent implementation of a general sinusoidal path technique. The warped position subtracts the path offset; the path offset output can be added to camera or object positions. No textures or channel inputs required.",
+  "notes": "Independent implementation of a general sinusoidal path technique. The warped position subtracts the path offset; the path offset output can be added to camera or object positions. No textures or channel inputs required. Path Mode selects sinusoidal displacement, linear displacement proportional to axial Z, or their sum. Slopes are transverse displacement per unit Z. Linear mode is independent of animation time. Existing sinusoidal behavior is preserved by default.",
   "inputs": [
     {
       "id": "position",
@@ -88,11 +88,38 @@
       "default": 0,
       "min": -5,
       "max": 5
+    },
+    {
+      "id": "path_mode",
+      "name": "Path Mode",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Sinusoidal",
+        "Linear",
+        "Combined"
+      ]
+    },
+    {
+      "id": "horizontal_slope",
+      "name": "Horizontal Slope",
+      "type": "float",
+      "default": 0,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "vertical_slope",
+      "name": "Vertical Slope",
+      "type": "float",
+      "default": 0,
+      "min": -10,
+      "max": 10
     }
   ],
-  "helpers": "vec2 maker_sinusoidal_tunnel_offset(vec3 p,float ax,float ay,float fx,float fy,float phx,float phy,float speed){\n float t=u_time*speed;\n return vec2(ax*sin(p.z*fx+phx+t),ay*sin(p.z*fy+phy+t));\n}\nvec3 maker_sinusoidal_tunnel_warp(vec3 p,float ax,float ay,float fx,float fy,float phx,float phy,float speed){\n vec2 d=maker_sinusoidal_tunnel_offset(p,ax,ay,fx,fy,phx,phy,speed);\n return vec3(p.xy-d,p.z);\n}",
+  "helpers": "vec2 maker_sinusoidal_tunnel_offset(vec3 p,float ax,float ay,float fx,float fy,float phx,float phy,float speed,float mode,float sx,float sy){\n vec2 linear=vec2(sx,sy)*p.z;\n if(mode>=0.5 && mode<1.5) return linear;\n float t=u_time*speed;\n vec2 wave=vec2(ax*sin(p.z*fx+phx+t),ay*sin(p.z*fy+phy+t));\n return mode>=1.5 ? wave+linear : wave;\n}\nvec3 maker_sinusoidal_tunnel_warp(vec3 p,float ax,float ay,float fx,float fy,float phx,float phy,float speed,float mode,float sx,float sy){\n vec2 d=maker_sinusoidal_tunnel_offset(p,ax,ay,fx,fy,phx,phy,speed,mode,sx,sy);\n return vec3(p.xy-d,p.z);\n}",
   "glsl_outputs": {
-    "warped": "maker_sinusoidal_tunnel_warp({position},{horizontal_amplitude},{vertical_amplitude},{horizontal_frequency},{vertical_frequency},{horizontal_phase},{vertical_phase},{speed})",
-    "offset": "maker_sinusoidal_tunnel_offset({position},{horizontal_amplitude},{vertical_amplitude},{horizontal_frequency},{vertical_frequency},{horizontal_phase},{vertical_phase},{speed})"
+    "warped": "maker_sinusoidal_tunnel_warp({position},{horizontal_amplitude},{vertical_amplitude},{horizontal_frequency},{vertical_frequency},{horizontal_phase},{vertical_phase},{speed},{path_mode},{horizontal_slope},{vertical_slope})",
+    "offset": "maker_sinusoidal_tunnel_offset({position},{horizontal_amplitude},{vertical_amplitude},{horizontal_frequency},{vertical_frequency},{horizontal_phase},{vertical_phase},{speed},{path_mode},{horizontal_slope},{vertical_slope})"
   }
 }

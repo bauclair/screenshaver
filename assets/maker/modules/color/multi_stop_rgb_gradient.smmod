@@ -1,0 +1,219 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.color.multi_stop_rgb_gradient",
+  "name": "Multi-Stop RGB Gradient",
+  "category": "Color",
+  "created_by": "Screenshaver",
+  "description": "Interpolates three or four RGB and opacity stops using positioned or sequential transitions.",
+  "uses": "Noncyclic palettes, scalar visualization and masked compositing.",
+  "notes": "Stops are sorted together with their colors and opacities. Equal positions retain original order; the last coincident stop wins at that position. Values outside the stop range use endpoint values. Opacity is a separate scalar, not framebuffer alpha. Three-Stop retains the original calculation. Four-Stop sorts stably, with the last coincident stop winning at that position. Sequential modes blend in declared color order using independent transition intervals; reversed boundaries are sorted, and equal boundaries produce a hard step. Stop positions are ignored in sequential modes. The fourth color and opacity are ignored in three-color modes. Linear or smooth interpolation applies to every mode.",
+  "header_color": "#B46A35",
+  "inputs": [
+    {
+      "id": "value",
+      "name": "Scalar Value",
+      "type": "float",
+      "default": "maker_uv.x"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "color",
+      "name": "Color",
+      "type": "vec3",
+      "semantic_role": "color"
+    },
+    {
+      "id": "opacity",
+      "name": "Opacity",
+      "type": "float",
+      "semantic_role": "mask"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "color1",
+      "name": "Color 1",
+      "type": "color3",
+      "default": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "color2",
+      "name": "Color 2",
+      "type": "color3",
+      "default": [
+        0,
+        1,
+        1
+      ]
+    },
+    {
+      "id": "color3",
+      "name": "Color 3",
+      "type": "color3",
+      "default": [
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "id": "stop1",
+      "name": "Stop 1 Position",
+      "type": "float",
+      "default": 0,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "stop2",
+      "name": "Stop 2 Position",
+      "type": "float",
+      "default": 0.5,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "stop3",
+      "name": "Stop 3 Position",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "opacity1",
+      "name": "Stop 1 Opacity",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "opacity2",
+      "name": "Stop 2 Opacity",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "opacity3",
+      "name": "Stop 3 Opacity",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "interpolation",
+      "name": "Interpolation",
+      "type": "choice",
+      "default": 0,
+      "min": 0,
+      "max": 1,
+      "options": [
+        "Linear",
+        "Smooth"
+      ]
+    },
+    {
+      "id": "gradient_mode",
+      "name": "Gradient Mode",
+      "type": "choice",
+      "default": 0,
+      "min": 0,
+      "max": 3,
+      "options": [
+        "Three-Stop",
+        "Four-Stop",
+        "Sequential Three-Color",
+        "Sequential Four-Color"
+      ]
+    },
+    {
+      "id": "color4",
+      "name": "Color 4",
+      "type": "color3",
+      "default": [
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "id": "stop4",
+      "name": "Stop 4 Position",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "opacity4",
+      "name": "Stop 4 Opacity",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "transition1_start",
+      "name": "Transition 1 Start",
+      "type": "float",
+      "default": 0,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "transition1_end",
+      "name": "Transition 1 End",
+      "type": "float",
+      "default": 0.5,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "transition2_start",
+      "name": "Transition 2 Start",
+      "type": "float",
+      "default": 0.25,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "transition2_end",
+      "name": "Transition 2 End",
+      "type": "float",
+      "default": 0.75,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "transition3_start",
+      "name": "Transition 3 Start",
+      "type": "float",
+      "default": 0.5,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "transition3_end",
+      "name": "Transition 3 End",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 1
+    }
+  ],
+  "helpers": "void maker_gradient_swap(inout float a,inout float b,inout vec3 wa,inout vec3 wb){if(a>b){float t=a;a=b;b=t;vec3 w=wa;wa=wb;wb=w;}}\nvec3 maker_gradient_weights(float v,vec3 s,float mode){\n vec3 a=vec3(1,0,0),b=vec3(0,1,0),c=vec3(0,0,1);\n maker_gradient_swap(s.x,s.y,a,b);maker_gradient_swap(s.y,s.z,b,c);maker_gradient_swap(s.x,s.y,a,b);\n if(v<s.x)return a; if(v>=s.z)return c;\n float t; vec3 l,r;\n if(v<s.y){t=clamp((v-s.x)/max(s.y-s.x,1e-7),0.0,1.0);l=a;r=b;}\n else{t=clamp((v-s.y)/max(s.z-s.y,1e-7),0.0,1.0);l=b;r=c;}\n if(mode>=0.5)t=t*t*(3.0-2.0*t);return mix(l,r,t);\n}\nvec3 maker_three_stop_rgb(float v,vec3 s,float mode,vec3 a,vec3 b,vec3 c){vec3 w=maker_gradient_weights(v,s,mode);return a*w.x+b*w.y+c*w.z;}\n\nfloat maker_gradient_extended_ramp(float v,float a,float b,float mode){\n float lo=min(a,b),hi=max(a,b);\n if(hi==lo)return step(lo,v);\n float t=clamp((v-lo)/(hi-lo),0.0,1.0);\n return mode>=0.5?t*t*(3.0-2.0*t):t;\n}\nvec4 maker_gradient_extended_weights(float v,vec4 s,float interp,float mode,vec2 t1,vec2 t2,vec2 t3){\n if(mode<0.5)return vec4(maker_gradient_weights(v,s.xyz,interp),0.0);\n if(mode>=1.5){\n  float a=maker_gradient_extended_ramp(v,t1.x,t1.y,interp);\n  float b=maker_gradient_extended_ramp(v,t2.x,t2.y,interp);\n  float c=mode>=2.5?maker_gradient_extended_ramp(v,t3.x,t3.y,interp):0.0;\n  return vec4((1.0-a)*(1.0-b)*(1.0-c),a*(1.0-b)*(1.0-c),b*(1.0-c),c);\n }\n vec4 w[4]; float pos[4];\n for(int i=0;i<4;i++){pos[i]=s[i];w[i]=vec4(0.0);w[i][i]=1.0;}\n for(int pass=0;pass<3;pass++)for(int j=0;j<3-pass;j++){\n  if(pos[j]>pos[j+1]){float q=pos[j];pos[j]=pos[j+1];pos[j+1]=q;vec4 r=w[j];w[j]=w[j+1];w[j+1]=r;}\n }\n if(v<pos[0])return w[0];\n for(int j=0;j<3;j++)if(v<pos[j+1])return mix(w[j],w[j+1],maker_gradient_extended_ramp(v,pos[j],pos[j+1],interp));\n return w[3];\n}\nvec3 maker_gradient_extended_rgb(float v,vec4 s,float interp,float mode,vec2 t1,vec2 t2,vec2 t3,vec3 a,vec3 b,vec3 c,vec3 e){\n if(mode<0.5)return maker_three_stop_rgb(v,s.xyz,interp,a,b,c);\n vec4 w=maker_gradient_extended_weights(v,s,interp,mode,t1,t2,t3);\n return a*w.x+b*w.y+c*w.z+e*w.w;\n}\nfloat maker_gradient_extended_opacity(float v,vec4 s,float interp,float mode,vec2 t1,vec2 t2,vec2 t3,vec4 opacity){\n if(mode<0.5)return dot(maker_gradient_weights(v,s.xyz,interp),opacity.xyz);\n return dot(maker_gradient_extended_weights(v,s,interp,mode,t1,t2,t3),opacity);\n}\n",
+  "glsl_outputs": {
+    "color": "maker_gradient_extended_rgb({value},vec4({stop1},{stop2},{stop3},{stop4}),{interpolation},{gradient_mode},vec2({transition1_start},{transition1_end}),vec2({transition2_start},{transition2_end}),vec2({transition3_start},{transition3_end}),{color1},{color2},{color3},{color4})",
+    "opacity": "maker_gradient_extended_opacity({value},vec4({stop1},{stop2},{stop3},{stop4}),{interpolation},{gradient_mode},vec2({transition1_start},{transition1_end}),vec2({transition2_start},{transition2_end}),vec2({transition3_start},{transition3_end}),vec4({opacity1},{opacity2},{opacity3},{opacity4}))"
+  },
+  "terminal": false
+}

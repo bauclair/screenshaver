@@ -1,0 +1,101 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.geometric_sequence_coordinates",
+  "name": "Geometric Sequence Coordinates",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "description": "Geometric Sequence Coordinates procedural geometry and animation utility.",
+  "uses": "Geometric Sequence Coordinates procedural geometry and animation utility.",
+  "notes": "Finite sequence, ties select lower index. Ratios within 0.0001 of unity use uniform spacing. Very small spacing near a convergent sequence loses distinct coordinates in float precision.",
+  "header_color": "#627FC2",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "index",
+      "name": "Index",
+      "type": "float",
+      "default": "0.0"
+    },
+    {
+      "id": "coordinate",
+      "name": "Coordinate",
+      "type": "float",
+      "default": "0.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "sequence_coordinate",
+      "name": "Sequence Coordinate",
+      "type": "float"
+    },
+    {
+      "id": "local_spacing",
+      "name": "Local Spacing",
+      "type": "float"
+    },
+    {
+      "id": "scale_factor",
+      "name": "Scale Factor",
+      "type": "float"
+    },
+    {
+      "id": "continuous_index",
+      "name": "Continuous Index",
+      "type": "float"
+    },
+    {
+      "id": "nearest_index",
+      "name": "Nearest Index",
+      "type": "float"
+    },
+    {
+      "id": "nearest_coordinate",
+      "name": "Nearest Coordinate",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "initial_spacing",
+      "name": "Initial Spacing",
+      "type": "float",
+      "default": 0.5,
+      "min": 0.001,
+      "max": 20
+    },
+    {
+      "id": "spacing_ratio",
+      "name": "Spacing Ratio",
+      "type": "float",
+      "default": 0.9,
+      "min": 0.1,
+      "max": 2
+    },
+    {
+      "id": "origin",
+      "name": "Coordinate Origin",
+      "type": "float",
+      "default": 0,
+      "min": -100,
+      "max": 100
+    },
+    {
+      "id": "sample_count",
+      "name": "Sample Count",
+      "type": "float",
+      "default": 16,
+      "min": 2,
+      "max": 64
+    }
+  ],
+  "helpers": "struct MakerGeoSeq {float x;float spacing;float scale;float inverse;float nearest;float nx;};\nfloat maker_geo_seq_x(float i,float s,float q,float o){return o+s*(abs(q-1.0)<0.0001?i:(pow(q,i)-1.0)/(q-1.0));}\nMakerGeoSeq maker_geo_seq(float i,float x,float s,float q,float o,float count){float last=clamp(floor(count+0.5),2.0,64.0)-1.0;i=clamp(i,0.0,last);float end=maker_geo_seq_x(last,s,q,o);x=clamp(x,o,end);float inv=abs(q-1.0)<0.0001?(x-o)/s:log(max(1.0+(q-1.0)*(x-o)/s,1e-30))/log(q);inv=x>=end?last:clamp(inv,0.0,last);float a=floor(inv),b=min(a+1.0,last),xa=maker_geo_seq_x(a,s,q,o),xb=maker_geo_seq_x(b,s,q,o);float n=abs(x-xa)<=abs(x-xb)?a:b;float k=abs(q-1.0)<0.0001?1.0:pow(q,i);return MakerGeoSeq(maker_geo_seq_x(i,s,q,o),s*k,k,inv,n,maker_geo_seq_x(n,s,q,o));}",
+  "glsl_outputs": {
+    "sequence_coordinate": "maker_geo_seq({index},{coordinate},{initial_spacing},{spacing_ratio},{origin},{sample_count}).x",
+    "local_spacing": "maker_geo_seq({index},{coordinate},{initial_spacing},{spacing_ratio},{origin},{sample_count}).spacing",
+    "scale_factor": "maker_geo_seq({index},{coordinate},{initial_spacing},{spacing_ratio},{origin},{sample_count}).scale",
+    "continuous_index": "maker_geo_seq({index},{coordinate},{initial_spacing},{spacing_ratio},{origin},{sample_count}).inverse",
+    "nearest_index": "maker_geo_seq({index},{coordinate},{initial_spacing},{spacing_ratio},{origin},{sample_count}).nearest",
+    "nearest_coordinate": "maker_geo_seq({index},{coordinate},{initial_spacing},{spacing_ratio},{origin},{sample_count}).nx"
+  }
+}

@@ -1,0 +1,76 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.geometry.sdf_icosahedron",
+  "name": "SDF Icosahedron",
+  "category": "Geometry",
+  "created_by": "Screenshaver",
+  "description": "SDF Icosahedron procedural geometry and animation utility.",
+  "uses": "SDF Icosahedron procedural geometry and animation utility.",
+  "notes": "Sharp mode conservative maximum-plane distance. Rounded mode uses finite triangle distances outside the smaller core to produce actual rounded edges; dominant face normal is not rounded surface normal. Canonical face order.",
+  "header_color": "#477D9A",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "default": "vec3(maker_uv,0.0)",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "radius_modulation",
+      "name": "Radius Modulation",
+      "type": "float",
+      "default": "0.0"
+    },
+    {
+      "id": "rounding_modulation",
+      "name": "Rounding Modulation",
+      "type": "float",
+      "default": "0.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "distance",
+      "name": "Distance",
+      "type": "float",
+      "semantic_role": "distance"
+    },
+    {
+      "id": "face_index",
+      "name": "Face Index",
+      "type": "float"
+    },
+    {
+      "id": "face_normal",
+      "name": "Face Normal",
+      "type": "vec3",
+      "semantic_role": "normal3d"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "radius",
+      "name": "Radius (inradius)",
+      "type": "float",
+      "default": 0.5,
+      "min": 0.001,
+      "max": 20
+    },
+    {
+      "id": "rounding",
+      "name": "Rounding Radius",
+      "type": "float",
+      "default": 0,
+      "min": 0,
+      "max": 5
+    }
+  ],
+  "helpers": "struct MakerIcoSolid {float d;float index;vec3 normal;};\nfloat maker_ico_edge(vec3 p,vec3 a,vec3 b){vec3 e=b-a;return length(p-a-e*clamp(dot(p-a,e)/max(dot(e,e),1e-30),0.0,1.0));}\nMakerIcoSolid maker_ico_solid(vec3 p,float r,float rounding){\n const vec3 ns[20]=vec3[20](vec3(0.3568220898,0.0000000000,-0.9341723590),vec3(-0.5773502692,-0.5773502692,-0.5773502692),vec3(0.0000000000,-0.9341723590,-0.3568220898),vec3(-0.3568220898,0.0000000000,-0.9341723590),vec3(0.5773502692,-0.5773502692,-0.5773502692),vec3(-0.3568220898,0.0000000000,0.9341723590),vec3(0.0000000000,-0.9341723590,0.3568220898),vec3(0.5773502692,-0.5773502692,0.5773502692),vec3(-0.5773502692,-0.5773502692,0.5773502692),vec3(0.3568220898,0.0000000000,0.9341723590),vec3(0.0000000000,0.9341723590,-0.3568220898),vec3(0.5773502692,0.5773502692,-0.5773502692),vec3(-0.5773502692,0.5773502692,-0.5773502692),vec3(-0.5773502692,0.5773502692,0.5773502692),vec3(0.0000000000,0.9341723590,0.3568220898),vec3(0.5773502692,0.5773502692,0.5773502692),vec3(-0.9341723590,-0.3568220898,0.0000000000),vec3(-0.9341723590,0.3568220898,0.0000000000),vec3(0.9341723590,-0.3568220898,0.0000000000),vec3(0.9341723590,0.3568220898,0.0000000000));\n const vec3 vs[12]=vec3[12](vec3(0.0000000000,-0.5257311121,-0.8506508084),vec3(0.0000000000,-0.5257311121,0.8506508084),vec3(0.0000000000,0.5257311121,-0.8506508084),vec3(0.0000000000,0.5257311121,0.8506508084),vec3(-0.5257311121,-0.8506508084,0.0000000000),vec3(-0.5257311121,0.8506508084,0.0000000000),vec3(0.5257311121,-0.8506508084,0.0000000000),vec3(0.5257311121,0.8506508084,0.0000000000),vec3(-0.8506508084,0.0000000000,-0.5257311121),vec3(0.8506508084,0.0000000000,-0.5257311121),vec3(-0.8506508084,0.0000000000,0.5257311121),vec3(0.8506508084,0.0000000000,0.5257311121));\n const ivec3 fs[20]=ivec3[20](ivec3(0,2,9),ivec3(0,4,8),ivec3(0,6,4),ivec3(0,8,2),ivec3(0,9,6),ivec3(1,3,10),ivec3(1,4,6),ivec3(1,6,11),ivec3(1,10,4),ivec3(1,11,3),ivec3(2,5,7),ivec3(2,7,9),ivec3(2,8,5),ivec3(3,5,10),ivec3(3,7,5),ivec3(3,11,7),ivec3(4,10,8),ivec3(5,8,10),ivec3(6,9,11),ivec3(7,11,9));\n r=clamp(r,0.001,20.0);float k=clamp(rounding,0.0,r),core=r-k;float best=-1e30;int idx=0;\n for(int i=0;i<20;i++){float s=dot(p,ns[i]);if(s>best){best=s;idx=i;}}\n float d=best-core;\n if(k>0.0 && d>0.0){if(core<1e-7)d=length(p);else{float scale=core/dot(ns[0],vs[fs[0].x]);d=1e30;for(int i=0;i<20;i++){ivec3 f=fs[i];vec3 a=vs[f.x]*scale,b=vs[f.y]*scale,c=vs[f.z]*scale,n=ns[i];float z=dot(p-a,n);vec3 q=p-z*n;bool inside=dot(cross(b-a,q-a),n)>=0.0&&dot(cross(c-b,q-b),n)>=0.0&&dot(cross(a-c,q-c),n)>=0.0;d=min(d,inside?abs(z):min(maker_ico_edge(p,a,b),min(maker_ico_edge(p,b,c),maker_ico_edge(p,c,a))));}}}\n return MakerIcoSolid(d-k,float(idx),ns[idx]);}",
+  "glsl_outputs": {
+    "distance": "maker_ico_solid({position},{radius}+{radius_modulation},{rounding}+{rounding_modulation}).d",
+    "face_index": "maker_ico_solid({position},{radius}+{radius_modulation},{rounding}+{rounding_modulation}).index",
+    "face_normal": "maker_ico_solid({position},{radius}+{radius_modulation},{rounding}+{rounding_modulation}).normal"
+  }
+}
