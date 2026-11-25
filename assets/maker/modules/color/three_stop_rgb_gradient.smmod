@@ -1,0 +1,131 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.color.three_stop_rgb_gradient",
+  "name": "Three-Stop RGB Gradient",
+  "category": "Color",
+  "created_by": "Screenshaver",
+  "description": "Interpolates three positioned RGB and opacity stops.",
+  "uses": "Noncyclic palettes, scalar visualization and masked compositing.",
+  "notes": "Stops are sorted together with their colors and opacities. Equal positions retain original order; the last coincident stop wins at that position. Values outside the stop range use endpoint values. Opacity is a separate scalar, not framebuffer alpha.",
+  "header_color": "#B46A35",
+  "inputs": [
+    {
+      "id": "value",
+      "name": "Scalar Value",
+      "type": "float",
+      "default": "maker_uv.x"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "color",
+      "name": "Color",
+      "type": "vec3",
+      "semantic_role": "color"
+    },
+    {
+      "id": "opacity",
+      "name": "Opacity",
+      "type": "float",
+      "semantic_role": "mask"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "color1",
+      "name": "Color 1",
+      "type": "color3",
+      "default": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "color2",
+      "name": "Color 2",
+      "type": "color3",
+      "default": [
+        0,
+        1,
+        1
+      ]
+    },
+    {
+      "id": "color3",
+      "name": "Color 3",
+      "type": "color3",
+      "default": [
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "id": "stop1",
+      "name": "Stop 1 Position",
+      "type": "float",
+      "default": 0,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "stop2",
+      "name": "Stop 2 Position",
+      "type": "float",
+      "default": 0.5,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "stop3",
+      "name": "Stop 3 Position",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "opacity1",
+      "name": "Stop 1 Opacity",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "opacity2",
+      "name": "Stop 2 Opacity",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "opacity3",
+      "name": "Stop 3 Opacity",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "interpolation",
+      "name": "Interpolation",
+      "type": "choice",
+      "default": 0,
+      "min": 0,
+      "max": 1,
+      "options": [
+        "Linear",
+        "Smooth"
+      ]
+    }
+  ],
+  "helpers": "void maker_gradient_swap(inout float a,inout float b,inout vec3 wa,inout vec3 wb){if(a>b){float t=a;a=b;b=t;vec3 w=wa;wa=wb;wb=w;}}\nvec3 maker_gradient_weights(float v,vec3 s,float mode){\n vec3 a=vec3(1,0,0),b=vec3(0,1,0),c=vec3(0,0,1);\n maker_gradient_swap(s.x,s.y,a,b);maker_gradient_swap(s.y,s.z,b,c);maker_gradient_swap(s.x,s.y,a,b);\n if(v<s.x)return a; if(v>=s.z)return c;\n float t; vec3 l,r;\n if(v<s.y){t=clamp((v-s.x)/max(s.y-s.x,1e-7),0.0,1.0);l=a;r=b;}\n else{t=clamp((v-s.y)/max(s.z-s.y,1e-7),0.0,1.0);l=b;r=c;}\n if(mode>=0.5)t=t*t*(3.0-2.0*t);return mix(l,r,t);\n}\nvec3 maker_three_stop_rgb(float v,vec3 s,float mode,vec3 a,vec3 b,vec3 c){vec3 w=maker_gradient_weights(v,s,mode);return a*w.x+b*w.y+c*w.z;}\n",
+  "glsl_outputs": {
+    "color": "maker_three_stop_rgb({value},vec3({stop1},{stop2},{stop3}),{interpolation},{color1},{color2},{color3})",
+    "opacity": "dot(maker_gradient_weights({value},vec3({stop1},{stop2},{stop3}),{interpolation}),vec3({opacity1},{opacity2},{opacity3}))"
+  },
+  "terminal": false
+}

@@ -1,0 +1,108 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.color.rgb_power_colorizer",
+  "name": "RGB Power Colorizer",
+  "category": "Color",
+  "created_by": "Screenshaver",
+  "description": "Maps a scalar to independent nonlinear RGB channels.",
+  "uses": "Procedural palettes and externally modulated color.",
+  "notes": "Negative scalar values map to zero; scalar and modulation magnitudes bounded to 10000 to limit overflow. Unclamped mode permits signed modulation and HDR.",
+  "header_color": "#B46A35",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "value",
+      "name": "Scalar Value",
+      "type": "float",
+      "default": "0.5"
+    },
+    {
+      "id": "red_modulation",
+      "name": "Red Modulation",
+      "type": "float",
+      "default": "1.0"
+    },
+    {
+      "id": "green_modulation",
+      "name": "Green Modulation",
+      "type": "float",
+      "default": "1.0"
+    },
+    {
+      "id": "blue_modulation",
+      "name": "Blue Modulation",
+      "type": "float",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "color",
+      "name": "Color",
+      "type": "vec3",
+      "semantic_role": "color"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "red_exponent",
+      "name": "Red Exponent",
+      "type": "float",
+      "default": 1,
+      "min": 0.25,
+      "max": 8
+    },
+    {
+      "id": "green_exponent",
+      "name": "Green Exponent",
+      "type": "float",
+      "default": 1,
+      "min": 0.25,
+      "max": 8
+    },
+    {
+      "id": "blue_exponent",
+      "name": "Blue Exponent",
+      "type": "float",
+      "default": 1,
+      "min": 0.25,
+      "max": 8
+    },
+    {
+      "id": "red_gain",
+      "name": "Red Gain",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "green_gain",
+      "name": "Green Gain",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "blue_gain",
+      "name": "Blue Gain",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "clamp_output",
+      "name": "Clamp Output",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "No",
+        "Yes"
+      ]
+    }
+  ],
+  "helpers": "vec3 maker_rgb_power(float x,vec3 modulation,vec3 exponent,vec3 gain,float limit){\n vec3 c=pow(vec3(clamp(x,0.0,10000.0)),exponent)*gain*clamp(modulation,vec3(-10000.0),vec3(10000.0));\n return limit>0.5?clamp(c,0.0,1.0):c;\n}",
+  "glsl": "maker_rgb_power({value},vec3({red_modulation},{green_modulation},{blue_modulation}),vec3({red_exponent},{green_exponent},{blue_exponent}),vec3({red_gain},{green_gain},{blue_gain}),{clamp_output})"
+}

@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.exponential_edge_attenuation_2d",
+  "name": "Exponential Edge Attenuation 2D",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "description": "Normalized exponential attenuation toward rectangular boundaries.",
+  "uses": "Vignettes, edge fades and rectangular masks.",
+  "notes": "Extents are half widths. Center is one; boundary and exterior equal minimum.",
+  "header_color": "#557C9C",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "position2d"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "mask",
+      "name": "Attenuation Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "extent_x",
+      "name": "Horizontal Extent",
+      "type": "float",
+      "default": 1,
+      "min": 0.01,
+      "max": 10
+    },
+    {
+      "id": "extent_y",
+      "name": "Vertical Extent",
+      "type": "float",
+      "default": 1,
+      "min": 0.01,
+      "max": 10
+    },
+    {
+      "id": "falloff_x",
+      "name": "Horizontal Falloff",
+      "type": "float",
+      "default": 5,
+      "min": 0.1,
+      "max": 32
+    },
+    {
+      "id": "falloff_y",
+      "name": "Vertical Falloff",
+      "type": "float",
+      "default": 5,
+      "min": 0.1,
+      "max": 32
+    },
+    {
+      "id": "minimum",
+      "name": "Minimum Intensity",
+      "type": "float",
+      "default": 0,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "center_x",
+      "name": "Center X",
+      "type": "float",
+      "default": 0,
+      "min": -5,
+      "max": 5
+    },
+    {
+      "id": "center_y",
+      "name": "Center Y",
+      "type": "float",
+      "default": 0,
+      "min": -5,
+      "max": 5
+    }
+  ],
+  "helpers": "float maker_exp_edge(vec2 p,vec2 center,vec2 extent,vec2 falloff,float minimum){\n vec2 t=clamp(1.0-abs(p-center)/max(extent,vec2(0.01)),0.0,1.0);\n vec2 k=clamp(falloff,0.1,32.0);\n vec2 w=(1.0-exp(-k*t))/(1.0-exp(-k));\n return mix(clamp(minimum,0.0,1.0),1.0,clamp(w.x*w.y,0.0,1.0));\n}",
+  "glsl": "maker_exp_edge({position},vec2({center_x},{center_y}),vec2({extent_x},{extent_y}),vec2({falloff_x},{falloff_y}),{minimum})"
+}

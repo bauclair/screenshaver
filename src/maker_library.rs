@@ -9,6 +9,16 @@ impl Library {
  fn load()->Self{
     let mut result=Self{modules:BTreeMap::new(),categories:BTreeMap::new(),sources:BTreeMap::new(),errors:Vec::new(),catalog_fingerprint:0xcbf29ce484222325};
     let official=[
+      ("animation/interpolated_procedural_sequence.smmod",include_str!("../assets/maker/modules/animation/interpolated_procedural_sequence.smmod")),
+       ("coordinates/traveling_axial_coordinate_3d.smmod",include_str!("../assets/maker/modules/coordinates/traveling_axial_coordinate_3d.smmod")),
+       ("coordinates/axial_rational_compression_3d.smmod",include_str!("../assets/maker/modules/coordinates/axial_rational_compression_3d.smmod")),
+       ("fields/exponential_edge_attenuation_2d.smmod",include_str!("../assets/maker/modules/fields/exponential_edge_attenuation_2d.smmod")),
+       ("color/rgb_power_colorizer.smmod",include_str!("../assets/maker/modules/color/rgb_power_colorizer.smmod")),
+       ("fields/sparse_random_cell_field_2d.smmod",include_str!("../assets/maker/modules/fields/sparse_random_cell_field_2d.smmod")),
+      ("coordinates/rectangular_grid_coordinates_2d.smmod",include_str!("../assets/maker/modules/coordinates/rectangular_grid_coordinates_2d.smmod")),
+      ("math/scalar_response_shaping.smmod",include_str!("../assets/maker/modules/math/scalar_response_shaping.smmod")),
+      ("color/three_stop_rgb_gradient.smmod",include_str!("../assets/maker/modules/color/three_stop_rgb_gradient.smmod")),
+
     ("fields/propagating_radial_wavefront_2d.smmod",include_str!("../assets/maker/modules/fields/propagating_radial_wavefront_2d.smmod")),
     ("coordinates/polar_coordinate_mapping_2d.smmod",include_str!("../assets/maker/modules/coordinates/polar_coordinate_mapping_2d.smmod")),
       ("fields/scale_compensated_fractal_orbit_field_3d.smmod",include_str!("../assets/maker/modules/fields/scale_compensated_fractal_orbit_field_3d.smmod")),
@@ -176,6 +186,9 @@ impl Library {
       ("fields/directional_field_derivative_3d.smmod",include_str!("../assets/maker/modules/fields/directional_field_derivative_3d.smmod")),
     ("coordinates/lattice_interpolation_warp_3d.smmod",include_str!("../assets/maker/modules/coordinates/lattice_interpolation_warp_3d.smmod")),
     ("geometry/geometric_ray_sample_distribution.smmod",include_str!("../assets/maker/modules/geometry/geometric_ray_sample_distribution.smmod")),
+    ("coordinates/randomized_cell_transform_2d.smmod",include_str!("../assets/maker/modules/coordinates/randomized_cell_transform_2d.smmod")),
+    ("fields/cross_shape_field_2d.smmod",include_str!("../assets/maker/modules/fields/cross_shape_field_2d.smmod")),
+    ("coordinates/iterative_rotational_fold_3d.smmod",include_str!("../assets/maker/modules/coordinates/iterative_rotational_fold_3d.smmod")),
 ];
     for (path,src) in official {result.register(path,src,Trust::Official)}
     if let Some(home)=std::env::var_os("HOME"){

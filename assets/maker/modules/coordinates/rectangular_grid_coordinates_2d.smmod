@@ -1,0 +1,111 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.rectangular_grid_coordinates_2d",
+  "name": "Rectangular Grid Coordinates 2D",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "description": "Quantizes a position into rectangular cells with an adjustable interior mask.",
+  "uses": "Mosaics, pixel patterns, quantized sampling and tiled effects.",
+  "notes": "Local Position is centered in each cell in coordinate units. Cell Index is floor-based, including negative coordinates. Gaps are total fractions of cell size; softness is measured in normalized cell units and fades inward. Zero gap leaves that axis fully open; a full gap closes it.",
+  "header_color": "#627FC2",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "position2d"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "local",
+      "name": "Local Position",
+      "type": "vec2",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "cell",
+      "name": "Cell Index",
+      "type": "vec2"
+    },
+    {
+      "id": "center",
+      "name": "Cell Center",
+      "type": "vec2",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "mask",
+      "name": "Cell Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "cell_width",
+      "name": "Cell Width",
+      "type": "float",
+      "default": 0.1,
+      "min": 0.001,
+      "max": 10
+    },
+    {
+      "id": "cell_height",
+      "name": "Cell Height",
+      "type": "float",
+      "default": 0.1,
+      "min": 0.001,
+      "max": 10
+    },
+    {
+      "id": "gap_x",
+      "name": "Horizontal Gap",
+      "type": "float",
+      "default": 0.1,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "gap_y",
+      "name": "Vertical Gap",
+      "type": "float",
+      "default": 0.1,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "softness",
+      "name": "Edge Softness",
+      "type": "float",
+      "default": 0.01,
+      "min": 0,
+      "max": 0.5
+    },
+    {
+      "id": "offset_x",
+      "name": "Horizontal Offset",
+      "type": "float",
+      "default": 0,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "offset_y",
+      "name": "Vertical Offset",
+      "type": "float",
+      "default": 0,
+      "min": -10,
+      "max": 10
+    }
+  ],
+  "helpers": "vec2 maker_rect_grid_size(vec2 s){return max(abs(s),vec2(0.001));}\nvec2 maker_rect_grid_index(vec2 p,vec2 s,vec2 o){return floor((p-o)/maker_rect_grid_size(s));}\nvec2 maker_rect_grid_center(vec2 p,vec2 s,vec2 o){return o+maker_rect_grid_size(s)*(maker_rect_grid_index(p,s,o)+0.5);}\nfloat maker_rect_grid_axis(float x,float gap,float soft){\n gap=clamp(gap,0.0,1.0); if(gap<=0.0)return 1.0; if(gap>=1.0)return 0.0;\n float margin=0.5*(1.0-gap)-abs(x-0.5);\n float w=min(max(soft,0.0),0.5*(1.0-gap));\n return w<=0.0?step(0.0,margin):smoothstep(0.0,w,margin);\n}\nfloat maker_rect_grid_mask(vec2 p,vec2 s,vec2 o,vec2 gap,float soft){\n vec2 q=fract((p-o)/maker_rect_grid_size(s));\n return maker_rect_grid_axis(q.x,gap.x,soft)*maker_rect_grid_axis(q.y,gap.y,soft);\n}",
+  "glsl_outputs": {
+    "local": "({position}-maker_rect_grid_center({position},vec2({cell_width},{cell_height}),vec2({offset_x},{offset_y})))",
+    "cell": "maker_rect_grid_index({position},vec2({cell_width},{cell_height}),vec2({offset_x},{offset_y}))",
+    "center": "maker_rect_grid_center({position},vec2({cell_width},{cell_height}),vec2({offset_x},{offset_y}))",
+    "mask": "maker_rect_grid_mask({position},vec2({cell_width},{cell_height}),vec2({offset_x},{offset_y}),vec2({gap_x},{gap_y}),{softness})"
+  },
+  "terminal": false
+}

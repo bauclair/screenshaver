@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.sparse_random_cell_field_2d",
+  "name": "Sparse Random Cell Field 2D",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "description": "Assigns independent deterministic occupancy and brightness to grid cells.",
+  "uses": "Stars, stippling, sparse cellular masks and debris.",
+  "notes": "Piecewise constant cell values; seed rounded to integer. Probability zero and one give empty and full occupancy. No particle loop.",
+  "header_color": "#557C9C",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "position2d"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "random",
+      "name": "Random Value",
+      "type": "float"
+    },
+    {
+      "id": "mask",
+      "name": "Occupancy Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    },
+    {
+      "id": "intensity",
+      "name": "Intensity",
+      "type": "float",
+      "semantic_role": "intensity"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "density",
+      "name": "Cell Density",
+      "type": "float",
+      "default": 100,
+      "min": 1,
+      "max": 1000
+    },
+    {
+      "id": "probability",
+      "name": "Occupancy Probability",
+      "type": "float",
+      "default": 0.05,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "exponent",
+      "name": "Intensity Exponent",
+      "type": "float",
+      "default": 4,
+      "min": 0.25,
+      "max": 64
+    },
+    {
+      "id": "gain",
+      "name": "Intensity Gain",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "seed",
+      "name": "Seed",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 1000
+    }
+  ],
+  "helpers": "uint maker_sparse_mix(uint n){n^=n>>16u;n*=0x7feb352du;n^=n>>15u;n*=0x846ca68bu;return n^(n>>16u);}\nvec3 maker_sparse_cell(vec2 p,float density,float probability,float exponent,float gain,float seed){\n ivec2 c=ivec2(floor(clamp(p*max(density,1.0),vec2(-1000000000.0),vec2(1000000000.0))));\n uint h=maker_sparse_mix(uint(c.x)^maker_sparse_mix(uint(c.y))^maker_sparse_mix(uint(floor(seed+0.5))));\n float r=float(maker_sparse_mix(h^0x9e3779b9u)>>8u)/16777216.0;\n float o=float(maker_sparse_mix(h^0x85ebca6bu)>>8u)/16777216.0;\n float m=o<clamp(probability,0.0,1.0)?1.0:0.0;\n return vec3(r,m,m*gain*pow(r,max(exponent,0.25)));\n}",
+  "glsl_outputs": {
+    "random": "maker_sparse_cell({position},{density},{probability},{exponent},{gain},{seed}).x",
+    "mask": "maker_sparse_cell({position},{density},{probability},{exponent},{gain},{seed}).y",
+    "intensity": "maker_sparse_cell({position},{density},{probability},{exponent},{gain},{seed}).z"
+  }
+}

@@ -8,7 +8,7 @@
   "header_color": "#557C9C",
   "description": "Evaluates a regularized folded-inversion orbit and accumulates its changing radius into a bounded scalar signal.",
   "uses": "Fractal density masks, orbit-driven emission and procedural coloring.",
-  "notes": "Independent orbit-variation formulation using normalized radius changes and weighted accumulation. Self-contained because Maker cannot reevaluate arbitrary connected transforms inside an iteration.",
+  "notes": "Independent orbit-variation formulation using normalized radius changes and weighted accumulation. Self-contained because Maker cannot reevaluate arbitrary connected transforms inside an iteration. Optional absolute and squared radius changes and response exponent; defaults retain original normalized response.",
   "inputs": [
     {
       "id": "position",
@@ -39,7 +39,7 @@
       "type": "float",
       "default": 7,
       "min": 1,
-      "max": 16
+      "max": 32
     },
     {
       "id": "inversion",
@@ -80,11 +80,30 @@
       "default": 0.84,
       "min": 0.1,
       "max": 1
+    },
+    {
+      "id": "orbit_metric",
+      "name": "Orbit Metric",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Normalized Radius",
+        "Absolute Radius",
+        "Squared Radius"
+      ]
+    },
+    {
+      "id": "response_exponent",
+      "name": "Response Exponent",
+      "type": "float",
+      "default": 1,
+      "min": 0.25,
+      "max": 4
     }
   ],
-  "helpers": "vec2 maker_bcc_orbit_signal(vec3 p,float count,float gain,float radius_floor,float offset,float sensitivity,float decay){\n vec3 q=p;float last=length(q);float total=0.0;float weight=1.0;float weights=0.0;\n for(int i=0;i<16;i++){\n  if(float(i)>=floor(count+0.5))break;\n  vec3 f=abs(q+vec3(0.21,-0.17,0.09));\n  float r2=max(dot(f,f),radius_floor*radius_floor);\n  q=clamp(gain*f/r2-vec3(offset,offset*0.61,offset*1.13),vec3(-10000.0),vec3(10000.0));\n  float current=length(q);\n  float change=abs(current-last)/(1.0+current+last);\n  total+=weight*(1.0-exp(-sensitivity*change));\n  weights+=weight;\n  weight*=clamp(decay,0.1,1.0);\n  last=current;\n }\n float v=clamp(total/max(weights,0.00001),0.0,1.0);\n return vec2(v,1.0-v);\n}",
+  "helpers": "vec2 maker_bcc_orbit_signal(vec3 p,float count,float gain,float radius_floor,float offset,float sensitivity,float decay,float metric,float exponent){\n vec3 q=p;float last=length(q);float total=0.0;float weight=1.0;float weights=0.0;\n for(int i=0;i<32;i++){\n  if(float(i)>=floor(count+0.5))break;\n  vec3 f=abs(q+vec3(0.21,-0.17,0.09));\n  float r2=max(dot(f,f),radius_floor*radius_floor);\n  q=clamp(gain*f/r2-vec3(offset,offset*0.61,offset*1.13),vec3(-10000.0),vec3(10000.0));\n  float current=length(q);\n  float change=abs(current-last)/(1.0+current+last);\n  if(metric>1.5)change=abs(current*current-last*last);\n  else if(metric>0.5)change=abs(current-last);\n  float response=exponent==1.0?change:pow(change,clamp(exponent,0.25,4.0));\n  total+=weight*(1.0-exp(-sensitivity*response));\n  weights+=weight;\n  weight*=clamp(decay,0.1,1.0);\n  last=current;\n }\n float v=clamp(total/max(weights,0.00001),0.0,1.0);\n return vec2(v,1.0-v);\n}",
   "glsl_outputs": {
-    "variation": "maker_bcc_orbit_signal({position},{iterations},{inversion},{radius_floor},{offset},{sensitivity},{decay}).x",
-    "stability": "maker_bcc_orbit_signal({position},{iterations},{inversion},{radius_floor},{offset},{sensitivity},{decay}).y"
+    "variation": "maker_bcc_orbit_signal({position},{iterations},{inversion},{radius_floor},{offset},{sensitivity},{decay},{orbit_metric},{response_exponent}).x",
+    "stability": "maker_bcc_orbit_signal({position},{iterations},{inversion},{radius_floor},{offset},{sensitivity},{decay},{orbit_metric},{response_exponent}).y"
   }
 }

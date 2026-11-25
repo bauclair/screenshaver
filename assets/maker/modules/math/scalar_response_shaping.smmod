@@ -1,0 +1,118 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.math.scalar_response_shaping",
+  "name": "Scalar Response Shaping",
+  "category": "Math",
+  "created_by": "Screenshaver",
+  "description": "Applies selectable scalar transfer functions with gain, bias and optional animated phase.",
+  "uses": "Noise shaping, ridges, density masks and procedural materials.",
+  "notes": "Normalized Value maps signed Direct and Sinusoidal results from [-1,1] to [0,1]; other modes clamp directly to [0,1]. Threshold endpoints are sorted; equal endpoints produce a step. Frequency is cycles per input unit, phase is degrees and speed is cycles per second.",
+  "header_color": "#65758B",
+  "inputs": [
+    {
+      "id": "value",
+      "name": "Scalar Value",
+      "type": "float",
+      "default": "maker_uv.x"
+    },
+    {
+      "id": "time",
+      "name": "Time",
+      "type": "float",
+      "default": "u_time",
+      "semantic_role": "time"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "shaped",
+      "name": "Shaped Value",
+      "type": "float"
+    },
+    {
+      "id": "normalized",
+      "name": "Normalized Value",
+      "type": "float",
+      "semantic_role": "intensity"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "mode",
+      "name": "Response Mode",
+      "type": "choice",
+      "default": 0,
+      "min": 0,
+      "max": 4,
+      "options": [
+        "Direct",
+        "Absolute",
+        "Ridge",
+        "Smooth Threshold",
+        "Sinusoidal"
+      ]
+    },
+    {
+      "id": "gain",
+      "name": "Input Gain",
+      "type": "float",
+      "default": 1,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "bias",
+      "name": "Input Bias",
+      "type": "float",
+      "default": 0,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "lower",
+      "name": "Lower Threshold",
+      "type": "float",
+      "default": -0.5,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "upper",
+      "name": "Upper Threshold",
+      "type": "float",
+      "default": 0.5,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "frequency",
+      "name": "Wave Frequency",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 32
+    },
+    {
+      "id": "phase",
+      "name": "Phase Offset",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "speed",
+      "name": "Animation Speed",
+      "type": "float",
+      "default": 0,
+      "min": -10,
+      "max": 10
+    }
+  ],
+  "helpers": "float maker_scalar_response(float v,float t,float mode,float gain,float bias,float lo,float hi,float freq,float phase,float speed){\n float x=v*gain+bias; int m=int(clamp(floor(mode+0.5),0.0,4.0));\n if(m==1)return abs(x); if(m==2)return max(0.0,1.0-abs(x));\n if(m==3){float a=min(lo,hi),b=max(lo,hi);return b-a<1e-6?step(a,x):smoothstep(a,b,x);}\n if(m==4)return sin(6.28318530718*(x*freq+t*speed+phase/360.0));\n return x;\n}\nfloat maker_scalar_response_normalize(float v,float mode){\n int m=int(clamp(floor(mode+0.5),0.0,4.0));return clamp((m==0||m==4)?0.5*v+0.5:v,0.0,1.0);\n}",
+  "glsl_outputs": {
+    "shaped": "maker_scalar_response({value},{time},{mode},{gain},{bias},{lower},{upper},{frequency},{phase},{speed})",
+    "normalized": "maker_scalar_response_normalize(maker_scalar_response({value},{time},{mode},{gain},{bias},{lower},{upper},{frequency},{phase},{speed}),{mode})"
+  },
+  "terminal": false
+}

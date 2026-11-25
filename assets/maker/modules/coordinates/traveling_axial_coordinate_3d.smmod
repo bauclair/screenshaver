@@ -1,0 +1,83 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.traveling_axial_coordinate_3d",
+  "name": "Traveling Axial Coordinate 3D",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "description": "Expresses position relative to a translating axial origin.",
+  "uses": "Moving modulation envelopes and traveling coordinate domains.",
+  "notes": "Gain applies only to relative scalar coordinate. Translation is not periodic.",
+  "header_color": "#627FC2",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "default": "vec3(maker_uv,0.0)",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "time",
+      "name": "Time",
+      "type": "float",
+      "default": "u_time",
+      "semantic_role": "time"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "relative",
+      "name": "Relative Coordinate",
+      "type": "float"
+    },
+    {
+      "id": "translated",
+      "name": "Translated Position",
+      "type": "vec3",
+      "semantic_role": "position3d"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "axis",
+      "name": "Travel Axis",
+      "type": "choice",
+      "default": 2,
+      "options": [
+        "X",
+        "Y",
+        "Z"
+      ]
+    },
+    {
+      "id": "speed",
+      "name": "Travel Speed",
+      "type": "float",
+      "default": 1,
+      "min": -20,
+      "max": 20
+    },
+    {
+      "id": "offset",
+      "name": "Initial Offset",
+      "type": "float",
+      "default": 0,
+      "min": -100,
+      "max": 100
+    },
+    {
+      "id": "gain",
+      "name": "Coordinate Gain",
+      "type": "float",
+      "default": 1,
+      "min": -10,
+      "max": 10
+    }
+  ],
+  "helpers": "int maker_travel_axis(float a){return int(clamp(floor(a+0.5),0.0,2.0));}\nvec3 maker_travel_position(vec3 p,float t,float a,float speed,float offset){p[maker_travel_axis(a)]-=speed*t+offset;return p;}\nfloat maker_travel_relative(vec3 p,float t,float a,float speed,float offset,float gain){return maker_travel_position(p,t,a,speed,offset)[maker_travel_axis(a)]*gain;}",
+  "glsl_outputs": {
+    "relative": "maker_travel_relative({position},{time},{axis},{speed},{offset},{gain})",
+    "translated": "maker_travel_position({position},{time},{axis},{speed},{offset})"
+  }
+}

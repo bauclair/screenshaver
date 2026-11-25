@@ -1,0 +1,105 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.cross_shape_field_2d",
+  "name": "Cross Shape Field 2D",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "description": "Combines two independently sized softened rectangular arms.",
+  "uses": "Crosses, intersecting lines and procedural symbols.",
+  "notes": "Lengths and thicknesses are half extents in coordinate units. Softness extends outward. Zero thickness retains a softened centerline. The second arm angle is measured from the positive X axis.",
+  "header_color": "#557C9C",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "position2d"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "mask",
+      "name": "Cross Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    },
+    {
+      "id": "horizontal",
+      "name": "Horizontal Arm Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    },
+    {
+      "id": "vertical",
+      "name": "Vertical Arm Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "horizontal_length",
+      "name": "Horizontal Half Length",
+      "type": "float",
+      "default": 0.2,
+      "min": 0.001,
+      "max": 10
+    },
+    {
+      "id": "vertical_length",
+      "name": "Vertical Half Length",
+      "type": "float",
+      "default": 0.2,
+      "min": 0.001,
+      "max": 10
+    },
+    {
+      "id": "horizontal_thickness",
+      "name": "Horizontal Half Thickness",
+      "type": "float",
+      "default": 0.02,
+      "min": 0,
+      "max": 2
+    },
+    {
+      "id": "vertical_thickness",
+      "name": "Vertical Half Thickness",
+      "type": "float",
+      "default": 0.02,
+      "min": 0,
+      "max": 2
+    },
+    {
+      "id": "edge_softness",
+      "name": "Edge Softness",
+      "type": "float",
+      "default": 0.02,
+      "min": 0.001,
+      "max": 1
+    },
+    {
+      "id": "end_softness",
+      "name": "End Softness",
+      "type": "float",
+      "default": 0.02,
+      "min": 0.001,
+      "max": 1
+    },
+    {
+      "id": "arm_angle",
+      "name": "Arm Angle",
+      "type": "float",
+      "default": 90,
+      "min": 0,
+      "max": 180
+    }
+  ],
+  "helpers": "vec2 maker_cross_rotate(vec2 p,float deg){float a=radians(deg),c=cos(a),s=sin(a);return vec2(c*p.x+s*p.y,-s*p.x+c*p.y);}\nfloat maker_cross_arm(vec2 p,float len,float thick,float edge,float end_soft){\n float l=max(len,0.001),w=max(thick,0.0);\n return (1.0-smoothstep(l,l+max(end_soft,0.001),abs(p.x)))*(1.0-smoothstep(w,w+max(edge,0.001),abs(p.y)));\n}",
+  "glsl_outputs": {
+    "mask": "max(maker_cross_arm({position},{horizontal_length},{horizontal_thickness},{edge_softness},{end_softness}),maker_cross_arm(maker_cross_rotate({position},{arm_angle}),{vertical_length},{vertical_thickness},{edge_softness},{end_softness}))",
+    "horizontal": "maker_cross_arm({position},{horizontal_length},{horizontal_thickness},{edge_softness},{end_softness})",
+    "vertical": "maker_cross_arm(maker_cross_rotate({position},{arm_angle}),{vertical_length},{vertical_thickness},{edge_softness},{end_softness})"
+  },
+  "terminal": false
+}

@@ -6,7 +6,7 @@
   "created_by": "Screenshaver",
   "description": "Blends two independently selected vector metrics.",
   "uses": "Geometric contours, procedural masks, lattice patterns.",
-  "notes": "Blend is clamped to [0,1]. Each metric is gain times norm plus bias, then optionally inverted as 1 minus that value. Modified metrics need not be norms or signed distances.",
+  "notes": "Blend is clamped to [0,1]. Each metric is gain times norm plus bias, then optionally inverted as 1 minus that value. Modified metrics need not be norms or signed distances. Generalized power norm uses peak normalization before exponentiation.",
   "header_color": "#65758B",
   "terminal": false,
   "inputs": [
@@ -49,7 +49,8 @@
       "options": [
         "Manhattan",
         "Euclidean",
-        "Maximum"
+        "Maximum",
+        "Generalized Power Norm"
       ]
     },
     {
@@ -60,7 +61,8 @@
       "options": [
         "Manhattan",
         "Euclidean",
-        "Maximum"
+        "Maximum",
+        "Generalized Power Norm"
       ]
     },
     {
@@ -114,12 +116,28 @@
         "No",
         "Yes"
       ]
+    },
+    {
+      "id": "first_exponent",
+      "name": "First Norm Exponent",
+      "type": "float",
+      "default": 2,
+      "min": 1,
+      "max": 32
+    },
+    {
+      "id": "second_exponent",
+      "name": "Second Norm Exponent",
+      "type": "float",
+      "default": 2,
+      "min": 1,
+      "max": 32
     }
   ],
-  "helpers": "float maker_norm_metric(vec3 v,float mode,float gain,float bias,float invert){\n vec3 a=abs(v);\n float n=mode<0.5?a.x+a.y+a.z:(mode<1.5?length(v):max(a.x,max(a.y,a.z)));\n float m=gain*n+bias;\n return invert>0.5?1.0-m:m;\n}",
+  "helpers": "float maker_norm_metric(vec3 v,float mode,float gain,float bias,float invert,float exponent){\n vec3 a=abs(v);\n float n=mode<0.5?a.x+a.y+a.z:(mode<1.5?length(v):max(a.x,max(a.y,a.z)));\n if(mode>=2.5){\n  float peak=max(a.x,max(a.y,a.z));\n  float p=clamp(exponent,1.0,32.0);\n  if(peak==0.0)n=0.0;\n  else {vec3 q=pow(a/peak,vec3(p));n=peak*pow(q.x+q.y+q.z,1.0/p);}\n }\n float m=gain*n+bias;\n return invert>0.5?1.0-m:m;\n}",
   "glsl_outputs": {
-    "metric": "mix(maker_norm_metric({vector},{first_norm},{first_gain},{first_bias},{first_invert}),maker_norm_metric({vector},{second_norm},{second_gain},{second_bias},{second_invert}),clamp({blend},0.0,1.0))",
-    "first": "maker_norm_metric({vector},{first_norm},{first_gain},{first_bias},{first_invert})",
-    "second": "maker_norm_metric({vector},{second_norm},{second_gain},{second_bias},{second_invert})"
+    "metric": "mix(maker_norm_metric({vector},{first_norm},{first_gain},{first_bias},{first_invert},{first_exponent}),maker_norm_metric({vector},{second_norm},{second_gain},{second_bias},{second_invert},{second_exponent}),clamp({blend},0.0,1.0))",
+    "first": "maker_norm_metric({vector},{first_norm},{first_gain},{first_bias},{first_invert},{first_exponent})",
+    "second": "maker_norm_metric({vector},{second_norm},{second_gain},{second_bias},{second_invert},{second_exponent})"
   }
 }

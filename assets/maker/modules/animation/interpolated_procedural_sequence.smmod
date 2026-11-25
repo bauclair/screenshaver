@@ -1,0 +1,121 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.animation.interpolated_procedural_sequence",
+  "name": "Interpolated Procedural Sequence",
+  "category": "Animation",
+  "created_by": "Screenshaver",
+  "description": "Interpolates deterministic scalar states at evenly spaced time boundaries.",
+  "uses": "Procedural parameter animation, evolving geometry and material variation.",
+  "notes": "State Index is the signed floor of time divided by duration. Transition Progress is the raw fractional state progress, independent of easing. Random states use integer hashing; phase settings affect sine and cosine only. State coordinate is clamped to +/- 8388606 for safe integer conversion and adjacent-state precision; extreme times saturate. Reversed value endpoints invert the output range.",
+  "header_color": "#B477C7",
+  "inputs": [
+    {
+      "id": "time",
+      "name": "Time",
+      "type": "float",
+      "default": "u_time",
+      "semantic_role": "time"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "value",
+      "name": "Value",
+      "type": "float"
+    },
+    {
+      "id": "state_index",
+      "name": "State Index",
+      "type": "float"
+    },
+    {
+      "id": "transition_progress",
+      "name": "Transition Progress",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "duration",
+      "name": "State Duration",
+      "type": "float",
+      "default": 10,
+      "min": 0.1,
+      "max": 120
+    },
+    {
+      "id": "phase_increment",
+      "name": "State Phase Increment",
+      "type": "float",
+      "default": 90,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "initial_phase",
+      "name": "Initial Phase",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "minimum",
+      "name": "Minimum Value",
+      "type": "float",
+      "default": -1,
+      "min": -20,
+      "max": 20
+    },
+    {
+      "id": "maximum",
+      "name": "Maximum Value",
+      "type": "float",
+      "default": 1,
+      "min": -20,
+      "max": 20
+    },
+    {
+      "id": "sequence",
+      "name": "Sequence Function",
+      "type": "choice",
+      "default": 0,
+      "min": 0,
+      "max": 2,
+      "options": [
+        "Sine",
+        "Cosine",
+        "Random"
+      ]
+    },
+    {
+      "id": "interpolation",
+      "name": "Interpolation",
+      "type": "choice",
+      "default": 2,
+      "min": 0,
+      "max": 3,
+      "options": [
+        "Step",
+        "Linear",
+        "Smooth",
+        "Smoother"
+      ]
+    },
+    {
+      "id": "seed",
+      "name": "Seed",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 1000
+    }
+  ],
+  "terminal": false,
+  "helpers": "float maker_sequence_clock(float t,float duration){return clamp(t/max(duration,0.1),-8388606.0,8388606.0);}\nuint maker_sequence_hash(uint x){x^=x>>16u;x*=0x7feb352du;x^=x>>15u;x*=0x846ca68bu;x^=x>>16u;return x;}\nfloat maker_sequence_state(float n,float increment,float phase,float mode,float seed){\n if(mode>=1.5){uint key=uint(int(n))^maker_sequence_hash(uint(clamp(floor(seed+0.5),0.0,1000.0)));return float(maker_sequence_hash(key)>>8u)/16777216.0;}\n float angle=radians(mod(n*increment+phase,360.0));\n return 0.5+0.5*(mode<0.5?sin(angle):cos(angle));\n}\nfloat maker_sequence_value(float t,float duration,float increment,float phase,float lo,float hi,float mode,float easing,float seed){\n float x=maker_sequence_clock(t,duration),n=floor(x),f=fract(x),w=f;\n if(easing<0.5)w=0.0;\n else if(easing>=2.5)w=f*f*f*(f*(6.0*f-15.0)+10.0);\n else if(easing>=1.5)w=f*f*(3.0-2.0*f);\n return mix(lo,hi,mix(maker_sequence_state(n,increment,phase,mode,seed),maker_sequence_state(n+1.0,increment,phase,mode,seed),clamp(w,0.0,1.0)));\n}",
+  "glsl_outputs": {
+    "value": "maker_sequence_value({time},{duration},{phase_increment},{initial_phase},{minimum},{maximum},{sequence},{interpolation},{seed})",
+    "state_index": "floor(maker_sequence_clock({time},{duration}))",
+    "transition_progress": "fract(maker_sequence_clock({time},{duration}))"
+  }
+}

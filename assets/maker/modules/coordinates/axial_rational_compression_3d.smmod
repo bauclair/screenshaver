@@ -1,0 +1,87 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.axial_rational_compression_3d",
+  "name": "Axial Rational Compression 3D",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "description": "Compresses selected coordinate axes using a bounded rational response.",
+  "uses": "Tapered domains, animated deformation and branching geometry.",
+  "notes": "Factor is independent of axis selection. Log-domain response bounds exponentiation. Zero strength is identity. Not a distance field.",
+  "header_color": "#627FC2",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "default": "vec3(maker_uv,0.0)",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "modulation",
+      "name": "Modulation",
+      "type": "float",
+      "default": "0.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "compressed",
+      "name": "Compressed Position",
+      "type": "vec3",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "factor",
+      "name": "Compression Factor",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "strength",
+      "name": "Compression Strength",
+      "type": "float",
+      "default": 0.1,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "exponent",
+      "name": "Response Exponent",
+      "type": "float",
+      "default": 2,
+      "min": 0.25,
+      "max": 8
+    },
+    {
+      "id": "axes",
+      "name": "Compression Axes",
+      "type": "choice",
+      "default": 4,
+      "options": [
+        "None",
+        "X",
+        "Y",
+        "Z",
+        "XY",
+        "XZ",
+        "YZ",
+        "XYZ"
+      ]
+    },
+    {
+      "id": "minimum",
+      "name": "Minimum Scale",
+      "type": "float",
+      "default": 0.001,
+      "min": 0.001,
+      "max": 1
+    }
+  ],
+  "helpers": "float maker_axial_compression_factor(float m,float k,float e,float minimum){\n if(k<=0.0)return 1.0;\n float x=abs(m); if(x==0.0)return 1.0;\n float response=exp(clamp(log(k)+clamp(e,0.25,8.0)*log(x),-80.0,80.0));\n return max(clamp(minimum,0.001,1.0),1.0/(1.0+response));\n}\nvec3 maker_axial_compress(vec3 p,float f,float axes){\n int a=int(clamp(floor(axes+0.5),0.0,7.0));\n if(a==1||a==4||a==5||a==7)p.x*=f;\n if(a==2||a==4||a==6||a==7)p.y*=f;\n if(a==3||a==5||a==6||a==7)p.z*=f;\n return p;\n}",
+  "glsl_outputs": {
+    "compressed": "maker_axial_compress({position},maker_axial_compression_factor({modulation},{strength},{exponent},{minimum}),{axes})",
+    "factor": "maker_axial_compression_factor({modulation},{strength},{exponent},{minimum})"
+  }
+}

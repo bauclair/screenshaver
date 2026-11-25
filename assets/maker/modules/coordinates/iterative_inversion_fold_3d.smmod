@@ -8,7 +8,7 @@
   "header_color": "#627FC2",
   "description": "Iteratively applies a centered absolute fold, regularized reciprocal-radius scaling, and translation to a 3D point.",
   "uses": "Fractal coordinate transforms, crystalline distortions and procedural orbit construction.",
-  "notes": "Independently designed transform. Uses a positive denominator floor to avoid singularities; output is a position, not a distance estimator. Scale outputs report nominal reciprocal scaling, not an exact derivative under regularization or clamping. Accumulated scale saturates at exp(\u00b180); zero gain returns zero and a logarithmic sentinel of -80.",
+  "notes": "Independently designed transform. Uses a positive denominator floor to avoid singularities; output is a position, not a distance estimator. Scale outputs report nominal reciprocal scaling, not an exact derivative under regularization or clamping. Accumulated scale saturates at exp(\u00b180); zero gain returns zero and a logarithmic sentinel of -80. Additive modulation is clamped to the effective parameter ranges. Absolute First computes the denominator before a second absolute fold. All outputs share the same transformation helper. Initial reflection is applied once before iteration.",
   "inputs": [
     {
       "id": "position",
@@ -16,6 +16,24 @@
       "type": "vec3",
       "semantic_role": "position3d",
       "default": "vec3(maker_uv,0.35)"
+    },
+    {
+      "id": "center_modulation",
+      "name": "Fold Center Modulation",
+      "type": "float",
+      "default": "0.0"
+    },
+    {
+      "id": "gain_modulation",
+      "name": "Inversion Gain Modulation",
+      "type": "float",
+      "default": "0.0"
+    },
+    {
+      "id": "translation_modulation",
+      "name": "Translation Modulation",
+      "type": "float",
+      "default": "0.0"
     }
   ],
   "outputs": [
@@ -43,7 +61,7 @@
       "type": "float",
       "default": 5,
       "min": 1,
-      "max": 16
+      "max": 32
     },
     {
       "id": "fold_center",
@@ -59,7 +77,7 @@
       "type": "float",
       "default": 0.9,
       "min": 0,
-      "max": 3
+      "max": 10
     },
     {
       "id": "radius_floor",
@@ -74,14 +92,51 @@
       "name": "Offset",
       "type": "float",
       "default": 0.65,
-      "min": -3,
-      "max": 3
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "fold_convention",
+      "name": "Fold Convention",
+      "type": "choice",
+      "default": 0,
+      "min": 0,
+      "max": 1,
+      "options": [
+        "Centered",
+        "Absolute First"
+      ]
+    },
+    {
+      "id": "translation_profile",
+      "name": "Translation Profile",
+      "type": "choice",
+      "default": 0,
+      "min": 0,
+      "max": 1,
+      "options": [
+        "Existing",
+        "Uniform"
+      ]
+    },
+    {
+      "id": "initial_reflection",
+      "name": "Initial Reflection",
+      "type": "choice",
+      "default": 0,
+      "min": 0,
+      "max": 2,
+      "options": [
+        "None",
+        "Positive",
+        "Negative"
+      ]
     }
   ],
-  "helpers": "vec3 maker_bcc_invert_fold(vec3 p,float count,float center,float gain,float floor_radius,float shift){\n vec3 q=p;\n for(int i=0;i<16;i++){\n  if(float(i)>=floor(count+0.5))break;\n  vec3 reflected=abs(q-vec3(center));\n  float r2=dot(reflected,reflected);\n  q=reflected*(gain/max(r2,floor_radius*floor_radius))-vec3(shift,shift*0.73,shift*1.19);\n  q=clamp(q,vec3(-10000.0),vec3(10000.0));\n }\n return q;\n}\nvec2 maker_inversion_nominal_scale(vec3 p,float count,float center,float gain,float floor_radius,float shift){\n if(gain<=0.0)return vec2(0.0,-80.0);\n vec3 q=p;float log_scale=0.0;\n for(int i=0;i<16;i++){\n  if(float(i)>=floor(count+0.5))break;\n  vec3 reflected=abs(q-vec3(center));\n  float r2=dot(reflected,reflected);\n  float factor=gain/max(r2,floor_radius*floor_radius);\n  log_scale+=log(max(factor,1e-35));\n  q=reflected*factor-vec3(shift,shift*0.73,shift*1.19);\n  q=clamp(q,vec3(-10000.0),vec3(10000.0));\n }\n return vec2(exp(clamp(log_scale,-80.0,80.0)),log_scale);\n}",
+  "helpers": "struct MakerInversionResult { vec3 position; float scale; float log_scale; };\nMakerInversionResult maker_modulated_inversion(vec3 p,float count,float center,float gain,float radius_floor,float shift,float cm,float gm,float tm,float convention,float profile,float reflection){\n float c=clamp(center+cm,-3.0,3.0),g=clamp(gain+gm,0.0,10.0),b=clamp(shift+tm,-10.0,10.0);\n float rf=clamp(radius_floor,0.001,2.0);\n vec3 q=reflection<0.5?p:(reflection<1.5?abs(p):-abs(p));\n vec3 translation=profile<0.5?vec3(b,b*0.73,b*1.19):vec3(b);\n float ls=0.0;\n int n=int(clamp(floor(count+0.5),1.0,32.0));\n for(int i=0;i<32;++i){\n  if(i>=n)break;\n  vec3 v=convention<0.5?abs(q-vec3(c)):abs(q)-vec3(c);\n  float factor=g/max(dot(v,v),rf*rf);\n  ls+=log(max(factor,1e-35));\n  q=clamp(abs(v)*factor-translation,vec3(-10000.0),vec3(10000.0));\n }\n return MakerInversionResult(q,g<=0.0?0.0:exp(clamp(ls,-80.0,80.0)),g<=0.0?-80.0:ls);\n}",
   "glsl_outputs": {
-    "folded": "maker_bcc_invert_fold({position},{iterations},{fold_center},{inversion},{radius_floor},{offset})",
-    "accumulated_scale": "maker_inversion_nominal_scale({position},{iterations},{fold_center},{inversion},{radius_floor},{offset}).x",
-    "logarithmic_scale": "maker_inversion_nominal_scale({position},{iterations},{fold_center},{inversion},{radius_floor},{offset}).y"
+    "folded": "maker_modulated_inversion({position},{iterations},{fold_center},{inversion},{radius_floor},{offset},{center_modulation},{gain_modulation},{translation_modulation},{fold_convention},{translation_profile},{initial_reflection}).position",
+    "accumulated_scale": "maker_modulated_inversion({position},{iterations},{fold_center},{inversion},{radius_floor},{offset},{center_modulation},{gain_modulation},{translation_modulation},{fold_convention},{translation_profile},{initial_reflection}).scale",
+    "logarithmic_scale": "maker_modulated_inversion({position},{iterations},{fold_center},{inversion},{radius_floor},{offset},{center_modulation},{gain_modulation},{translation_modulation},{fold_convention},{translation_profile},{initial_reflection}).log_scale"
   }
 }
