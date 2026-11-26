@@ -1,0 +1,158 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.lighting.ggx_microfacet_lighting",
+  "name": "GGX Microfacet Lighting",
+  "category": "Lighting",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "GGX Microfacet Lighting",
+  "uses": "GGX Microfacet Lighting",
+  "notes": "Linear RGB direct lighting; no distance attenuation or tone mapping.",
+  "header_color": "#527D94",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "surface_normal",
+      "name": "Surface Normal",
+      "type": "vec3",
+      "default": "vec3(0,0,1)"
+    },
+    {
+      "id": "view_direction",
+      "name": "View Direction",
+      "type": "vec3",
+      "default": "vec3(0,0,1)"
+    },
+    {
+      "id": "light_direction",
+      "name": "Light Direction",
+      "type": "vec3",
+      "default": "normalize(vec3(0.5,0.5,1))"
+    },
+    {
+      "id": "base_color",
+      "name": "Base Color",
+      "type": "vec3",
+      "default": "vec3(0.7)"
+    },
+    {
+      "id": "light_color",
+      "name": "Light Color",
+      "type": "vec3",
+      "default": "vec3(1)"
+    },
+    {
+      "id": "roughness_multiplier",
+      "name": "Roughness Multiplier",
+      "type": "float",
+      "default": "1.0"
+    },
+    {
+      "id": "metallic_multiplier",
+      "name": "Metallic Multiplier",
+      "type": "float",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "combined_lighting",
+      "name": "Combined Lighting",
+      "type": "vec3"
+    },
+    {
+      "id": "diffuse_lighting",
+      "name": "Diffuse Lighting",
+      "type": "vec3"
+    },
+    {
+      "id": "specular_lighting",
+      "name": "Specular Lighting",
+      "type": "vec3"
+    },
+    {
+      "id": "fresnel_response",
+      "name": "Fresnel Response",
+      "type": "vec3"
+    },
+    {
+      "id": "distribution",
+      "name": "Distribution",
+      "type": "float"
+    },
+    {
+      "id": "geometry_attenuation",
+      "name": "Geometry Attenuation",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "roughness",
+      "name": "Roughness",
+      "type": "float",
+      "default": 0.4,
+      "min": 0.04,
+      "max": 1
+    },
+    {
+      "id": "metallic",
+      "name": "Metallic",
+      "type": "float",
+      "default": 0,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "dielectric_reflectance",
+      "name": "Dielectric Reflectance",
+      "type": "float",
+      "default": 0.04,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "light_intensity",
+      "name": "Light Intensity",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 100
+    },
+    {
+      "id": "diffuse_strength",
+      "name": "Diffuse Strength",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 4
+    },
+    {
+      "id": "specular_strength",
+      "name": "Specular Strength",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 4
+    },
+    {
+      "id": "geometry_model",
+      "name": "Geometry Model",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Smith GGX",
+        "Schlick GGX"
+      ]
+    }
+  ],
+  "helpers": "\nstruct MakerB330GgxMicrofacetLighting {vec3 combined_lighting;vec3 diffuse_lighting;vec3 specular_lighting;vec3 fresnel_response;float distribution;float geometry_attenuation;};\nMakerB330GgxMicrofacetLighting maker_b330_ggx_microfacet_lighting(vec3 surface_normal,vec3 view_direction,vec3 light_direction,vec3 base_color,vec3 light_color,float roughness_multiplier,float metallic_multiplier,float roughness,float metallic,float dielectric_reflectance,float light_intensity,float diffuse_strength,float specular_strength,float geometry_model,float tm){\nfloat nl=length(surface_normal),vl=length(view_direction),ll=length(light_direction);if(min(nl,min(vl,ll))<1e-8)return MakerB330GgxMicrofacetLighting(vec3(0),vec3(0),vec3(0),vec3(0),0.,0.);vec3 n=surface_normal/nl,v=view_direction/vl,l=light_direction/ll;float nv=max(dot(n,v),0.),nd=max(dot(n,l),0.);if(min(nv,nd)<=0.||length(v+l)<1e-8)return MakerB330GgxMicrofacetLighting(vec3(0),vec3(0),vec3(0),vec3(0),0.,0.);vec3 h=normalize(v+l);float nh=max(dot(n,h),0.),vh=clamp(dot(v,h),0.,1.);float r=clamp(roughness*roughness_multiplier,.04,1.),a=r*r,a2=a*a;float den=nh*nh*(a2-1.)+1.;float D=a2/(3.14159265*den*den);float k=(r+1.)*(r+1.)/8.;float G=geometry_model<.5?(2.*nv/(nv+sqrt(a2+(1.-a2)*nv*nv)))*(2.*nd/(nd+sqrt(a2+(1.-a2)*nd*nd))):(nv/(nv*(1.-k)+k))*(nd/(nd*(1.-k)+k));float m=clamp(metallic*metallic_multiplier,0.,1.);vec3 base=clamp(base_color,0.,1.);vec3 F0=mix(vec3(dielectric_reflectance),base,m);vec3 F=F0+(1.-F0)*pow(1.-vh,5.);vec3 energy=max(light_color,vec3(0))*light_intensity*nd;vec3 diff=(1.-F)*(1.-m)*base/3.14159265*energy*diffuse_strength;vec3 spec=D*G*F/max(4.*nv*nd,1e-8)*energy*specular_strength;return MakerB330GgxMicrofacetLighting(diff+spec,diff,spec,F,D,G);\n}",
+  "glsl_outputs": {
+    "combined_lighting": "maker_b330_ggx_microfacet_lighting({surface_normal},{view_direction},{light_direction},{base_color},{light_color},{roughness_multiplier},{metallic_multiplier},{roughness},{metallic},{dielectric_reflectance},{light_intensity},{diffuse_strength},{specular_strength},{geometry_model},u_time).combined_lighting",
+    "diffuse_lighting": "maker_b330_ggx_microfacet_lighting({surface_normal},{view_direction},{light_direction},{base_color},{light_color},{roughness_multiplier},{metallic_multiplier},{roughness},{metallic},{dielectric_reflectance},{light_intensity},{diffuse_strength},{specular_strength},{geometry_model},u_time).diffuse_lighting",
+    "specular_lighting": "maker_b330_ggx_microfacet_lighting({surface_normal},{view_direction},{light_direction},{base_color},{light_color},{roughness_multiplier},{metallic_multiplier},{roughness},{metallic},{dielectric_reflectance},{light_intensity},{diffuse_strength},{specular_strength},{geometry_model},u_time).specular_lighting",
+    "fresnel_response": "maker_b330_ggx_microfacet_lighting({surface_normal},{view_direction},{light_direction},{base_color},{light_color},{roughness_multiplier},{metallic_multiplier},{roughness},{metallic},{dielectric_reflectance},{light_intensity},{diffuse_strength},{specular_strength},{geometry_model},u_time).fresnel_response",
+    "distribution": "maker_b330_ggx_microfacet_lighting({surface_normal},{view_direction},{light_direction},{base_color},{light_color},{roughness_multiplier},{metallic_multiplier},{roughness},{metallic},{dielectric_reflectance},{light_intensity},{diffuse_strength},{specular_strength},{geometry_model},u_time).distribution",
+    "geometry_attenuation": "maker_b330_ggx_microfacet_lighting({surface_normal},{view_direction},{light_direction},{base_color},{light_color},{roughness_multiplier},{metallic_multiplier},{roughness},{metallic},{dielectric_reflectance},{light_intensity},{diffuse_strength},{specular_strength},{geometry_model},u_time).geometry_attenuation"
+  }
+}

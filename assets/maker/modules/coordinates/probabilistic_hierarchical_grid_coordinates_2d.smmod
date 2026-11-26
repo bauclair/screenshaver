@@ -1,0 +1,141 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.probabilistic_hierarchical_grid_coordinates_2d",
+  "name": "Probabilistic Hierarchical Grid Coordinates 2D",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Probabilistic Hierarchical Grid Coordinates 2D",
+  "uses": "Probabilistic Hierarchical Grid Coordinates 2D",
+  "notes": "Local coordinates normalized; cell identifier is level-local.",
+  "header_color": "#527D94",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "grid_offset",
+      "name": "Grid Offset",
+      "type": "vec2",
+      "default": "vec2(0)"
+    },
+    {
+      "id": "scale_multiplier",
+      "name": "Scale Multiplier",
+      "type": "float",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "local_coordinates",
+      "name": "Local Coordinates",
+      "type": "vec2"
+    },
+    {
+      "id": "cell_center",
+      "name": "Cell Center",
+      "type": "vec2"
+    },
+    {
+      "id": "cell_size",
+      "name": "Cell Size",
+      "type": "float"
+    },
+    {
+      "id": "cell_identifier",
+      "name": "Cell Identifier",
+      "type": "vec2"
+    },
+    {
+      "id": "subdivision_level",
+      "name": "Subdivision Level",
+      "type": "float"
+    },
+    {
+      "id": "random_value",
+      "name": "Random Value",
+      "type": "float"
+    },
+    {
+      "id": "boundary_distance",
+      "name": "Boundary Distance",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "base_cell_size",
+      "name": "Base Cell Size",
+      "type": "float",
+      "default": 1,
+      "min": 0.001,
+      "max": 100
+    },
+    {
+      "id": "maximum_levels",
+      "name": "Maximum Levels",
+      "type": "float",
+      "default": 2,
+      "min": 1,
+      "max": 8
+    },
+    {
+      "id": "subdivision_probability",
+      "name": "Subdivision Probability",
+      "type": "float",
+      "default": 0.5,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "probability_multiplier",
+      "name": "Probability Multiplier",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 2
+    },
+    {
+      "id": "subdivision_factor",
+      "name": "Subdivision Factor",
+      "type": "float",
+      "default": 2,
+      "min": 2,
+      "max": 4
+    },
+    {
+      "id": "seed",
+      "name": "Seed",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 65535
+    },
+    {
+      "id": "coordinate_orientation",
+      "name": "Coordinate Orientation",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Centered",
+        "Positive"
+      ]
+    }
+  ],
+  "helpers": "float maker_b330_gridhash(vec2 id,float seed){return fract(sin(dot(id,vec2(127.1,311.7))+seed*19.19)*43758.5453);}\nstruct MakerB330ProbabilisticHierarchicalGridCoordinates2D {vec2 local_coordinates;vec2 cell_center;float cell_size;vec2 cell_identifier;float subdivision_level;float random_value;float boundary_distance;};\nMakerB330ProbabilisticHierarchicalGridCoordinates2D maker_b330_probabilistic_hierarchical_grid_coordinates_2d(vec2 position,vec2 grid_offset,float scale_multiplier,float base_cell_size,float maximum_levels,float subdivision_probability,float probability_multiplier,float subdivision_factor,float seed,float coordinate_orientation,float tm){\nfloat s=max(1e-6,base_cell_size*scale_multiplier);vec2 q=position-grid_offset;vec2 id=floor(q/s);float level=1.;float r=0.;float prob=subdivision_probability;for(int i=0;i<8;i++){r=maker_b330_gridhash(id,float(i)+seed);if(i+1>=int(round(maximum_levels))||r>=prob)break;s/=round(subdivision_factor);id=floor(q/s);level+=1.;prob=clamp(prob*probability_multiplier,0.,1.);}vec2 local=q/s-id;float edge=min(min(local.x,local.y),min(1.-local.x,1.-local.y))*s;return MakerB330ProbabilisticHierarchicalGridCoordinates2D(local-(coordinate_orientation<.5?.5:0.),(id+.5)*s+grid_offset,s,id,level,r,edge);\n}",
+  "glsl_outputs": {
+    "local_coordinates": "maker_b330_probabilistic_hierarchical_grid_coordinates_2d({position},{grid_offset},{scale_multiplier},{base_cell_size},{maximum_levels},{subdivision_probability},{probability_multiplier},{subdivision_factor},{seed},{coordinate_orientation},u_time).local_coordinates",
+    "cell_center": "maker_b330_probabilistic_hierarchical_grid_coordinates_2d({position},{grid_offset},{scale_multiplier},{base_cell_size},{maximum_levels},{subdivision_probability},{probability_multiplier},{subdivision_factor},{seed},{coordinate_orientation},u_time).cell_center",
+    "cell_size": "maker_b330_probabilistic_hierarchical_grid_coordinates_2d({position},{grid_offset},{scale_multiplier},{base_cell_size},{maximum_levels},{subdivision_probability},{probability_multiplier},{subdivision_factor},{seed},{coordinate_orientation},u_time).cell_size",
+    "cell_identifier": "maker_b330_probabilistic_hierarchical_grid_coordinates_2d({position},{grid_offset},{scale_multiplier},{base_cell_size},{maximum_levels},{subdivision_probability},{probability_multiplier},{subdivision_factor},{seed},{coordinate_orientation},u_time).cell_identifier",
+    "subdivision_level": "maker_b330_probabilistic_hierarchical_grid_coordinates_2d({position},{grid_offset},{scale_multiplier},{base_cell_size},{maximum_levels},{subdivision_probability},{probability_multiplier},{subdivision_factor},{seed},{coordinate_orientation},u_time).subdivision_level",
+    "random_value": "maker_b330_probabilistic_hierarchical_grid_coordinates_2d({position},{grid_offset},{scale_multiplier},{base_cell_size},{maximum_levels},{subdivision_probability},{probability_multiplier},{subdivision_factor},{seed},{coordinate_orientation},u_time).random_value",
+    "boundary_distance": "maker_b330_probabilistic_hierarchical_grid_coordinates_2d({position},{grid_offset},{scale_multiplier},{base_cell_size},{maximum_levels},{subdivision_probability},{probability_multiplier},{subdivision_factor},{seed},{coordinate_orientation},u_time).boundary_distance"
+  }
+}

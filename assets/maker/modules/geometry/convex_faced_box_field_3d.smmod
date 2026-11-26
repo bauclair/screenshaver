@@ -1,0 +1,113 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.geometry.convex_faced_box_field_3d",
+  "name": "Convex-Faced Box Field 3D",
+  "category": "Geometry",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Convex-Faced Box Field 3D",
+  "uses": "Convex-Faced Box Field 3D",
+  "notes": "Conservative Lipschitz-scaled field; face normal is dominant axis, not exact curved surface normal.",
+  "header_color": "#527D94",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "default": "vec3(maker_uv,0.0)",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec3",
+      "default": "vec3(0)"
+    },
+    {
+      "id": "size_multiplier",
+      "name": "Size Multiplier",
+      "type": "float",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "conservative_distance",
+      "name": "Conservative Distance",
+      "type": "float"
+    },
+    {
+      "id": "implicit_field",
+      "name": "Implicit Field",
+      "type": "float"
+    },
+    {
+      "id": "interior_mask",
+      "name": "Interior Mask",
+      "type": "float"
+    },
+    {
+      "id": "face_normal",
+      "name": "Face Normal",
+      "type": "vec3"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "half_width",
+      "name": "Half Width",
+      "type": "float",
+      "default": 0.5,
+      "min": 0.001,
+      "max": 100
+    },
+    {
+      "id": "half_height",
+      "name": "Half Height",
+      "type": "float",
+      "default": 0.5,
+      "min": 0.001,
+      "max": 100
+    },
+    {
+      "id": "half_depth",
+      "name": "Half Depth",
+      "type": "float",
+      "default": 0.5,
+      "min": 0.001,
+      "max": 100
+    },
+    {
+      "id": "face_curvature",
+      "name": "Face Curvature",
+      "type": "float",
+      "default": 0.1,
+      "min": 0,
+      "max": 2
+    },
+    {
+      "id": "curvature_exponent",
+      "name": "Curvature Exponent",
+      "type": "float",
+      "default": 2,
+      "min": 1,
+      "max": 8
+    },
+    {
+      "id": "boundary_offset",
+      "name": "Boundary Offset",
+      "type": "float",
+      "default": 0,
+      "min": -10,
+      "max": 10
+    }
+  ],
+  "helpers": "\nstruct MakerB330ConvexFacedBoxField3D {float conservative_distance;float implicit_field;float interior_mask;vec3 face_normal;};\nMakerB330ConvexFacedBoxField3D maker_b330_convex_faced_box_field_3d(vec3 position,vec3 center,float size_multiplier,float half_width,float half_height,float half_depth,float face_curvature,float curvature_exponent,float boundary_offset,float tm){\nvec3 h=max(vec3(1e-6),vec3(half_width,half_height,half_depth)*max(size_multiplier,1e-6));vec3 q=position-center;vec3 u=abs(q)/h;vec3 b=pow(clamp(vec3(1)-u*u,0.,1.),vec3(curvature_exponent));vec3 d=abs(q)-h-face_curvature*h*b.yzx*b.zxy;int i=d.x>=d.y&&d.x>=d.z?0:(d.y>=d.z?1:2);float raw=d[i];float bound=1.+2.*curvature_exponent*face_curvature*max(h.x,max(h.y,h.z))/min(h.x,min(h.y,h.z))*1.414214;float field=raw/bound-boundary_offset;vec3 n=vec3(0);n[i]=q[i]<0.?-1.:1.;return MakerB330ConvexFacedBoxField3D(field,raw,field<=0.?1.:0.,n);\n}",
+  "glsl_outputs": {
+    "conservative_distance": "maker_b330_convex_faced_box_field_3d({position},{center},{size_multiplier},{half_width},{half_height},{half_depth},{face_curvature},{curvature_exponent},{boundary_offset},u_time).conservative_distance",
+    "implicit_field": "maker_b330_convex_faced_box_field_3d({position},{center},{size_multiplier},{half_width},{half_height},{half_depth},{face_curvature},{curvature_exponent},{boundary_offset},u_time).implicit_field",
+    "interior_mask": "maker_b330_convex_faced_box_field_3d({position},{center},{size_multiplier},{half_width},{half_height},{half_depth},{face_curvature},{curvature_exponent},{boundary_offset},u_time).interior_mask",
+    "face_normal": "maker_b330_convex_faced_box_field_3d({position},{center},{size_multiplier},{half_width},{half_height},{half_depth},{face_curvature},{curvature_exponent},{boundary_offset},u_time).face_normal"
+  }
+}

@@ -1,0 +1,146 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.product_harmonic_coordinate_warp_2d",
+  "name": "Product Harmonic Coordinate Warp 2D",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Product Harmonic Coordinate Warp 2D",
+  "uses": "Product Harmonic Coordinate Warp 2D",
+  "notes": "",
+  "header_color": "#527D94",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "strength_multiplier",
+      "name": "Strength Multiplier",
+      "type": "float",
+      "default": "1.0"
+    },
+    {
+      "id": "time_offset",
+      "name": "Time Offset",
+      "type": "float",
+      "default": "0.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "warped_position",
+      "name": "Warped Position",
+      "type": "vec2"
+    },
+    {
+      "id": "displacement",
+      "name": "Displacement",
+      "type": "vec2"
+    },
+    {
+      "id": "displacement_magnitude",
+      "name": "Displacement Magnitude",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "iterations",
+      "name": "Iterations",
+      "type": "float",
+      "default": 7,
+      "min": 1,
+      "max": 16
+    },
+    {
+      "id": "strength",
+      "name": "Strength",
+      "type": "float",
+      "default": 0.1,
+      "min": 0,
+      "max": 4
+    },
+    {
+      "id": "base_frequency",
+      "name": "Base Frequency",
+      "type": "float",
+      "default": 1,
+      "min": 0.001,
+      "max": 128
+    },
+    {
+      "id": "frequency_exponent",
+      "name": "Frequency Exponent",
+      "type": "float",
+      "default": 2,
+      "min": 0,
+      "max": 4
+    },
+    {
+      "id": "amplitude_decay_exponent",
+      "name": "Amplitude Decay Exponent",
+      "type": "float",
+      "default": 0,
+      "min": 0,
+      "max": 4
+    },
+    {
+      "id": "animation_speed",
+      "name": "Animation Speed",
+      "type": "float",
+      "default": 0.5,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "x_phase",
+      "name": "X Phase",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "y_phase",
+      "name": "Y Phase",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "displacement_axis",
+      "name": "Displacement Axis",
+      "type": "choice",
+      "default": 1,
+      "options": [
+        "X",
+        "Y",
+        "Alternating",
+        "Both"
+      ]
+    },
+    {
+      "id": "harmonic_combination",
+      "name": "Harmonic Combination",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Sine x Sine",
+        "Sine x Cosine",
+        "Cosine x Cosine"
+      ]
+    }
+  ],
+  "helpers": "\nstruct MakerB330ProductHarmonicCoordinateWarp2D {vec2 warped_position;vec2 displacement;float displacement_magnitude;};\nMakerB330ProductHarmonicCoordinateWarp2D maker_b330_product_harmonic_coordinate_warp_2d(vec2 position,float strength_multiplier,float time_offset,float iterations,float strength,float base_frequency,float frequency_exponent,float amplitude_decay_exponent,float animation_speed,float x_phase,float y_phase,float displacement_axis,float harmonic_combination,float tm){\nvec2 q=position;float t=(tm+time_offset)*animation_speed;for(int i=0;i<16;i++){if(i>=int(round(iterations)))break;float k=float(i+1);float fr=min(base_frequency*pow(k,frequency_exponent),4096.);float a=strength*clamp(strength_multiplier,-4.,4.)/pow(k,amplitude_decay_exponent);vec2 arg=q*fr+vec2(radians(x_phase)+t,radians(y_phase)-t);float v=(harmonic_combination>1.5?cos(arg.x):sin(arg.x))*(harmonic_combination>.5?cos(arg.y):sin(arg.y));if(displacement_axis<.5||(abs(displacement_axis-2.)<.5&&i%2==0))q.x+=a*v;else if(displacement_axis>2.5)q+=vec2(a*v);else q.y+=a*v;}return MakerB330ProductHarmonicCoordinateWarp2D(q,q-position,length(q-position));\n}",
+  "glsl_outputs": {
+    "warped_position": "maker_b330_product_harmonic_coordinate_warp_2d({position},{strength_multiplier},{time_offset},{iterations},{strength},{base_frequency},{frequency_exponent},{amplitude_decay_exponent},{animation_speed},{x_phase},{y_phase},{displacement_axis},{harmonic_combination},u_time).warped_position",
+    "displacement": "maker_b330_product_harmonic_coordinate_warp_2d({position},{strength_multiplier},{time_offset},{iterations},{strength},{base_frequency},{frequency_exponent},{amplitude_decay_exponent},{animation_speed},{x_phase},{y_phase},{displacement_axis},{harmonic_combination},u_time).displacement",
+    "displacement_magnitude": "maker_b330_product_harmonic_coordinate_warp_2d({position},{strength_multiplier},{time_offset},{iterations},{strength},{base_frequency},{frequency_exponent},{amplitude_decay_exponent},{animation_speed},{x_phase},{y_phase},{displacement_axis},{harmonic_combination},u_time).displacement_magnitude"
+  }
+}

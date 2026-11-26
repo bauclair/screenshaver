@@ -1,0 +1,132 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.four_dimensional_cyclic_trigonometric_field",
+  "name": "Four-Dimensional Cyclic Trigonometric Field",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Four-Dimensional Cyclic Trigonometric Field",
+  "uses": "Four-Dimensional Cyclic Trigonometric Field",
+  "notes": "Implicit field; frequency compensation is not an SDF guarantee.",
+  "header_color": "#527D94",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "default": "vec3(maker_uv,0.0)",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "fourth_coordinate",
+      "name": "Fourth Coordinate",
+      "type": "float",
+      "default": "0.0"
+    },
+    {
+      "id": "frequency_multiplier",
+      "name": "Frequency Multiplier",
+      "type": "float",
+      "default": "1.0"
+    },
+    {
+      "id": "time_offset",
+      "name": "Time Offset",
+      "type": "float",
+      "default": "0.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "signed_field",
+      "name": "Signed Field",
+      "type": "float"
+    },
+    {
+      "id": "absolute_field",
+      "name": "Absolute Field",
+      "type": "float"
+    },
+    {
+      "id": "shell_field",
+      "name": "Shell Field",
+      "type": "float"
+    },
+    {
+      "id": "normalized_response",
+      "name": "Normalized Response",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "spatial_frequency",
+      "name": "Spatial Frequency",
+      "type": "float",
+      "default": 4,
+      "min": 0.001,
+      "max": 128
+    },
+    {
+      "id": "fourth_coordinate_frequency",
+      "name": "Fourth Coordinate Frequency",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 128
+    },
+    {
+      "id": "fourth_coordinate_animation_speed",
+      "name": "Fourth Coordinate Animation Speed",
+      "type": "float",
+      "default": 0.5,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "isovalue",
+      "name": "Isovalue",
+      "type": "float",
+      "default": 0,
+      "min": -4,
+      "max": 4
+    },
+    {
+      "id": "shell_thickness",
+      "name": "Shell Thickness",
+      "type": "float",
+      "default": 0.05,
+      "min": 0,
+      "max": 4
+    },
+    {
+      "id": "coupling_pattern",
+      "name": "Coupling Pattern",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Sequential",
+        "Reverse",
+        "Crossed"
+      ]
+    },
+    {
+      "id": "frequency_compensation",
+      "name": "Frequency Compensation",
+      "type": "choice",
+      "default": 1,
+      "options": [
+        "Disabled",
+        "Enabled"
+      ]
+    }
+  ],
+  "helpers": "\nstruct MakerB330FourDimensionalCyclicTrigonometricField {float signed_field;float absolute_field;float shell_field;float normalized_response;};\nMakerB330FourDimensionalCyclicTrigonometricField maker_b330_four_dimensional_cyclic_trigonometric_field(vec3 position,float fourth_coordinate,float frequency_multiplier,float time_offset,float spatial_frequency,float fourth_coordinate_frequency,float fourth_coordinate_animation_speed,float isovalue,float shell_thickness,float coupling_pattern,float frequency_compensation,float tm){\nfloat fr=spatial_frequency*frequency_multiplier;vec4 q=vec4(position*fr,fourth_coordinate*fourth_coordinate_frequency+(tm+time_offset)*fourth_coordinate_animation_speed);vec4 b=coupling_pattern<.5?q.yzwx:(coupling_pattern<1.5?q.wxyz:q.zwxy);float raw=dot(sin(q),cos(b));float d=raw-isovalue;float scale=frequency_compensation>.5?max(abs(fr),1e-6):1.;return MakerB330FourDimensionalCyclicTrigonometricField(d/scale,abs(d)/scale,(abs(d)-shell_thickness)/scale,clamp(.5+raw*.125,0.,1.));\n}",
+  "glsl_outputs": {
+    "signed_field": "maker_b330_four_dimensional_cyclic_trigonometric_field({position},{fourth_coordinate},{frequency_multiplier},{time_offset},{spatial_frequency},{fourth_coordinate_frequency},{fourth_coordinate_animation_speed},{isovalue},{shell_thickness},{coupling_pattern},{frequency_compensation},u_time).signed_field",
+    "absolute_field": "maker_b330_four_dimensional_cyclic_trigonometric_field({position},{fourth_coordinate},{frequency_multiplier},{time_offset},{spatial_frequency},{fourth_coordinate_frequency},{fourth_coordinate_animation_speed},{isovalue},{shell_thickness},{coupling_pattern},{frequency_compensation},u_time).absolute_field",
+    "shell_field": "maker_b330_four_dimensional_cyclic_trigonometric_field({position},{fourth_coordinate},{frequency_multiplier},{time_offset},{spatial_frequency},{fourth_coordinate_frequency},{fourth_coordinate_animation_speed},{isovalue},{shell_thickness},{coupling_pattern},{frequency_compensation},u_time).shell_field",
+    "normalized_response": "maker_b330_four_dimensional_cyclic_trigonometric_field({position},{fourth_coordinate},{frequency_multiplier},{time_offset},{spatial_frequency},{fourth_coordinate_frequency},{fourth_coordinate_animation_speed},{isovalue},{shell_thickness},{coupling_pattern},{frequency_compensation},u_time).normalized_response"
+  }
+}
