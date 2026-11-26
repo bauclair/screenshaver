@@ -1,0 +1,148 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.noise.procedural_b_spline_profile_1d",
+  "name": "Procedural B-Spline Profile 1D",
+  "category": "Noise",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Procedural B-Spline Profile 1D",
+  "uses": "Procedural B-Spline Profile 1D",
+  "notes": "Derivatives are spatial; second derivative can jump at knots.",
+  "header_color": "#527D94",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "coordinate",
+      "name": "Coordinate",
+      "type": "float",
+      "default": "maker_uv.x"
+    },
+    {
+      "id": "time_offset",
+      "name": "Time Offset",
+      "type": "float",
+      "default": "0.0"
+    },
+    {
+      "id": "amplitude_multiplier",
+      "name": "Amplitude Multiplier",
+      "type": "float",
+      "default": "1.0"
+    },
+    {
+      "id": "frequency_multiplier",
+      "name": "Frequency Multiplier",
+      "type": "float",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "profile_value",
+      "name": "Profile Value",
+      "type": "float"
+    },
+    {
+      "id": "signed_variation",
+      "name": "Signed Variation",
+      "type": "float"
+    },
+    {
+      "id": "first_derivative",
+      "name": "First Derivative",
+      "type": "float"
+    },
+    {
+      "id": "second_derivative",
+      "name": "Second Derivative",
+      "type": "float"
+    },
+    {
+      "id": "segment_fraction",
+      "name": "Segment Fraction",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "frequency",
+      "name": "Frequency",
+      "type": "float",
+      "default": 5,
+      "min": 0.001,
+      "max": 128
+    },
+    {
+      "id": "amplitude",
+      "name": "Amplitude",
+      "type": "float",
+      "default": 0.1,
+      "min": 0,
+      "max": 100
+    },
+    {
+      "id": "baseline",
+      "name": "Baseline",
+      "type": "float",
+      "default": 0,
+      "min": -100,
+      "max": 100
+    },
+    {
+      "id": "seed",
+      "name": "Seed",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 65535
+    },
+    {
+      "id": "coordinate_offset",
+      "name": "Coordinate Offset",
+      "type": "float",
+      "default": 0,
+      "min": -100,
+      "max": 100
+    },
+    {
+      "id": "scroll_speed",
+      "name": "Scroll Speed",
+      "type": "float",
+      "default": 0,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "wobble_amplitude",
+      "name": "Wobble Amplitude",
+      "type": "float",
+      "default": 0.5,
+      "min": 0,
+      "max": 4
+    },
+    {
+      "id": "wobble_speed",
+      "name": "Wobble Speed",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "wobble_frequency_variation",
+      "name": "Wobble Frequency Variation",
+      "type": "float",
+      "default": 0.3,
+      "min": 0,
+      "max": 1
+    }
+  ],
+  "helpers": "float maker_b321_splinehash(int i,uint s){uint h=uint(i)^s*0x9e3779b9u;h^=h>>16u;h*=0x7feb352du;h^=h>>15u;h*=0x846ca68bu;h^=h>>16u;return float(h&65535u)/65535.;}\nstruct MakerB321ProceduralBSplineProfile1D {float profile_value;float signed_variation;float first_derivative;float second_derivative;float segment_fraction;};\nMakerB321ProceduralBSplineProfile1D maker_b321_procedural_b_spline_profile_1d(float coordinate,float time_offset,float amplitude_multiplier,float frequency_multiplier,float frequency,float amplitude,float baseline,float seed,float coordinate_offset,float scroll_speed,float wobble_amplitude,float wobble_speed,float wobble_frequency_variation,float tm){\nfloat f=frequency*clamp(frequency_multiplier,0.,100.);float a=amplitude*amplitude_multiplier;float t=tm+time_offset;float x=clamp((coordinate+coordinate_offset+scroll_speed*t)*f,-1e6,1e6);float i=floor(x),u=fract(x);vec3 y=vec3(0);for(int j=0;j<3;j++){float h=maker_b321_splinehash(int(i)+j,uint(seed));float h2=maker_b321_splinehash(int(i)+j,uint(seed)+137u);y[j]=2.*h-1.+wobble_amplitude*sin(t*wobble_speed*(1.+wobble_frequency_variation*(2.*h2-1.))+6.2831853*h2);}float v=a*(.5*(1.-u)*(1.-u)*y.x+(.5+u-u*u)*y.y+.5*u*u*y.z);return MakerB321ProceduralBSplineProfile1D(baseline+v,v,a*f*((u-1.)*y.x+(1.-2.*u)*y.y+u*y.z),a*f*f*(y.x-2.*y.y+y.z),u);\n}",
+  "glsl_outputs": {
+    "profile_value": "maker_b321_procedural_b_spline_profile_1d({coordinate},{time_offset},{amplitude_multiplier},{frequency_multiplier},{frequency},{amplitude},{baseline},{seed},{coordinate_offset},{scroll_speed},{wobble_amplitude},{wobble_speed},{wobble_frequency_variation},u_time).profile_value",
+    "signed_variation": "maker_b321_procedural_b_spline_profile_1d({coordinate},{time_offset},{amplitude_multiplier},{frequency_multiplier},{frequency},{amplitude},{baseline},{seed},{coordinate_offset},{scroll_speed},{wobble_amplitude},{wobble_speed},{wobble_frequency_variation},u_time).signed_variation",
+    "first_derivative": "maker_b321_procedural_b_spline_profile_1d({coordinate},{time_offset},{amplitude_multiplier},{frequency_multiplier},{frequency},{amplitude},{baseline},{seed},{coordinate_offset},{scroll_speed},{wobble_amplitude},{wobble_speed},{wobble_frequency_variation},u_time).first_derivative",
+    "second_derivative": "maker_b321_procedural_b_spline_profile_1d({coordinate},{time_offset},{amplitude_multiplier},{frequency_multiplier},{frequency},{amplitude},{baseline},{seed},{coordinate_offset},{scroll_speed},{wobble_amplitude},{wobble_speed},{wobble_frequency_variation},u_time).second_derivative",
+    "segment_fraction": "maker_b321_procedural_b_spline_profile_1d({coordinate},{time_offset},{amplitude_multiplier},{frequency_multiplier},{frequency},{amplitude},{baseline},{seed},{coordinate_offset},{scroll_speed},{wobble_amplitude},{wobble_speed},{wobble_frequency_variation},u_time).segment_fraction"
+  }
+}

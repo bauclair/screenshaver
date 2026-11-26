@@ -1,0 +1,118 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.compositing.material_aware_field_selector",
+  "name": "Material-Aware Field Selector",
+  "category": "Compositing",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Material-Aware Field Selector",
+  "uses": "Material-Aware Field Selector",
+  "notes": "Selection mask is one for A. Bias applies to A comparison only. Does not transport material through callable ray traversal.",
+  "header_color": "#527D94",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "distance_a",
+      "name": "Distance A",
+      "type": "float",
+      "default": "0.0"
+    },
+    {
+      "id": "distance_b",
+      "name": "Distance B",
+      "type": "float",
+      "default": "1.0"
+    },
+    {
+      "id": "material_a",
+      "name": "Material A",
+      "type": "float",
+      "default": "0.0"
+    },
+    {
+      "id": "material_b",
+      "name": "Material B",
+      "type": "float",
+      "default": "1.0"
+    },
+    {
+      "id": "color_a",
+      "name": "Color A",
+      "type": "vec3",
+      "default": "vec3(1,0,0)"
+    },
+    {
+      "id": "color_b",
+      "name": "Color B",
+      "type": "vec3",
+      "default": "vec3(0,0,1)"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "selected_distance",
+      "name": "Selected Distance",
+      "type": "float"
+    },
+    {
+      "id": "material_identifier",
+      "name": "Material Identifier",
+      "type": "float"
+    },
+    {
+      "id": "selected_color",
+      "name": "Selected Color",
+      "type": "vec3"
+    },
+    {
+      "id": "selection_mask",
+      "name": "Selection Mask",
+      "type": "float"
+    },
+    {
+      "id": "distance_difference",
+      "name": "Distance Difference",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "selection_operation",
+      "name": "Selection Operation",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Minimum",
+        "Maximum",
+        "Minimum Absolute",
+        "Maximum Absolute"
+      ]
+    },
+    {
+      "id": "tie_resolution",
+      "name": "Tie Resolution",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Prefer A",
+        "Prefer B"
+      ]
+    },
+    {
+      "id": "comparison_bias",
+      "name": "Comparison Bias",
+      "type": "float",
+      "default": 0,
+      "min": -100,
+      "max": 100
+    }
+  ],
+  "helpers": "\nstruct MakerB321MaterialAwareFieldSelector {float selected_distance;float material_identifier;vec3 selected_color;float selection_mask;float distance_difference;};\nMakerB321MaterialAwareFieldSelector maker_b321_material_aware_field_selector(float distance_a,float distance_b,float material_a,float material_b,vec3 color_a,vec3 color_b,float selection_operation,float tie_resolution,float comparison_bias,float tm){\nfloat a=selection_operation>1.5?abs(distance_a):distance_a;float b=selection_operation>1.5?abs(distance_b):distance_b;a+=comparison_bias;bool maximum=selection_operation>.5&&selection_operation<1.5||selection_operation>2.5;bool choose=a==b?tie_resolution<.5:(maximum?a>b:a<b);return MakerB321MaterialAwareFieldSelector(choose?distance_a:distance_b,choose?material_a:material_b,choose?color_a:color_b,choose?1.:0.,distance_a-distance_b);\n}",
+  "glsl_outputs": {
+    "selected_distance": "maker_b321_material_aware_field_selector({distance_a},{distance_b},{material_a},{material_b},{color_a},{color_b},{selection_operation},{tie_resolution},{comparison_bias},u_time).selected_distance",
+    "material_identifier": "maker_b321_material_aware_field_selector({distance_a},{distance_b},{material_a},{material_b},{color_a},{color_b},{selection_operation},{tie_resolution},{comparison_bias},u_time).material_identifier",
+    "selected_color": "maker_b321_material_aware_field_selector({distance_a},{distance_b},{material_a},{material_b},{color_a},{color_b},{selection_operation},{tie_resolution},{comparison_bias},u_time).selected_color",
+    "selection_mask": "maker_b321_material_aware_field_selector({distance_a},{distance_b},{material_a},{material_b},{color_a},{color_b},{selection_operation},{tie_resolution},{comparison_bias},u_time).selection_mask",
+    "distance_difference": "maker_b321_material_aware_field_selector({distance_a},{distance_b},{material_a},{material_b},{color_a},{color_b},{selection_operation},{tie_resolution},{comparison_bias},u_time).distance_difference"
+  }
+}

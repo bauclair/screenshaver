@@ -1,0 +1,121 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.height_profile_boundary_field_2d",
+  "name": "Height Profile Boundary Field 2D",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Height Profile Boundary Field 2D",
+  "uses": "Height Profile Boundary Field 2D",
+  "notes": "Normal distance is a local approximation. Shadow offset is in approximate normal-distance units.",
+  "header_color": "#527D94",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "height",
+      "name": "Height",
+      "type": "float",
+      "default": "0.0"
+    },
+    {
+      "id": "profile_derivative",
+      "name": "Profile Derivative",
+      "type": "float",
+      "default": "0.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "signed_vertical_distance",
+      "name": "Signed Vertical Distance",
+      "type": "float"
+    },
+    {
+      "id": "approximate_normal_distance",
+      "name": "Approximate Normal Distance",
+      "type": "float"
+    },
+    {
+      "id": "fill_mask",
+      "name": "Fill Mask",
+      "type": "float"
+    },
+    {
+      "id": "boundary_mask",
+      "name": "Boundary Mask",
+      "type": "float"
+    },
+    {
+      "id": "shadow_mask",
+      "name": "Shadow Mask",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "height_offset",
+      "name": "Height Offset",
+      "type": "float",
+      "default": 0,
+      "min": -100,
+      "max": 100
+    },
+    {
+      "id": "boundary_width",
+      "name": "Boundary Width",
+      "type": "float",
+      "default": 0.01,
+      "min": 0.0001,
+      "max": 10
+    },
+    {
+      "id": "edge_softness",
+      "name": "Edge Softness",
+      "type": "float",
+      "default": 0.005,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "shadow_offset",
+      "name": "Shadow Offset",
+      "type": "float",
+      "default": 0.02,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "shadow_softness",
+      "name": "Shadow Softness",
+      "type": "float",
+      "default": 0.04,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "fill_direction",
+      "name": "Fill Direction",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Below",
+        "Above"
+      ]
+    }
+  ],
+  "helpers": "\nstruct MakerB321HeightProfileBoundaryField2D {float signed_vertical_distance;float approximate_normal_distance;float fill_mask;float boundary_mask;float shadow_mask;};\nMakerB321HeightProfileBoundaryField2D maker_b321_height_profile_boundary_field_2d(vec2 position,float height,float profile_derivative,float height_offset,float boundary_width,float edge_softness,float shadow_offset,float shadow_softness,float fill_direction,float tm){\nfloat d=position.y-height-height_offset;float slope=clamp(profile_derivative,-1e10,1e10);float n=d*inversesqrt(1.+slope*slope);float s=fill_direction<.5?1.:-1.;float e=max(edge_softness,1e-6);float fill=1.-smoothstep(-e,e,s*n);float edge=1.-smoothstep(boundary_width,boundary_width+e,abs(n));float sh=1.-smoothstep(-max(shadow_softness,1e-6),max(shadow_softness,1e-6),s*n-shadow_offset);return MakerB321HeightProfileBoundaryField2D(d,n,fill,edge,max(0.,sh-fill));\n}",
+  "glsl_outputs": {
+    "signed_vertical_distance": "maker_b321_height_profile_boundary_field_2d({position},{height},{profile_derivative},{height_offset},{boundary_width},{edge_softness},{shadow_offset},{shadow_softness},{fill_direction},u_time).signed_vertical_distance",
+    "approximate_normal_distance": "maker_b321_height_profile_boundary_field_2d({position},{height},{profile_derivative},{height_offset},{boundary_width},{edge_softness},{shadow_offset},{shadow_softness},{fill_direction},u_time).approximate_normal_distance",
+    "fill_mask": "maker_b321_height_profile_boundary_field_2d({position},{height},{profile_derivative},{height_offset},{boundary_width},{edge_softness},{shadow_offset},{shadow_softness},{fill_direction},u_time).fill_mask",
+    "boundary_mask": "maker_b321_height_profile_boundary_field_2d({position},{height},{profile_derivative},{height_offset},{boundary_width},{edge_softness},{shadow_offset},{shadow_softness},{fill_direction},u_time).boundary_mask",
+    "shadow_mask": "maker_b321_height_profile_boundary_field_2d({position},{height},{profile_derivative},{height_offset},{boundary_width},{edge_softness},{shadow_offset},{shadow_softness},{fill_direction},u_time).shadow_mask"
+  }
+}

@@ -1,0 +1,147 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.length_gated_segment_field_2d",
+  "name": "Length-Gated Segment Field 2D",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Length-Gated Segment Field 2D",
+  "uses": "Length-Gated Segment Field 2D",
+  "notes": "",
+  "header_color": "#527D94",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "start_point",
+      "name": "Start Point",
+      "type": "vec2",
+      "default": "vec2(-0.4,0)"
+    },
+    {
+      "id": "end_point",
+      "name": "End Point",
+      "type": "vec2",
+      "default": "vec2(0.4,0)"
+    },
+    {
+      "id": "width_multiplier",
+      "name": "Width Multiplier",
+      "type": "float",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "line_response",
+      "name": "Line Response",
+      "type": "float"
+    },
+    {
+      "id": "segment_distance",
+      "name": "Segment Distance",
+      "type": "float"
+    },
+    {
+      "id": "segment_fraction",
+      "name": "Segment Fraction",
+      "type": "float"
+    },
+    {
+      "id": "segment_length",
+      "name": "Segment Length",
+      "type": "float"
+    },
+    {
+      "id": "visibility",
+      "name": "Visibility",
+      "type": "float"
+    },
+    {
+      "id": "closest_point",
+      "name": "Closest Point",
+      "type": "vec2"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "line_width",
+      "name": "Line Width",
+      "type": "float",
+      "default": 0.01,
+      "min": 0.0001,
+      "max": 10
+    },
+    {
+      "id": "edge_softness",
+      "name": "Edge Softness",
+      "type": "float",
+      "default": 0.005,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "minimum_length",
+      "name": "Minimum Length",
+      "type": "float",
+      "default": 0,
+      "min": 0,
+      "max": 100
+    },
+    {
+      "id": "maximum_length",
+      "name": "Maximum Length",
+      "type": "float",
+      "default": 1,
+      "min": 0.001,
+      "max": 100
+    },
+    {
+      "id": "length_fade_width",
+      "name": "Length Fade Width",
+      "type": "float",
+      "default": 0.2,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "preferred_length",
+      "name": "Preferred Length",
+      "type": "float",
+      "default": 0.75,
+      "min": 0,
+      "max": 100
+    },
+    {
+      "id": "preferred_length_strength",
+      "name": "Preferred Length Strength",
+      "type": "float",
+      "default": 0,
+      "min": 0,
+      "max": 4
+    },
+    {
+      "id": "preferred_length_width",
+      "name": "Preferred Length Width",
+      "type": "float",
+      "default": 0.1,
+      "min": 0.001,
+      "max": 10
+    }
+  ],
+  "helpers": "\nstruct MakerB321LengthGatedSegmentField2D {float line_response;float segment_distance;float segment_fraction;float segment_length;float visibility;vec2 closest_point;};\nMakerB321LengthGatedSegmentField2D maker_b321_length_gated_segment_field_2d(vec2 position,vec2 start_point,vec2 end_point,float width_multiplier,float line_width,float edge_softness,float minimum_length,float maximum_length,float length_fade_width,float preferred_length,float preferred_length_strength,float preferred_length_width,float tm){\nvec2 e=end_point-start_point;float l=length(e);float t=l>1e-8?clamp(dot(position-start_point,e/l)/l,0.,1.):0.;vec2 q=start_point+t*e;float d=length(position-q);float w=max(0.,line_width*width_multiplier);float fade=max(length_fade_width,1e-6);float gate=(minimum_length<=0.?1.:smoothstep(minimum_length-fade,minimum_length,l))*(1.-smoothstep(maximum_length,maximum_length+fade,l));float v=gate*(1.+preferred_length_strength*exp(-pow((l-preferred_length)/preferred_length_width,2.)));return MakerB321LengthGatedSegmentField2D(v*(1.-smoothstep(w,w+max(edge_softness,1e-6),d)),d,t,l,v,q);\n}",
+  "glsl_outputs": {
+    "line_response": "maker_b321_length_gated_segment_field_2d({position},{start_point},{end_point},{width_multiplier},{line_width},{edge_softness},{minimum_length},{maximum_length},{length_fade_width},{preferred_length},{preferred_length_strength},{preferred_length_width},u_time).line_response",
+    "segment_distance": "maker_b321_length_gated_segment_field_2d({position},{start_point},{end_point},{width_multiplier},{line_width},{edge_softness},{minimum_length},{maximum_length},{length_fade_width},{preferred_length},{preferred_length_strength},{preferred_length_width},u_time).segment_distance",
+    "segment_fraction": "maker_b321_length_gated_segment_field_2d({position},{start_point},{end_point},{width_multiplier},{line_width},{edge_softness},{minimum_length},{maximum_length},{length_fade_width},{preferred_length},{preferred_length_strength},{preferred_length_width},u_time).segment_fraction",
+    "segment_length": "maker_b321_length_gated_segment_field_2d({position},{start_point},{end_point},{width_multiplier},{line_width},{edge_softness},{minimum_length},{maximum_length},{length_fade_width},{preferred_length},{preferred_length_strength},{preferred_length_width},u_time).segment_length",
+    "visibility": "maker_b321_length_gated_segment_field_2d({position},{start_point},{end_point},{width_multiplier},{line_width},{edge_softness},{minimum_length},{maximum_length},{length_fade_width},{preferred_length},{preferred_length_strength},{preferred_length_width},u_time).visibility",
+    "closest_point": "maker_b321_length_gated_segment_field_2d({position},{start_point},{end_point},{width_multiplier},{line_width},{edge_softness},{minimum_length},{maximum_length},{length_fade_width},{preferred_length},{preferred_length_strength},{preferred_length_width},u_time).closest_point"
+  }
+}

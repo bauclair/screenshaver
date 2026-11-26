@@ -1,0 +1,138 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.analytical_bokeh_response_3d",
+  "name": "Analytical Bokeh Response 3D",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Analytical Bokeh Response 3D",
+  "uses": "Analytical Bokeh Response 3D",
+  "notes": "",
+  "header_color": "#527D94",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "ray_origin",
+      "name": "Ray Origin",
+      "type": "vec3",
+      "default": "vec3(maker_uv,0.0)"
+    },
+    {
+      "id": "ray_direction",
+      "name": "Ray Direction",
+      "type": "vec3",
+      "default": "vec3(0,0,1)"
+    },
+    {
+      "id": "light_position",
+      "name": "Light Position",
+      "type": "vec3",
+      "default": "vec3(0,0,1)"
+    },
+    {
+      "id": "radius_multiplier",
+      "name": "Radius Multiplier",
+      "type": "float",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "bokeh_intensity",
+      "name": "Bokeh Intensity",
+      "type": "float"
+    },
+    {
+      "id": "disc_mask",
+      "name": "Disc Mask",
+      "type": "float"
+    },
+    {
+      "id": "rim_response",
+      "name": "Rim Response",
+      "type": "float"
+    },
+    {
+      "id": "ray_distance",
+      "name": "Ray Distance",
+      "type": "float"
+    },
+    {
+      "id": "light_depth",
+      "name": "Light Depth",
+      "type": "float"
+    },
+    {
+      "id": "effective_radius",
+      "name": "Effective Radius",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "radius",
+      "name": "Radius",
+      "type": "float",
+      "default": 0.1,
+      "min": 0.001,
+      "max": 100
+    },
+    {
+      "id": "edge_softness",
+      "name": "Edge Softness",
+      "type": "float",
+      "default": 0.15,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "center_brightness",
+      "name": "Center Brightness",
+      "type": "float",
+      "default": 0.7,
+      "min": 0,
+      "max": 4
+    },
+    {
+      "id": "rim_brightness",
+      "name": "Rim Brightness",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 4
+    },
+    {
+      "id": "rim_width",
+      "name": "Rim Width",
+      "type": "float",
+      "default": 0.2,
+      "min": 0.001,
+      "max": 1
+    },
+    {
+      "id": "depth_scaling",
+      "name": "Depth Scaling",
+      "type": "float",
+      "default": 0,
+      "min": 0,
+      "max": 4
+    },
+    {
+      "id": "intensity",
+      "name": "Intensity",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 10
+    }
+  ],
+  "helpers": "\nstruct MakerB321AnalyticalBokehResponse3D {float bokeh_intensity;float disc_mask;float rim_response;float ray_distance;float light_depth;float effective_radius;};\nMakerB321AnalyticalBokehResponse3D maker_b321_analytical_bokeh_response_3d(vec3 ray_origin,vec3 ray_direction,vec3 light_position,float radius_multiplier,float radius,float edge_softness,float center_brightness,float rim_brightness,float rim_width,float depth_scaling,float intensity,float tm){\nvec3 q=light_position-ray_origin;float l=length(ray_direction);if(l<1e-8||isnan(l)||isinf(l))return MakerB321AnalyticalBokehResponse3D(0.,0.,0.,0.,0.,0.);vec3 d=ray_direction/l;float t=dot(q,d);float r=max(1e-6,radius*max(0.,radius_multiplier)*(1.+depth_scaling*max(t,0.)));float dist=length(q-max(t,0.)*d);float x=dist/r;float mask=t<0.?0.:1.-smoothstep(1.-max(edge_softness,1e-5),1.,x);float rim=mask*smoothstep(1.-rim_width,1.,x);return MakerB321AnalyticalBokehResponse3D(intensity*(center_brightness*mask+rim_brightness*rim),mask,rim,dist,t,r);\n}",
+  "glsl_outputs": {
+    "bokeh_intensity": "maker_b321_analytical_bokeh_response_3d({ray_origin},{ray_direction},{light_position},{radius_multiplier},{radius},{edge_softness},{center_brightness},{rim_brightness},{rim_width},{depth_scaling},{intensity},u_time).bokeh_intensity",
+    "disc_mask": "maker_b321_analytical_bokeh_response_3d({ray_origin},{ray_direction},{light_position},{radius_multiplier},{radius},{edge_softness},{center_brightness},{rim_brightness},{rim_width},{depth_scaling},{intensity},u_time).disc_mask",
+    "rim_response": "maker_b321_analytical_bokeh_response_3d({ray_origin},{ray_direction},{light_position},{radius_multiplier},{radius},{edge_softness},{center_brightness},{rim_brightness},{rim_width},{depth_scaling},{intensity},u_time).rim_response",
+    "ray_distance": "maker_b321_analytical_bokeh_response_3d({ray_origin},{ray_direction},{light_position},{radius_multiplier},{radius},{edge_softness},{center_brightness},{rim_brightness},{rim_width},{depth_scaling},{intensity},u_time).ray_distance",
+    "light_depth": "maker_b321_analytical_bokeh_response_3d({ray_origin},{ray_direction},{light_position},{radius_multiplier},{radius},{edge_softness},{center_brightness},{rim_brightness},{rim_width},{depth_scaling},{intensity},u_time).light_depth",
+    "effective_radius": "maker_b321_analytical_bokeh_response_3d({ray_origin},{ray_direction},{light_position},{radius_multiplier},{radius},{edge_softness},{center_brightness},{rim_brightness},{rim_width},{depth_scaling},{intensity},u_time).effective_radius"
+  }
+}

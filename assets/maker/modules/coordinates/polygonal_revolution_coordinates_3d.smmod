@@ -1,0 +1,142 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.polygonal_revolution_coordinates_3d",
+  "name": "Polygonal Revolution Coordinates 3D",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Polygonal Revolution Coordinates 3D",
+  "uses": "Polygonal Revolution Coordinates 3D",
+  "notes": "Major radius is polygon apothem at zero circular blend. Angle is radians; transformed position packs cross-section and angle.",
+  "header_color": "#527D94",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "default": "vec3(maker_uv,0.0)",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec3",
+      "default": "vec3(0)"
+    },
+    {
+      "id": "time_offset",
+      "name": "Time Offset",
+      "type": "float",
+      "default": "0.0"
+    },
+    {
+      "id": "scale_multiplier",
+      "name": "Scale Multiplier",
+      "type": "float",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "cross_section_coordinates",
+      "name": "Cross Section Coordinates",
+      "type": "vec2"
+    },
+    {
+      "id": "transformed_position",
+      "name": "Transformed Position",
+      "type": "vec3"
+    },
+    {
+      "id": "polygonal_radius",
+      "name": "Polygonal Radius",
+      "type": "float"
+    },
+    {
+      "id": "circular_radius",
+      "name": "Circular Radius",
+      "type": "float"
+    },
+    {
+      "id": "angular_coordinate",
+      "name": "Angular Coordinate",
+      "type": "float"
+    },
+    {
+      "id": "sector_index",
+      "name": "Sector Index",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "polygon_sides",
+      "name": "Polygon Sides",
+      "type": "float",
+      "default": 6,
+      "min": 3,
+      "max": 32
+    },
+    {
+      "id": "major_radius",
+      "name": "Major Radius",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 100
+    },
+    {
+      "id": "orientation",
+      "name": "Orientation",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "circular_blend",
+      "name": "Circular Blend",
+      "type": "float",
+      "default": 0,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "cross_section_twist",
+      "name": "Cross Section Twist",
+      "type": "float",
+      "default": 0,
+      "min": -32,
+      "max": 32
+    },
+    {
+      "id": "twist_animation_speed",
+      "name": "Twist Animation Speed",
+      "type": "float",
+      "default": 0,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "rotation_axis",
+      "name": "Rotation Axis",
+      "type": "choice",
+      "default": 2,
+      "options": [
+        "X",
+        "Y",
+        "Z"
+      ]
+    }
+  ],
+  "helpers": "\nstruct MakerB321PolygonalRevolutionCoordinates3D {vec2 cross_section_coordinates;vec3 transformed_position;float polygonal_radius;float circular_radius;float angular_coordinate;float sector_index;};\nMakerB321PolygonalRevolutionCoordinates3D maker_b321_polygonal_revolution_coordinates_3d(vec3 position,vec3 center,float time_offset,float scale_multiplier,float polygon_sides,float major_radius,float orientation,float circular_blend,float cross_section_twist,float twist_animation_speed,float rotation_axis,float tm){\nvec3 q=(position-center)*max(0.,scale_multiplier);if(rotation_axis<.5)q=q.yzx;else if(rotation_axis<1.5)q=q.zxy;float r=length(q.xy);float a=r>1e-8?atan(q.y,q.x):0.;float n=clamp(round(polygon_sides),3.,32.);float period=6.283185307/n;float angle=mod(a-radians(orientation),6.283185307);float idx=floor((angle+.5*period)/period);float delta=angle-idx*period;float rp=r*cos(delta);vec2 v=vec2(mix(rp,r,circular_blend)-major_radius,q.z);float t=cross_section_twist*a+twist_animation_speed*(tm+time_offset);v=mat2(cos(t),sin(t),-sin(t),cos(t))*v;return MakerB321PolygonalRevolutionCoordinates3D(v,vec3(v,a),rp,r,a,mod(idx,n));\n}",
+  "glsl_outputs": {
+    "cross_section_coordinates": "maker_b321_polygonal_revolution_coordinates_3d({position},{center},{time_offset},{scale_multiplier},{polygon_sides},{major_radius},{orientation},{circular_blend},{cross_section_twist},{twist_animation_speed},{rotation_axis},u_time).cross_section_coordinates",
+    "transformed_position": "maker_b321_polygonal_revolution_coordinates_3d({position},{center},{time_offset},{scale_multiplier},{polygon_sides},{major_radius},{orientation},{circular_blend},{cross_section_twist},{twist_animation_speed},{rotation_axis},u_time).transformed_position",
+    "polygonal_radius": "maker_b321_polygonal_revolution_coordinates_3d({position},{center},{time_offset},{scale_multiplier},{polygon_sides},{major_radius},{orientation},{circular_blend},{cross_section_twist},{twist_animation_speed},{rotation_axis},u_time).polygonal_radius",
+    "circular_radius": "maker_b321_polygonal_revolution_coordinates_3d({position},{center},{time_offset},{scale_multiplier},{polygon_sides},{major_radius},{orientation},{circular_blend},{cross_section_twist},{twist_animation_speed},{rotation_axis},u_time).circular_radius",
+    "angular_coordinate": "maker_b321_polygonal_revolution_coordinates_3d({position},{center},{time_offset},{scale_multiplier},{polygon_sides},{major_radius},{orientation},{circular_blend},{cross_section_twist},{twist_animation_speed},{rotation_axis},u_time).angular_coordinate",
+    "sector_index": "maker_b321_polygonal_revolution_coordinates_3d({position},{center},{time_offset},{scale_multiplier},{polygon_sides},{major_radius},{orientation},{circular_blend},{cross_section_twist},{twist_animation_speed},{rotation_axis},u_time).sector_index"
+  }
+}
