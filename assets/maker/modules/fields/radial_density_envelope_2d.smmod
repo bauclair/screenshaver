@@ -1,0 +1,135 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.radial_density_envelope_2d",
+  "name": "Radial Density Envelope 2D",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Smooth disc or annular density with independently shaped radial envelopes.",
+  "uses": "Smooth disc or annular density with independently shaped radial envelopes.",
+  "notes": "Normalized Density is the unscaled envelope difference clamped to [0,1], not peak-normalized. Inner radius limited to outer radius; zero inner radius disables subtraction. Radius multiplier bounded to [0.0001,100], density multiplier to [0,10]. Nonfinite inputs return zero. No color or opacity integration.",
+  "header_color": "#348F8B",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec2",
+      "default": "vec2(0.0)",
+      "semantic_role": "offset2d"
+    },
+    {
+      "id": "radius_multiplier",
+      "name": "Radius Multiplier",
+      "type": "float",
+      "default": "1.0"
+    },
+    {
+      "id": "density_multiplier",
+      "name": "Density Multiplier",
+      "type": "float",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "density",
+      "name": "Density",
+      "type": "float",
+      "semantic_role": "intensity"
+    },
+    {
+      "id": "normalized",
+      "name": "Normalized Density",
+      "type": "float",
+      "semantic_role": "mask"
+    },
+    {
+      "id": "radial_distance",
+      "name": "Radial Distance",
+      "type": "float",
+      "semantic_role": "distance"
+    },
+    {
+      "id": "outer_envelope",
+      "name": "Outer Envelope",
+      "type": "float",
+      "semantic_role": "mask"
+    },
+    {
+      "id": "inner_envelope",
+      "name": "Inner Envelope",
+      "type": "float",
+      "semantic_role": "mask"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "outer_radius",
+      "name": "Outer Radius",
+      "type": "float",
+      "default": 1,
+      "min": 0.001,
+      "max": 100
+    },
+    {
+      "id": "inner_radius",
+      "name": "Inner Radius",
+      "type": "float",
+      "default": 0.25,
+      "min": 0,
+      "max": 100
+    },
+    {
+      "id": "outer_exponent",
+      "name": "Outer Falloff Exponent",
+      "type": "float",
+      "default": 1,
+      "min": 0.1,
+      "max": 16
+    },
+    {
+      "id": "inner_exponent",
+      "name": "Inner Falloff Exponent",
+      "type": "float",
+      "default": 1,
+      "min": 0.1,
+      "max": 16
+    },
+    {
+      "id": "strength",
+      "name": "Density Strength",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "mode",
+      "name": "Density Mode",
+      "type": "choice",
+      "default": 0,
+      "min": 0,
+      "max": 1,
+      "options": [
+        "Disc",
+        "Annular"
+      ]
+    }
+  ],
+  "helpers": "struct MakerRDE { float density; float normalized; float radial_distance; float outer_envelope; float inner_envelope; };\nfloat maker_rde_envelope(float r,float radius,float exponent){\n if(radius<=0.0)return 0.0;\n float t=clamp(1.0-r/radius,0.0,1.0);\n return pow(t*t*(3.0-2.0*t),exponent);\n}\nMakerRDE maker_rde_eval(vec2 position,vec2 center,float rm,float dm,float outer_radius,float inner_radius,float oe,float ie,float strength,float mode){\n if(any(isnan(position))||any(isinf(position))||any(isnan(center))||any(isinf(center))||isnan(rm)||isinf(rm)||isnan(dm)||isinf(dm))return MakerRDE(0.,0.,0.,0.,0.);\n float r=length(clamp(position,vec2(-1e10),vec2(1e10))-clamp(center,vec2(-1e10),vec2(1e10)));\n float scale=clamp(rm,0.0001,100.0);\n float outer=maker_rde_envelope(r,outer_radius*scale,oe);\n float inner=maker_rde_envelope(r,min(inner_radius,outer_radius)*scale,ie);\n float n=clamp(outer-(mode>=0.5?inner:0.0),0.0,1.0);\n return MakerRDE(n*strength*clamp(dm,0.,10.),n,r,outer,inner);\n}",
+  "glsl_outputs": {
+    "density": "maker_rde_eval({position},{center},{radius_multiplier},{density_multiplier},{outer_radius},{inner_radius},{outer_exponent},{inner_exponent},{strength},{mode}).density",
+    "normalized": "maker_rde_eval({position},{center},{radius_multiplier},{density_multiplier},{outer_radius},{inner_radius},{outer_exponent},{inner_exponent},{strength},{mode}).normalized",
+    "radial_distance": "maker_rde_eval({position},{center},{radius_multiplier},{density_multiplier},{outer_radius},{inner_radius},{outer_exponent},{inner_exponent},{strength},{mode}).radial_distance",
+    "outer_envelope": "maker_rde_eval({position},{center},{radius_multiplier},{density_multiplier},{outer_radius},{inner_radius},{outer_exponent},{inner_exponent},{strength},{mode}).outer_envelope",
+    "inner_envelope": "maker_rde_eval({position},{center},{radius_multiplier},{density_multiplier},{outer_radius},{inner_radius},{outer_exponent},{inner_exponent},{strength},{mode}).inner_envelope"
+  }
+}

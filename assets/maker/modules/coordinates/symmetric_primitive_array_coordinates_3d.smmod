@@ -1,0 +1,132 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.symmetric_primitive_array_coordinates_3d",
+  "name": "Symmetric Primitive Array Coordinates 3D",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Maps angular sectors to a shared local primitive coordinate system.",
+  "uses": "Maps angular sectors to a shared local primitive coordinate system.",
+  "notes": "Radius modulation is additive in coordinate units; angle modulation is additive in radians. Sector angle is absolute placement angle in radians wrapped to [0,2pi). Index is zero-based; normalized index is index/(count-1), or zero for one instance. At the axis choose sector zero. Fixed orientation preserves common world-plane orientation. Local rotation is applied relative to the selected orientation. Nearest angular sector is not an exact union for overlapping or asymmetric primitives. XY/XZ/YZ preserve the remaining axis. Radius clamped to [0,10000]; positions bounded to +/-1e10.",
+  "header_color": "#627FC2",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "default": "vec3(0.0)",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec3",
+      "default": "vec3(0.0)",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "radius_modulation",
+      "name": "Radius Modulation",
+      "type": "float",
+      "default": "0.0"
+    },
+    {
+      "id": "angle_modulation",
+      "name": "Angle Modulation",
+      "type": "float",
+      "default": "0.0",
+      "semantic_role": "angle"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "local",
+      "name": "Local Position",
+      "type": "vec3",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "index",
+      "name": "Sector Index",
+      "type": "float"
+    },
+    {
+      "id": "normalized",
+      "name": "Normalized Sector Index",
+      "type": "float"
+    },
+    {
+      "id": "angle",
+      "name": "Sector Angle",
+      "type": "float",
+      "semantic_role": "angle"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "count",
+      "name": "Primitive Count",
+      "type": "float",
+      "default": 4,
+      "min": 1,
+      "max": 64
+    },
+    {
+      "id": "radius",
+      "name": "Array Radius",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 100
+    },
+    {
+      "id": "orientation",
+      "name": "Array Orientation",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "local_rotation",
+      "name": "Local Primitive Rotation",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "plane",
+      "name": "Arrangement Plane",
+      "type": "choice",
+      "default": 0,
+      "min": 0,
+      "max": 2,
+      "options": [
+        "XY",
+        "XZ",
+        "YZ"
+      ]
+    },
+    {
+      "id": "mode",
+      "name": "Primitive Orientation",
+      "type": "choice",
+      "default": 0,
+      "min": 0,
+      "max": 1,
+      "options": [
+        "Radial",
+        "Fixed"
+      ]
+    }
+  ],
+  "helpers": "struct MakerSPAResult { vec3 local; float index; float normalized; float angle; };\nvec2 maker_spa_rotate(vec2 p,float a){float s=sin(a),c=cos(a);return vec2(c*p.x-s*p.y,s*p.x+c*p.y);}\nMakerSPAResult maker_spa_eval(vec3 p,vec3 c,float rm,float am,float count,float radius,float orientation,float local_rotation,float plane,float mode){\n if(any(isnan(p))||any(isinf(p))||any(isnan(c))||any(isinf(c))||isnan(rm)||isinf(rm)||isnan(am)||isinf(am))return MakerSPAResult(vec3(0.0),0.0,0.0,0.0);\n vec3 q=clamp(p,vec3(-1e10),vec3(1e10))-clamp(c,vec3(-1e10),vec3(1e10));\n vec2 v=plane<0.5?q.xy:(plane<1.5?q.xz:q.yz);\n float tau=6.283185307179586;float n=clamp(floor(count+0.5),1.0,64.0);float spacing=tau/n;\n float origin=mod(radians(orientation)+mod(am,tau),tau);\n float idx=dot(v,v)>0.0?mod(floor(mod(atan(v.y,v.x)-origin,tau)/spacing+0.5),n):0.0;\n float angle=mod(origin+idx*spacing,tau);\n float r=clamp(radius+rm,0.0,10000.0);\n vec2 local=v-r*vec2(cos(angle),sin(angle));\n local=maker_spa_rotate(local,-radians(local_rotation)-(mode<0.5?angle:0.0));\n vec3 result=plane<0.5?vec3(local,q.z):(plane<1.5?vec3(local.x,q.y,local.y):vec3(q.x,local));\n return MakerSPAResult(result,idx,n>1.0?idx/(n-1.0):0.0,angle);\n}",
+  "glsl_outputs": {
+    "local": "maker_spa_eval({position},{center},{radius_modulation},{angle_modulation},{count},{radius},{orientation},{local_rotation},{plane},{mode}).local",
+    "index": "maker_spa_eval({position},{center},{radius_modulation},{angle_modulation},{count},{radius},{orientation},{local_rotation},{plane},{mode}).index",
+    "normalized": "maker_spa_eval({position},{center},{radius_modulation},{angle_modulation},{count},{radius},{orientation},{local_rotation},{plane},{mode}).normalized",
+    "angle": "maker_spa_eval({position},{center},{radius_modulation},{angle_modulation},{count},{radius},{orientation},{local_rotation},{plane},{mode}).angle"
+  }
+}

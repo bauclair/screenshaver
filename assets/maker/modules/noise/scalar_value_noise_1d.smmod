@@ -1,0 +1,112 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.noise.scalar_value_noise_1d",
+  "name": "Scalar Value Noise 1D",
+  "category": "Noise",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Deterministic one-dimensional lattice value noise for scalar field remapping.",
+  "uses": "Remap scalar fields into smooth or piecewise-linear irregular responses, optionally animated.",
+  "notes": "Noise ranges from zero to Amplitude; Signed Noise ranges from negative to positive Amplitude. Derivative is with respect to Value, including effective frequency. Linear interpolation uses the right-hand derivative at lattice boundaries. Frequency Multiplier is bounded to +/-16; sampling coordinate is bounded to +/-1000000, with zero derivative outside that bound. Nonfinite inputs return zero. No textures or loops.",
+  "header_color": "#806B99",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "value",
+      "name": "Value",
+      "type": "float",
+      "default": "0.0"
+    },
+    {
+      "id": "time_offset",
+      "name": "Time Offset",
+      "type": "float",
+      "default": "0.0",
+      "semantic_role": "time"
+    },
+    {
+      "id": "frequency_multiplier",
+      "name": "Frequency Multiplier",
+      "type": "float",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "noise",
+      "name": "Noise",
+      "type": "float"
+    },
+    {
+      "id": "signed_noise",
+      "name": "Signed Noise",
+      "type": "float"
+    },
+    {
+      "id": "derivative",
+      "name": "Derivative",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "frequency",
+      "name": "Frequency",
+      "type": "float",
+      "default": 8,
+      "min": 0.001,
+      "max": 256
+    },
+    {
+      "id": "amplitude",
+      "name": "Amplitude",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "phase",
+      "name": "Phase Offset",
+      "type": "float",
+      "default": 0,
+      "min": -1000,
+      "max": 1000
+    },
+    {
+      "id": "speed",
+      "name": "Animation Speed",
+      "type": "float",
+      "default": 0,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "seed",
+      "name": "Seed",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 65535
+    },
+    {
+      "id": "interpolation",
+      "name": "Interpolation",
+      "type": "choice",
+      "default": 1,
+      "min": 0,
+      "max": 2,
+      "options": [
+        "Linear",
+        "Cubic",
+        "Quintic"
+      ]
+    }
+  ],
+  "helpers": "float maker_svn1_corner(int cell, uint seed) {\n    uint h = uint(cell + 1000001) ^ (seed * 747796405u);\n    h ^= h >> 16u; h *= 2246822519u;\n    h ^= h >> 13u; h *= 3266489917u; h ^= h >> 16u;\n    return float(h & 16777215u) / 16777215.0;\n}\nvec3 maker_svn1_eval(float v, float offset, float multiplier, float frequency, float amplitude, float phase, float speed, float seed, float interpolation) {\n    if (isnan(v)||isinf(v)||isnan(offset)||isinf(offset)||isnan(multiplier)||isinf(multiplier)||isnan(u_time)||isinf(u_time)) return vec3(0.0);\n    float k = frequency * clamp(multiplier,-16.0,16.0);\n    float t = clamp(u_time,-1e6,1e6)+clamp(offset,-1e6,1e6);\n    float raw = clamp(v,-1e20,1e20)*k + phase + speed*t;\n    float x = clamp(raw,-1e6,1e6);\n    int i = int(floor(x)); float f = fract(x);\n    uint s = uint(clamp(floor(seed+0.5),0.0,65535.0));\n    float a = maker_svn1_corner(i,s), b = maker_svn1_corner(i+1,s);\n    float w = f, dw = 1.0;\n    if (interpolation >= 1.5) { w=f*f*f*(f*(6.0*f-15.0)+10.0); dw=30.0*f*f*(f-1.0)*(f-1.0); }\n    else if (interpolation >= 0.5) { w=f*f*(3.0-2.0*f); dw=6.0*f*(1.0-f); }\n    float n = clamp(mix(a,b,w),0.0,1.0);\n    float derivative = (abs(raw)<1e6 && abs(v)<1e20) ? amplitude*(b-a)*dw*k : 0.0;\n    return vec3(amplitude*n,amplitude*(2.0*n-1.0),derivative);\n}",
+  "glsl_outputs": {
+    "noise": "maker_svn1_eval({value},{time_offset},{frequency_multiplier},{frequency},{amplitude},{phase},{speed},{seed},{interpolation}).x",
+    "signed_noise": "maker_svn1_eval({value},{time_offset},{frequency_multiplier},{frequency},{amplitude},{phase},{speed},{seed},{interpolation}).y",
+    "derivative": "maker_svn1_eval({value},{time_offset},{frequency_multiplier},{frequency},{amplitude},{phase},{speed},{seed},{interpolation}).z"
+  }
+}

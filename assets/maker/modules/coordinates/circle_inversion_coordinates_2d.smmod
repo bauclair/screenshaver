@@ -1,0 +1,112 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.circle_inversion_coordinates_2d",
+  "name": "Circle Inversion Coordinates 2D",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Geometric circle inversion with bounded singularity handling.",
+  "uses": "Geometric circle inversion with bounded singularity handling.",
+  "notes": "Standard uses exact inversion outside minimum radius and before output cap; otherwise bounded. Regularized uses r^2 + minimum_radius^2 denominator. Validity is one only for unconstrained standard inversion. Magnification is ideal local scale in standard mode and radial scale factor in regularized mode, not an isotropic derivative. At center returns center. Nonfinite inputs return zero.",
+  "header_color": "#627FC2",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec2",
+      "default": "vec2(0.0)",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "radius_multiplier",
+      "name": "Radius Multiplier",
+      "type": "float",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "inverted",
+      "name": "Inverted Position",
+      "type": "vec2",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "original_radius",
+      "name": "Original Radius",
+      "type": "float",
+      "semantic_role": "distance"
+    },
+    {
+      "id": "inverted_radius",
+      "name": "Inverted Radius",
+      "type": "float",
+      "semantic_role": "distance"
+    },
+    {
+      "id": "magnification",
+      "name": "Local Magnification",
+      "type": "float"
+    },
+    {
+      "id": "validity",
+      "name": "Validity",
+      "type": "float",
+      "semantic_role": "mask"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "radius",
+      "name": "Inversion Radius",
+      "type": "float",
+      "default": 1,
+      "min": 0.001,
+      "max": 100
+    },
+    {
+      "id": "minimum_radius",
+      "name": "Minimum Radius",
+      "type": "float",
+      "default": 0.001,
+      "min": 1e-05,
+      "max": 1
+    },
+    {
+      "id": "maximum_distance",
+      "name": "Maximum Output Distance",
+      "type": "float",
+      "default": 1000,
+      "min": 1,
+      "max": 100000
+    },
+    {
+      "id": "mode",
+      "name": "Inversion Mode",
+      "type": "choice",
+      "default": 0,
+      "min": 0,
+      "max": 1,
+      "options": [
+        "Standard",
+        "Regularized"
+      ]
+    }
+  ],
+  "helpers": "struct MakerCIResult { vec2 inverted; float original_radius; float inverted_radius; float magnification; float validity; };\nMakerCIResult maker_ci_eval(vec2 p,vec2 c,float multiplier,float radius,float minimum_radius,float maximum_distance,float mode){\n if(any(isnan(p))||any(isinf(p))||any(isnan(c))||any(isinf(c))||isnan(multiplier)||isinf(multiplier))return MakerCIResult(vec2(0),0.,0.,0.,0.);\n vec2 q=clamp(p,vec2(-1e10),vec2(1e10))-clamp(c,vec2(-1e10),vec2(1e10));float r=length(q);float R=radius*clamp(multiplier,0.0001,100.0);float m=minimum_radius;\n float k=R*R/(mode<0.5?max(r*r,m*m):r*r+m*m);float d=r*k;float bounded=min(d,maximum_distance);vec2 v=r>0.?q/r*bounded:vec2(0.);float valid=mode<0.5&&r>=m&&d<=maximum_distance&&multiplier>=0.0001&&multiplier<=100.&&all(equal(p,clamp(p,vec2(-1e10),vec2(1e10))))&&all(equal(c,clamp(c,vec2(-1e10),vec2(1e10))))?1.:0.;\n return MakerCIResult(clamp(c,vec2(-1e10),vec2(1e10))+v,r,bounded,k,valid);\n}",
+  "glsl_outputs": {
+    "inverted": "maker_ci_eval({position},{center},{radius_multiplier},{radius},{minimum_radius},{maximum_distance},{mode}).inverted",
+    "original_radius": "maker_ci_eval({position},{center},{radius_multiplier},{radius},{minimum_radius},{maximum_distance},{mode}).original_radius",
+    "inverted_radius": "maker_ci_eval({position},{center},{radius_multiplier},{radius},{minimum_radius},{maximum_distance},{mode}).inverted_radius",
+    "magnification": "maker_ci_eval({position},{center},{radius_multiplier},{radius},{minimum_radius},{maximum_distance},{mode}).magnification",
+    "validity": "maker_ci_eval({position},{center},{radius_multiplier},{radius},{minimum_radius},{maximum_distance},{mode}).validity"
+  }
+}

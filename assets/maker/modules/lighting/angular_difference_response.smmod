@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.lighting.angular_difference_response",
+  "name": "Angular Difference Response",
+  "category": "Lighting",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Hollow angular lobe from the difference of two cosine powers, with analytical peak normalization.",
+  "uses": "Hollow angular lobe from the difference of two cosine powers, with analytical peak normalization.",
+  "notes": "Exponents sorted so Broad Lobe uses the smaller exponent. Equal or nearly equal exponents (difference <= 0.0001) yield zero difference. Normalized Response is independent of intensity. Zero or nonfinite directions return zero. Bidirectional uses absolute alignment; Forward clamps negative alignment to zero. Intensity multiplier bounded to [0,10].",
+  "header_color": "#C29A56",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "direction",
+      "name": "Direction",
+      "type": "vec3",
+      "default": "vec3(0.0,0.0,1.0)",
+      "semantic_role": "direction3d"
+    },
+    {
+      "id": "reference",
+      "name": "Reference Direction",
+      "type": "vec3",
+      "default": "vec3(0.0,0.0,1.0)",
+      "semantic_role": "direction3d"
+    },
+    {
+      "id": "multiplier",
+      "name": "Intensity Multiplier",
+      "type": "float",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "response",
+      "name": "Response",
+      "type": "float",
+      "semantic_role": "intensity"
+    },
+    {
+      "id": "normalized",
+      "name": "Normalized Response",
+      "type": "float",
+      "semantic_role": "mask"
+    },
+    {
+      "id": "broad",
+      "name": "Broad Lobe",
+      "type": "float"
+    },
+    {
+      "id": "narrow",
+      "name": "Narrow Lobe",
+      "type": "float"
+    },
+    {
+      "id": "alignment",
+      "name": "Alignment",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "broad_exponent",
+      "name": "Broad Exponent",
+      "type": "float",
+      "default": 8,
+      "min": 0.1,
+      "max": 256
+    },
+    {
+      "id": "narrow_exponent",
+      "name": "Narrow Exponent",
+      "type": "float",
+      "default": 32,
+      "min": 0.1,
+      "max": 512
+    },
+    {
+      "id": "intensity",
+      "name": "Intensity",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "mode",
+      "name": "Alignment Mode",
+      "type": "choice",
+      "default": 0,
+      "min": 0,
+      "max": 1,
+      "options": [
+        "Forward",
+        "Bidirectional"
+      ]
+    }
+  ],
+  "helpers": "struct MakerADR { float response; float normalized; float broad; float narrow; float alignment; };\nMakerADR maker_adr_eval(vec3 direction,vec3 reference,float multiplier,float broad_exponent,float narrow_exponent,float intensity,float mode){\n if(any(isnan(direction))||any(isinf(direction))||any(isnan(reference))||any(isinf(reference))||isnan(multiplier)||isinf(multiplier))return MakerADR(0.,0.,0.,0.,0.);\n float ds=max(abs(direction.x),max(abs(direction.y),abs(direction.z)));float rs=max(abs(reference.x),max(abs(reference.y),abs(reference.z)));\n if(ds<=0.0||rs<=0.0)return MakerADR(0.,0.,0.,0.,0.);\n float c=dot(normalize(direction/ds),normalize(reference/rs));c=clamp(mode>=0.5?abs(c):c,0.0,1.0);\n float a=min(broad_exponent,narrow_exponent),b=max(broad_exponent,narrow_exponent);\n float broad=pow(c,a),narrow=pow(c,b);float delta=b-a;\n if(delta<=0.0001)return MakerADR(0.,0.,broad,narrow,c);\n float peak_log=log(a/b)/delta;\n float peak=exp(a*peak_log)*(1.0-a/b);\n float raw=max(broad-narrow,0.0);\n return MakerADR(raw*intensity*clamp(multiplier,0.,10.),clamp(raw/max(peak,1e-12),0.,1.),broad,narrow,c);\n}",
+  "glsl_outputs": {
+    "response": "maker_adr_eval({direction},{reference},{multiplier},{broad_exponent},{narrow_exponent},{intensity},{mode}).response",
+    "normalized": "maker_adr_eval({direction},{reference},{multiplier},{broad_exponent},{narrow_exponent},{intensity},{mode}).normalized",
+    "broad": "maker_adr_eval({direction},{reference},{multiplier},{broad_exponent},{narrow_exponent},{intensity},{mode}).broad",
+    "narrow": "maker_adr_eval({direction},{reference},{multiplier},{broad_exponent},{narrow_exponent},{intensity},{mode}).narrow",
+    "alignment": "maker_adr_eval({direction},{reference},{multiplier},{broad_exponent},{narrow_exponent},{intensity},{mode}).alignment"
+  }
+}

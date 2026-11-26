@@ -1,0 +1,106 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.crystallographic_symmetry_coordinates_2d",
+  "name": "Crystallographic Symmetry Coordinates 2D",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Canonical square or triangular lattice coordinates under rotational and optional mirror symmetry.",
+  "uses": "Canonical square or triangular lattice coordinates under rotational and optional mirror symmetry.",
+  "notes": "p4/p6 use rotational sectors; p4m/p6m fold additionally by reflection. Fundamental position in normalized lattice units; domain UV is bounding-box normalized, not barycentric. Lattice cell is nearest lattice vertex index before folding; ties deterministic. Boundary distance measures nearest supporting edge of canonical domain in lattice units. Cell index can break symmetry. Angle modulation radians; scale multiplier bounded. Fixed nine-candidate nearest lattice search for triangular lattice.",
+  "header_color": "#627FC2",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec2",
+      "default": "vec2(0.0)",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "scale_multiplier",
+      "name": "Scale Multiplier",
+      "type": "float",
+      "default": "1.0"
+    },
+    {
+      "id": "angle_modulation",
+      "name": "Angle Modulation",
+      "type": "float",
+      "default": "0.0",
+      "semantic_role": "angle"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "fundamental",
+      "name": "Fundamental Position",
+      "type": "vec2",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "uv",
+      "name": "Domain UV",
+      "type": "vec2",
+      "semantic_role": "uv"
+    },
+    {
+      "id": "cell",
+      "name": "Lattice Cell",
+      "type": "vec2"
+    },
+    {
+      "id": "boundary",
+      "name": "Domain Boundary Distance",
+      "type": "float",
+      "semantic_role": "distance"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "group",
+      "name": "Symmetry Group",
+      "type": "choice",
+      "default": 3,
+      "min": 0,
+      "max": 3,
+      "options": [
+        "p4",
+        "p4m",
+        "p6",
+        "p6m"
+      ]
+    },
+    {
+      "id": "spacing",
+      "name": "Lattice Spacing",
+      "type": "float",
+      "default": 1,
+      "min": 0.001,
+      "max": 100
+    },
+    {
+      "id": "orientation",
+      "name": "Lattice Orientation",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    }
+  ],
+  "helpers": "struct MakerCSResult { vec2 fundamental; vec2 uv; vec2 cell; float boundary; };\nvec2 maker_cs_rot(vec2 p,float a){float c=cos(a),s=sin(a);return vec2(c*p.x-s*p.y,s*p.x+c*p.y);}\nMakerCSResult maker_cs_eval(vec2 p,vec2 center,float scale,float am,float group,float spacing,float orientation){\n if(any(isnan(p))||any(isinf(p))||any(isnan(center))||any(isinf(center))||isnan(scale)||isinf(scale)||isnan(am)||isinf(am))return MakerCSResult(vec2(0),vec2(0),vec2(0),0.);\n vec2 q=clamp(maker_cs_rot(clamp(p,vec2(-1e6),vec2(1e6))-clamp(center,vec2(-1e6),vec2(1e6)),-radians(orientation)-mod(am,6.28318530718))/(spacing*clamp(scale,0.0001,100.)),vec2(-1e6),vec2(1e6));\n bool hex=group>=1.5;bool mirror=group<1.5?group>=0.5:group>=2.5;float h=0.866025403784;vec2 cell;vec2 v;\n if(hex){vec2 a=vec2(q.x-q.y/(2.*h),q.y/h);vec2 b=floor(a+0.5);float best=1e20;cell=b;v=vec2(0);for(int j=-1;j<=1;j++)for(int i=-1;i<=1;i++){vec2 k=b+vec2(i,j);vec2 z=q-vec2(k.x+0.5*k.y,h*k.y);float d=dot(z,z);if(d<best){best=d;cell=k;v=z;}}}else{cell=floor(q+0.5);v=q-cell;}\n float sector=hex?1.047197551197:1.570796326795;float r=length(v);float a=r>0.?mod(atan(v.y,v.x),sector):0.;if(mirror)a=min(a,sector-a);vec2 f=r*vec2(cos(a),sin(a));float end=mirror?sector*0.5:sector;\n float boundary=min(f.y,abs(sin(end)*f.x-cos(end)*f.y));boundary=min(boundary,0.5-f.x);if(!mirror)boundary=min(boundary,hex?0.5-dot(f,vec2(0.5,h)):0.5-f.y);\n vec2 uv=clamp(f/vec2(0.5,mirror?(hex?0.288675134595:0.5):(hex?0.57735026919:0.5)),0.,1.);\n return MakerCSResult(f,uv,cell,max(boundary,0.));\n}",
+  "glsl_outputs": {
+    "fundamental": "maker_cs_eval({position},{center},{scale_multiplier},{angle_modulation},{group},{spacing},{orientation}).fundamental",
+    "uv": "maker_cs_eval({position},{center},{scale_multiplier},{angle_modulation},{group},{spacing},{orientation}).uv",
+    "cell": "maker_cs_eval({position},{center},{scale_multiplier},{angle_modulation},{group},{spacing},{orientation}).cell",
+    "boundary": "maker_cs_eval({position},{center},{scale_multiplier},{angle_modulation},{group},{spacing},{orientation}).boundary"
+  }
+}

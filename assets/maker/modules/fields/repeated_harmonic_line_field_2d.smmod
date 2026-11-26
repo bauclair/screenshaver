@@ -1,0 +1,201 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.repeated_harmonic_line_field_2d",
+  "name": "Repeated Harmonic Line Field 2D",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Finite repeated harmonic lines with Gaussian cores and exponential glow.",
+  "uses": "Finite repeated harmonic lines with Gaussian cores and exponential glow.",
+  "notes": "Distance is transverse at the sampled longitudinal coordinate, not Euclidean curve distance. Nearest index uses lowest index on ties. Average divides by all lines; maximum combined is maximum per-line sum. Core and glow truncated at 6 and 24 widths respectively; rejection preserves nearest distance. Phase offset radians.",
+  "header_color": "#527D79",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec2",
+      "default": "vec2(0.0)"
+    },
+    {
+      "id": "time_offset",
+      "name": "Time Offset",
+      "type": "float",
+      "default": "0.0",
+      "semantic_role": "time"
+    },
+    {
+      "id": "phase_offset",
+      "name": "Phase Offset",
+      "type": "float",
+      "default": "0.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "line",
+      "name": "Line Intensity",
+      "type": "float"
+    },
+    {
+      "id": "glow",
+      "name": "Glow Intensity",
+      "type": "float"
+    },
+    {
+      "id": "combined",
+      "name": "Combined Intensity",
+      "type": "float"
+    },
+    {
+      "id": "distance",
+      "name": "Nearest Line Distance",
+      "type": "float"
+    },
+    {
+      "id": "index",
+      "name": "Nearest Line Index",
+      "type": "float"
+    },
+    {
+      "id": "normalized_index",
+      "name": "Normalized Line Index",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "count",
+      "name": "Line Count",
+      "type": "float",
+      "default": 24,
+      "min": 1,
+      "max": 150
+    },
+    {
+      "id": "distribution",
+      "name": "Distribution Width",
+      "type": "float",
+      "default": 2,
+      "min": 0,
+      "max": 20
+    },
+    {
+      "id": "orientation",
+      "name": "Orientation",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "amplitude",
+      "name": "Wave Amplitude",
+      "type": "float",
+      "default": 0.3,
+      "min": 0,
+      "max": 5
+    },
+    {
+      "id": "frequency",
+      "name": "Spatial Frequency",
+      "type": "float",
+      "default": 0.5,
+      "min": 0,
+      "max": 100
+    },
+    {
+      "id": "animation",
+      "name": "Animation Frequency",
+      "type": "float",
+      "default": 0.25,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "spread",
+      "name": "Phase Spread",
+      "type": "float",
+      "default": 360,
+      "min": -1440,
+      "max": 1440
+    },
+    {
+      "id": "secondary",
+      "name": "Secondary Harmonic Strength",
+      "type": "float",
+      "default": 0.5,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "ratio",
+      "name": "Secondary Frequency Ratio",
+      "type": "float",
+      "default": 2,
+      "min": 0.1,
+      "max": 8
+    },
+    {
+      "id": "line_width",
+      "name": "Line Width",
+      "type": "float",
+      "default": 0.005,
+      "min": 0.0001,
+      "max": 1
+    },
+    {
+      "id": "line_gain",
+      "name": "Line Intensity",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 16
+    },
+    {
+      "id": "glow_width",
+      "name": "Glow Width",
+      "type": "float",
+      "default": 0.08,
+      "min": 0.001,
+      "max": 5
+    },
+    {
+      "id": "glow_gain",
+      "name": "Glow Intensity",
+      "type": "float",
+      "default": 0.1,
+      "min": 0,
+      "max": 16
+    },
+    {
+      "id": "mode",
+      "name": "Accumulation Mode",
+      "type": "choice",
+      "default": 0,
+      "min": 0,
+      "max": 2,
+      "options": [
+        "Additive",
+        "Average",
+        "Maximum"
+      ]
+    }
+  ],
+  "helpers": "struct MakerRepeatedHarmonicLines {float line;float glow;float combined;float distance;float index;float normalized_index;};\nMakerRepeatedHarmonicLines maker_repeated_harmonic_lines(vec2 p,vec2 center,float offset,float phaseOffset,float count,float distribution,float orientation,float amp,float freq,float speed,float spread,float secondary,float ratio,float lw,float lg,float gw,float gg,float mode){\n MakerRepeatedHarmonicLines r=MakerRepeatedHarmonicLines(0.0,0.0,0.0,0.0,0.0,0.0);\n if(any(isnan(p))||any(isinf(p))||any(isnan(center))||any(isinf(center))||isnan(offset)||isinf(offset)||isnan(phaseOffset)||isinf(phaseOffset))return r;\n vec2 q=clamp(p,vec2(-1e4),vec2(1e4))-clamp(center,vec2(-1e4),vec2(1e4));float a=radians(orientation);vec2 axis=vec2(cos(a),sin(a));float x=dot(q,axis),y=dot(q,vec2(-axis.y,axis.x));\n float tau=6.28318530718,t=clamp(u_time+offset,-1e5,1e5),phase=clamp(phaseOffset,-1e5,1e5);int n=int(clamp(floor(count+0.5),1.0,150.0));\n float basePhase=tau*(freq*x+speed*t)+phase;float secondPhase=tau*(freq*ratio*x-speed*t)+phase;float best=1e30;float bound=amp*(1.0+secondary);float cutoff=max(6.0*lw,24.0*gw);\n for(int i=0;i<150;i++){if(i>=n)break;float k=n==1?0.5:float(i)/float(n-1);float base=(k-0.5)*distribution;float lower=max(0.0,abs(y-base)-bound);\n if(lower>cutoff && lower>best)continue;\n float ph=radians(spread)*k;float h=base+amp*(sin(basePhase+ph)+secondary*sin(secondPhase-ph));float d=abs(y-h);\n if(d<best){best=d;r.index=float(i);}\n float l=d<=6.0*lw?lg*exp(-pow(d/lw,2.0)):0.0;float g=d<=24.0*gw?gg*exp(-d/gw):0.0;\n if(mode>=1.5){r.line=max(r.line,l);r.glow=max(r.glow,g);r.combined=max(r.combined,l+g);}else{r.line+=l;r.glow+=g;r.combined+=l+g;}\n }\n if(mode>=0.5&&mode<1.5){r.line/=float(n);r.glow/=float(n);r.combined/=float(n);}r.distance=best;r.normalized_index=n>1?r.index/float(n-1):0.0;return r;\n}",
+  "glsl_outputs": {
+    "line": "maker_repeated_harmonic_lines({position},{center},{time_offset},{phase_offset},{count},{distribution},{orientation},{amplitude},{frequency},{animation},{spread},{secondary},{ratio},{line_width},{line_gain},{glow_width},{glow_gain},{mode}).line",
+    "glow": "maker_repeated_harmonic_lines({position},{center},{time_offset},{phase_offset},{count},{distribution},{orientation},{amplitude},{frequency},{animation},{spread},{secondary},{ratio},{line_width},{line_gain},{glow_width},{glow_gain},{mode}).glow",
+    "combined": "maker_repeated_harmonic_lines({position},{center},{time_offset},{phase_offset},{count},{distribution},{orientation},{amplitude},{frequency},{animation},{spread},{secondary},{ratio},{line_width},{line_gain},{glow_width},{glow_gain},{mode}).combined",
+    "distance": "maker_repeated_harmonic_lines({position},{center},{time_offset},{phase_offset},{count},{distribution},{orientation},{amplitude},{frequency},{animation},{spread},{secondary},{ratio},{line_width},{line_gain},{glow_width},{glow_gain},{mode}).distance",
+    "index": "maker_repeated_harmonic_lines({position},{center},{time_offset},{phase_offset},{count},{distribution},{orientation},{amplitude},{frequency},{animation},{spread},{secondary},{ratio},{line_width},{line_gain},{glow_width},{glow_gain},{mode}).index",
+    "normalized_index": "maker_repeated_harmonic_lines({position},{center},{time_offset},{phase_offset},{count},{distribution},{orientation},{amplitude},{frequency},{animation},{spread},{secondary},{ratio},{line_width},{line_gain},{glow_width},{glow_gain},{mode}).normalized_index"
+  }
+}

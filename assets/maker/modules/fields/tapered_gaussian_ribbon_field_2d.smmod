@@ -1,0 +1,131 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.tapered_gaussian_ribbon_field_2d",
+  "name": "Tapered Gaussian Ribbon Field 2D",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Oriented tapered ribbon with generalized Gaussian transverse response.",
+  "uses": "Oriented tapered ribbon with generalized Gaussian transverse response.",
+  "notes": "Longitudinal coordinate is unbounded fraction along segment; transverse distance is unsigned. Endpoint softness is a fraction of segment length outside each endpoint. Extended mode holds endpoint widths. Degenerate segment returns zero.",
+  "header_color": "#527D79",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "(gl_FragCoord.xy/u_resolution.xy*2.0-1.0)",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "start",
+      "name": "Start Point",
+      "type": "vec2",
+      "default": "vec2(0.0,0.8)"
+    },
+    {
+      "id": "end",
+      "name": "End Point",
+      "type": "vec2",
+      "default": "vec2(0.0,-0.8)"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "intensity",
+      "name": "Ribbon Intensity",
+      "type": "float"
+    },
+    {
+      "id": "normalized",
+      "name": "Normalized Intensity",
+      "type": "float"
+    },
+    {
+      "id": "width",
+      "name": "Local Width",
+      "type": "float"
+    },
+    {
+      "id": "longitudinal",
+      "name": "Longitudinal Coordinate",
+      "type": "float"
+    },
+    {
+      "id": "distance",
+      "name": "Transverse Distance",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "start_width",
+      "name": "Start Width",
+      "type": "float",
+      "default": 0.035,
+      "min": 0.001,
+      "max": 10
+    },
+    {
+      "id": "end_width",
+      "name": "End Width",
+      "type": "float",
+      "default": 0.35,
+      "min": 0.001,
+      "max": 10
+    },
+    {
+      "id": "taper",
+      "name": "Taper Exponent",
+      "type": "float",
+      "default": 0.8,
+      "min": 0.1,
+      "max": 8
+    },
+    {
+      "id": "response",
+      "name": "Response Exponent",
+      "type": "float",
+      "default": 2,
+      "min": 0.5,
+      "max": 8
+    },
+    {
+      "id": "intensity",
+      "name": "Intensity",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 32
+    },
+    {
+      "id": "softness",
+      "name": "Endpoint Softness",
+      "type": "float",
+      "default": 0.05,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "mode",
+      "name": "Endpoint Mode",
+      "type": "choice",
+      "default": 0,
+      "min": 0,
+      "max": 1,
+      "options": [
+        "Finite",
+        "Extended"
+      ]
+    }
+  ],
+  "helpers": "struct MakerGaussianRibbon {float intensity;float normalized;float width;float longitudinal;float distance;};\nMakerGaussianRibbon maker_tapered_gaussian_ribbon(vec2 p,vec2 a,vec2 b,float wa,float wb,float taper,float response,float intensity,float softness,float mode){\n MakerGaussianRibbon r=MakerGaussianRibbon(0.0,0.0,0.0,0.0,0.0);\n if(any(isnan(p))||any(isinf(p))||any(isnan(a))||any(isinf(a))||any(isnan(b))||any(isinf(b)))return r;\n p=clamp(p,vec2(-1e6),vec2(1e6));a=clamp(a,vec2(-1e6),vec2(1e6));b=clamp(b,vec2(-1e6),vec2(1e6));vec2 ab=b-a;float len=length(ab);if(len<1e-6)return r;\n vec2 axis=ab/len;vec2 q=p-a;r.longitudinal=dot(q,axis)/len;r.distance=abs(dot(q,vec2(-axis.y,axis.x)));r.width=mix(wa,wb,pow(clamp(r.longitudinal,0.0,1.0),taper));\n float gate=1.0;if(mode<0.5){if(softness<=0.0)gate=step(0.0,r.longitudinal)*step(r.longitudinal,1.0);else gate=smoothstep(-softness,0.0,r.longitudinal)*(1.0-smoothstep(1.0,1.0+softness,r.longitudinal));}\n r.normalized=gate*exp(-min(80.0,pow(min(r.distance/max(r.width,0.001),1e8),response)));r.intensity=intensity*r.normalized;return r;\n}",
+  "glsl_outputs": {
+    "intensity": "maker_tapered_gaussian_ribbon({position},{start},{end},{start_width},{end_width},{taper},{response},{intensity},{softness},{mode}).intensity",
+    "normalized": "maker_tapered_gaussian_ribbon({position},{start},{end},{start_width},{end_width},{taper},{response},{intensity},{softness},{mode}).normalized",
+    "width": "maker_tapered_gaussian_ribbon({position},{start},{end},{start_width},{end_width},{taper},{response},{intensity},{softness},{mode}).width",
+    "longitudinal": "maker_tapered_gaussian_ribbon({position},{start},{end},{start_width},{end_width},{taper},{response},{intensity},{softness},{mode}).longitudinal",
+    "distance": "maker_tapered_gaussian_ribbon({position},{start},{end},{start_width},{end_width},{taper},{response},{intensity},{softness},{mode}).distance"
+  }
+}

@@ -1,0 +1,200 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.noise.flow_modulated_fractal_noise_2d",
+  "name": "Flow-Modulated Fractal Noise 2D",
+  "category": "Noise",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Procedural fractal noise with bounded per-octave circulation and displacement feedback.",
+  "uses": "Procedural fractal noise with bounded per-octave circulation and displacement feedback.",
+  "notes": "Final Displacement is in final octave sampling units. Flow multiplier bounded to +/-4; displacement components bounded to +/-64; frequency capped at 4096. Ridged response uses squared ridge; sinusoidal response frequency in cycles per signed noise unit. No textures.",
+  "header_color": "#806B99",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "time_offset",
+      "name": "Time Offset",
+      "type": "float",
+      "default": "0.0",
+      "semantic_role": "time"
+    },
+    {
+      "id": "flow_multiplier",
+      "name": "Flow Multiplier",
+      "type": "float",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "noise",
+      "name": "Noise",
+      "type": "float"
+    },
+    {
+      "id": "normalized",
+      "name": "Normalized Noise",
+      "type": "float"
+    },
+    {
+      "id": "displacement",
+      "name": "Final Displacement",
+      "type": "vec2",
+      "semantic_role": "offset2d"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "frequency",
+      "name": "Initial Frequency",
+      "type": "float",
+      "default": 2,
+      "min": 0.01,
+      "max": 100
+    },
+    {
+      "id": "amplitude",
+      "name": "Amplitude",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 8
+    },
+    {
+      "id": "octaves",
+      "name": "Octaves",
+      "type": "float",
+      "default": 5,
+      "min": 1,
+      "max": 8
+    },
+    {
+      "id": "persistence",
+      "name": "Persistence",
+      "type": "float",
+      "default": 0.5,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "lacunarity",
+      "name": "Lacunarity",
+      "type": "float",
+      "default": 2,
+      "min": 1,
+      "max": 4
+    },
+    {
+      "id": "rotation",
+      "name": "Octave Rotation",
+      "type": "float",
+      "default": 25,
+      "min": -180,
+      "max": 180
+    },
+    {
+      "id": "flow_frequency",
+      "name": "Flow Frequency",
+      "type": "float",
+      "default": 2,
+      "min": 0.01,
+      "max": 100
+    },
+    {
+      "id": "flow_strength",
+      "name": "Flow Strength",
+      "type": "float",
+      "default": 0.35,
+      "min": 0,
+      "max": 4
+    },
+    {
+      "id": "flow_decay",
+      "name": "Flow Strength Decay",
+      "type": "float",
+      "default": 0.75,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "feedback",
+      "name": "Displacement Persistence",
+      "type": "float",
+      "default": 0.5,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "flow_rotation",
+      "name": "Flow Rotation",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "speed",
+      "name": "Animation Speed",
+      "type": "float",
+      "default": 0.25,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "seed",
+      "name": "Seed",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 65535
+    },
+    {
+      "id": "response_frequency",
+      "name": "Response Frequency",
+      "type": "float",
+      "default": 1,
+      "min": 0.1,
+      "max": 8
+    },
+    {
+      "id": "response",
+      "name": "Noise Response",
+      "type": "choice",
+      "default": 0,
+      "min": 0,
+      "max": 3,
+      "options": [
+        "Standard",
+        "Turbulent",
+        "Ridged",
+        "Sinusoidal"
+      ]
+    },
+    {
+      "id": "normalization",
+      "name": "Flow Normalization",
+      "type": "choice",
+      "default": 2,
+      "min": 0,
+      "max": 2,
+      "options": [
+        "Natural",
+        "Unit",
+        "Soft"
+      ]
+    }
+  ],
+  "helpers": "uint maker_fmfn_hash(uvec2 c,uint seed){uint h=c.x*1664525u+c.y*1013904223u+seed*747796405u;h^=h>>16u;h*=2246822519u;h^=h>>13u;h*=3266489917u;return h^(h>>16u);}\nfloat maker_fmfn_corner(uvec2 c,uint seed){return float(maker_fmfn_hash(c%65536u,seed)&65535u)/32767.5-1.0;}\nfloat maker_fmfn_value(vec2 p,uint seed){vec2 q=mod(p,65536.0);uvec2 c=uvec2(floor(q));vec2 f=fract(q);vec2 w=f*f*f*(f*(6.0*f-15.0)+10.0);return mix(mix(maker_fmfn_corner(c,seed),maker_fmfn_corner(c+uvec2(1,0),seed),w.x),mix(maker_fmfn_corner(c+uvec2(0,1),seed),maker_fmfn_corner(c+uvec2(1,1),seed),w.x),w.y);}\n\nvec4 maker_fmfn_eval(vec2 p,float offset,float multiplier,float freq,float amp,float oct,float persistence,float lacunarity,float rotation,float flow_freq,float flow_strength,float decay,float feedback,float flow_rotation,float speed,float seed,float response_freq,float response,float normalization){\n if(any(isnan(p))||any(isinf(p))||isnan(offset)||isinf(offset)||isnan(multiplier)||isinf(multiplier)||isnan(u_time)||isinf(u_time))return vec4(0);\n float t=clamp(u_time+offset,-1e5,1e5)*speed;vec2 b=clamp(p,vec2(-1e4),vec2(1e4)),d=vec2(0);float a=radians(rotation),r=radians(flow_rotation);mat2 rot=mat2(cos(a),sin(a),-sin(a),cos(a)),fr=mat2(cos(r),sin(r),-sin(r),cos(r));float strength=flow_strength*clamp(multiplier,-4.0,4.0),w=1.0,total=0.0,weights=0.0;int count=int(clamp(floor(oct+0.5),1.0,8.0));uint s=uint(clamp(seed,0.0,65535.0));\n for(int i=0;i<8;i++){if(i>=count)break;vec2 q=b*freq+d;vec2 phase=q*flow_freq+vec2(t,-0.7*t);vec2 sn=sin(phase),cs=cos(phase);vec2 v=flow_freq*vec2(sn.x*cs.y,-cs.x*sn.y);float m=length(v);if(normalization>=0.5)v=normalization<1.5?(m>1e-6?v/m:vec2(0)):v/sqrt(1.0+m*m);d=clamp(feedback*d+strength*(fr*v),vec2(-64),vec2(64));float n=clamp(maker_fmfn_value(b*freq+d,s+uint(i)*7919u),-1.0,1.0);float val=response<0.5?n:response<1.5?abs(n):response<2.5?pow(1.0-abs(n),2.0):0.5+0.5*sin(6.28318530718*response_freq*n);total+=w*val;weights+=w;w*=persistence;strength*=decay;freq=min(4096.0,freq*lacunarity);b=rot*b;}\n float v=total/max(weights,1e-6);return vec4(amp*v,clamp(response<0.5?0.5+0.5*v:v,0.0,1.0),d);\n}",
+  "glsl_outputs": {
+    "noise": "maker_fmfn_eval({position},{time_offset},{flow_multiplier},{frequency},{amplitude},{octaves},{persistence},{lacunarity},{rotation},{flow_frequency},{flow_strength},{flow_decay},{feedback},{flow_rotation},{speed},{seed},{response_frequency},{response},{normalization}).x",
+    "normalized": "maker_fmfn_eval({position},{time_offset},{flow_multiplier},{frequency},{amplitude},{octaves},{persistence},{lacunarity},{rotation},{flow_frequency},{flow_strength},{flow_decay},{feedback},{flow_rotation},{speed},{seed},{response_frequency},{response},{normalization}).y",
+    "displacement": "maker_fmfn_eval({position},{time_offset},{flow_multiplier},{frequency},{amplitude},{octaves},{persistence},{lacunarity},{rotation},{flow_frequency},{flow_strength},{flow_decay},{feedback},{flow_rotation},{speed},{seed},{response_frequency},{response},{normalization}).zw"
+  }
+}

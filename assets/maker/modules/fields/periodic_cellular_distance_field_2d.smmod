@@ -1,0 +1,161 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.periodic_cellular_distance_field_2d",
+  "name": "Periodic Cellular Distance Field 2D",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Periodic or nonperiodic animated cellular distances and nearest-site attributes.",
+  "uses": "Periodic or nonperiodic animated cellular distances and nearest-site attributes.",
+  "notes": "Distances and offset in scaled lattice units. Wrapped axes repeat every period/density coordinate units within floating-point precision. F2-F1 is not exact boundary distance. Fixed 5x5 search; ties use traversal order. Animation blends seeded static offsets with bounded sinusoidal offsets; speed zero freezes motion. Coordinates outside +/-100000 are clamped. Nonfinite position/time returns zero. Nonperiodic hash uses integer lattice identities.",
+  "header_color": "#348F8B",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "time_offset",
+      "name": "Time Offset",
+      "type": "float",
+      "default": "0.0",
+      "semantic_role": "time"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "nearest",
+      "name": "Nearest Distance",
+      "type": "float",
+      "semantic_role": "distance"
+    },
+    {
+      "id": "second",
+      "name": "Second Distance",
+      "type": "float",
+      "semantic_role": "distance"
+    },
+    {
+      "id": "gap",
+      "name": "Distance Gap",
+      "type": "float",
+      "semantic_role": "distance"
+    },
+    {
+      "id": "random_value",
+      "name": "Cell Random Value",
+      "type": "float"
+    },
+    {
+      "id": "site_offset",
+      "name": "Nearest Site Offset",
+      "type": "vec2",
+      "semantic_role": "offset2d"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "density_x",
+      "name": "Horizontal Density",
+      "type": "float",
+      "default": 8,
+      "min": 0.01,
+      "max": 100
+    },
+    {
+      "id": "density_y",
+      "name": "Vertical Density",
+      "type": "float",
+      "default": 8,
+      "min": 0.01,
+      "max": 100
+    },
+    {
+      "id": "period_x",
+      "name": "Horizontal Period",
+      "type": "float",
+      "default": 8,
+      "min": 1,
+      "max": 256
+    },
+    {
+      "id": "period_y",
+      "name": "Vertical Period",
+      "type": "float",
+      "default": 8,
+      "min": 1,
+      "max": 256
+    },
+    {
+      "id": "jitter",
+      "name": "Jitter",
+      "type": "float",
+      "default": 0.8,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "seed",
+      "name": "Seed",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 65535
+    },
+    {
+      "id": "speed",
+      "name": "Animation Speed",
+      "type": "float",
+      "default": 0,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "animation_strength",
+      "name": "Animation Strength",
+      "type": "float",
+      "default": 0.25,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "metric",
+      "name": "Distance Metric",
+      "type": "choice",
+      "default": 0,
+      "min": 0,
+      "max": 2,
+      "options": [
+        "Euclidean",
+        "Manhattan",
+        "Chebyshev"
+      ]
+    },
+    {
+      "id": "repeat_mode",
+      "name": "Repetition Mode",
+      "type": "choice",
+      "default": 3,
+      "min": 0,
+      "max": 3,
+      "options": [
+        "None",
+        "Horizontal",
+        "Vertical",
+        "Both Axes"
+      ]
+    }
+  ],
+  "helpers": "struct MakerPCDResult { float nearest; float second; float gap; float random_value; vec2 site_offset; };\nuint maker_pcd_mix(uint x){x ^= x >> 16u; x *= 0x7feb352du; x ^= x >> 15u; x *= 0x846ca68bu; return x ^ (x >> 16u);}\nfloat maker_pcd_random(ivec2 c,uint seed,uint stream){uint h=maker_pcd_mix(uint(c.x)^maker_pcd_mix(uint(c.y)+0x9e3779b9u)^maker_pcd_mix(seed+stream*0x85ebca6bu));return float(h >> 8u)/16777216.0;}\nint maker_pcd_wrap(int x,int n){return ((x%n)+n)%n;}\nMakerPCDResult maker_pcd_eval(vec2 p,float time_offset,float density_x,float density_y,float period_x,float period_y,float jitter,float seed,float speed,float animation_strength,float metric,float repeat_mode){\n if(any(isnan(p))||any(isinf(p))||isnan(time_offset)||isinf(time_offset))return MakerPCDResult(0.0,0.0,0.0,0.0,vec2(0.0));\n vec2 q=clamp(p,vec2(-100000.0),vec2(100000.0))*vec2(density_x,density_y);\n ivec2 periods=ivec2(clamp(floor(vec2(period_x,period_y)+0.5),vec2(1.0),vec2(256.0)));\n bool wx=repeat_mode>0.5&&repeat_mode<1.5||repeat_mode>2.5;bool wy=repeat_mode>1.5;\n if(wx)q.x=mod(q.x,float(periods.x));if(wy)q.y=mod(q.y,float(periods.y));\n ivec2 cell=ivec2(floor(q));vec2 f=fract(q);uint s=uint(clamp(floor(seed+0.5),0.0,65535.0));\n float t=clamp(u_time+time_offset,-100000.0,100000.0)*speed;\n float a=1e20,b=1e20,r=0.0;vec2 best=vec2(0.0);\n for(int y=-2;y<=2;++y)for(int x=-2;x<=2;++x){\n  ivec2 k=cell+ivec2(x,y);if(wx)k.x=maker_pcd_wrap(k.x,periods.x);if(wy)k.y=maker_pcd_wrap(k.y,periods.y);\n  vec2 h=vec2(maker_pcd_random(k,s,1u),maker_pcd_random(k,s,2u));\n  vec2 phase=6.28318530718*vec2(maker_pcd_random(k,s,3u),maker_pcd_random(k,s,4u));\n  vec2 moving=0.5+0.5*sin(phase+vec2(t,t*0.731));\n  vec2 offset=vec2(x,y)+0.5+jitter*(mix(h,moving,animation_strength)-0.5)-f;\n  vec2 v=abs(offset);float d=metric<0.5?dot(v,v):(metric<1.5?v.x+v.y:max(v.x,v.y));\n  if(d<a){b=a;a=d;best=offset;r=maker_pcd_random(k,s,5u);}else if(d<b)b=d;\n }\n if(metric<0.5){a=sqrt(a);b=sqrt(b);}return MakerPCDResult(a,b,max(b-a,0.0),r,best);\n}",
+  "glsl_outputs": {
+    "nearest": "maker_pcd_eval({position},{time_offset},{density_x},{density_y},{period_x},{period_y},{jitter},{seed},{speed},{animation_strength},{metric},{repeat_mode}).nearest",
+    "second": "maker_pcd_eval({position},{time_offset},{density_x},{density_y},{period_x},{period_y},{jitter},{seed},{speed},{animation_strength},{metric},{repeat_mode}).second",
+    "gap": "maker_pcd_eval({position},{time_offset},{density_x},{density_y},{period_x},{period_y},{jitter},{seed},{speed},{animation_strength},{metric},{repeat_mode}).gap",
+    "random_value": "maker_pcd_eval({position},{time_offset},{density_x},{density_y},{period_x},{period_y},{jitter},{seed},{speed},{animation_strength},{metric},{repeat_mode}).random_value",
+    "site_offset": "maker_pcd_eval({position},{time_offset},{density_x},{density_y},{period_x},{period_y},{jitter},{seed},{speed},{animation_strength},{metric},{repeat_mode}).site_offset"
+  }
+}

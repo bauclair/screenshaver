@@ -1,0 +1,134 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.math.threshold_field_remapping",
+  "name": "Threshold Field Remapping",
+  "category": "Math",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Independent scalar transfer functions on either side of a threshold.",
+  "uses": "Independent scalar transfer functions on either side of a threshold.",
+  "notes": "Linear uses x, Inverted uses 1-x, Smooth uses smoothstep(0,1,x). Gain and bias follow shaping. Softness is transition half-width; zero uses hard classification. Region Index is one at or above threshold. Inputs bounded to +/-1e6; nonfinite inputs return zero.",
+  "header_color": "#8B789C",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "value",
+      "name": "Value",
+      "type": "float",
+      "default": "0.0"
+    },
+    {
+      "id": "threshold_offset",
+      "name": "Threshold Offset",
+      "type": "float",
+      "default": "0.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "remapped",
+      "name": "Remapped Value",
+      "type": "float"
+    },
+    {
+      "id": "lower",
+      "name": "Lower Region Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    },
+    {
+      "id": "upper",
+      "name": "Upper Region Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    },
+    {
+      "id": "region",
+      "name": "Region Index",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "threshold",
+      "name": "Threshold",
+      "type": "float",
+      "default": 0.5,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "softness",
+      "name": "Transition Softness",
+      "type": "float",
+      "default": 0.01,
+      "min": 0,
+      "max": 2
+    },
+    {
+      "id": "lower_gain",
+      "name": "Lower Region Gain",
+      "type": "float",
+      "default": 1,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "lower_bias",
+      "name": "Lower Region Bias",
+      "type": "float",
+      "default": 0,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "upper_gain",
+      "name": "Upper Region Gain",
+      "type": "float",
+      "default": 1,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "upper_bias",
+      "name": "Upper Region Bias",
+      "type": "float",
+      "default": 0,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "lower_mode",
+      "name": "Lower Region Mode",
+      "type": "choice",
+      "default": 0,
+      "min": 0,
+      "max": 2,
+      "options": [
+        "Linear",
+        "Inverted",
+        "Smooth"
+      ]
+    },
+    {
+      "id": "upper_mode",
+      "name": "Upper Region Mode",
+      "type": "choice",
+      "default": 0,
+      "min": 0,
+      "max": 2,
+      "options": [
+        "Linear",
+        "Inverted",
+        "Smooth"
+      ]
+    }
+  ],
+  "helpers": "struct MakerTFR { float remapped; float lower; float upper; float region; };\nfloat maker_tfr_shape(float x,float mode){if(mode<0.5)return x;if(mode<1.5)return 1.0-x;return smoothstep(0.0,1.0,x);}\nMakerTFR maker_tfr_eval(float x,float offset,float threshold,float softness,float lg,float lb,float ug,float ub,float lm,float um){\n if(isnan(x)||isinf(x)||isnan(offset)||isinf(offset))return MakerTFR(0.,0.,0.,0.);\n x=clamp(x,-1e6,1e6);float t=threshold+clamp(offset,-1e6,1e6);\n float region=step(t,x);float w=region;\n if(softness>0.0){float f=clamp(0.5+0.5*(x-t)/softness,0.0,1.0);w=f*f*(3.0-2.0*f);}\n float a=maker_tfr_shape(x,lm)*lg+lb,b=maker_tfr_shape(x,um)*ug+ub;\n return MakerTFR(mix(a,b,w),1.0-w,w,region);\n}",
+  "glsl_outputs": {
+    "remapped": "maker_tfr_eval({value},{threshold_offset},{threshold},{softness},{lower_gain},{lower_bias},{upper_gain},{upper_bias},{lower_mode},{upper_mode}).remapped",
+    "lower": "maker_tfr_eval({value},{threshold_offset},{threshold},{softness},{lower_gain},{lower_bias},{upper_gain},{upper_bias},{lower_mode},{upper_mode}).lower",
+    "upper": "maker_tfr_eval({value},{threshold_offset},{threshold},{softness},{lower_gain},{lower_bias},{upper_gain},{upper_bias},{lower_mode},{upper_mode}).upper",
+    "region": "maker_tfr_eval({value},{threshold_offset},{threshold},{softness},{lower_gain},{lower_bias},{upper_gain},{upper_bias},{lower_mode},{upper_mode}).region"
+  }
+}

@@ -1,0 +1,124 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.cyclic_exponential_coordinate_scaling_2d",
+  "name": "Cyclic Exponential Coordinate Scaling 2D",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Exponentially scale sampling coordinates around a center with repeat or ping-pong animation.",
+  "uses": "Exponentially scale sampling coordinates around a center with repeat or ping-pong animation.",
+  "notes": "Phase modulation is in cycles. Pattern expansion reduces sampling scale. Cycle Phase is the raw fractional cycle, including in Ping-Pong mode. Position and center bounded to +/-1e6.",
+  "header_color": "#65758B",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec2",
+      "default": "vec2(0.0)",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "time_offset",
+      "name": "Time Offset",
+      "type": "float",
+      "default": "0.0",
+      "semantic_role": "time"
+    },
+    {
+      "id": "phase_mod",
+      "name": "Phase Modulation",
+      "type": "float",
+      "default": "0.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "scaled",
+      "name": "Scaled Position",
+      "type": "vec2",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "scale",
+      "name": "Coordinate Scale",
+      "type": "float"
+    },
+    {
+      "id": "cycle",
+      "name": "Cycle Phase",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "ratio",
+      "name": "Scale Ratio",
+      "type": "float",
+      "default": 4,
+      "min": 1,
+      "max": 100
+    },
+    {
+      "id": "frequency",
+      "name": "Cycle Frequency",
+      "type": "float",
+      "default": 0.5,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "phase",
+      "name": "Initial Phase",
+      "type": "float",
+      "default": 0,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "base",
+      "name": "Base Scale",
+      "type": "float",
+      "default": 1,
+      "min": 0.001,
+      "max": 100
+    },
+    {
+      "id": "direction",
+      "name": "Scale Direction",
+      "type": "choice",
+      "default": 0,
+      "min": 0,
+      "max": 1,
+      "options": [
+        "Pattern Expansion",
+        "Pattern Contraction"
+      ]
+    },
+    {
+      "id": "mode",
+      "name": "Cycle Mode",
+      "type": "choice",
+      "default": 0,
+      "min": 0,
+      "max": 1,
+      "options": [
+        "Repeat",
+        "Ping-Pong"
+      ]
+    }
+  ],
+  "helpers": "vec4 maker_cecs_eval(vec2 p,vec2 center,float offset,float modulation,float ratio,float freq,float phase,float base,float direction,float mode){\n if(any(isnan(p))||any(isinf(p))||any(isnan(center))||any(isinf(center))||isnan(offset)||isinf(offset)||isnan(modulation)||isinf(modulation)||isnan(u_time)||isinf(u_time))return vec4(0.0);\n float t=clamp(u_time+offset,-1e5,1e5);float q=fract(freq*t+phase+clamp(modulation,-1e5,1e5));float progress=mode<0.5?q:1.0-abs(2.0*q-1.0);float scale=base*exp((direction<0.5?-1.0:1.0)*progress*log(ratio));vec2 c=clamp(center,vec2(-1e6),vec2(1e6));vec2 v=c+scale*(clamp(p,vec2(-1e6),vec2(1e6))-c);return vec4(v,scale,q);\n}",
+  "glsl_outputs": {
+    "scaled": "maker_cecs_eval({position},{center},{time_offset},{phase_mod},{ratio},{frequency},{phase},{base},{direction},{mode}).xy",
+    "scale": "maker_cecs_eval({position},{center},{time_offset},{phase_mod},{ratio},{frequency},{phase},{base},{direction},{mode}).z",
+    "cycle": "maker_cecs_eval({position},{center},{time_offset},{phase_mod},{ratio},{frequency},{phase},{base},{direction},{mode}).w"
+  }
+}

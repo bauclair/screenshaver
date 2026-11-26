@@ -1,0 +1,141 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.noise.turbulent_ridged_fractal_noise_2d",
+  "name": "Turbulent and Ridged Fractal Noise 2D",
+  "category": "Noise",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Procedural multioctave value noise with per-octave standard, turbulent or ridged response.",
+  "uses": "Procedural multioctave value noise with per-octave standard, turbulent or ridged response.",
+  "notes": "Normalized Noise is independent of amplitude. Frequency capped at 4096; at most eight octaves. No textures required.",
+  "header_color": "#806B99",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "time_offset",
+      "name": "Time Offset",
+      "type": "float",
+      "default": "0.0",
+      "semantic_role": "time"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "noise",
+      "name": "Noise",
+      "type": "float"
+    },
+    {
+      "id": "normalized",
+      "name": "Normalized Noise",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "frequency",
+      "name": "Frequency",
+      "type": "float",
+      "default": 3,
+      "min": 0.01,
+      "max": 100
+    },
+    {
+      "id": "amplitude",
+      "name": "Amplitude",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 8
+    },
+    {
+      "id": "octaves",
+      "name": "Octaves",
+      "type": "float",
+      "default": 5,
+      "min": 1,
+      "max": 8
+    },
+    {
+      "id": "persistence",
+      "name": "Persistence",
+      "type": "float",
+      "default": 0.5,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "lacunarity",
+      "name": "Lacunarity",
+      "type": "float",
+      "default": 2,
+      "min": 1,
+      "max": 4
+    },
+    {
+      "id": "rotation",
+      "name": "Octave Rotation",
+      "type": "float",
+      "default": 30,
+      "min": -180,
+      "max": 180
+    },
+    {
+      "id": "speed",
+      "name": "Animation Speed",
+      "type": "float",
+      "default": 0.2,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "direction",
+      "name": "Animation Direction",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "seed",
+      "name": "Seed",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 65535
+    },
+    {
+      "id": "ridge",
+      "name": "Ridge Exponent",
+      "type": "float",
+      "default": 2,
+      "min": 0.5,
+      "max": 8
+    },
+    {
+      "id": "mode",
+      "name": "Noise Mode",
+      "type": "choice",
+      "default": 1,
+      "min": 0,
+      "max": 2,
+      "options": [
+        "Standard",
+        "Turbulent",
+        "Ridged"
+      ]
+    }
+  ],
+  "helpers": "uint maker_trfn_hash(uvec2 c,uint seed){uint h=c.x*1664525u+c.y*1013904223u+seed*747796405u;h^=h>>16u;h*=2246822519u;h^=h>>13u;h*=3266489917u;return h^(h>>16u);}\nfloat maker_trfn_corner(uvec2 c,uint seed){return float(maker_trfn_hash(c%65536u,seed)&65535u)/32767.5-1.0;}\nfloat maker_trfn_value(vec2 p,uint seed){vec2 q=mod(p,65536.0);uvec2 c=uvec2(floor(q));vec2 f=fract(q);vec2 w=f*f*f*(f*(6.0*f-15.0)+10.0);return mix(mix(maker_trfn_corner(c,seed),maker_trfn_corner(c+uvec2(1,0),seed),w.x),mix(maker_trfn_corner(c+uvec2(0,1),seed),maker_trfn_corner(c+uvec2(1,1),seed),w.x),w.y);}\nvec2 maker_trfn_eval(vec2 p,float offset,float freq,float amp,float oct,float persistence,float lacunarity,float rotation,float speed,float direction,float seed,float ridge,float mode){\n if(any(isnan(p))||any(isinf(p))||isnan(offset)||isinf(offset)||isnan(u_time)||isinf(u_time))return vec2(0.0);\n float t=clamp(u_time+offset,-1e5,1e5);float a=radians(direction);vec2 q=clamp(p,vec2(-1e4),vec2(1e4))+t*speed*vec2(cos(a),sin(a));float r=radians(rotation);mat2 rot=mat2(cos(r),sin(r),-sin(r),cos(r));int count=int(clamp(floor(oct+0.5),1.0,8.0));float total=0.0,weight=1.0,weights=0.0;uint s=uint(clamp(seed,0.0,65535.0));\n for(int i=0;i<8;i++){if(i>=count)break;float n=clamp(maker_trfn_value(q*freq,s+uint(i)*7919u),-1.0,1.0);float v=mode<0.5?n:(mode<1.5?abs(n):pow(max(0.0,1.0-abs(n)),ridge));total+=weight*v;weights+=weight;weight*=persistence;freq=min(4096.0,freq*lacunarity);q=rot*q;}\n float v=total/max(weights,1e-6);return vec2(amp*v,clamp(mode<0.5?0.5+0.5*v:v,0.0,1.0));\n}",
+  "glsl_outputs": {
+    "noise": "maker_trfn_eval({position},{time_offset},{frequency},{amplitude},{octaves},{persistence},{lacunarity},{rotation},{speed},{direction},{seed},{ridge},{mode}).x",
+    "normalized": "maker_trfn_eval({position},{time_offset},{frequency},{amplitude},{octaves},{persistence},{lacunarity},{rotation},{speed},{direction},{seed},{ridge},{mode}).y"
+  }
+}

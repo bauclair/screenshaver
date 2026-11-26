@@ -1,0 +1,140 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.polygonal_polar_coordinates_2d",
+  "name": "Polygonal Polar Coordinates 2D",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Regular polygon radial coordinates with circular-to-polygonal interpolation.",
+  "uses": "Faceted radial patterns, polygonal waves and angular coordinate mapping.",
+  "notes": "Polar Coordinates packs blended radius and selected angle. Polygonal Radius is the unblended polygon metric; Euclidean Radius is scaled circular distance. Circumradius normalization gives radius one at vertices of a unit circumradius polygon; Apothem normalization gives radius one on the edges of a unit apothem polygon. Orientation defines an edge normal. Angle Modulation and Sector Angle are radians; Sector Angle is signed relative to the nearest edge normal. Origin and nonfinite inputs return zero. Scale Multiplier bounded to [0.0001,100], coordinates to +/-1e10.",
+  "header_color": "#527D94",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec2",
+      "default": "vec2(0.0)",
+      "semantic_role": "offset2d"
+    },
+    {
+      "id": "scale_multiplier",
+      "name": "Scale Multiplier",
+      "type": "float",
+      "default": "1.0"
+    },
+    {
+      "id": "angle_modulation",
+      "name": "Angle Modulation",
+      "type": "float",
+      "default": "0.0",
+      "semantic_role": "angle"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "polar",
+      "name": "Polar Coordinates",
+      "type": "vec2"
+    },
+    {
+      "id": "polygon_radius",
+      "name": "Polygonal Radius",
+      "type": "float",
+      "semantic_role": "distance"
+    },
+    {
+      "id": "euclidean_radius",
+      "name": "Euclidean Radius",
+      "type": "float",
+      "semantic_role": "distance"
+    },
+    {
+      "id": "angle",
+      "name": "Angle",
+      "type": "float",
+      "semantic_role": "angle"
+    },
+    {
+      "id": "sector_angle",
+      "name": "Sector Angle",
+      "type": "float",
+      "semantic_role": "angle"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "sides",
+      "name": "Polygon Sides",
+      "type": "float",
+      "default": 6,
+      "min": 3,
+      "max": 64
+    },
+    {
+      "id": "radial_scale",
+      "name": "Radial Scale",
+      "type": "float",
+      "default": 1,
+      "min": 0.001,
+      "max": 100
+    },
+    {
+      "id": "orientation",
+      "name": "Orientation",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "influence",
+      "name": "Polygon Influence",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "normalization",
+      "name": "Radius Normalization",
+      "type": "choice",
+      "default": 0,
+      "min": 0,
+      "max": 1,
+      "options": [
+        "Circumradius",
+        "Apothem"
+      ]
+    },
+    {
+      "id": "angular_range",
+      "name": "Angular Range",
+      "type": "choice",
+      "default": 0,
+      "min": 0,
+      "max": 2,
+      "options": [
+        "Signed",
+        "Positive",
+        "Normalized"
+      ]
+    }
+  ],
+  "helpers": "struct MakerPPC { vec2 polar; float polygon_radius; float euclidean_radius; float angle; float sector_angle; };\nMakerPPC maker_ppc_eval(vec2 p,vec2 center,float sm,float am,float sides,float scale,float orientation,float influence,float normalization,float angular_range){\n if(any(isnan(p))||any(isinf(p))||any(isnan(center))||any(isinf(center))||isnan(sm)||isinf(sm)||isnan(am)||isinf(am))return MakerPPC(vec2(0.0),0.0,0.0,0.0,0.0);\n const float pi=3.141592653589793; const float tau=6.283185307179586;\n vec2 q=clamp(p,vec2(-1e10),vec2(1e10))-clamp(center,vec2(-1e10),vec2(1e10));\n float r=length(q)*scale*clamp(sm,0.0001,100.0);\n if(r==0.0)return MakerPPC(vec2(0.0),0.0,0.0,0.0,0.0);\n float a=mod(atan(q.y,q.x)-radians(orientation)-mod(am,tau)+pi,tau)-pi;\n float sector=tau/clamp(floor(sides+0.5),3.0,64.0);\n float local=mod(a+0.5*sector,sector)-0.5*sector;\n float factor=cos(local);\n if(normalization<0.5)factor/=cos(0.5*sector);\n float pr=r*factor;\n float angle=a;\n if(angular_range>=0.5)angle=mod(a,tau);\n if(angular_range>=1.5)angle/=tau;\n return MakerPPC(vec2(mix(r,pr,clamp(influence,0.0,1.0)),angle),pr,r,angle,local);\n}",
+  "glsl_outputs": {
+    "polar": "maker_ppc_eval({position},{center},{scale_multiplier},{angle_modulation},{sides},{radial_scale},{orientation},{influence},{normalization},{angular_range}).polar",
+    "polygon_radius": "maker_ppc_eval({position},{center},{scale_multiplier},{angle_modulation},{sides},{radial_scale},{orientation},{influence},{normalization},{angular_range}).polygon_radius",
+    "euclidean_radius": "maker_ppc_eval({position},{center},{scale_multiplier},{angle_modulation},{sides},{radial_scale},{orientation},{influence},{normalization},{angular_range}).euclidean_radius",
+    "angle": "maker_ppc_eval({position},{center},{scale_multiplier},{angle_modulation},{sides},{radial_scale},{orientation},{influence},{normalization},{angular_range}).angle",
+    "sector_angle": "maker_ppc_eval({position},{center},{scale_multiplier},{angle_modulation},{sides},{radial_scale},{orientation},{influence},{normalization},{angular_range}).sector_angle"
+  }
+}

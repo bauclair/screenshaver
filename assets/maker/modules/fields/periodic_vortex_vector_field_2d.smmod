@@ -1,0 +1,176 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.periodic_vortex_vector_field_2d",
+  "name": "Periodic Vortex Vector Field 2D",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Periodic circulation derived from a scalar potential gradient.",
+  "uses": "Periodic circulation derived from a scalar potential gradient.",
+  "notes": "Spatial frequencies in radians per unit, animation speeds in radians per second, phase input in radians. Natural field is divergence-free before optional vector rotation. Soft normalization uses v/sqrt(1+dot(v,v)). Magnitude and direction describe the final vector.",
+  "header_color": "#527D79",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "time_offset",
+      "name": "Time Offset",
+      "type": "float",
+      "default": "0.0",
+      "semantic_role": "time"
+    },
+    {
+      "id": "phase_offset",
+      "name": "Phase Offset",
+      "type": "vec2",
+      "default": "vec2(0.0)"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "vector",
+      "name": "Vector",
+      "type": "vec2",
+      "semantic_role": "offset2d"
+    },
+    {
+      "id": "magnitude",
+      "name": "Magnitude",
+      "type": "float"
+    },
+    {
+      "id": "direction",
+      "name": "Direction",
+      "type": "vec2",
+      "semantic_role": "direction2d"
+    },
+    {
+      "id": "potential",
+      "name": "Scalar Potential",
+      "type": "float"
+    },
+    {
+      "id": "displaced",
+      "name": "Displaced Position",
+      "type": "vec2",
+      "semantic_role": "position2d"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "fx",
+      "name": "Horizontal Frequency",
+      "type": "float",
+      "default": 2,
+      "min": 0.01,
+      "max": 100
+    },
+    {
+      "id": "fy",
+      "name": "Vertical Frequency",
+      "type": "float",
+      "default": 2,
+      "min": 0.01,
+      "max": 100
+    },
+    {
+      "id": "sx",
+      "name": "Horizontal Animation Speed",
+      "type": "float",
+      "default": 0.3,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "sy",
+      "name": "Vertical Animation Speed",
+      "type": "float",
+      "default": -0.2,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "px",
+      "name": "Horizontal Phase",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "py",
+      "name": "Vertical Phase",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "orientation",
+      "name": "Field Orientation",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "rotation",
+      "name": "Vector Rotation",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "rotation_speed",
+      "name": "Rotation Speed",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "strength",
+      "name": "Field Strength",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "displacement",
+      "name": "Displacement Strength",
+      "type": "float",
+      "default": 0.25,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "mode",
+      "name": "Normalization Mode",
+      "type": "choice",
+      "default": 0,
+      "min": 0,
+      "max": 2,
+      "options": [
+        "Natural",
+        "Unit",
+        "Soft"
+      ]
+    }
+  ],
+  "helpers": "struct MakerPVFResult { vec2 v; float magnitude; vec2 direction; float potential; vec2 displaced; };\nmat2 maker_pvf_rot(float a){float c=cos(a),s=sin(a);return mat2(c,s,-s,c);}\nMakerPVFResult maker_pvf_eval(vec2 p,float offset,vec2 phase,float fx,float fy,float sx,float sy,float px,float py,float orientation,float rotation,float rotation_speed,float strength,float displacement,float mode){\n if(any(isnan(p))||any(isinf(p))||any(isnan(phase))||any(isinf(phase))||isnan(offset)||isinf(offset)||isnan(u_time)||isinf(u_time))return MakerPVFResult(vec2(0),0.0,vec2(0),0.0,vec2(0));\n p=clamp(p,vec2(-1e4),vec2(1e4));float t=clamp(u_time+offset,-1e5,1e5);mat2 r=maker_pvf_rot(radians(orientation));vec2 q=transpose(r)*p;vec2 k=vec2(fx,fy);vec2 a=k*q+vec2(sx,sy)*t+radians(vec2(px,py))+clamp(phase,vec2(-1e5),vec2(1e5));vec2 s=sin(a),c=cos(a);vec2 v=vec2(fy*s.x*c.y,-fx*c.x*s.y);float m=length(v);if(mode>=0.5)v=mode<1.5?(m>1e-6?v/m:vec2(0)):v/sqrt(1.0+m*m);v=r*maker_pvf_rot(radians(rotation+rotation_speed*t))*v*strength;m=length(v);return MakerPVFResult(v,m,m>1e-6?v/m:vec2(0),s.x*s.y,p+v*displacement);\n}",
+  "glsl_outputs": {
+    "vector": "maker_pvf_eval({position},{time_offset},{phase_offset},{fx},{fy},{sx},{sy},{px},{py},{orientation},{rotation},{rotation_speed},{strength},{displacement},{mode}).v",
+    "magnitude": "maker_pvf_eval({position},{time_offset},{phase_offset},{fx},{fy},{sx},{sy},{px},{py},{orientation},{rotation},{rotation_speed},{strength},{displacement},{mode}).magnitude",
+    "direction": "maker_pvf_eval({position},{time_offset},{phase_offset},{fx},{fy},{sx},{sy},{px},{py},{orientation},{rotation},{rotation_speed},{strength},{displacement},{mode}).direction",
+    "potential": "maker_pvf_eval({position},{time_offset},{phase_offset},{fx},{fy},{sx},{sy},{px},{py},{orientation},{rotation},{rotation_speed},{strength},{displacement},{mode}).potential",
+    "displaced": "maker_pvf_eval({position},{time_offset},{phase_offset},{fx},{fy},{sx},{sy},{px},{py},{orientation},{rotation},{rotation_speed},{strength},{displacement},{mode}).displaced"
+  }
+}

@@ -1,0 +1,103 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.color.hyperbolic_tangent_rgb_response",
+  "name": "Hyperbolic Tangent RGB Response",
+  "category": "Color",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Direct or multiplicative hyperbolic tangent response for RGB intensity.",
+  "uses": "Direct or multiplicative hyperbolic tangent response for RGB intensity.",
+  "notes": "Signed per-channel direct response; modulated mode multiplies input by signed response. Luminance mode uses nonnegative Rec.709 luminance of absolute RGB for a hue-preserving scale. Response Color and Response Luminance are pre-output-gain, pre-blend. Nonfinite inputs return zero.",
+  "header_color": "#B76E85",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "color",
+      "name": "Color",
+      "type": "vec3",
+      "default": "vec3(0.5)",
+      "semantic_role": "color"
+    },
+    {
+      "id": "gain_multiplier",
+      "name": "Gain Multiplier",
+      "type": "float",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "processed",
+      "name": "Processed Color",
+      "type": "vec3",
+      "semantic_role": "color"
+    },
+    {
+      "id": "response",
+      "name": "Response Color",
+      "type": "vec3",
+      "semantic_role": "color"
+    },
+    {
+      "id": "luminance",
+      "name": "Response Luminance",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "gain",
+      "name": "Response Gain",
+      "type": "float",
+      "default": 1,
+      "min": 0.001,
+      "max": 10
+    },
+    {
+      "id": "output_gain",
+      "name": "Output Gain",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "response_mode",
+      "name": "Response Mode",
+      "type": "choice",
+      "default": 0,
+      "min": 0,
+      "max": 1,
+      "options": [
+        "Direct",
+        "Modulated"
+      ]
+    },
+    {
+      "id": "processing_mode",
+      "name": "Processing Mode",
+      "type": "choice",
+      "default": 0,
+      "min": 0,
+      "max": 1,
+      "options": [
+        "Per Channel",
+        "Luminance"
+      ]
+    },
+    {
+      "id": "blend",
+      "name": "Blend Strength",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 1
+    }
+  ],
+  "helpers": "struct MakerHTRGB { vec3 processed; vec3 response; float luminance; };\nMakerHTRGB maker_htrgb_eval(vec3 col,float gm,float gain,float og,float mode,float processing,float blend){\n if(any(isnan(col))||any(isinf(col))||isnan(gm)||isinf(gm))return MakerHTRGB(vec3(0),vec3(0),0.0);\n col=clamp(col,vec3(-1e6),vec3(1e6)); float g=gain*clamp(gm,0.0,10.0);\n vec3 weights=vec3(0.2126,0.7152,0.0722); vec3 response;\n if(processing<0.5){response=tanh(col*g);if(mode>=0.5)response*=col;}\n else {float l=dot(abs(col),weights);float r=tanh(l*g);response=col*(mode<0.5?(l>1e-8?r/l:g):r);}\n return MakerHTRGB(mix(col,response*og,blend),response,dot(response,weights));\n}",
+  "glsl_outputs": {
+    "processed": "maker_htrgb_eval({color},{gain_multiplier},{gain},{output_gain},{response_mode},{processing_mode},{blend}).processed",
+    "response": "maker_htrgb_eval({color},{gain_multiplier},{gain},{output_gain},{response_mode},{processing_mode},{blend}).response",
+    "luminance": "maker_htrgb_eval({color},{gain_multiplier},{gain},{output_gain},{response_mode},{processing_mode},{blend}).luminance"
+  }
+}

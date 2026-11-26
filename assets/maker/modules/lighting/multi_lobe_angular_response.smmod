@@ -1,0 +1,135 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.lighting.multi_lobe_angular_response",
+  "name": "Multi-Lobe Angular Response",
+  "category": "Lighting",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Three independently weighted cosine-power directional lobes.",
+  "uses": "Three independently weighted cosine-power directional lobes.",
+  "notes": "Alignment is signed cosine. Output gain affects combined response only. Invalid or zero directions return zero.",
+  "header_color": "#9A8053",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "reference",
+      "name": "Reference Direction",
+      "type": "vec3",
+      "default": "vec3(0.0,1.0,0.0)",
+      "semantic_role": "direction3d"
+    },
+    {
+      "id": "sample_dir",
+      "name": "Sample Direction",
+      "type": "vec3",
+      "default": "vec3(0.0,1.0,0.0)",
+      "semantic_role": "direction3d"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "broad",
+      "name": "Broad Response",
+      "type": "float"
+    },
+    {
+      "id": "medium",
+      "name": "Medium Response",
+      "type": "float"
+    },
+    {
+      "id": "narrow",
+      "name": "Narrow Response",
+      "type": "float"
+    },
+    {
+      "id": "combined",
+      "name": "Combined Response",
+      "type": "float"
+    },
+    {
+      "id": "alignment",
+      "name": "Angular Alignment",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "broad_exp",
+      "name": "Broad Exponent",
+      "type": "float",
+      "default": 12,
+      "min": 1,
+      "max": 1024
+    },
+    {
+      "id": "broad_weight",
+      "name": "Broad Weight",
+      "type": "float",
+      "default": 0.2,
+      "min": 0,
+      "max": 16
+    },
+    {
+      "id": "medium_exp",
+      "name": "Medium Exponent",
+      "type": "float",
+      "default": 64,
+      "min": 1,
+      "max": 1024
+    },
+    {
+      "id": "medium_weight",
+      "name": "Medium Weight",
+      "type": "float",
+      "default": 0.35,
+      "min": 0,
+      "max": 16
+    },
+    {
+      "id": "narrow_exp",
+      "name": "Narrow Exponent",
+      "type": "float",
+      "default": 256,
+      "min": 1,
+      "max": 1024
+    },
+    {
+      "id": "narrow_weight",
+      "name": "Narrow Weight",
+      "type": "float",
+      "default": 0.45,
+      "min": 0,
+      "max": 16
+    },
+    {
+      "id": "gain",
+      "name": "Output Gain",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 16
+    },
+    {
+      "id": "mode",
+      "name": "Combination Mode",
+      "type": "choice",
+      "default": 0,
+      "min": 0,
+      "max": 2,
+      "options": [
+        "Additive",
+        "Normalized",
+        "Maximum"
+      ]
+    }
+  ],
+  "helpers": "struct MakerAngularLobes {float broad;float medium;float narrow;float combined;float alignment;};\nMakerAngularLobes maker_multi_lobe_angular(vec3 a,vec3 b,float pe,float pw,float qe,float qw,float re,float rw,float gain,float mode){\n MakerAngularLobes r=MakerAngularLobes(0.0,0.0,0.0,0.0,0.0);\n if(any(isnan(a))||any(isinf(a))||any(isnan(b))||any(isinf(b)))return r;\n float ma=max(max(abs(a.x),abs(a.y)),abs(a.z)),mb=max(max(abs(b.x),abs(b.y)),abs(b.z));if(ma<=0.0||mb<=0.0)return r;\n r.alignment=clamp(dot(normalize(a/ma),normalize(b/mb)),-1.0,1.0);float c=max(0.0,r.alignment);\n r.broad=pw*pow(c,pe);r.medium=qw*pow(c,qe);r.narrow=rw*pow(c,re);float sum=r.broad+r.medium+r.narrow;float w=pw+qw+rw;\n r.combined=gain*(mode>=1.5?max(r.broad,max(r.medium,r.narrow)):mode>=0.5?(w>0.0?sum/w:0.0):sum);return r;\n}",
+  "glsl_outputs": {
+    "broad": "maker_multi_lobe_angular({reference},{sample_dir},{broad_exp},{broad_weight},{medium_exp},{medium_weight},{narrow_exp},{narrow_weight},{gain},{mode}).broad",
+    "medium": "maker_multi_lobe_angular({reference},{sample_dir},{broad_exp},{broad_weight},{medium_exp},{medium_weight},{narrow_exp},{narrow_weight},{gain},{mode}).medium",
+    "narrow": "maker_multi_lobe_angular({reference},{sample_dir},{broad_exp},{broad_weight},{medium_exp},{medium_weight},{narrow_exp},{narrow_weight},{gain},{mode}).narrow",
+    "combined": "maker_multi_lobe_angular({reference},{sample_dir},{broad_exp},{broad_weight},{medium_exp},{medium_weight},{narrow_exp},{narrow_weight},{gain},{mode}).combined",
+    "alignment": "maker_multi_lobe_angular({reference},{sample_dir},{broad_exp},{broad_weight},{medium_exp},{medium_weight},{narrow_exp},{narrow_weight},{gain},{mode}).alignment"
+  }
+}

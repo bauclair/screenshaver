@@ -1,0 +1,126 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.triplanar_projection_coordinates_3d",
+  "name": "Triplanar Projection Coordinates 3D",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Three planar projections with normalized normal-dependent blending weights.",
+  "uses": "Three planar projections with normalized normal-dependent blending weights.",
+  "notes": "Weights X/Y/Z correspond to YZ/XZ/XY. Normal-Aligned flips the first coordinate to orient each plane toward the normal. Zero normal uses +Z; excessive bias falls back to unbiased weights. Nonfinite inputs return zero. Scale multiplier bounded to [0.0001,100]. No texture sampling.",
+  "header_color": "#527D94",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "semantic_role": "position3d",
+      "default": "vec3(maker_uv,0.0)"
+    },
+    {
+      "id": "normal",
+      "name": "Normal",
+      "type": "vec3",
+      "semantic_role": "normal3d",
+      "default": "vec3(0.0,0.0,1.0)"
+    },
+    {
+      "id": "scale_multiplier",
+      "name": "Scale Multiplier",
+      "type": "float",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "yz",
+      "name": "YZ Coordinates",
+      "type": "vec2",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "xz",
+      "name": "XZ Coordinates",
+      "type": "vec2",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "xy",
+      "name": "XY Coordinates",
+      "type": "vec2",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "weights",
+      "name": "Blend Weights",
+      "type": "vec3"
+    },
+    {
+      "id": "wx",
+      "name": "X Weight",
+      "type": "float",
+      "semantic_role": "mask"
+    },
+    {
+      "id": "wy",
+      "name": "Y Weight",
+      "type": "float",
+      "semantic_role": "mask"
+    },
+    {
+      "id": "wz",
+      "name": "Z Weight",
+      "type": "float",
+      "semantic_role": "mask"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "scale",
+      "name": "Projection Scale",
+      "type": "float",
+      "default": 1,
+      "min": 0.001,
+      "max": 100
+    },
+    {
+      "id": "sharpness",
+      "name": "Blend Sharpness",
+      "type": "float",
+      "default": 2,
+      "min": 0.1,
+      "max": 32
+    },
+    {
+      "id": "bias",
+      "name": "Blend Bias",
+      "type": "float",
+      "default": 0,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "orientation",
+      "name": "Orientation Mode",
+      "type": "choice",
+      "default": 0,
+      "min": 0,
+      "max": 1,
+      "options": [
+        "Fixed",
+        "Normal-Aligned"
+      ]
+    }
+  ],
+  "helpers": "struct MakerTPC { vec2 yz; vec2 xz; vec2 xy; vec3 weights; float wx; float wy; float wz; };\nMakerTPC maker_tpc_eval(vec3 p,vec3 n,float sm,float scale,float sharpness,float bias,float orientation){\n if(any(isnan(p))||any(isinf(p))||any(isnan(n))||any(isinf(n))||isnan(sm)||isinf(sm))return MakerTPC(vec2(0),vec2(0),vec2(0),vec3(0),0.,0.,0.);\n p=clamp(p,vec3(-1e10),vec3(1e10))*scale*clamp(sm,0.0001,100.0);\n float nm=max(abs(n.x),max(abs(n.y),abs(n.z)));\n n=nm>0.0?normalize(n/nm):vec3(0.0,0.0,1.0);\n vec3 q=max(abs(n)-clamp(bias,0.0,1.0),vec3(0.0));\n float qm=max(q.x,max(q.y,q.z));\n if(qm<=0.0){q=abs(n);qm=max(q.x,max(q.y,q.z));}\n vec3 w=pow(q/qm,vec3(clamp(sharpness,0.1,32.0)));w/=w.x+w.y+w.z;\n vec2 yz=p.yz,xz=p.xz,xy=p.xy;\n if(orientation>=0.5){yz.x*=n.x<0.0?-1.0:1.0;xz.x*=n.y>0.0?-1.0:1.0;xy.x*=n.z<0.0?-1.0:1.0;}\n return MakerTPC(yz,xz,xy,w,w.x,w.y,w.z);\n}",
+  "glsl_outputs": {
+    "yz": "maker_tpc_eval({position},{normal},{scale_multiplier},{scale},{sharpness},{bias},{orientation}).yz",
+    "xz": "maker_tpc_eval({position},{normal},{scale_multiplier},{scale},{sharpness},{bias},{orientation}).xz",
+    "xy": "maker_tpc_eval({position},{normal},{scale_multiplier},{scale},{sharpness},{bias},{orientation}).xy",
+    "weights": "maker_tpc_eval({position},{normal},{scale_multiplier},{scale},{sharpness},{bias},{orientation}).weights",
+    "wx": "maker_tpc_eval({position},{normal},{scale_multiplier},{scale},{sharpness},{bias},{orientation}).wx",
+    "wy": "maker_tpc_eval({position},{normal},{scale_multiplier},{scale},{sharpness},{bias},{orientation}).wy",
+    "wz": "maker_tpc_eval({position},{normal},{scale_multiplier},{scale},{sharpness},{bias},{orientation}).wz"
+  }
+}

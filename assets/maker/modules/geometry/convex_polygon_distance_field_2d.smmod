@@ -1,0 +1,129 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.geometry.convex_polygon_distance_field_2d",
+  "name": "Convex Polygon Distance Field 2D",
+  "category": "Geometry",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Regular convex polygon with exact Euclidean boundary distance and alternative half-plane responses.",
+  "uses": "Procedural geometry, masks and distance fields.",
+  "notes": "Negative signed distance inside. Apothem is center-to-edge distance. Quadratic exterior response accumulates positive half-plane violations and is not an exact Euclidean distance. Soft Mask is one inside and fades outward over Edge Softness. Angle Modulation is radians; Rotation is degrees. Radius Multiplier bounded to 0.0001\u2013100; positions bounded to +/-1e10. Nonfinite inputs return zero. Up to 32 edges.",
+  "header_color": "#557C9C",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec2",
+      "default": "vec2(0.0)",
+      "semantic_role": "offset2d"
+    },
+    {
+      "id": "radius_multiplier",
+      "name": "Radius Multiplier",
+      "type": "float",
+      "default": "1.0"
+    },
+    {
+      "id": "angle_modulation",
+      "name": "Angle Modulation",
+      "type": "float",
+      "default": "0.0",
+      "semantic_role": "angle"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "signed_distance",
+      "name": "Signed Distance",
+      "type": "float",
+      "semantic_role": "distance"
+    },
+    {
+      "id": "half_plane",
+      "name": "Half-Plane Distance",
+      "type": "float",
+      "semantic_role": "distance"
+    },
+    {
+      "id": "quadratic",
+      "name": "Quadratic Exterior Distance",
+      "type": "float",
+      "semantic_role": "distance"
+    },
+    {
+      "id": "interior",
+      "name": "Interior Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    },
+    {
+      "id": "soft_mask",
+      "name": "Soft Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "sides",
+      "name": "Polygon Sides",
+      "type": "float",
+      "default": 6,
+      "min": 3,
+      "max": 32
+    },
+    {
+      "id": "apothem",
+      "name": "Apothem",
+      "type": "float",
+      "default": 0.5,
+      "min": 0.001,
+      "max": 100
+    },
+    {
+      "id": "rotation",
+      "name": "Rotation",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "softness",
+      "name": "Edge Softness",
+      "type": "float",
+      "default": 0.01,
+      "min": 1e-05,
+      "max": 10
+    },
+    {
+      "id": "response",
+      "name": "Mask Response",
+      "type": "choice",
+      "default": 0,
+      "min": 0,
+      "max": 2,
+      "options": [
+        "Euclidean",
+        "Half-Plane",
+        "Quadratic"
+      ]
+    }
+  ],
+  "helpers": "struct MakerCPDResult { float signed_distance; float half_plane; float quadratic; float interior; float soft_mask; };\nMakerCPDResult maker_cpd_eval(vec2 position,vec2 center,float multiplier,float angle,float sides,float apothem,float rotation,float softness,float response){\n if(any(isnan(position))||any(isinf(position))||any(isnan(center))||any(isinf(center))||isnan(multiplier)||isinf(multiplier)||isnan(angle)||isinf(angle))return MakerCPDResult(0.,0.,0.,0.,0.);\n vec2 q=clamp(position,vec2(-1e10),vec2(1e10))-clamp(center,vec2(-1e10),vec2(1e10));\n int count=int(clamp(floor(sides+0.5),3.,32.));float step_angle=6.28318530718/float(count);\n float r=apothem*clamp(multiplier,0.0001,100.);float half_length=r*tan(step_angle*0.5);\n float phase=radians(rotation)+mod(angle,6.28318530718);\n float max_h=-1e30;float sum_sq=0.;float min_sq=1e30;\n for(int i=0;i<32;i++){\n  if(i>=count)break;\n  float a=phase+float(i)*step_angle;vec2 n=vec2(cos(a),sin(a));vec2 tangent=vec2(-n.y,n.x);\n  float h=dot(q,n)-r;float along=dot(q,tangent);float excess=max(abs(along)-half_length,0.);\n  min_sq=min(min_sq,h*h+excess*excess);max_h=max(max_h,h);float positive=max(h,0.);sum_sq+=positive*positive;\n }\n float d=sqrt(min_sq)*(max_h<=0.?-1.:1.);float quadratic=sqrt(sum_sq);\n float mask_d=response<0.5?d:(response<1.5?max_h:quadratic);\n return MakerCPDResult(d,max_h,quadratic,max_h<=0.?1.:0.,1.-smoothstep(0.,softness,mask_d));\n}",
+  "glsl_outputs": {
+    "signed_distance": "maker_cpd_eval({position},{center},{radius_multiplier},{angle_modulation},{sides},{apothem},{rotation},{softness},{response}).signed_distance",
+    "half_plane": "maker_cpd_eval({position},{center},{radius_multiplier},{angle_modulation},{sides},{apothem},{rotation},{softness},{response}).half_plane",
+    "quadratic": "maker_cpd_eval({position},{center},{radius_multiplier},{angle_modulation},{sides},{apothem},{rotation},{softness},{response}).quadratic",
+    "interior": "maker_cpd_eval({position},{center},{radius_multiplier},{angle_modulation},{sides},{apothem},{rotation},{softness},{response}).interior",
+    "soft_mask": "maker_cpd_eval({position},{center},{radius_multiplier},{angle_modulation},{sides},{apothem},{rotation},{softness},{response}).soft_mask"
+  }
+}

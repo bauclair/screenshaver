@@ -1,0 +1,172 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.multioctave_directional_wave_height_field_2d",
+  "name": "Multioctave Directional Wave Height Field 2D",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Layered directional harmonic height waves with analytical derivatives.",
+  "uses": "Layered directional harmonic height waves with analytical derivatives.",
+  "notes": "Position is XZ; height is Y. Frequency is radians per unit; speed is phase travel units per second. Frequency capped at 4096. Height is not an SDF.",
+  "header_color": "#527D79",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "(gl_FragCoord.xy/u_resolution.xy*2.0-1.0)",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "time_offset",
+      "name": "Time Offset",
+      "type": "float",
+      "default": "0.0",
+      "semantic_role": "time"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "height",
+      "name": "Height",
+      "type": "float"
+    },
+    {
+      "id": "normalized",
+      "name": "Normalized Height",
+      "type": "float"
+    },
+    {
+      "id": "gradient",
+      "name": "Spatial Gradient",
+      "type": "vec2"
+    },
+    {
+      "id": "normal",
+      "name": "Surface Normal",
+      "type": "vec3",
+      "semantic_role": "normal3d"
+    },
+    {
+      "id": "crest",
+      "name": "Crest Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "octaves",
+      "name": "Octaves",
+      "type": "float",
+      "default": 4,
+      "min": 1,
+      "max": 8
+    },
+    {
+      "id": "frequency",
+      "name": "Initial Frequency",
+      "type": "float",
+      "default": 2,
+      "min": 0.01,
+      "max": 100
+    },
+    {
+      "id": "amplitude",
+      "name": "Wave Amplitude",
+      "type": "float",
+      "default": 0.5,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "progression",
+      "name": "Frequency Progression",
+      "type": "float",
+      "default": 1.9,
+      "min": 1,
+      "max": 4
+    },
+    {
+      "id": "decay",
+      "name": "Amplitude Decay",
+      "type": "float",
+      "default": 0.45,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "direction",
+      "name": "Propagation Direction",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "turn",
+      "name": "Direction Change per Octave",
+      "type": "float",
+      "default": 35,
+      "min": -180,
+      "max": 180
+    },
+    {
+      "id": "speed",
+      "name": "Animation Speed",
+      "type": "float",
+      "default": 0.5,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "counter",
+      "name": "Counterwave Strength",
+      "type": "float",
+      "default": 0.65,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "sharpness",
+      "name": "Crest Sharpness",
+      "type": "float",
+      "default": 2,
+      "min": 1,
+      "max": 8
+    },
+    {
+      "id": "sharp_decay",
+      "name": "Sharpness Decay",
+      "type": "float",
+      "default": 0.8,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "threshold",
+      "name": "Crest Threshold",
+      "type": "float",
+      "default": 0.75,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "softness",
+      "name": "Crest Softness",
+      "type": "float",
+      "default": 0.1,
+      "min": 0.001,
+      "max": 1
+    }
+  ],
+  "helpers": "struct MakerWaveHeightResult {float height;float normalized;vec2 gradient;vec3 normal;float crest;};\nMakerWaveHeightResult maker_directional_wave_height(vec2 pos,float offset,float octaves,float freq,float amp,float progression,float decay,float direction,float turn,float speed,float counter,float sharp,float sharpDecay,float threshold,float softness){\n MakerWaveHeightResult r=MakerWaveHeightResult(0.0,0.0,vec2(0.0),vec3(0.0,1.0,0.0),0.0);\n if(any(isnan(pos))||any(isinf(pos))||isnan(offset)||isinf(offset)) return r;\n pos=clamp(pos,vec2(-10000.0),vec2(10000.0));float t=clamp(u_time+offset,-1e6,1e6);float total=0.0;\n int count=int(clamp(floor(octaves+0.5),1.0,8.0));\n for(int i=0;i<8;i++){if(i>=count)break;\n float a=radians(direction+float(i)*turn);vec2 k=freq*vec2(cos(a),sin(a));vec2 k2=0.83*freq*vec2(cos(a+0.61),sin(a+0.61));\n float phase=dot(k,pos)+t*speed*freq;float phase2=dot(k2,pos)-t*speed*freq*0.83+1.7;\n float b=clamp(0.5+0.5*sin(phase),0.0,1.0),c=clamp(0.5+0.5*sin(phase2),0.0,1.0);\n float db=b>0.0?0.5*sharp*pow(b,sharp-1.0)*cos(phase):0.0;float dc=c>0.0?0.5*sharp*pow(c,sharp-1.0)*cos(phase2):0.0;\n r.height+=amp*(pow(b,sharp)+counter*pow(c,sharp))/(1.0+counter);r.gradient+=amp*(db*k+counter*dc*k2)/(1.0+counter);total+=amp;\n freq=min(freq*progression,4096.0);amp*=decay;sharp=1.0+(sharp-1.0)*sharpDecay;\n }\n r.normalized=total>0.0?clamp(r.height/total,0.0,1.0):0.0;r.normal=normalize(vec3(-r.gradient.x,1.0,-r.gradient.y));r.crest=smoothstep(threshold-softness,threshold+softness,r.normalized);return r;\n}",
+  "glsl_outputs": {
+    "height": "maker_directional_wave_height({position},{time_offset},{octaves},{frequency},{amplitude},{progression},{decay},{direction},{turn},{speed},{counter},{sharpness},{sharp_decay},{threshold},{softness}).height",
+    "normalized": "maker_directional_wave_height({position},{time_offset},{octaves},{frequency},{amplitude},{progression},{decay},{direction},{turn},{speed},{counter},{sharpness},{sharp_decay},{threshold},{softness}).normalized",
+    "gradient": "maker_directional_wave_height({position},{time_offset},{octaves},{frequency},{amplitude},{progression},{decay},{direction},{turn},{speed},{counter},{sharpness},{sharp_decay},{threshold},{softness}).gradient",
+    "normal": "maker_directional_wave_height({position},{time_offset},{octaves},{frequency},{amplitude},{progression},{decay},{direction},{turn},{speed},{counter},{sharpness},{sharp_decay},{threshold},{softness}).normal",
+    "crest": "maker_directional_wave_height({position},{time_offset},{octaves},{frequency},{amplitude},{progression},{decay},{direction},{turn},{speed},{counter},{sharpness},{sharp_decay},{threshold},{softness}).crest"
+  }
+}

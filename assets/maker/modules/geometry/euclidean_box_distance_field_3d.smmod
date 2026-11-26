@@ -1,0 +1,94 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.geometry.euclidean_box_distance_field_3d",
+  "name": "Euclidean Box Distance Field 3D",
+  "category": "Geometry",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Exact signed Euclidean distance to an axis-aligned rectangular solid.",
+  "uses": "Exact signed Euclidean distance to an axis-aligned rectangular solid.",
+  "notes": "Negative inside; surface distance is absolute distance; interior depth is nonnegative. Mask includes boundary. Size multiplier is clamped to [0.0001,100]; finite positions and centers bounded to +/-1e10. Invalid inputs return zero outputs.",
+  "header_color": "#557C9C",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "default": "vec3(0.0)",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec3",
+      "default": "vec3(0.0)",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "size_multiplier",
+      "name": "Size Multiplier",
+      "type": "float",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "distance",
+      "name": "Signed Distance",
+      "type": "float",
+      "semantic_role": "distance"
+    },
+    {
+      "id": "surface",
+      "name": "Surface Distance",
+      "type": "float",
+      "semantic_role": "distance"
+    },
+    {
+      "id": "depth",
+      "name": "Interior Depth",
+      "type": "float",
+      "semantic_role": "distance"
+    },
+    {
+      "id": "mask",
+      "name": "Interior Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "hx",
+      "name": "X Half-Extent",
+      "type": "float",
+      "default": 0.5,
+      "min": 0.001,
+      "max": 100
+    },
+    {
+      "id": "hy",
+      "name": "Y Half-Extent",
+      "type": "float",
+      "default": 0.5,
+      "min": 0.001,
+      "max": 100
+    },
+    {
+      "id": "hz",
+      "name": "Z Half-Extent",
+      "type": "float",
+      "default": 0.5,
+      "min": 0.001,
+      "max": 100
+    }
+  ],
+  "helpers": "struct MakerEBoxResult { float distance; float surface; float depth; float mask; };\nMakerEBoxResult maker_ebox_eval(vec3 p,vec3 c,float scale,float hx,float hy,float hz){\n if(any(isnan(p))||any(isinf(p))||any(isnan(c))||any(isinf(c))||isnan(scale)||isinf(scale))return MakerEBoxResult(0.0,0.0,0.0,0.0);\n vec3 halfsize=vec3(hx,hy,hz)*clamp(scale,0.0001,100.0);\n vec3 local=abs(clamp(p,vec3(-1e10),vec3(1e10))-clamp(c,vec3(-1e10),vec3(1e10)));\n vec3 excess=max(local-halfsize,vec3(0.0));\n float clearance=min(halfsize.x-local.x,min(halfsize.y-local.y,halfsize.z-local.z));\n float d=clearance>=0.0?-clearance:length(excess);\n return MakerEBoxResult(d,abs(d),max(-d,0.0),d<=0.0?1.0:0.0);\n}",
+  "glsl_outputs": {
+    "distance": "maker_ebox_eval({position},{center},{size_multiplier},{hx},{hy},{hz}).distance",
+    "surface": "maker_ebox_eval({position},{center},{size_multiplier},{hx},{hy},{hz}).surface",
+    "depth": "maker_ebox_eval({position},{center},{size_multiplier},{hx},{hy},{hz}).depth",
+    "mask": "maker_ebox_eval({position},{center},{size_multiplier},{hx},{hy},{hz}).mask"
+  }
+}

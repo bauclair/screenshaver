@@ -1,0 +1,119 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.geometry.triangle_boundary_distance_field_2d",
+  "name": "Triangle Boundary Distance Field 2D",
+  "category": "Geometry",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Signed finite triangle distance and independent edge distances.",
+  "uses": "Signed finite triangle distance and independent edge distances.",
+  "notes": "Preset vertices anchored at origin; size scales all vertices including custom. Signed distance negative inside; mask includes boundary. Degenerate triangle treated as union of finite segments with no interior. Infinite-line mode falls back to point distance for zero-length edge. Coordinates bounded to +/-1e6.",
+  "header_color": "#627FC2",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "vertex_a",
+      "name": "Vertex A",
+      "type": "vec2",
+      "default": "vec2(0.0)",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "vertex_b",
+      "name": "Vertex B",
+      "type": "vec2",
+      "default": "vec2(1.0,0.0)",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "vertex_c",
+      "name": "Vertex C",
+      "type": "vec2",
+      "default": "vec2(0.0,1.0)",
+      "semantic_role": "position2d"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "distance",
+      "name": "Signed Distance",
+      "type": "float",
+      "semantic_role": "distance"
+    },
+    {
+      "id": "ab",
+      "name": "Edge AB Distance",
+      "type": "float",
+      "semantic_role": "distance"
+    },
+    {
+      "id": "bc",
+      "name": "Edge BC Distance",
+      "type": "float",
+      "semantic_role": "distance"
+    },
+    {
+      "id": "ca",
+      "name": "Edge CA Distance",
+      "type": "float",
+      "semantic_role": "distance"
+    },
+    {
+      "id": "mask",
+      "name": "Interior Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "profile",
+      "name": "Triangle Profile",
+      "type": "choice",
+      "default": 0,
+      "min": 0,
+      "max": 3,
+      "options": [
+        "Equilateral",
+        "Right",
+        "30\u00b0\u201360\u00b0\u201390\u00b0",
+        "Custom"
+      ]
+    },
+    {
+      "id": "size",
+      "name": "Triangle Size",
+      "type": "float",
+      "default": 1,
+      "min": 0.001,
+      "max": 100
+    },
+    {
+      "id": "mode",
+      "name": "Edge Distance Mode",
+      "type": "choice",
+      "default": 0,
+      "min": 0,
+      "max": 1,
+      "options": [
+        "Infinite Line",
+        "Finite Segment"
+      ]
+    }
+  ],
+  "helpers": "struct MakerTBDResult { float distance; float ab; float bc; float ca; float mask; };\nfloat maker_tbd_cross(vec2 a,vec2 b){return a.x*b.y-a.y*b.x;}\nvec2 maker_tbd_edge(vec2 p,vec2 a,vec2 b){vec2 e=b-a,q=p-a;float l=dot(e,e);if(l<=1e-20)return vec2(length(q));return vec2(length(q-e*clamp(dot(q,e)/l,0.,1.)),abs(maker_tbd_cross(e,q))/sqrt(l));}\nMakerTBDResult maker_tbd_eval(vec2 p,vec2 a,vec2 b,vec2 c,float profile,float size,float mode){\n if(any(isnan(p))||any(isinf(p))||any(isnan(a))||any(isinf(a))||any(isnan(b))||any(isinf(b))||any(isnan(c))||any(isinf(c)))return MakerTBDResult(0.,0.,0.,0.,0.);\n if(profile<2.5){a=vec2(0);b=profile<1.5?vec2(1.,0.):vec2(0.5,0.);c=profile<0.5?vec2(0.5,0.866025403784):profile<1.5?vec2(0.,1.):vec2(0.5,0.288675134595);}\n a=clamp(a,vec2(-1e6),vec2(1e6))*size;b=clamp(b,vec2(-1e6),vec2(1e6))*size;c=clamp(c,vec2(-1e6),vec2(1e6))*size;p=clamp(p,vec2(-1e6),vec2(1e6));\n vec2 ab=maker_tbd_edge(p,a,b),bc=maker_tbd_edge(p,b,c),ca=maker_tbd_edge(p,c,a);float area=maker_tbd_cross(b-a,c-a);float x=maker_tbd_cross(b-a,p-a),y=maker_tbd_cross(c-b,p-b),z=maker_tbd_cross(a-c,p-c);bool inside=abs(area)>1e-20&&(area>0.?min(x,min(y,z))>=0.:max(x,max(y,z))<=0.);float d=min(ab.x,min(bc.x,ca.x));return MakerTBDResult(inside?-d:d,mode<0.5?ab.y:ab.x,mode<0.5?bc.y:bc.x,mode<0.5?ca.y:ca.x,inside?1.:0.);\n}",
+  "glsl_outputs": {
+    "distance": "maker_tbd_eval({position},{vertex_a},{vertex_b},{vertex_c},{profile},{size},{mode}).distance",
+    "ab": "maker_tbd_eval({position},{vertex_a},{vertex_b},{vertex_c},{profile},{size},{mode}).ab",
+    "bc": "maker_tbd_eval({position},{vertex_a},{vertex_b},{vertex_c},{profile},{size},{mode}).bc",
+    "ca": "maker_tbd_eval({position},{vertex_a},{vertex_b},{vertex_c},{profile},{size},{mode}).ca",
+    "mask": "maker_tbd_eval({position},{vertex_a},{vertex_b},{vertex_c},{profile},{size},{mode}).mask"
+  }
+}

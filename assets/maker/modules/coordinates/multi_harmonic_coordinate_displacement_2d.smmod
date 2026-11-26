@@ -1,0 +1,209 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.multi_harmonic_coordinate_displacement_2d",
+  "name": "Multi-Harmonic Coordinate Displacement 2D",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Three independent spatial and temporal harmonics displace coordinates perpendicular to a sampling axis.",
+  "uses": "Three independent spatial and temporal harmonics displace coordinates perpendicular to a sampling axis.",
+  "notes": "Spatial frequency in cycles per unit; temporal frequency in Hz; external phase in radians. Derivatives are of scalar displacement with respect to axis coordinate and time. Inputs bounded for numerical stability.",
+  "header_color": "#65758B",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "time_offset",
+      "name": "Time Offset",
+      "type": "float",
+      "default": "0.0",
+      "semantic_role": "time"
+    },
+    {
+      "id": "phase_mod",
+      "name": "Phase Modulation",
+      "type": "float",
+      "default": "0.0"
+    },
+    {
+      "id": "amplitude_multiplier",
+      "name": "Amplitude Multiplier",
+      "type": "float",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "displaced",
+      "name": "Displaced Position",
+      "type": "vec2",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "displacement",
+      "name": "Displacement",
+      "type": "float"
+    },
+    {
+      "id": "spatial",
+      "name": "Spatial Derivative",
+      "type": "float"
+    },
+    {
+      "id": "temporal",
+      "name": "Temporal Derivative",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "amp1",
+      "name": "Harmonic 1 Amplitude",
+      "type": "float",
+      "default": 0.3,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "freq1",
+      "name": "Harmonic 1 Spatial Frequency",
+      "type": "float",
+      "default": 0.5,
+      "min": 0,
+      "max": 100
+    },
+    {
+      "id": "speed1",
+      "name": "Harmonic 1 Temporal Frequency",
+      "type": "float",
+      "default": 0.3,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "phase1",
+      "name": "Harmonic 1 Phase",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "influence1",
+      "name": "Harmonic 1 Phase Influence",
+      "type": "float",
+      "default": 1,
+      "min": -16,
+      "max": 16
+    },
+    {
+      "id": "amp2",
+      "name": "Harmonic 2 Amplitude",
+      "type": "float",
+      "default": 0.18,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "freq2",
+      "name": "Harmonic 2 Spatial Frequency",
+      "type": "float",
+      "default": 1.2,
+      "min": 0,
+      "max": 100
+    },
+    {
+      "id": "speed2",
+      "name": "Harmonic 2 Temporal Frequency",
+      "type": "float",
+      "default": -0.2,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "phase2",
+      "name": "Harmonic 2 Phase",
+      "type": "float",
+      "default": 60,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "influence2",
+      "name": "Harmonic 2 Phase Influence",
+      "type": "float",
+      "default": 1,
+      "min": -16,
+      "max": 16
+    },
+    {
+      "id": "amp3",
+      "name": "Harmonic 3 Amplitude",
+      "type": "float",
+      "default": 0.12,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "freq3",
+      "name": "Harmonic 3 Spatial Frequency",
+      "type": "float",
+      "default": 2,
+      "min": 0,
+      "max": 100
+    },
+    {
+      "id": "speed3",
+      "name": "Harmonic 3 Temporal Frequency",
+      "type": "float",
+      "default": 0.4,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "phase3",
+      "name": "Harmonic 3 Phase",
+      "type": "float",
+      "default": 120,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "influence3",
+      "name": "Harmonic 3 Phase Influence",
+      "type": "float",
+      "default": 1,
+      "min": -16,
+      "max": 16
+    },
+    {
+      "id": "orientation",
+      "name": "Orientation",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "strength",
+      "name": "Displacement Strength",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 10
+    }
+  ],
+  "helpers": "struct MakerHarmonicDisplacement {vec2 displaced;float displacement;float spatial;float temporal;};\nvec3 maker_mhd_component(float s,float t,float pm,float a,float f,float v,float ph,float k){\n float tau=6.28318530718;float angle=tau*(f*s+v*t)+radians(ph)+k*pm;float c=a*cos(angle)*tau;return vec3(a*sin(angle),c*f,c*v);\n}\nMakerHarmonicDisplacement maker_multi_harmonic_displacement(vec2 p,float offset,float pm,float gain,float a1,float f1,float v1,float ph1,float k1,float a2,float f2,float v2,float ph2,float k2,float a3,float f3,float v3,float ph3,float k3,float orientation,float strength){\n MakerHarmonicDisplacement r=MakerHarmonicDisplacement(vec2(0.0),0.0,0.0,0.0);\n if(any(isnan(p))||any(isinf(p))||isnan(offset)||isinf(offset)||isnan(pm)||isinf(pm)||isnan(gain)||isinf(gain))return r;\n p=clamp(p,vec2(-1e4),vec2(1e4));float t=clamp(u_time+offset,-1e5,1e5);pm=clamp(pm,-1e5,1e5);gain=clamp(gain,-100.0,100.0);\n float ang=radians(orientation);vec2 axis=vec2(cos(ang),sin(ang));float s=dot(p,axis);\n vec3 d=gain*strength*(maker_mhd_component(s,t,pm,a1,f1,v1,ph1,k1)+maker_mhd_component(s,t,pm,a2,f2,v2,ph2,k2)+maker_mhd_component(s,t,pm,a3,f3,v3,ph3,k3));\n r.displaced=p+vec2(-axis.y,axis.x)*d.x;r.displacement=d.x;r.spatial=d.y;r.temporal=d.z;return r;\n}",
+  "glsl_outputs": {
+    "displaced": "maker_multi_harmonic_displacement({position},{time_offset},{phase_mod},{amplitude_multiplier},{amp1},{freq1},{speed1},{phase1},{influence1},{amp2},{freq2},{speed2},{phase2},{influence2},{amp3},{freq3},{speed3},{phase3},{influence3},{orientation},{strength}).displaced",
+    "displacement": "maker_multi_harmonic_displacement({position},{time_offset},{phase_mod},{amplitude_multiplier},{amp1},{freq1},{speed1},{phase1},{influence1},{amp2},{freq2},{speed2},{phase2},{influence2},{amp3},{freq3},{speed3},{phase3},{influence3},{orientation},{strength}).displacement",
+    "spatial": "maker_multi_harmonic_displacement({position},{time_offset},{phase_mod},{amplitude_multiplier},{amp1},{freq1},{speed1},{phase1},{influence1},{amp2},{freq2},{speed2},{phase2},{influence2},{amp3},{freq3},{speed3},{phase3},{influence3},{orientation},{strength}).spatial",
+    "temporal": "maker_multi_harmonic_displacement({position},{time_offset},{phase_mod},{amplitude_multiplier},{amp1},{freq1},{speed1},{phase1},{influence1},{amp2},{freq2},{speed2},{phase2},{influence2},{amp3},{freq3},{speed3},{phase3},{influence3},{orientation},{strength}).temporal"
+  }
+}
