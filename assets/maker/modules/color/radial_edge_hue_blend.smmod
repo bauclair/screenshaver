@@ -4,6 +4,7 @@
   "name": "Radial Edge Hue Blend",
   "category": "Color",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "header_color": "#A27660",
   "description": "Blends a base RGB color toward an independently chosen edge RGB color using radial distance.",
   "uses": "Colored borders, radial chroma gradients, glowing procedural compositions.",

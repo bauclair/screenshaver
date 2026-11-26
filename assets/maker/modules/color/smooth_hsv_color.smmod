@@ -4,6 +4,7 @@
   "name": "Smooth HSV Color",
   "category": "Color",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "header_color": "#A26D9C",
   "description": "Converts hue, saturation and brightness into RGB with smoothly interpolated hue transitions.",
   "uses": "Procedural rainbow palettes, color cycling, and coloring scalar fields through a hue-mapping module.",

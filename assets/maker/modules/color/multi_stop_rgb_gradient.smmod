@@ -4,6 +4,7 @@
   "name": "Multi-Stop RGB Gradient",
   "category": "Color",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "description": "Interpolates three or four RGB and opacity stops using positioned or sequential transitions.",
   "uses": "Noncyclic palettes, scalar visualization and masked compositing.",
   "notes": "Stops are sorted together with their colors and opacities. Equal positions retain original order; the last coincident stop wins at that position. Values outside the stop range use endpoint values. Opacity is a separate scalar, not framebuffer alpha. Three-Stop retains the original calculation. Four-Stop sorts stably, with the last coincident stop winning at that position. Sequential modes blend in declared color order using independent transition intervals; reversed boundaries are sorted, and equal boundaries produce a hard step. Stop positions are ignored in sequential modes. The fourth color and opacity are ignored in three-color modes. Linear or smooth interpolation applies to every mode.",

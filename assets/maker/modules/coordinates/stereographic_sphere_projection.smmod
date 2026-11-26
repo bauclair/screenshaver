@@ -1,0 +1,131 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.stereographic_sphere_projection",
+  "name": "Stereographic Sphere Projection",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Plane to sphere and sphere to plane independently. Plane Scale is physical plane units per normalized unit. Sphere input is radially normalized about center; off-surface points use their direction. Projection pole invalid for sphere-to-plane; out-of-range plane output returns zero and invalid. Surface Normal corresponds to plane-to-sphere output.",
+  "uses": "Stereographic Sphere Projection",
+  "notes": "Plane to sphere and sphere to plane independently. Plane Scale is physical plane units per normalized unit. Sphere input is radially normalized about center; off-surface points use their direction. Projection pole invalid for sphere-to-plane; out-of-range plane output returns zero and invalid. Surface Normal corresponds to plane-to-sphere output.",
+  "header_color": "#65758B",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "plane",
+      "name": "Plane Position",
+      "type": "vec2",
+      "semantic_role": "position2d",
+      "default": "maker_uv"
+    },
+    {
+      "id": "sphere",
+      "name": "Sphere Position",
+      "type": "vec3",
+      "semantic_role": "position3d",
+      "default": "vec3(0.0,-1.0,0.0)"
+    },
+    {
+      "id": "center",
+      "name": "Sphere Center",
+      "type": "vec3",
+      "semantic_role": "position3d",
+      "default": "vec3(0.0)"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "sphere_out",
+      "name": "Projected Sphere Position",
+      "type": "vec3",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "plane_out",
+      "name": "Projected Plane Position",
+      "type": "vec2",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "normal",
+      "name": "Surface Normal",
+      "type": "vec3",
+      "semantic_role": "normal3d"
+    },
+    {
+      "id": "forward_valid",
+      "name": "Forward Validity Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    },
+    {
+      "id": "inverse_valid",
+      "name": "Inverse Validity Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "radius",
+      "name": "Sphere Radius",
+      "type": "float",
+      "default": 1,
+      "min": 0.001,
+      "max": 100
+    },
+    {
+      "id": "axis",
+      "name": "Projection Axis",
+      "type": "choice",
+      "default": 1,
+      "options": [
+        "X",
+        "Y",
+        "Z"
+      ]
+    },
+    {
+      "id": "pole",
+      "name": "Projection Pole",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Positive",
+        "Negative"
+      ]
+    },
+    {
+      "id": "plane_scale",
+      "name": "Plane Scale",
+      "type": "float",
+      "default": 1,
+      "min": 0.001,
+      "max": 100
+    },
+    {
+      "id": "floor",
+      "name": "Denominator Floor",
+      "type": "float",
+      "default": 1e-06,
+      "min": 1e-08,
+      "max": 0.1
+    },
+    {
+      "id": "cap",
+      "name": "Maximum Plane Magnitude",
+      "type": "float",
+      "default": 10000,
+      "min": 1,
+      "max": 1000000.0
+    }
+  ],
+  "helpers": "struct MakerSSP {vec3 sphere;vec2 plane;vec3 normal;float fv;float iv;};\nvec3 maker_ssp_pack(vec3 p,float axis){return axis<0.5?p.zxy:(axis<1.5?p.yzx:p);}\nvec3 maker_ssp_unpack(vec3 p,float axis){return axis<0.5?p.yzx:(axis<1.5?p.zxy:p);}\nMakerSSP maker_ssp(vec2 plane,vec3 sphere,vec3 center,float radius,float axis,float pole,float scale,float eps,float cap){\n MakerSSP r=MakerSSP(vec3(0.0),vec2(0.0),vec3(0.0),0.0,0.0);if(any(isnan(center))||any(isinf(center))||any(greaterThan(abs(center),vec3(1e8))))return r;\n float signp=pole<0.5?1.0:-1.0;\n if(!any(isnan(plane))&&!any(isinf(plane))&&all(lessThanEqual(abs(plane),vec2(1e8)))){vec2 q=plane/scale;float d=dot(q,q);vec3 n=vec3(2.0*q,signp*(d-1.0))/(1.0+d);r.normal=maker_ssp_pack(n,axis);r.sphere=center+radius*r.normal;r.fv=1.0;}\n if(!any(isnan(sphere))&&!any(isinf(sphere))&&all(lessThanEqual(abs(sphere),vec3(1e8)))){vec3 q=maker_ssp_unpack(sphere-center,axis);float l=length(q);if(l>1e-12){q/=l;float den=1.0-signp*q.z;if(den>=eps){vec2 v=scale*q.xy/den;if(length(v)<=cap){r.plane=v;r.iv=1.0;}}}}\n return r;\n}",
+  "glsl_outputs": {
+    "sphere_out": "maker_ssp({plane},{sphere},{center},{radius},{axis},{pole},{plane_scale},{floor},{cap}).sphere",
+    "plane_out": "maker_ssp({plane},{sphere},{center},{radius},{axis},{pole},{plane_scale},{floor},{cap}).plane",
+    "normal": "maker_ssp({plane},{sphere},{center},{radius},{axis},{pole},{plane_scale},{floor},{cap}).normal",
+    "forward_valid": "maker_ssp({plane},{sphere},{center},{radius},{axis},{pole},{plane_scale},{floor},{cap}).fv",
+    "inverse_valid": "maker_ssp({plane},{sphere},{center},{radius},{axis},{pole},{plane_scale},{floor},{cap}).iv"
+  }
+}

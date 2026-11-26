@@ -4,6 +4,7 @@
   "name": "Polynomial Distance Attenuation",
   "category": "Lighting",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "description": "Applies bounded reciprocal polynomial falloff to a scalar distance.",
   "uses": "Reusable procedural illumination and material shading.",
   "notes": "Negative distances use their magnitude. NaN distance produces zero response; infinite or extreme distances are bounded to 1e15. Normalized Attenuation is Attenuation clamped to [0,1]. Nonnegative coefficients, a positive denominator floor and a maximum response prevent singularities.",

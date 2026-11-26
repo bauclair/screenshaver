@@ -4,6 +4,7 @@
   "name": "Phong and Blinn–Phong Specular Response",
   "category": "Lighting",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "description": "Computes independent scalar diffuse and specular illumination and a reflected light direction.",
   "uses": "Reusable procedural illumination and material shading.",
   "notes": "Light and view vectors point away from the surface toward the light and viewer. Invalid or zero vectors produce zero contributions as applicable. Specular requires front-facing light and view. Reflection is independent of viewing direction. No color or attenuation is applied.",

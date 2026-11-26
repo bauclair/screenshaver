@@ -4,6 +4,7 @@
   "name": "Procedural Radial Ray Field",
   "category": "Fields",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "header_color": "#267A49",
   "description": "Animated radial ray intensity generated from bounded angular harmonics and distance attenuation.",
   "uses": "Solar flares, stylized energy bursts, radial light patterns, abstract backgrounds.",

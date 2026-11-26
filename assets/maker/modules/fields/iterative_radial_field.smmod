@@ -4,6 +4,7 @@
   "name": "Iterative Radial Field",
   "category": "Fields",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "header_color": "#267A49",
   "description": "Computes a bounded scalar field by repeatedly folding, rotating, and contracting a 2D point.",
   "uses": "General-purpose abstract textures and animated contour patterns.",

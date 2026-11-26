@@ -4,6 +4,7 @@
   "name": "Sparse Random Cell Field 2D",
   "category": "Fields",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "description": "Assigns independent deterministic occupancy and brightness to grid cells.",
   "uses": "Stars, stippling, sparse cellular masks and debris.",
   "notes": "Piecewise constant cell values; seed rounded to integer. Probability zero and one give empty and full occupancy. No particle loop.",

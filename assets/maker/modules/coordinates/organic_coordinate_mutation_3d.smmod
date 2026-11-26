@@ -1,6 +1,7 @@
 {
   "schema_version": 1,
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "terminal": false,
   "id": "screenshaver.coordinates.organic_coordinate_mutation_3d",
   "name": "Organic Coordinate Mutation 3D",

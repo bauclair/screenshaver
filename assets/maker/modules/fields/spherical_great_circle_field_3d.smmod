@@ -4,6 +4,7 @@
   "name": "Spherical Great-Circle Field 3D",
   "category": "Fields",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "description": "Evaluates angular distance to a great circle or its minor arc.",
   "uses": "Procedural spherical geometry and surface decoration.",
   "notes": "Angles returned in radians. Signed angle always refers to supporting circle. Invalid zero or parallel endpoints and zero position return zero distances and zero mask.",

@@ -1,6 +1,7 @@
 {
   "schema_version": 1,
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "terminal": false,
   "id": "screenshaver.coordinates.periodic_mirror_tile_3d",
   "name": "Periodic Mirror Tile 3D",

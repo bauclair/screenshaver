@@ -4,6 +4,7 @@
   "name": "Spherical Surface Shading 2D",
   "category": "Lighting",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "terminal": false,
   "header_color": "#477D9A",
   "description": "Reconstructs the visible hemisphere of a circular 2D footprint and shades it with an adjustable light.",

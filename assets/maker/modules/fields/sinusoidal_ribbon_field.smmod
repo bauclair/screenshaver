@@ -4,6 +4,7 @@
   "name": "Sinusoidal Ribbon Field",
   "category": "Fields",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "header_color": "#348F8B",
   "description": "Generates a soft ribbon around an animated sinusoidal centerline in 2D.",
   "uses": "Animated wave ribbons, light trails and procedural band masks.",

@@ -4,6 +4,7 @@
   "name": "Perspective Ring Projection",
   "category": "Geometry",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "header_color": "#477D9A",
   "description": "Projects a circular ring in a plane parallel to the image plane using a pinhole camera model.",
   "uses": "Perspective tunnel layers, circular overlays and depth-scaled outlines.",

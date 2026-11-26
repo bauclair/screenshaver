@@ -4,6 +4,7 @@
   "name": "Traveling Axial Coordinate 3D",
   "category": "Coordinates",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "description": "Expresses position relative to a translating axial origin.",
   "uses": "Moving modulation envelopes and traveling coordinate domains.",
   "notes": "Gain applies only to relative scalar coordinate. Translation is not periodic.",

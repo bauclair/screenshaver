@@ -4,6 +4,7 @@
   "name": "Henyey–Greenstein Scattering",
   "category": "Lighting",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "description": "Evaluates single or dual angular scattering phase functions.",
   "uses": "Fog, clouds, dust and directional volumetric illumination.",
   "notes": "Incident direction is light propagation toward the sample; outgoing direction points from sample toward viewer. Zero directions return zero scattering and cosine. Physical normalization integrates to one before intensity scaling; relative omits 4 pi. HDR output is intentional.",

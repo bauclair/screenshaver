@@ -4,6 +4,7 @@
   "name": "SDF Capsule",
   "category": "Geometry",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "description": "SDF Capsule procedural geometry and animation utility.",
   "uses": "SDF Capsule procedural geometry and animation utility.",
   "notes": "Coincident endpoints become a sphere. Radius modulation is additive.",

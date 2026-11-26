@@ -1,6 +1,7 @@
 {
   "schema_version": 1,
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "terminal": false,
   "id": "screenshaver.fields.second_order_cellular_field_3d",
   "name": "Second-Order Cellular Field 3D",

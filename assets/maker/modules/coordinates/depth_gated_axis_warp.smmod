@@ -4,6 +4,7 @@
   "name": "Depth-Gated Axis Warp",
   "category": "Coordinates",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "header_color": "#5488A4",
   "description": "Animates a 3D position with smooth lateral waves that fade in after a configurable depth threshold.",
   "uses": "Bending repeated geometry, tunnel structures, and depth-layered procedural fields without altering the underlying geometry module.",

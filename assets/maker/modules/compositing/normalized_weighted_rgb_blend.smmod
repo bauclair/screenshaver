@@ -1,0 +1,155 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.compositing.normalized_weighted_rgb_blend",
+  "name": "Normalized Weighted RGB Blend",
+  "category": "Compositing",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "terminal": false,
+  "header_color": "#429F91",
+  "description": "Nonnegative weighted RGB average with raw sum and weight outputs.",
+  "uses": "Procedural fields and material composition.",
+  "notes": "NaN inputs select adjustable defaults. Weights clamp to [0,1e12], colors to signed magnitude 1e12. Gain and clamp affect blended color only. Zero total weight returns black. For hierarchical blending use blended color with gain 1 and clamp off, and total weight.",
+  "inputs": [
+    {
+      "id": "color_a",
+      "name": "Color A",
+      "type": "vec3",
+      "default": "vec3(uintBitsToFloat(0x7fc00000u))",
+      "semantic_role": "color"
+    },
+    {
+      "id": "weight_a",
+      "name": "Weight A",
+      "type": "float",
+      "default": "uintBitsToFloat(0x7fc00000u)"
+    },
+    {
+      "id": "color_b",
+      "name": "Color B",
+      "type": "vec3",
+      "default": "vec3(uintBitsToFloat(0x7fc00000u))",
+      "semantic_role": "color"
+    },
+    {
+      "id": "weight_b",
+      "name": "Weight B",
+      "type": "float",
+      "default": "uintBitsToFloat(0x7fc00000u)"
+    },
+    {
+      "id": "color_c",
+      "name": "Color C",
+      "type": "vec3",
+      "default": "vec3(uintBitsToFloat(0x7fc00000u))",
+      "semantic_role": "color"
+    },
+    {
+      "id": "weight_c",
+      "name": "Weight C",
+      "type": "float",
+      "default": "uintBitsToFloat(0x7fc00000u)"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "color",
+      "name": "Blended Color",
+      "type": "vec3",
+      "semantic_role": "color"
+    },
+    {
+      "id": "weighted_sum",
+      "name": "Weighted Color Sum",
+      "type": "vec3",
+      "semantic_role": "color"
+    },
+    {
+      "id": "total_weight",
+      "name": "Total Weight",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "default_color_a",
+      "name": "Default Color A",
+      "type": "color3",
+      "default": [
+        1,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "default_weight_a",
+      "name": "Default Weight A",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 100
+    },
+    {
+      "id": "default_color_b",
+      "name": "Default Color B",
+      "type": "color3",
+      "default": [
+        0,
+        1,
+        0
+      ]
+    },
+    {
+      "id": "default_weight_b",
+      "name": "Default Weight B",
+      "type": "float",
+      "default": 0.5,
+      "min": 0,
+      "max": 100
+    },
+    {
+      "id": "default_color_c",
+      "name": "Default Color C",
+      "type": "color3",
+      "default": [
+        0,
+        0,
+        1
+      ]
+    },
+    {
+      "id": "default_weight_c",
+      "name": "Default Weight C",
+      "type": "float",
+      "default": 0.25,
+      "min": 0,
+      "max": 100
+    },
+    {
+      "id": "gain",
+      "name": "Output Gain",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 16
+    },
+    {
+      "id": "clamp_output",
+      "name": "Output Clamp",
+      "type": "choice",
+      "default": 0,
+      "min": 0,
+      "max": 1,
+      "options": [
+        "No",
+        "Yes"
+      ]
+    }
+  ],
+  "helpers": "struct MakerNWB {vec3 color; vec3 weighted_sum; float total_weight;};\nvec3 maker_nwb_color(vec3 c,vec3 fallback){return any(isnan(c))?fallback:clamp(c,vec3(-1e12),vec3(1e12));}\nfloat maker_nwb_weight(float w,float fallback){return clamp(isnan(w)?fallback:w,0.0,1e12);}\nMakerNWB maker_nwb_eval(vec3 a,float wa,vec3 b,float wb,vec3 c,float wc,float gain,float clipMode){\n float total=wa+wb+wc; vec3 sum=a*wa+b*wb+c*wc;\n vec3 result=total>0.0?(sum/total)*gain:vec3(0.0);\n if(clipMode>=0.5)result=clamp(result,0.0,1.0);\n return MakerNWB(result,sum,total);\n}",
+  "glsl_outputs": {
+    "color": "maker_nwb_eval(maker_nwb_color({color_a},{default_color_a}),maker_nwb_weight({weight_a},{default_weight_a}),maker_nwb_color({color_b},{default_color_b}),maker_nwb_weight({weight_b},{default_weight_b}),maker_nwb_color({color_c},{default_color_c}),maker_nwb_weight({weight_c},{default_weight_c}),{gain},{clamp_output}).color",
+    "weighted_sum": "maker_nwb_eval(maker_nwb_color({color_a},{default_color_a}),maker_nwb_weight({weight_a},{default_weight_a}),maker_nwb_color({color_b},{default_color_b}),maker_nwb_weight({weight_b},{default_weight_b}),maker_nwb_color({color_c},{default_color_c}),maker_nwb_weight({weight_c},{default_weight_c}),{gain},{clamp_output}).weighted_sum",
+    "total_weight": "maker_nwb_eval(maker_nwb_color({color_a},{default_color_a}),maker_nwb_weight({weight_a},{default_weight_a}),maker_nwb_color({color_b},{default_color_b}),maker_nwb_weight({weight_b},{default_weight_b}),maker_nwb_color({color_c},{default_color_c}),maker_nwb_weight({weight_c},{default_weight_c}),{gain},{clamp_output}).total_weight"
+  }
+}

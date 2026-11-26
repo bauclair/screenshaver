@@ -4,6 +4,7 @@
   "name": "Coupled Trigonometric Field 3D",
   "category": "Math",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "description": "Generates cyclically coupled spatial trigonometric components and their scalar mean.",
   "uses": "Procedural masks, coordinate modulation, interference and material variation.",
   "notes": "Forward coupling uses YZX; reverse uses ZXY. Spatial and coupling frequencies are angular frequencies in radians per coordinate unit. Animation speed is radians per second; phase offset is degrees. Scalar outputs are bounded for finite ordinary inputs.",

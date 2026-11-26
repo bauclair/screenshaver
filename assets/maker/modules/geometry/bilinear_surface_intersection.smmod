@@ -1,6 +1,7 @@
 {
   "schema_version": 1,
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "terminal": false,
   "id": "screenshaver.geometry.bilinear_surface_intersection",
   "name": "Bilinear Surface Intersection",

@@ -1,0 +1,103 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.radial_power_warp_2d",
+  "name": "Radial Power Warp 2D",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Power mapping around center; strength blends original and transformed radius. Center returns zero scale by convention. Exponent clamped to 0.1\u20138; transformed radius capped at 1e8.",
+  "uses": "Radial Power Warp 2D",
+  "notes": "Power mapping around center; strength blends original and transformed radius. Center returns zero scale by convention. Exponent clamped to 0.1\u20138; transformed radius capped at 1e8.",
+  "header_color": "#65758B",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "semantic_role": "position2d",
+      "default": "maker_uv"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec2",
+      "semantic_role": "position2d",
+      "default": "vec2(0.0)"
+    },
+    {
+      "id": "multiplier",
+      "name": "Exponent Multiplier",
+      "type": "float",
+      "semantic_role": "",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "warped",
+      "name": "Warped Position",
+      "type": "vec2",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "original_radius",
+      "name": "Original Radius",
+      "type": "float",
+      "semantic_role": "distance"
+    },
+    {
+      "id": "warped_radius",
+      "name": "Warped Radius",
+      "type": "float",
+      "semantic_role": "distance"
+    },
+    {
+      "id": "radial_scale",
+      "name": "Radial Scale",
+      "type": "float",
+      "semantic_role": ""
+    }
+  ],
+  "parameters": [
+    {
+      "id": "exponent",
+      "name": "Exponent",
+      "type": "float",
+      "default": 1,
+      "min": 0.1,
+      "max": 8
+    },
+    {
+      "id": "reference_radius",
+      "name": "Reference Radius",
+      "type": "float",
+      "default": 1,
+      "min": 0.001,
+      "max": 100
+    },
+    {
+      "id": "output_scale",
+      "name": "Output Scale",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 16
+    },
+    {
+      "id": "strength",
+      "name": "Warp Strength",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 1
+    }
+  ],
+  "helpers": "struct MakerRPW {vec2 p;float r;float wr;float scale;};\nMakerRPW maker_rpw(vec2 p,vec2 c,float mult,float e,float refR,float scale,float strength){\n if(any(isnan(c))||any(isinf(c)))c=vec2(0.0);if(any(isnan(p))||any(isinf(p)))p=c;\n c=clamp(c,vec2(-1e6),vec2(1e6));p=clamp(p,vec2(-1e6),vec2(1e6));\n if(isnan(mult)||isinf(mult))mult=1.0;e=clamp(e*clamp(mult,0.0,80.0),0.1,8.0);\n vec2 q=p-c;float r=length(q);if(r<=1e-20)return MakerRPW(c,r,0.0,0.0);\n float target=scale==0.0?0.0:min(1e8,scale*refR*exp(clamp(e*log(r/refR),-80.0,40.0)));\n float wr=mix(r,target,strength);return MakerRPW(c+(q/r)*wr,r,wr,wr/r);\n}",
+  "glsl_outputs": {
+    "warped": "maker_rpw({position},{center},{multiplier},{exponent},{reference_radius},{output_scale},{strength}).p",
+    "original_radius": "maker_rpw({position},{center},{multiplier},{exponent},{reference_radius},{output_scale},{strength}).r",
+    "warped_radius": "maker_rpw({position},{center},{multiplier},{exponent},{reference_radius},{output_scale},{strength}).wr",
+    "radial_scale": "maker_rpw({position},{center},{multiplier},{exponent},{reference_radius},{output_scale},{strength}).scale"
+  }
+}

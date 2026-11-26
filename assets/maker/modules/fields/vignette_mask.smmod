@@ -4,6 +4,7 @@
   "name": "Vignette Mask",
   "category": "Fields",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "header_color": "#5A78A8",
   "description": "Separable polynomial vignette mask with optional nonnegative clamping.",
   "uses": "Edge attenuation, masks, and modulation of scalar fields.",

@@ -4,6 +4,7 @@
   "name": "Repeated Ring Accumulation",
   "category": "Fields",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "header_color": "#477D9A",
   "description": "Accumulates projected circular outlines along a camera-relative depth interval, sampling two connected scalar 3D fields for independent horizontal and vertical path offsets.",
   "uses": "Repeated rings, abstract perspective corridors and depth-layered luminous outlines.",

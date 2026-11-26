@@ -4,6 +4,7 @@
   "name": "Spatial Phase Oscillator",
   "category": "Math",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "header_color": "#688C91",
   "description": "Bounded scalar oscillation with phase driven by three-dimensional position and time.",
   "uses": "Spatially coordinated motion, pulsating material values and connected size modulation.",

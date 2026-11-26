@@ -4,6 +4,7 @@
   "name": "Iterative Spiral Field",
   "category": "Fields",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "header_color": "#348F8B",
   "description": "Accumulates bounded harmonic rings over iteratively rotated and scaled 2D coordinates.",
   "uses": "Abstract spiral textures, animated radial interference and iterative fields.",

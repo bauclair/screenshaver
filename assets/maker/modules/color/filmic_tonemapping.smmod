@@ -4,6 +4,7 @@
   "name": "Filmic Tone Mapping",
   "category": "Color",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "header_color": "#A27660",
   "description": "Independent luminance-preserving filmic highlight compression.",
   "uses": "Color grading of accumulated field illumination.",

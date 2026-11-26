@@ -4,6 +4,7 @@
   "name": "Randomized Cell Transform 2D",
   "category": "Coordinates",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "description": "Applies deterministic cell-specific translation and animated rotation.",
   "uses": "Randomized geometric arrays, mosaics and confetti.",
   "notes": "Jitter is a symmetric maximum displacement in local coordinate units, not a fraction of cell width. For 0.1-wide cells try 0.015 jitter. Rotation range is symmetric about the offset; angle output is radians. Speed variation scales the signed base speed by a factor between 1-variation and 1+variation. Cell-local sampling can clip shapes. Oscillating translation uses jitter in coordinate units; Combined adds the static offset and may exceed the original jitter bound. Frequency is in Hz. Shared phase does not imply shared frequency.",

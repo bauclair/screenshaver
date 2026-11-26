@@ -4,6 +4,7 @@
   "name": "Logarithmic Radial Field 3D",
   "category": "Fields",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "description": "Evaluate a radial power multiplied by logarithmic growth around a configurable center.",
   "uses": "Nonlinear density distributions, spatial attenuation and procedural volumetric fields.",
   "notes": "Non-SDF field. Field 3D samples the Radial Field output. Positive exponent ensures a defined value at the center.",

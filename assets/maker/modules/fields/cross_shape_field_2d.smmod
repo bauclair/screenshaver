@@ -4,6 +4,7 @@
   "name": "Cross Shape Field 2D",
   "category": "Fields",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "description": "Combines two independently sized softened rectangular arms.",
   "uses": "Crosses, intersecting lines and procedural symbols.",
   "notes": "Lengths and thicknesses are half extents in coordinate units. Softness extends outward. Zero thickness retains a softened centerline. The second arm angle is measured from the positive X axis.",

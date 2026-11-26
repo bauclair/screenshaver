@@ -4,6 +4,7 @@
   "name": "Cross-Axis Sine Warp",
   "category": "Coordinates",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "header_color": "#287C9B",
   "description": "Bounded cross-coupled sine displacement with legacy simultaneous or sequential harmonic feedback.",
   "uses": "Liquid patterns, coupled sine distortions, animated UV warps.",

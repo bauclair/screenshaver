@@ -4,6 +4,7 @@
   "name": "Log Polar Mapping",
   "category": "Coordinates",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "header_color": "#235BB1",
   "description": "Converts a 2D position into logarithmic radius and angular position.",
   "uses": "Spiral patterns, radial distortions, and procedural coordinate systems.",

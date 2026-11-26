@@ -4,6 +4,7 @@
   "name": "Color Accumulation",
   "category": "Color",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "header_color": "#A27660",
   "description": "Adjusts brightness and contrast of accumulated procedural light.",
   "uses": "Convert traversal illumination into vivid, controllable colors.",

@@ -4,6 +4,7 @@
   "name": "Harmonic Motion Path 2D",
   "category": "Geometry",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "description": "Planar motion from two independent harmonic oscillations per axis, with analytical velocity.",
   "uses": "Moving light sources, emitters, masks and animated coordinate origins.",
   "notes": "Frequency in Hz, phase in degrees. Negative frequency reverses phase progression. Velocity holds center, time offset and parameters fixed. Zero frequency produces a static offset. No constant speed or closure guarantee.",

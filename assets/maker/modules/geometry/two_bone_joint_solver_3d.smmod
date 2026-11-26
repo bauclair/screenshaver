@@ -4,6 +4,7 @@
   "name": "Two-Bone Joint Solver 3D",
   "category": "Geometry",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "description": "Two-Bone Joint Solver 3D procedural geometry and animation utility.",
   "uses": "Two-Bone Joint Solver 3D procedural geometry and animation utility.",
   "notes": "Lengths clamped to 0.001\u201320. Equal lengths and coincident target fold along bend direction. Unreachable target clamped to reachable shell.",

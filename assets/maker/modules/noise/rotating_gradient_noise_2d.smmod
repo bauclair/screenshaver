@@ -4,6 +4,7 @@
   "name": "Rotating Gradient Noise 2D",
   "category": "Noise",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "description": "Animated lattice gradients with analytical spatial derivatives.",
   "uses": "Evolving noise, gradient displacement and curl fields.",
   "notes": "Gradient and curl differentiate signed noise with respect to position at fixed time. Domain repeats every 65536 lattice units. Rotation speed is degrees per second.",

@@ -4,6 +4,7 @@
   "name": "Soft Interference Field",
   "category": "Fields",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "header_color": "#4B9A86",
   "description": "Combines three low-frequency moving wave directions after a gentle nonlinear coordinate deformation.",
   "uses": "Broad plasma veils, fluid gradients, animated masks and soft moving backgrounds.",

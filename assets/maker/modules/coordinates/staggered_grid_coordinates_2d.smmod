@@ -1,6 +1,7 @@
 {
   "schema_version": 1,
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "terminal": false,
   "attributed_to": [],
   "id": "screenshaver.coordinates.staggered_grid_coordinates_2d",

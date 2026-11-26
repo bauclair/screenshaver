@@ -1,0 +1,130 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.anisotropic_radial_glow_field_2d",
+  "name": "Anisotropic Radial Glow Field 2D",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Rotated elliptical metric; rotation offset in degrees. Reciprocal, exponential and Gaussian responses use exponent as response power. Normalized intensity is unit-amplitude falloff, independent of intensity multiplier. Negative multiplier treated as zero; multiplier capped at 32. Invalid inputs return zero.",
+  "uses": "Anisotropic Radial Glow Field 2D",
+  "notes": "Rotated elliptical metric; rotation offset in degrees. Reciprocal, exponential and Gaussian responses use exponent as response power. Normalized intensity is unit-amplitude falloff, independent of intensity multiplier. Negative multiplier treated as zero; multiplier capped at 32. Invalid inputs return zero.",
+  "header_color": "#527D79",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "semantic_role": "position2d",
+      "default": "maker_uv"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec2",
+      "semantic_role": "position2d",
+      "default": "vec2(0.0)"
+    },
+    {
+      "id": "rotation_offset",
+      "name": "Rotation Offset",
+      "type": "float",
+      "semantic_role": "angle",
+      "default": "0.0"
+    },
+    {
+      "id": "multiplier",
+      "name": "Intensity Multiplier",
+      "type": "float",
+      "semantic_role": "intensity",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "glow",
+      "name": "Glow Intensity",
+      "type": "float",
+      "semantic_role": "intensity"
+    },
+    {
+      "id": "normalized",
+      "name": "Normalized Intensity",
+      "type": "float",
+      "semantic_role": "mask"
+    },
+    {
+      "id": "distance",
+      "name": "Anisotropic Distance",
+      "type": "float",
+      "semantic_role": "distance"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "x_scale",
+      "name": "X Axis Scale",
+      "type": "float",
+      "default": 1,
+      "min": 0.01,
+      "max": 100
+    },
+    {
+      "id": "y_scale",
+      "name": "Y Axis Scale",
+      "type": "float",
+      "default": 5,
+      "min": 0.01,
+      "max": 100
+    },
+    {
+      "id": "rotation",
+      "name": "Rotation",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "intensity",
+      "name": "Intensity",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 32
+    },
+    {
+      "id": "falloff",
+      "name": "Falloff Strength",
+      "type": "float",
+      "default": 5,
+      "min": 0,
+      "max": 100
+    },
+    {
+      "id": "exponent",
+      "name": "Falloff Exponent",
+      "type": "float",
+      "default": 2,
+      "min": 0.1,
+      "max": 8
+    },
+    {
+      "id": "mode",
+      "name": "Response Mode",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Reciprocal",
+        "Exponential",
+        "Gaussian"
+      ]
+    }
+  ],
+  "helpers": "struct MakerARG {float glow;float normalized;float distance;};\nMakerARG maker_arg(vec2 p,vec2 c,float offset,float mult,float sx,float sy,float rotation,float intensity,float k,float e,float mode){\n if(any(isnan(p))||any(isinf(p))||any(isnan(c))||any(isinf(c))||isnan(offset)||isinf(offset)||isnan(mult)||isinf(mult))return MakerARG(0.0,0.0,0.0);\n if(any(greaterThan(abs(p),vec2(1e8)))||any(greaterThan(abs(c),vec2(1e8))))return MakerARG(0.0,0.0,0.0);\n float a=radians(mod(rotation+mod(offset,360.0),360.0));float co=cos(a),si=sin(a);vec2 q=p-c;float d=length(vec2(co*q.x+si*q.y,-si*q.x+co*q.y)*vec2(sx,sy));float x=k*d;float f;\n if(mode<0.5)f=exp(-min(80.0,e*log(1.0+x)));else if(mode<1.5)f=exp(-min(80.0,e*x));else f=exp(-min(80.0,e*x*x));\n return MakerARG(intensity*clamp(mult,0.0,32.0)*f,f,d);\n}",
+  "glsl_outputs": {
+    "glow": "maker_arg({position},{center},{rotation_offset},{multiplier},{x_scale},{y_scale},{rotation},{intensity},{falloff},{exponent},{mode}).glow",
+    "normalized": "maker_arg({position},{center},{rotation_offset},{multiplier},{x_scale},{y_scale},{rotation},{intensity},{falloff},{exponent},{mode}).normalized",
+    "distance": "maker_arg({position},{center},{rotation_offset},{multiplier},{x_scale},{y_scale},{rotation},{intensity},{falloff},{exponent},{mode}).distance"
+  }
+}

@@ -4,6 +4,7 @@
   "name": "Axial Rational Compression 3D",
   "category": "Coordinates",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "description": "Compresses selected coordinate axes using a bounded rational response.",
   "uses": "Tapered domains, animated deformation and branching geometry.",
   "notes": "Factor is independent of axis selection. Log-domain response bounds exponentiation. Zero strength is identity. Not a distance field.",

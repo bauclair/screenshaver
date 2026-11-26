@@ -4,6 +4,7 @@
   "name": "Animated Polygon Sector Mask",
   "category": "Geometry",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "header_color": "#A94F1F",
   "terminal": false,
   "description": "Animated polar-sector shutter with a soft-edged polygonal iris mask, sector-local coordinates and sector index.",

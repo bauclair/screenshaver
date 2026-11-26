@@ -4,6 +4,7 @@
   "name": "Gradient Noise 3D",
   "category": "Fields",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "description": "Interpolates directional lattice contributions in three dimensions.",
   "uses": "Procedural density, material variation and displacement.",
   "notes": "Eight unit diagonal gradients; conservative signed amplitude bound, normalized output is 0.5+0.5*signed. Coordinates repeat after 1048576 lattice units to keep integer conversion bounded. Animation translates the sampling domain in lattice units per second.",

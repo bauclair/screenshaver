@@ -4,6 +4,7 @@
   "name": "Logarithmic and Exponential Response",
   "category": "Math",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "description": "Applies bounded logarithmic and exponential scalar transfer functions.",
   "uses": "Nonlinear animation, density shaping, noise redistribution and brightness compression.",
   "notes": "Unconnected Value uses animation time. Gain and bias precede response. Strength scales the argument in raw modes and controls curvature in normalized modes. Unsigned logarithms clamp their argument to Domain Floor. Exponential arguments are limited to [-60,60]. Normalized modes clamp input to [0,1] and approach a linear response at zero strength. Output gain and bias apply to all modes. Absolute Response is the magnitude of Response; Normalized Response clamps the final Response to [0,1]. NaN input is replaced by zero; extreme input is bounded to +/-1e20. Signed Logarithm supports reverse time.",

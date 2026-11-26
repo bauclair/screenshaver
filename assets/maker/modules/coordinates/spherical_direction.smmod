@@ -4,6 +4,7 @@
   "name": "Spherical Direction",
   "category": "Coordinates",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "header_color": "#235BB1",
   "description": "Maps normalized 2D coordinates to a unit-length direction on a sphere.",
   "uses": "Panoramic mapping, spherical projections, and procedural direction fields.",

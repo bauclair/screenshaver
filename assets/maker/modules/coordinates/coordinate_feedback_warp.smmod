@@ -4,6 +4,7 @@
   "name": "Coordinate Feedback Warp",
   "category": "Coordinates",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "header_color": "#287C9B",
   "description": "Bounded, iterative 3D coordinate deformation using independently specified axis rotations and smooth periodic displacement.",
   "uses": "Warp positions for procedural noise, geometry, and animated fields.",

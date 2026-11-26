@@ -4,6 +4,7 @@
   "name": "Fresnel Rim",
   "category": "Lighting",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "header_color": "#477D9A",
   "description": "Adds angle-dependent rim illumination based on a normal and viewing direction.",
   "uses": "Glowing edges, abstract surfaces and stylized silhouettes.",

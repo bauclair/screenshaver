@@ -4,6 +4,7 @@
   "name": "Cyclic Three-State Blend",
   "category": "Animation",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "description": "Stateless three-state cycle. Transition occurs at end of each state. Progress is raw transition fraction; weights use selected easing. Negative time wraps.",
   "uses": "Procedural geometry and animation compositions.",
   "notes": "Stateless three-state cycle. Transition occurs at end of each state. Progress is raw transition fraction; weights use selected easing. Negative time wraps.",

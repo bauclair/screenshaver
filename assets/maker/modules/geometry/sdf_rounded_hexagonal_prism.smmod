@@ -4,6 +4,7 @@
   "name": "SDF Rounded Hexagonal Prism",
   "category": "Geometry",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "description": "Finite rounded regular hexagonal prism.",
   "uses": "Finite rounded regular hexagonal prism.",
   "notes": "Apothem and half height are outer dimensions. Component distances describe rounded cross-section and axial extent; their extrusion alone does not reproduce the rounded 3D corners.",

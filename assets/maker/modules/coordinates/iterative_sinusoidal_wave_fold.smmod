@@ -4,6 +4,7 @@
   "name": "Iterative Sinusoidal Wave Fold",
   "category": "Coordinates",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "header_color": "#287C9B",
   "description": "Iteratively displaces vertical coordinates using two coupled sinusoidal phases with bounded feedback.",
   "uses": "Crumpled wave patterns, rippling bands, animated fabric-like distortions and abstract coordinate folding.",

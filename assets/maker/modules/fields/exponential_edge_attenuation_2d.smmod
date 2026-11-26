@@ -4,6 +4,7 @@
   "name": "Exponential Edge Attenuation 2D",
   "category": "Fields",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "description": "Normalized exponential attenuation toward rectangular boundaries.",
   "uses": "Vignettes, edge fades and rectangular masks.",
   "notes": "Extents are half widths. Center is one; boundary and exterior equal minimum.",

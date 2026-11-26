@@ -4,6 +4,7 @@
   "name": "Kaleidoscopic Sector Fold",
   "category": "Coordinates",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "header_color": "#5287B8",
   "description": "Maps a 2D position into a repeating angular wedge with mirrored or rotational symmetry.",
   "uses": "Kaleidoscopic domain mapping before procedural fields, masks and geometry.",

@@ -4,6 +4,7 @@
   "name": "Procedural Lattice Lines",
   "category": "Fields",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "header_color": "#4B9A86",
   "description": "Creates repeating oriented line cores and a separate Gaussian glow field.",
   "uses": "Grids, diamond lattices, neon linework and intersections formed by combining two instances.",

@@ -4,6 +4,7 @@
   "name": "Icosahedral Truncated Face Field 3D",
   "category": "Fields",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "description": "Constructs a corner-truncated triangular region from barycentric coordinates.",
   "uses": "Procedural spherical geometry and surface decoration.",
   "notes": "Input should sum to one. Metric is signed dimensionless constraint violation, not an exact distance. Interior includes softened exterior; corner mask covers removed corners within the triangle.",

@@ -1,6 +1,7 @@
 {
   "schema_version": 1,
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "terminal": false,
   "id": "screenshaver.color.alternating_3d_cell_color",
   "name": "Alternating 3D Cell Color",

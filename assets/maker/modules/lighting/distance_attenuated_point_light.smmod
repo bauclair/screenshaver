@@ -1,6 +1,7 @@
 {
   "schema_version": 1,
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "terminal": false,
   "id": "screenshaver.lighting.distance_attenuated_point_light",
   "name": "Distance-Attenuated Point Lighting",

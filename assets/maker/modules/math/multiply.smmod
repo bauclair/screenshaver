@@ -1,6 +1,7 @@
 {
   "schema_version": 1,
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "uses": "Scale noise strength and scalar signals.",
   "notes": "Unconnected Value defaults to 0.5.",
   "inputs": [

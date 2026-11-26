@@ -4,6 +4,7 @@
   "name": "Axial Field Displacement 3D",
   "category": "Fields",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "description": "Add a spatially weighted displacement field to a base scalar field.",
   "uses": "Procedural erosion, turbulence, implicit surfaces and density modulation.",
   "notes": "Requires two connected Field 3D inputs. Envelope is clamped, supports reversed endpoints and uses a step for coincident endpoints. Smooth mode uses cubic smoothstep; exponent applies in Power mode only. Result is not generally an SDF.",

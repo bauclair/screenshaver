@@ -4,6 +4,7 @@
   "name": "Cylindrical Cell Coordinates 3D",
   "category": "Coordinates",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "description": "Partition cylindrical space into radial, angular and axial cells.",
   "uses": "Partition cylindrical space into radial, angular and axial cells.",
   "notes": "Cylindrical coordinates are radius, angle in radians, axial coordinate. Angular offset and radial/axial phases shift cell boundaries; local coordinates are centered in each cell. Axis X uses YZ, Y uses ZX, Z uses XY. Angular offset is radians.",

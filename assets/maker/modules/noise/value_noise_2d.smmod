@@ -1,6 +1,7 @@
 {
   "schema_version": 1,
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "uses": "Organic textures, masks, and procedural variation.",
   "notes": "Uses unsigned integer mixing. GLSL 330+ required.",
   "inputs": [

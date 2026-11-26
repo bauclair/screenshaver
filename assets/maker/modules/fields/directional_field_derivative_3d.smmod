@@ -4,6 +4,7 @@
   "name": "Directional Field Derivative 3D",
   "category": "Fields",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "description": "Measure the signed spatial rate of change of a connected scalar field along a normalized direction.",
   "uses": "Procedural lighting, density transitions and directional field analysis.",
   "notes": "Requires a callable Field 3D connection. A zero direction yields zero derivative. Sampling distance is in coordinate units. All three samples are evaluated regardless of mode.",

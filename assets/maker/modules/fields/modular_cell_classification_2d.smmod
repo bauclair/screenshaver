@@ -4,6 +4,7 @@
   "name": "Modular Cell Classification 2D",
   "category": "Fields",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "description": "Classifies rectangular grid cells using weighted integer coordinates and positive modular arithmetic.",
   "uses": "Spatial masks, repeating material assignments and mosaics.",
   "notes": "Integer controls round to nearest integer (ties toward positive infinity). Selected class wraps modulo class count. Local position is centered in each cell, in input units. Class index is the callable scalar output.",

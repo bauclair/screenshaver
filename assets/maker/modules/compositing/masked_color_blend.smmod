@@ -4,6 +4,7 @@
   "name": "Masked Color Blend",
   "category": "Compositing",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "description": "Mixes two RGB colors using a scalar mask and adjustable influence.",
   "uses": "Layering independently generated colors, masked transitions, and color composition.",
   "notes": "The mask and influence are clamped to 0..1. No texture sampling is performed.",

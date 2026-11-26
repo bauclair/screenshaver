@@ -1,0 +1,172 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.mobius_coordinate_transformation_2d",
+  "name": "Möbius Coordinate Transformation 2D",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "General complex fractional linear map. All-NaN coefficient inputs select parameter defaults. Coefficients normalized together before denominator and determinant checks. Singular or invalid evaluations return zero; capped magnitude or derivative marks validity zero. Angle in radians.",
+  "uses": "Procedural coordinate transformations",
+  "notes": "General complex fractional linear map. All-NaN coefficient inputs select parameter defaults. Coefficients normalized together before denominator and determinant checks. Singular or invalid evaluations return zero; capped magnitude or derivative marks validity zero. Angle in radians.",
+  "header_color": "#65758B",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "semantic_role": "position2d",
+      "default": "maker_uv"
+    },
+    {
+      "id": "a",
+      "name": "Coefficient A",
+      "type": "vec2",
+      "semantic_role": "",
+      "default": "vec2(uintBitsToFloat(0x7fc00000u))"
+    },
+    {
+      "id": "b",
+      "name": "Coefficient B",
+      "type": "vec2",
+      "semantic_role": "",
+      "default": "vec2(uintBitsToFloat(0x7fc00000u))"
+    },
+    {
+      "id": "c",
+      "name": "Coefficient C",
+      "type": "vec2",
+      "semantic_role": "",
+      "default": "vec2(uintBitsToFloat(0x7fc00000u))"
+    },
+    {
+      "id": "d",
+      "name": "Coefficient D",
+      "type": "vec2",
+      "semantic_role": "",
+      "default": "vec2(uintBitsToFloat(0x7fc00000u))"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "transformed",
+      "name": "Transformed Position",
+      "type": "vec2",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "magnitude",
+      "name": "Magnitude",
+      "type": "float",
+      "semantic_role": "distance"
+    },
+    {
+      "id": "angle",
+      "name": "Angle",
+      "type": "float",
+      "semantic_role": "angle"
+    },
+    {
+      "id": "local_scale",
+      "name": "Local Scale",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "validity",
+      "name": "Validity Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "a_real",
+      "name": "A Real",
+      "type": "float",
+      "default": 1,
+      "min": -100,
+      "max": 100
+    },
+    {
+      "id": "a_imaginary",
+      "name": "A Imaginary",
+      "type": "float",
+      "default": 0,
+      "min": -100,
+      "max": 100
+    },
+    {
+      "id": "b_real",
+      "name": "B Real",
+      "type": "float",
+      "default": 0,
+      "min": -100,
+      "max": 100
+    },
+    {
+      "id": "b_imaginary",
+      "name": "B Imaginary",
+      "type": "float",
+      "default": 0,
+      "min": -100,
+      "max": 100
+    },
+    {
+      "id": "c_real",
+      "name": "C Real",
+      "type": "float",
+      "default": 0,
+      "min": -100,
+      "max": 100
+    },
+    {
+      "id": "c_imaginary",
+      "name": "C Imaginary",
+      "type": "float",
+      "default": 0,
+      "min": -100,
+      "max": 100
+    },
+    {
+      "id": "d_real",
+      "name": "D Real",
+      "type": "float",
+      "default": 1,
+      "min": -100,
+      "max": 100
+    },
+    {
+      "id": "d_imaginary",
+      "name": "D Imaginary",
+      "type": "float",
+      "default": 0,
+      "min": -100,
+      "max": 100
+    },
+    {
+      "id": "denominator_floor",
+      "name": "Denominator Floor",
+      "type": "float",
+      "default": 1e-06,
+      "min": 1e-08,
+      "max": 0.1
+    },
+    {
+      "id": "maximum_output",
+      "name": "Maximum Output Magnitude",
+      "type": "float",
+      "default": 10000,
+      "min": 1,
+      "max": 1000000.0
+    }
+  ],
+  "helpers": "struct MakerMobiusResult {vec2 p;float mag;float angle;float scale;float valid;};\nvec2 maker_mobius_mul(vec2 a,vec2 b){return vec2(a.x*b.x-a.y*b.y,a.x*b.y+a.y*b.x);}\nvec2 maker_mobius_coeff(vec2 a,vec2 fallback){return all(isnan(a))?fallback:a;}\nMakerMobiusResult maker_mobius(vec2 z,vec2 a,vec2 b,vec2 c,vec2 d,float ar,float ai,float br,float bi,float cr,float ci,float dr,float di,float eps,float cap){\n MakerMobiusResult bad=MakerMobiusResult(vec2(0.0),0.0,0.0,0.0,0.0);\n a=maker_mobius_coeff(a,vec2(ar,ai));b=maker_mobius_coeff(b,vec2(br,bi));c=maker_mobius_coeff(c,vec2(cr,ci));d=maker_mobius_coeff(d,vec2(dr,di));\n if(any(isnan(z))||any(isinf(z))||any(isnan(a))||any(isinf(a))||any(isnan(b))||any(isinf(b))||any(isnan(c))||any(isinf(c))||any(isnan(d))||any(isinf(d)))return bad;\n if(any(greaterThan(abs(z),vec2(1e8))))return bad;\n float s=max(max(max(abs(a.x),abs(a.y)),max(abs(b.x),abs(b.y))),max(max(abs(c.x),abs(c.y)),max(abs(d.x),abs(d.y))));\n if(s<1e-30)return bad;a/=s;b/=s;c/=s;d/=s;\n vec2 det=maker_mobius_mul(a,d)-maker_mobius_mul(b,c);float dm=length(det);if(dm<=1e-12)return bad;\n vec2 den=maker_mobius_mul(c,z)+d;float dn=length(den);if(dn<eps)return bad;\n vec2 num=maker_mobius_mul(a,z)+b;vec2 p=maker_mobius_mul(num,vec2(den.x,-den.y)/dn)/dn;\n float m=length(p);float sc=dm/(dn*dn);float valid=1.0;\n if(m>cap){p*=cap/m;m=cap;valid=0.0;}if(sc>cap){sc=cap;valid=0.0;}\n return MakerMobiusResult(p,m,m>0.0?atan(p.y,p.x):0.0,sc,valid);\n}",
+  "glsl_outputs": {
+    "transformed": "maker_mobius({position},{a},{b},{c},{d},{a_real},{a_imaginary},{b_real},{b_imaginary},{c_real},{c_imaginary},{d_real},{d_imaginary},{denominator_floor},{maximum_output}).p",
+    "magnitude": "maker_mobius({position},{a},{b},{c},{d},{a_real},{a_imaginary},{b_real},{b_imaginary},{c_real},{c_imaginary},{d_real},{d_imaginary},{denominator_floor},{maximum_output}).mag",
+    "angle": "maker_mobius({position},{a},{b},{c},{d},{a_real},{a_imaginary},{b_real},{b_imaginary},{c_real},{c_imaginary},{d_real},{d_imaginary},{denominator_floor},{maximum_output}).angle",
+    "local_scale": "maker_mobius({position},{a},{b},{c},{d},{a_real},{a_imaginary},{b_real},{b_imaginary},{c_real},{c_imaginary},{d_real},{d_imaginary},{denominator_floor},{maximum_output}).scale",
+    "validity": "maker_mobius({position},{a},{b},{c},{d},{a_real},{a_imaginary},{b_real},{b_imaginary},{c_real},{c_imaginary},{d_real},{d_imaginary},{denominator_floor},{maximum_output}).valid"
+  }
+}

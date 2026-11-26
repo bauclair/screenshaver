@@ -4,6 +4,7 @@
   "name": "Parametric Ring Accumulation 2D",
   "category": "Fields",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "header_color": "#477D9A",
   "description": "Accumulates soft circular outlines along animated planar parametric trajectories.",
   "uses": "Rosettes, harmonic ring distributions, geometric patterns and luminous outlines.",

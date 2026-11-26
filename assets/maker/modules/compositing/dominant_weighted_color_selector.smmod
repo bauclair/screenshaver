@@ -4,6 +4,7 @@
   "name": "Dominant Weighted Color Selector",
   "category": "Compositing",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "description": "Selects an entire RGB signal by greatest scalar weight without blending.",
   "uses": "Discrete materials, competing masks and light selection.",
   "notes": "Ties prefer A, then B, then C. NaN inputs use the corresponding adjustable default. Signed finite weights are compared as supplied; weighted color multiplies the winning RGB by its signed weight without clamping.",

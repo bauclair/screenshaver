@@ -1,6 +1,7 @@
 {
   "schema_version": 1,
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "terminal": false,
   "id": "screenshaver.coordinates.spatially_modulated_cell_displacement",
   "name": "Spatially Modulated Cell Displacement",

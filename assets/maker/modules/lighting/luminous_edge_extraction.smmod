@@ -4,6 +4,7 @@
   "name": "Luminous Edge Extraction",
   "category": "Lighting",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "header_color": "#D7A052",
   "description": "Extracts a smooth highlight band around the transition of a scalar mask using screen-space derivatives.",
   "uses": "Glowing shape boundaries, anti-aliased contour accents and luminous ornaments.",

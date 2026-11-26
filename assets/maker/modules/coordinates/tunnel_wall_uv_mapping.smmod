@@ -4,6 +4,7 @@
   "name": "Tunnel Wall UV Mapping",
   "category": "Coordinates",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "header_color": "#438FBC",
   "description": "Maps a rectangular tunnel wall hit to consistent world-scale 2D texture coordinates.",
   "uses": "Wall-aligned procedural patterns and future texture sampling when paired with Rectangular Tunnel Intersection.",

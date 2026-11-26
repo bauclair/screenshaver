@@ -4,6 +4,7 @@
   "name": "Directional Lighting",
   "category": "Lighting",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "header_color": "#477D9A",
   "description": "Diffuse and ambient lighting from a surface normal and light direction.",
   "uses": "Procedural 3D surfaces and abstract vector lighting.",

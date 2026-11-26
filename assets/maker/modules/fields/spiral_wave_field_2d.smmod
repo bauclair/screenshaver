@@ -4,6 +4,7 @@
   "name": "Spiral Wave Field 2D",
   "category": "Fields",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "description": "Periodic radial-angular wave with selectable profile and crest mask.",
   "uses": "Spiral bands, interference patterns and animated masks.",
   "notes": "Angular frequency is rounded to an integer. Frequencies are radians per coordinate unit and cycles per revolution respectively. Phase is in radians; mask width and softness are normalized crest thresholds. The polar origin uses angle zero.",

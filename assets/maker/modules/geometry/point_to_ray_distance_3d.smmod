@@ -4,6 +4,7 @@
   "name": "Point-to-Ray Distance 3D",
   "category": "Geometry",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "description": "Projects a point onto a ray or infinite line and reports the closest separation.",
   "uses": "Analytical spatial proximity, procedural beams and geometry masks.",
   "notes": "Direction is normalized internally. Zero or invalid direction collapses to the origin. Invalid positions become zero; finite positions are bounded to +/-1e12. Offset points from closest point toward input point.",

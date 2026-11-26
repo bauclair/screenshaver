@@ -4,6 +4,7 @@
   "name": "Distance Hue Mapping",
   "category": "Color",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "header_color": "#A26D9C",
   "description": "Maps a scalar distance to cyclic hue with optional logarithmic compression and time animation.",
   "uses": "Depth-colored geometry, animated rainbow bands, and scalar-field color mapping when connected to Smooth HSV Color.",

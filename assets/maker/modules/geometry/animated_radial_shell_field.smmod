@@ -4,6 +4,7 @@
   "name": "Animated Radial Shell Field",
   "category": "Geometry",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "description": "Concentric spherical shell signed-distance field and smooth band mask with animated radial phase.",
   "uses": "Generate reusable nested spherical shells for ray marching, procedural masks, and animated layered geometry.",
   "notes": "Independent implementation of radial periodic distance mathematics; does not reproduce the Controlled Explosions shader. The distance is a radial shell distance field; ray marching near the origin and rapidly animated phases may require conservative stepping.",

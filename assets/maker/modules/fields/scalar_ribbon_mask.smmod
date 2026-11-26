@@ -4,6 +4,7 @@
   "name": "Scalar Ribbon Mask",
   "category": "Fields",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "header_color": "#4B9A86",
   "description": "Converts a scalar field into a soft ribbon around a selected center.",
   "uses": "Contour bands, plasma veils, isolines and soft threshold regions.",

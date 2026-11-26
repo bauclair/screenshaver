@@ -4,6 +4,7 @@
   "name": "Trigonometric Interference Field 3D",
   "category": "Fields",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "header_color": "#398F94",
   "description": "Combines two independently parameterized harmonic vectors into a bounded deterministic interference field.",
   "uses": "Procedural materials, geometry displacement, interference textures and density modulation.",

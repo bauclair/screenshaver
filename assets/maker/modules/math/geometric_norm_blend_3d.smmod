@@ -4,6 +4,7 @@
   "name": "Geometric Norm Blend 3D",
   "category": "Math",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "description": "Blends two independently selected vector metrics.",
   "uses": "Geometric contours, procedural masks, lattice patterns.",
   "notes": "Blend is clamped to [0,1]. Each metric is gain times norm plus bias, then optionally inverted as 1 minus that value. Modified metrics need not be norms or signed distances. Generalized power norm uses peak normalization before exponentiation.",

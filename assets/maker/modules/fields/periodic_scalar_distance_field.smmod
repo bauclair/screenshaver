@@ -4,6 +4,7 @@
   "name": "Periodic Scalar Distance Field",
   "category": "Fields",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "description": "Repeating signed scalar bands with external modulation.",
   "uses": "Repeating signed scalar bands with external modulation.",
   "notes": "Phase locates the center of cell zero. Duty modulation is additive; period multiplier is positive and bounded. Distance is in scalar coordinate units, not necessarily a spatial SDF. Duty zero has no mask; duty one has full mask.",

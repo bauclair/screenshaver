@@ -4,6 +4,7 @@
   "name": "Scalar Field Compositor",
   "category": "Compositing",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "description": "Combines two scalar fields using arithmetic or Boolean mask operations.",
   "uses": "Field layering, mask intersections, procedural blending, and modulation.",
   "notes": "Modes are Add, Multiply, Maximum, Minimum, and Subtract (A-B). Clamp Output limits the result to 0..1. Absolute Difference preserves continuous values unless Clamp Output is enabled. Boolean operations classify each input as true when it is greater than or equal to Boolean Threshold and return exactly zero or one.",

@@ -4,6 +4,7 @@
   "name": "Look-at Camera Direction",
   "category": "Camera",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "header_color": "#5678A1",
   "description": "World-space camera ray direction constructed from eye, target, up and screen coordinates.",
   "uses": "Ray directions for procedural camera movement and 3D ray-based effects.",

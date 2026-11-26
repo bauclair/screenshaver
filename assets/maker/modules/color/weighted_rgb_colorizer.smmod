@@ -4,6 +4,7 @@
   "name": "Weighted RGB Colorizer",
   "category": "Color",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "header_color": "#B46A35",
   "description": "Maps a scalar value to a configurable RGB gradient using channel-dependent weights.",
   "uses": "Gold-like plasma coloration, tinted scalar fields, and nonperiodic color mapping.",

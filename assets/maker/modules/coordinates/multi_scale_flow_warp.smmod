@@ -4,6 +4,7 @@
   "name": "Multi-Scale Flow Warp",
   "category": "Coordinates",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "header_color": "#438FBC",
   "description": "Applies two successive smooth cross-axis sinusoidal distortions to a 2D position.",
   "uses": "Liquid motion, animated domain deformation, soft plasma and melted patterns.",

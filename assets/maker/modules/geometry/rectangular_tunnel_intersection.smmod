@@ -4,6 +4,7 @@
   "name": "Rectangular Tunnel Intersection",
   "category": "Geometry",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "header_color": "#7D82B8",
   "description": "Analytically intersects a ray with the four infinite side walls of a rectangular tunnel aligned with Z.",
   "uses": "Perspective tunnel geometry, wall-space effects and depth-based lighting without iterative ray marching.",

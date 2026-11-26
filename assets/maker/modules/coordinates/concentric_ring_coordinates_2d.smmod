@@ -4,6 +4,7 @@
   "name": "Concentric Ring Coordinates 2D",
   "category": "Coordinates",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "description": "Partition radial space into indexed concentric rings.",
   "uses": "Partition radial space into indexed concentric rings.",
   "notes": "Spacing multiplier scales spacing directly; nonpositive values use the minimum spacing 0.0001. Index is nonnegative, ties select the outer ring. Normalized offset is signed offset divided by spacing, not clamped. Angular coordinate is radians; center uses positive X.",

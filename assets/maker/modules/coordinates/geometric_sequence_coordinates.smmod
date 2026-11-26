@@ -4,6 +4,7 @@
   "name": "Geometric Sequence Coordinates",
   "category": "Coordinates",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "description": "Geometric Sequence Coordinates procedural geometry and animation utility.",
   "uses": "Geometric Sequence Coordinates procedural geometry and animation utility.",
   "notes": "Finite sequence, ties select lower index. Ratios within 0.0001 of unity use uniform spacing. Very small spacing near a convergent sequence loses distinct coordinates in float precision.",

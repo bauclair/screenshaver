@@ -4,6 +4,7 @@
   "name": "Inverse Bilinear Mapping 2D",
   "category": "Coordinates",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "description": "Inverts a planar bilinear mapping for a strictly convex quadrilateral.",
   "uses": "Procedural quadrilateral warps, irregular tiles and local area distortion.",
   "notes": "Corners must be cyclically ordered, clockwise or counterclockwise. Invalid or ambiguous mappings return zero outputs. Extrapolation accepts the orientation-preserving branch only. Inside uses the raw UV and Interior Tolerance; error and signed world-space Jacobian refer to the raw inverse before outside handling. Clamp and Zero change only UV outputs. Very large coordinates or inverse coordinates are rejected for numerical safety. Numerical Tolerance is relative to the largest edge length.",

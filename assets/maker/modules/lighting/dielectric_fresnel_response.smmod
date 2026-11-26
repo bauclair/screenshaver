@@ -4,6 +4,7 @@
   "name": "Dielectric Fresnel Response",
   "category": "Lighting",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "description": "Computes unpolarized dielectric interface reflectance and transmission.",
   "uses": "Transparent materials, optical interfaces and reflection weighting.",
   "notes": "Incident direction points toward the interface. Normal orientation is immaterial; indices must describe the actual incident and transmitted media. Transmission is power fraction, not radiance scaling. Invalid directions return full transmission. Indices are clamped to [0.0001,10000].",

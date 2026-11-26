@@ -4,6 +4,7 @@
   "name": "Geometric Ray Sample Distribution",
   "category": "Geometry",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "terminal": false,
   "header_color": "#557C9C",
   "description": "Computes a normalized geometric ray interval and sample position by index.",

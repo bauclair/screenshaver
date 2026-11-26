@@ -4,6 +4,7 @@
   "name": "Universal Test",
   "category": "Test",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "header_color": "#537D89",
   "description": "Universal diagnostic module with adjustable sampling and independent callable 2D/3D producers.",
   "uses": "Use position reference to test normal estimation, or connect callable Field 2D / Field 3D outputs to other diagnostic instances for deterministic field sampling.",

@@ -4,6 +4,7 @@
   "name": "Soft Shape Mask 2D",
   "category": "Fields",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "header_color": "#4B9A86",
   "description": "Generates soft disks, rings, diamonds, rectangles and elliptical petals from 2D coordinates.",
   "uses": "Soft shape layering, kaleidoscopic ornaments, geometric masks and procedural patterns.",

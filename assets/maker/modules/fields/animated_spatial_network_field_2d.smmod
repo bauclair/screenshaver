@@ -4,6 +4,7 @@
   "name": "Animated Spatial Network Field 2D",
   "category": "Fields",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "header_color": "#398F94",
   "description": "Deterministic moving lattice vertices and finite connecting segments with pulsed point intensity.",
   "uses": "Animated networks, constellations, geometric meshes and luminous grids.",

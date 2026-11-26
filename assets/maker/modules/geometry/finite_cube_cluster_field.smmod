@@ -4,6 +4,7 @@
   "name": "Finite Cube Cluster Field",
   "category": "Geometry",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "header_color": "#557C9C",
   "description": "Signed distance to a bounded three-dimensional lattice of boxes, with externally controlled size modulation.",
   "uses": "Finite block assemblies, cube sculptures, structured SDF scenes and animated grid forms.",

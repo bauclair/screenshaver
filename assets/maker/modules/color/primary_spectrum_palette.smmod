@@ -4,6 +4,7 @@
   "name": "Primary Spectrum Palette",
   "category": "Color",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "header_color": "#A26D9C",
   "description": "Cycles smoothly through five independently editable palette colors.",
   "uses": "Colorizing procedural fields, rainbow gradients and animated spectral lighting.",

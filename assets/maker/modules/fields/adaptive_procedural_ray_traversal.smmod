@@ -4,6 +4,7 @@
   "name": "Adaptive Procedural Ray Traversal",
   "category": "Fields",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "header_color": "#477D9A",
   "description": "Traverses a connected position-dependent 3D scalar field with bounded adaptive steps and opacity-weighted response accumulation.",
   "uses": "Procedural volumetric structures, glow paths, tunnels and non-SDF scalar fields.",

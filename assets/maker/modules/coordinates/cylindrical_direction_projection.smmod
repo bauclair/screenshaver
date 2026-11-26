@@ -4,6 +4,7 @@
   "name": "Cylindrical Direction Projection",
   "category": "Coordinates",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "header_color": "#627FC2",
   "description": "Projects a centered ray direction onto an infinite cylindrical surface.",
   "uses": "Procedural tunnels, cylindrical sampling and perspective patterns.",

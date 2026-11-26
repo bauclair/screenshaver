@@ -4,6 +4,7 @@
   "name": "Stellar Ray Accumulation 3D",
   "category": "Fields",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "terminal": false,
   "header_color": "#477D9A",
   "description": "Accumulates luminous points and chromatic trails across cyclic depth planes.",

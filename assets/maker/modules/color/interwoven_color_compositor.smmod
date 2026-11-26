@@ -4,6 +4,7 @@
   "name": "Interwoven Color Compositor",
   "category": "Color",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "description": "Composites two masked RGB layers with spatially variable foreground priority.",
   "uses": "Woven ribbons, interlocking rings and alternating layer priority.",
   "notes": "Ordering Mask 1 places A above B. Intersection darkening attenuates the lower layer in proportion to upper coverage. Continuous mode uses the clamped ordering field after frequency and phase.",

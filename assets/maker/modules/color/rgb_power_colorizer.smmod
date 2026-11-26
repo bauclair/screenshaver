@@ -4,6 +4,7 @@
   "name": "RGB Power Colorizer",
   "category": "Color",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "description": "Maps a scalar to independent nonlinear RGB channels.",
   "uses": "Procedural palettes and externally modulated color.",
   "notes": "Negative scalar values map to zero; scalar and modulation magnitudes bounded to 10000 to limit overflow. Unclamped mode permits signed modulation and HDR.",

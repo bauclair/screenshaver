@@ -4,6 +4,7 @@
   "name": "Geodesic Triangle Coordinates 3D",
   "category": "Coordinates",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "description": "Integer planar subdivision followed by radial projection. Local barycentric weights refer to the planar subdivision before projection. Boundary ties use the lower triangle where possible.",
   "uses": "Procedural geometry and animation compositions.",
   "notes": "Integer planar subdivision followed by radial projection. Local barycentric weights refer to the planar subdivision before projection. Boundary ties use the lower triangle where possible.",

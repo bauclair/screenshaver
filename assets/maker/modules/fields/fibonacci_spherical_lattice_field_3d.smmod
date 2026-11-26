@@ -4,6 +4,7 @@
   "name": "Fibonacci Spherical Lattice Field 3D",
   "category": "Fields",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "description": "Find the nearest golden-angle direction using latitude-bound pruning.",
   "uses": "Spherical dot textures, angular masks and procedural lattice geometry.",
   "notes": "Non-SDF chord distance. Field 3D samples nearest point distance. Center uses positive Y direction. Count rounded and clamped to 1\u20134096.",

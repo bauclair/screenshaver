@@ -16,7 +16,11 @@ pub fn fragment_source(graph:&Graph)->Result<String,String>{
   let module=node.definition();
   let name=attribution_text(&module.name);
   let creator=attribution_text(&module.created_by);
-  src.push_str(&format!(" * {name} — Created by: {creator}\n"));
+  src.push_str(&format!(" * {name} — Created by: {creator}"));
+  if let Some(email)=&module.creator_email {
+   src.push_str(&format!(" — Creator Email: {}",attribution_text(email)));
+  }
+  src.push('\n');
  }
  src.push_str(" */\nout vec4 fragColor;\nuniform vec2 u_resolution;\nuniform vec2 u_viewport_origin;\nuniform float u_time;\n");
  let mut emitted=HashSet::new();let mut helpers=HashSet::new();

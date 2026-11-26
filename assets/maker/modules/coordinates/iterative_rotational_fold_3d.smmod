@@ -4,6 +4,7 @@
   "name": "Iterative Rotational Fold 3D",
   "category": "Coordinates",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "description": "Repeatedly rotates, selectively folds and translates a three-dimensional coordinate.",
   "uses": "Fractal domains, crystalline geometry and animated coordinate deformation.",
   "notes": "Right-handed X then Y then Z rotation per iteration. Angles in degrees, speeds in degrees per second. Iterations and fold choice rounded to nearest integer. Translation follows folding on every iteration, including unfolded axes. This is a coordinate transform, not a distance field. Modulation is evaluated once per sample, not per iteration. Rotation modulation in degrees. Uniform scale compensation is nominal, not a conservative distance guarantee. Translation progression multiplies the combined translation vector by ratio^i at zero-based iteration i, independently of coordinate scale. Final multiplier is ratio^(count-1). Extreme input magnitudes may overflow.",

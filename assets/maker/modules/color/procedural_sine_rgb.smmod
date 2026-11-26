@@ -4,6 +4,7 @@
   "name": "Procedural Sine RGB",
   "category": "Color",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "header_color": "#B46A35",
   "description": "Generates phase-wheel or independently configurable directional sinusoidal RGB channels.",
   "uses": "Psychedelic color patterns and coordinate-driven palettes.",

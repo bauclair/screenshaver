@@ -4,6 +4,7 @@
   "name": "Linear RGB Gradient",
   "category": "Color",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "description": "Maps a scalar to a linear interpolation between two editable RGB colors.",
   "uses": "Nonperiodic palettes, scalar visualization, and color layering.",
   "notes": "Reversed input ranges reverse the gradient. Equal endpoints use a step at Input Minimum. Extrapolation is available when clamping is disabled. Interpolation operates on numeric RGB components without color-space conversion.",

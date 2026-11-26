@@ -4,6 +4,7 @@
   "name": "Gradient-Attenuated Fractal Noise 2D",
   "category": "Noise",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "description": "Bounded fractal gradient noise with slope-dependent octave weighting.",
   "uses": "Bounded fractal gradient noise with slope-dependent octave weighting.",
   "notes": "Accumulated gradient is the amplitude-weighted sum of octave gradients in input coordinates, not the derivative of the final attenuated field. Attenuation is amplitude-weighted mean. Rotation speed is degrees per second; octave rotation is degrees. Frequency capped at 4096.",

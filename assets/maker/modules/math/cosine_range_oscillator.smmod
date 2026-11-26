@@ -4,6 +4,7 @@
   "name": "Cosine Range Oscillator",
   "category": "Math",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "header_color": "#7C72B3",
   "description": "Smooth cosine oscillation between minimum and minimum plus range, with phase measured in degrees.",
   "uses": "Periodic modulation of shader parameters and scalar fields.",

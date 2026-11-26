@@ -1,0 +1,165 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.logarithmic_spiral_coordinate_mapping_2d",
+  "name": "Logarithmic Spiral Coordinate Mapping 2D",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Independent angular and logarithmic radial coefficients. Angular coordinate in turns; radius floor applies to dimensionless radius/reference radius. Below floor validity is zero but mapping remains finite. Noninteger angular coefficients can create a branch seam. Time bounded to +/-1e6 seconds.",
+  "uses": "Procedural coordinate transformations",
+  "notes": "Independent angular and logarithmic radial coefficients. Angular coordinate in turns; radius floor applies to dimensionless radius/reference radius. Below floor validity is zero but mapping remains finite. Noninteger angular coefficients can create a branch seam. Time bounded to +/-1e6 seconds.",
+  "header_color": "#65758B",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "semantic_role": "position2d",
+      "default": "maker_uv"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec2",
+      "semantic_role": "position2d",
+      "default": "vec2(0.0)"
+    },
+    {
+      "id": "time_offset",
+      "name": "Time Offset",
+      "type": "float",
+      "semantic_role": "time",
+      "default": "0.0"
+    },
+    {
+      "id": "phase_offset",
+      "name": "Phase Offset",
+      "type": "vec2",
+      "semantic_role": "",
+      "default": "vec2(0.0)"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "mapped",
+      "name": "Mapped Position",
+      "type": "vec2",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "log_radius",
+      "name": "Log Radius",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "angular",
+      "name": "Angular Coordinate",
+      "type": "float",
+      "semantic_role": "angle"
+    },
+    {
+      "id": "radius",
+      "name": "Radius",
+      "type": "float",
+      "semantic_role": "distance"
+    },
+    {
+      "id": "validity",
+      "name": "Validity Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "u_angular",
+      "name": "U Angular Coefficient",
+      "type": "float",
+      "default": 4,
+      "min": -32,
+      "max": 32
+    },
+    {
+      "id": "u_log",
+      "name": "U Log Radius Coefficient",
+      "type": "float",
+      "default": 1,
+      "min": -32,
+      "max": 32
+    },
+    {
+      "id": "v_angular",
+      "name": "V Angular Coefficient",
+      "type": "float",
+      "default": 1,
+      "min": -32,
+      "max": 32
+    },
+    {
+      "id": "v_log",
+      "name": "V Log Radius Coefficient",
+      "type": "float",
+      "default": -1,
+      "min": -32,
+      "max": 32
+    },
+    {
+      "id": "reference_radius",
+      "name": "Reference Radius",
+      "type": "float",
+      "default": 1,
+      "min": 0.001,
+      "max": 100
+    },
+    {
+      "id": "radius_floor",
+      "name": "Radius Floor",
+      "type": "float",
+      "default": 0.0001,
+      "min": 1e-06,
+      "max": 1
+    },
+    {
+      "id": "u_speed",
+      "name": "U Animation Speed",
+      "type": "float",
+      "default": 0.1,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "v_speed",
+      "name": "V Animation Speed",
+      "type": "float",
+      "default": 0,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "u_phase",
+      "name": "U Phase",
+      "type": "float",
+      "default": 0,
+      "min": -100,
+      "max": 100
+    },
+    {
+      "id": "v_phase",
+      "name": "V Phase",
+      "type": "float",
+      "default": 0,
+      "min": -100,
+      "max": 100
+    }
+  ],
+  "helpers": "struct MakerLogSpiralResult {vec2 p;float lr;float a;float r;float valid;};\nMakerLogSpiralResult maker_log_spiral(vec2 p,vec2 center,float t,vec2 phase,float ua,float ul,float va,float vl,float refR,float floorR,float us,float vs,float up,float vp){\n MakerLogSpiralResult bad=MakerLogSpiralResult(vec2(0.0),0.0,0.0,0.0,0.0);\n if(any(isnan(p))||any(isinf(p))||any(isnan(center))||any(isinf(center))||isnan(t)||isinf(t)||any(isnan(phase))||any(isinf(phase)))return bad;\n if(any(greaterThan(abs(p),vec2(1e8)))||any(greaterThan(abs(center),vec2(1e8)))||abs(t)>1e6||any(greaterThan(abs(phase),vec2(1e6))))return bad;\n vec2 q=p-center;float r=length(q);float rr=r/refR;float a=r>0.0?atan(q.y,q.x)/6.283185307179586:0.0;float lr=log(max(rr,floorR));\n vec2 mapped=vec2(ua*a+ul*lr,va*a+vl*lr)+vec2(up,vp)+phase+t*vec2(us,vs);\n return MakerLogSpiralResult(mapped,lr,a,r,rr>=floorR?1.0:0.0);\n}",
+  "glsl_outputs": {
+    "mapped": "maker_log_spiral({position},{center},(u_time+{time_offset}),{phase_offset},{u_angular},{u_log},{v_angular},{v_log},{reference_radius},{radius_floor},{u_speed},{v_speed},{u_phase},{v_phase}).p",
+    "log_radius": "maker_log_spiral({position},{center},(u_time+{time_offset}),{phase_offset},{u_angular},{u_log},{v_angular},{v_log},{reference_radius},{radius_floor},{u_speed},{v_speed},{u_phase},{v_phase}).lr",
+    "angular": "maker_log_spiral({position},{center},(u_time+{time_offset}),{phase_offset},{u_angular},{u_log},{v_angular},{v_log},{reference_radius},{radius_floor},{u_speed},{v_speed},{u_phase},{v_phase}).a",
+    "radius": "maker_log_spiral({position},{center},(u_time+{time_offset}),{phase_offset},{u_angular},{u_log},{v_angular},{v_log},{reference_radius},{radius_floor},{u_speed},{v_speed},{u_phase},{v_phase}).r",
+    "validity": "maker_log_spiral({position},{center},(u_time+{time_offset}),{phase_offset},{u_angular},{u_log},{v_angular},{v_log},{reference_radius},{radius_floor},{u_speed},{v_speed},{u_phase},{v_phase}).valid"
+  }
+}

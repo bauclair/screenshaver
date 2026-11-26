@@ -4,6 +4,7 @@
   "name": "Iterative Coordinate Fold 2D",
   "category": "Coordinates",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "header_color": "#627FC2",
   "description": "Repeated planar scaling, rotation and optional coordinate folding with radial statistics.",
   "uses": "Recursive mosaics, orbit statistics and procedural coordinate distortion.",

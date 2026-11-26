@@ -4,6 +4,7 @@
   "name": "SDF Icosahedron",
   "category": "Geometry",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "description": "SDF Icosahedron procedural geometry and animation utility.",
   "uses": "SDF Icosahedron procedural geometry and animation utility.",
   "notes": "Sharp mode conservative maximum-plane distance. Rounded mode uses finite triangle distances outside the smaller core to produce actual rounded edges; dominant face normal is not rounded surface normal. Canonical face order.",

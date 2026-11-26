@@ -1,6 +1,7 @@
 {
   "schema_version": 1,
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "uses": "Coordinate source for procedural textures and spatial patterns.",
   "notes": "Coordinates are centered, not limited to 0\u20131.",
   "inputs": [],

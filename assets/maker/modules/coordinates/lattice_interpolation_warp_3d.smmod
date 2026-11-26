@@ -4,6 +4,7 @@
   "name": "Lattice Interpolation Warp 3D",
   "category": "Coordinates",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "terminal": false,
   "header_color": "#557C9C",
   "description": "Remaps fractional lattice coordinates while preserving cell boundaries.",

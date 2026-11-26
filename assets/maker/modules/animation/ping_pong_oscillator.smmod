@@ -4,6 +4,7 @@
   "name": "Ping-Pong Oscillator",
   "category": "Animation",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "description": "Linearly oscillates between two limits, with an optional smooth turnaround.",
   "uses": "Back-and-forth motion, parameter modulation, and looping intensity changes.",
   "notes": "Time input is in seconds. Frequency is complete round trips per second. Smoothness 0 gives a triangular wave; 1 gives eased reversals.",

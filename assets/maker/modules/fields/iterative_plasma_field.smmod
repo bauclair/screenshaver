@@ -4,6 +4,7 @@
   "name": "Iterative Plasma Field",
   "category": "Fields",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "header_color": "#5A78A8",
   "description": "Scalar plasma field from a bounded sequence of rotated, phase-shifted periodic waves.",
   "uses": "Animated plasma, gold-like swirls, turbulent color fields.",

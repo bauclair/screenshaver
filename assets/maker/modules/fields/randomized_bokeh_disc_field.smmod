@@ -1,6 +1,7 @@
 {
   "schema_version": 1,
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "terminal": false,
   "attributed_to": [],
   "id": "screenshaver.fields.randomized_bokeh_disc_field",

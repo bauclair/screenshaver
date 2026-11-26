@@ -4,6 +4,7 @@
   "name": "Polar Coordinate Mapping 2D",
   "category": "Coordinates",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "description": "Maps Cartesian positions to selectable nonlinear polar sampling coordinates.",
   "uses": "Radial turbulence, circular textures and moving radial patterns.",
   "notes": "Radius and Angle are unanimated geometric measurements; Angle is in radians. Angular Speed is radians per time unit; Angular Offset is degrees. Circular Direction represents the raw geometric angle, with (1,0) at the center. Polar Coordinates have an angular seam. Radial mapping precedes scaling and animation. Half-turn wraps the raw angle to [-pi/2,pi/2). Mapped Radius and Mapped Angle equal the components of Polar Coordinates. Reciprocal mapping is bounded by Radius Floor but may alias.",

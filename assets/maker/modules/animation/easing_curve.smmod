@@ -4,6 +4,7 @@
   "name": "Easing Curve",
   "category": "Animation",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "description": "Remaps a normalized scalar through selectable easing curves.",
   "uses": "Smooth parameter transitions, controlled acceleration, and motion shaping.",
   "notes": "Input is clamped to 0..1. Modes: linear, smoothstep, smootherstep, ease-in quadratic, ease-out quadratic, ease-in-out quadratic.",

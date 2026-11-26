@@ -1,0 +1,130 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.geometry.ray_finite_cylinder_intersection_3d",
+  "name": "Ray\u2013Finite Cylinder Intersection 3D",
+  "category": "Geometry",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Closed finite cylinder; normalized ray distances. Inside origins have entry distance zero and normal at exit. Miss outputs zero. Near-parallel directions use tolerance-based interval approximation; relative coordinates beyond 1e7 rejected.",
+  "uses": "Ray\u2013Finite Cylinder Intersection 3D",
+  "notes": "Closed finite cylinder; normalized ray distances. Inside origins have entry distance zero and normal at exit. Miss outputs zero. Near-parallel directions use tolerance-based interval approximation; relative coordinates beyond 1e7 rejected.",
+  "header_color": "#876B91",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "origin",
+      "name": "Ray Origin",
+      "type": "vec3",
+      "semantic_role": "position3d",
+      "default": "vec3(0.0,0.0,3.0)"
+    },
+    {
+      "id": "direction",
+      "name": "Ray Direction",
+      "type": "vec3",
+      "semantic_role": "direction3d",
+      "default": "vec3(0.0,0.0,-1.0)"
+    },
+    {
+      "id": "center",
+      "name": "Cylinder Center",
+      "type": "vec3",
+      "semantic_role": "position3d",
+      "default": "vec3(0.0)"
+    },
+    {
+      "id": "axis",
+      "name": "Cylinder Axis",
+      "type": "vec3",
+      "semantic_role": "direction3d",
+      "default": "vec3(0.0,0.0,1.0)"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "hit",
+      "name": "Hit Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    },
+    {
+      "id": "entry",
+      "name": "Entry Distance",
+      "type": "float",
+      "semantic_role": "distance"
+    },
+    {
+      "id": "exit",
+      "name": "Exit Distance",
+      "type": "float",
+      "semantic_role": "distance"
+    },
+    {
+      "id": "entry_position",
+      "name": "Entry Position",
+      "type": "vec3",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "exit_position",
+      "name": "Exit Position",
+      "type": "vec3",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "normal",
+      "name": "Surface Normal",
+      "type": "vec3",
+      "semantic_role": "normal3d"
+    },
+    {
+      "id": "inside",
+      "name": "Inside Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    },
+    {
+      "id": "travel",
+      "name": "Internal Travel Distance",
+      "type": "float",
+      "semantic_role": "distance"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "radius",
+      "name": "Radius",
+      "type": "float",
+      "default": 1,
+      "min": 0.001,
+      "max": 100
+    },
+    {
+      "id": "half_height",
+      "name": "Half Height",
+      "type": "float",
+      "default": 0.5,
+      "min": 0.001,
+      "max": 100
+    },
+    {
+      "id": "tolerance",
+      "name": "Numerical Tolerance",
+      "type": "float",
+      "default": 1e-06,
+      "min": 1e-08,
+      "max": 0.001
+    }
+  ],
+  "helpers": "struct MakerRFC {float hit;float entry;float exit_t;vec3 ep;vec3 xp;vec3 n;float inside;float travel;};\nMakerRFC maker_rfc(vec3 o,vec3 d,vec3 c,vec3 a,float r,float h,float eps){\n MakerRFC miss=MakerRFC(0.0,0.0,0.0,vec3(0.0),vec3(0.0),vec3(0.0),0.0,0.0);\n if(any(isnan(o))||any(isinf(o))||any(isnan(c))||any(isinf(c))||any(isnan(d))||any(isinf(d))||any(isnan(a))||any(isinf(a)))return miss;\n float ds=max(max(abs(d.x),abs(d.y)),abs(d.z)),axs=max(max(abs(a.x),abs(a.y)),abs(a.z));\n if(ds<1e-20||axs<1e-20)return miss;d=normalize(d/ds);a=normalize(a/axs);\n vec3 v=o-c;if(any(greaterThan(abs(v),vec3(1e7))))return miss;\n float z=dot(v,a),dz=dot(d,a);vec3 q=v-z*a,w=d-dz*a;\n float lo=-1e9,hi=1e9;float aa=dot(w,w),rr=dot(q,q);bool inside=rr<r*r&&abs(z)<h;\n if(aa<=eps*eps){if(rr>r*r)return miss;}else{\n float mid=-dot(q,w)/aa;vec3 nearq=q+mid*w;float disc=r*r-dot(nearq,nearq);if(disc<0.0)return miss;\n float span=sqrt(max(disc,0.0)/aa);lo=mid-span;hi=mid+span;}\n if(abs(dz)<=eps){if(abs(z)>h)return miss;}else{float t0=(-h-z)/dz,t1=(h-z)/dz;lo=max(lo,min(t0,t1));hi=min(hi,max(t0,t1));}\n if(hi<max(lo,0.0))return miss;float en=max(lo,0.0),ex=hi;\n float surface=lo<0.0?ex:en;vec3 s=v+surface*d;float sz=dot(s,a);vec3 radial=s-sz*a;\n vec3 n=abs(abs(sz)-h)<=eps*max(1.0,h)?(sz>=0.0?a:-a):(length(radial)>1e-20?normalize(radial):vec3(0.0));\n return MakerRFC(1.0,en,ex,o+en*d,o+ex*d,n,inside?1.0:0.0,max(ex-en,0.0));\n}",
+  "glsl_outputs": {
+    "hit": "maker_rfc({origin},{direction},{center},{axis},{radius},{half_height},{tolerance}).hit",
+    "entry": "maker_rfc({origin},{direction},{center},{axis},{radius},{half_height},{tolerance}).entry",
+    "exit": "maker_rfc({origin},{direction},{center},{axis},{radius},{half_height},{tolerance}).exit_t",
+    "entry_position": "maker_rfc({origin},{direction},{center},{axis},{radius},{half_height},{tolerance}).ep",
+    "exit_position": "maker_rfc({origin},{direction},{center},{axis},{radius},{half_height},{tolerance}).xp",
+    "normal": "maker_rfc({origin},{direction},{center},{axis},{radius},{half_height},{tolerance}).n",
+    "inside": "maker_rfc({origin},{direction},{center},{axis},{radius},{half_height},{tolerance}).inside",
+    "travel": "maker_rfc({origin},{direction},{center},{axis},{radius},{half_height},{tolerance}).travel"
+  }
+}

@@ -4,6 +4,7 @@
   "name": "Cylindrical Cell Rotation 3D",
   "category": "Coordinates",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "description": "Rotate radial and axial cells independently around a cylinder axis.",
   "uses": "Rotate radial and axial cells independently around a cylinder axis.",
   "notes": "Speed and influences are degrees per second; modulation adds degrees to the final angle. Time offset is seconds. Rotation is discontinuous at cell boundaries; not an exact SDF-preserving warp.",

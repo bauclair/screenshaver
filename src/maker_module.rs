@@ -9,7 +9,7 @@ pub struct Port { pub id:String, pub name:String, pub ty:String, pub default:Str
 pub struct Parameter { pub id:String, pub name:String, pub ty:String, pub default:Value, pub min:f32, pub max:f32, pub options:Vec<String> }
 #[derive(Clone,Debug)]
 pub struct Module {
-    pub id:String, pub name:String, pub category:String, pub created_by:String, pub attributed_to:Vec<String>,
+    pub id:String, pub name:String, pub category:String, pub created_by:String, pub creator_email:Option<String>, pub attributed_to:Vec<String>,
     pub description:String, pub uses:String, pub notes:String, pub header_color:[u8;3],
     pub inputs:Vec<Port>, pub outputs:Vec<Port>, pub parameters:Vec<Parameter>,
     pub glsl:String, pub glsl_outputs:Vec<String>, pub helpers:String, pub terminal:bool, pub trust:Trust,
@@ -75,6 +75,22 @@ impl Module {
     if src.len()>131072{return Err("Module definition exceeds 128 KiB".into())}
     if glsl_outputs.iter().chain(std::iter::once(&glsl)).any(|s|s.contains("#version")||s.contains("#include")||s.contains("void main")) {return Err("GLSL module may not redefine shader entry point".into())}
     Ok(Self{id,name:required(&v,"name")?.into(),category:required(&v,"category")?.into(),created_by:required(&v,"created_by")?.into(),
+        creator_email:match v.get("creator_email") {
+            None | Some(Value::Null) => None,
+            Some(Value::String(email)) if email.trim().is_empty() => None,
+            Some(Value::String(email)) => {
+                let email=email.trim();
+                if email.len()>254 || email.chars().any(|c|c.is_control()||c.is_whitespace()) || email.contains("*/") {
+                    return Err("Field 'creator_email' must be a single email address".into());
+                }
+                let (local,domain)=email.split_once('@').ok_or("Field 'creator_email' must contain @")?;
+                if local.is_empty() || domain.is_empty() || domain.contains('@') {
+                    return Err("Field 'creator_email' must be a single email address".into());
+                }
+                Some(email.to_owned())
+            },
+            Some(_) => return Err("Field 'creator_email' must be a string".into()),
+        },
         attributed_to:match v.get("attributed_to") {
             None | Some(Value::Null) => Vec::new(),
             // Accept earlier multiline definitions for backward compatibility.
@@ -108,7 +124,7 @@ pub fn unresolved_definition(id:&str,name:&str,inputs:&[Port],outputs:&[Port])->
     let mut guard=cache.lock().unwrap_or_else(|e|e.into_inner());
     if let Some(&module)=guard.get(&key){return module}
     let module=Box::leak(Box::new(Module{
-        id:id.into(),name:name.into(),category:"Unresolved".into(),created_by:"Unavailable".into(),
+        id:id.into(),name:name.into(),category:"Unresolved".into(),created_by:"Unavailable".into(),creator_email:None,
         attributed_to:Vec::new(),description:"Module definition unavailable; original project data is preserved".into(),
         uses:String::new(),notes:String::new(),header_color:[90,90,90],inputs:inputs.to_vec(),outputs:outputs.to_vec(),
         parameters:Vec::new(),glsl:String::new(),glsl_outputs:Vec::new(),helpers:String::new(),terminal:false,trust:Trust::Community,

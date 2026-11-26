@@ -4,6 +4,7 @@
   "name": "2D Rotation",
   "category": "Math",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "header_color": "#688B82",
   "description": "Rotates a 2D vector by an angle in radians.",
   "uses": "Spatial transformation and animated patterns.",

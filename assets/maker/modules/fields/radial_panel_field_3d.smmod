@@ -4,6 +4,7 @@
   "name": "Radial Panel Field 3D",
   "category": "Fields",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "description": "Radial shell intersected with angular boundary estimate in radians. Negative inside. Smooth maximum rounds the intersection inward; not an exact SDF. Depth zero at outer radius, one at inner radius.",
   "uses": "Procedural geometry and animation compositions.",
   "notes": "Radial shell intersected with angular boundary estimate in radians. Negative inside. Smooth maximum rounds the intersection inward; not an exact SDF. Depth zero at outer radius, one at inner radius.",

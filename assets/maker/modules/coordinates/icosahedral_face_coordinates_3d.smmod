@@ -4,6 +4,7 @@
   "name": "Icosahedral Face Coordinates 3D",
   "category": "Coordinates",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "description": "Partitions directions into the twenty triangular faces of a regular icosahedron.",
   "uses": "Procedural spherical geometry and surface decoration.",
   "notes": "Unit vertices, outward face ordering, zero-based face index. Zero position uses +Y. Exact score ties retain first face; floating point near boundaries can select either adjacent face. Barycentric coordinates describe planar ray intersection, not spherical area.",

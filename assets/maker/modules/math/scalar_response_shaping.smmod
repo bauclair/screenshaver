@@ -4,6 +4,7 @@
   "name": "Scalar Response Shaping",
   "category": "Math",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "description": "Applies selectable scalar transfer functions with gain, bias and optional animated phase.",
   "uses": "Noise shaping, ridges, density masks and procedural materials.",
   "notes": "Normalized Value maps signed Direct and Sinusoidal results from [-1,1] to [0,1]; other modes clamp directly to [0,1]. Threshold endpoints are sorted; equal endpoints produce a step. Frequency is cycles per input unit, phase is degrees and speed is cycles per second. Sawtooth, Triangle and Periodic Gate use the same phase in cycles as Sinusoidal and return [0,1] directly. Gate is active from phase zero to Duty Cycle; softness is a transition half-width in cycles. Hyperbolic Tangent is signed and normalized by mapping [-1,1] to [0,1]. Reciprocal and Reciprocal Tanh use a positive denominator floor. Power uses absolute magnitude; powered magnitude is capped at 1e30 to avoid overflow for extreme finite inputs. New modes ignore wave and threshold parameters. Normalized outputs clamp to [0,1].",

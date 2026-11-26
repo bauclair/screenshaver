@@ -4,6 +4,7 @@
   "name": "Cyclic Scalar Spline",
   "category": "Animation",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "description": "Closed time-parameterized Hermite spline with optional linear interpolation.",
   "uses": "Closed time-parameterized Hermite spline with optional linear interpolation.",
   "notes": "Uniform segment time; cubic overshoot is intentional. Derivative is with respect to input time, not playback wall time. Linear derivatives can jump at knots.",

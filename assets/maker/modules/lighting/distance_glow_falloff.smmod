@@ -1,6 +1,7 @@
 {
   "schema_version": 1,
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "terminal": false,
   "helpers": "float maker_distance_glow_response(float d,float r,float strength,float multiplier,float mode,float epsilon,float exponent){\n d=max(d,0.0);r=max(r,0.00001);float s=strength*max(multiplier,0.0);epsilon=max(epsilon,0.0001);\n if(mode<0.5)return s/(1.0+pow(d/r,2.0));\n if(mode<1.5)return s*pow(epsilon/max(d,epsilon),exponent);\n return s*exp(-pow(d/r,exponent));\n}",
   "id": "screenshaver.lighting.distance_glow_falloff",

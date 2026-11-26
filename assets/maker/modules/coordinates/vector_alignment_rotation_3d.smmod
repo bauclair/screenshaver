@@ -4,6 +4,7 @@
   "name": "Vector Alignment Rotation 3D",
   "category": "Coordinates",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "description": "Rotates a vector by the shortest rotation aligning two directions.",
   "uses": "Coordinate orientation, camera alignment and procedural geometry.",
   "notes": "Zero-length reference directions leave position unchanged. Opposite directions use a deterministic perpendicular axis. Direction magnitudes are ignored.",

@@ -4,6 +4,7 @@
   "name": "Reciprocal Angular Light Response",
   "category": "Lighting",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "description": "Bounded reciprocal angular illumination.",
   "uses": "Bounded reciprocal angular illumination.",
   "notes": "Directions point toward the reference and light. Forward Only suppresses nonpositive alignment. Invalid or zero directions yield zero outputs.",

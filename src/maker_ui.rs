@@ -650,6 +650,18 @@ fn safety_profile(id:&str)->Option<(u64,u64)> {
         "screenshaver.noise.gradient_attenuated_fractal_noise_2d" => (20480, 1),
         "screenshaver.lighting.reciprocal_angular_light_response" => (384, 1),
         "screenshaver.color.rgb_transfer_function" => (192, 1),
+        "screenshaver.compositing.normalized_weighted_rgb_blend" => (384, 1),
+        "screenshaver.geometry.ray_finite_cylinder_intersection_3d" => (4096, 1),
+        "screenshaver.geometry.three_point_surface_normal_3d" => (768, 1),
+        "screenshaver.coordinates.mobius_coordinate_transformation_2d" => (1536, 1),
+        "screenshaver.coordinates.logarithmic_spiral_coordinate_mapping_2d" => (768, 1),
+        "screenshaver.fields.anisotropic_radial_glow_field_2d" => (512, 1),
+        "screenshaver.coordinates.stereographic_sphere_projection" => (1536, 1),
+        "screenshaver.coordinates.hyperbolic_mobius_coordinate_transformation_3d" => (2048, 1),
+        "screenshaver.coordinates.radial_power_warp_2d" => (384, 1),
+        "screenshaver.coordinates.toroidal_coordinate_mapping_3d" => (1024, 1),
+        "screenshaver.coordinates.modulated_periodic_coordinates_2d" => (512, 1),
+        "screenshaver.fields.animated_metaball_field_2d" => (65536, 1),
         "screenshaver.fields.periodic_scalar_distance_field" => (320, 1),
         "screenshaver.noise.rotating_gradient_noise_2d" => (2048, 1),
         "screenshaver.geometry.point_to_ray_distance_3d" => (256, 1),
@@ -675,6 +687,7 @@ fn safety_profile(id:&str)->Option<(u64,u64)> {
         "screenshaver.math.rotation2d" => (8, 1),
         "screenshaver.math.scalar_response_shaping" => (63, 1),
         "screenshaver.math.logarithmic_exponential_response" => (192, 1),
+        "screenshaver.math.cell_indexed_vector_modulation_3d" => (384, 1),
         "screenshaver.math.spatial_phase_oscillator" => (18, 1),
         "screenshaver.math.vector_magnitude_2d" => (8, 1),
         "screenshaver.noise.dot3d" => (17, 1),
@@ -4018,7 +4031,7 @@ impl MakerUi {
                                     egui::Align2::LEFT_CENTER,display_title,title_font,
                                     egui::Color32::WHITE);
                                 let header_response=header_response.on_hover_text(
-                                    format!("{}\nCreated by: {}{}\nDrag title bar to move the module",title,module.created_by,module.attributed_to.iter().map(|name|format!("\nAttributed to: {name}")).collect::<String>())
+                                    format!("{}\nCreated by: {}{}{}\nDrag title bar to move the module",title,module.created_by,module.creator_email.as_ref().map(|email|format!("\nCreator Email: {email}")).unwrap_or_default(),module.attributed_to.iter().map(|name|format!("\nAttributed to: {name}")).collect::<String>())
                                 );
                                 if header_response.clicked() {
                                     *selected=Some(id);
@@ -5033,6 +5046,7 @@ fn module_library_tooltip(ui:&mut egui::Ui,module:&Module){
     ui.strong("Typical uses");ui.label(&module.uses);
     ui.strong("Behavioral notes");ui.label(&module.notes);
     ui.separator();ui.label(format!("Created by: {}",module.created_by));
+    if let Some(email)=&module.creator_email {ui.label(format!("Creator Email: {email}"));}
     for name in &module.attributed_to {ui.label(format!("Attributed to: {name}"));}
     if module.trust==Trust::Community{
         ui.colored_label(egui::Color32::YELLOW,"This is a third-party module, not provided by Screenshaver");

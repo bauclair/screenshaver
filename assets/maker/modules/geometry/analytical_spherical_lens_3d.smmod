@@ -4,6 +4,7 @@
   "name": "Analytical Spherical Lens 3D",
   "category": "Geometry",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "description": "Fixed analytical traversal through a spherical dielectric.",
   "uses": "Fixed analytical traversal through a spherical dielectric.",
   "notes": "Miss returns zero outputs. Inside origin is entry position. TIR returns zero exit direction and transmission mask; no internal bounce. Entry TIR leaves exit position zero. Coordinates relative to center beyond 1e7 rejected; float precision limits distant or grazing rays.",

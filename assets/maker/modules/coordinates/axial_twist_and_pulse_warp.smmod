@@ -4,6 +4,7 @@
   "name": "Axial Twist and Pulse Warp",
   "category": "Coordinates",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "header_color": "#287C9B",
   "description": "Rotates and smoothly scales XY coordinates as functions of depth and animation time while preserving Z.",
   "uses": "Animated crystalline tunnels, twisting columns, depth-varying repeated geometry, and pulsing 3D coordinate domains.",

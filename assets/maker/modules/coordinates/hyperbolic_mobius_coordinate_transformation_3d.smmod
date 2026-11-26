@@ -1,0 +1,176 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.hyperbolic_mobius_coordinate_transformation_3d",
+  "name": "Hyperbolic Möbius Coordinate Transformation 3D",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Upper half-space conformal map. Positive height required. Horizontal planes YZ, ZX, XY for X, Y, Z height axes. All-NaN coefficients select defaults. Invalid or out-of-bounds results return zero and validity zero; local scale is Euclidean, not hyperbolic.",
+  "uses": "Hyperbolic Möbius Coordinate Transformation 3D",
+  "notes": "Upper half-space conformal map. Positive height required. Horizontal planes YZ, ZX, XY for X, Y, Z height axes. All-NaN coefficients select defaults. Invalid or out-of-bounds results return zero and validity zero; local scale is Euclidean, not hyperbolic.",
+  "header_color": "#65758B",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "semantic_role": "position3d",
+      "default": "vec3(maker_uv.x,1.0,maker_uv.y)"
+    },
+    {
+      "id": "a",
+      "name": "Coefficient A",
+      "type": "vec2",
+      "semantic_role": "",
+      "default": "vec2(uintBitsToFloat(0x7fc00000u))"
+    },
+    {
+      "id": "b",
+      "name": "Coefficient B",
+      "type": "vec2",
+      "semantic_role": "",
+      "default": "vec2(uintBitsToFloat(0x7fc00000u))"
+    },
+    {
+      "id": "c",
+      "name": "Coefficient C",
+      "type": "vec2",
+      "semantic_role": "",
+      "default": "vec2(uintBitsToFloat(0x7fc00000u))"
+    },
+    {
+      "id": "d",
+      "name": "Coefficient D",
+      "type": "vec2",
+      "semantic_role": "",
+      "default": "vec2(uintBitsToFloat(0x7fc00000u))"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "transformed",
+      "name": "Transformed Position",
+      "type": "vec3",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "local_scale",
+      "name": "Local Scale",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "height",
+      "name": "Boundary Height",
+      "type": "float",
+      "semantic_role": "distance"
+    },
+    {
+      "id": "validity",
+      "name": "Validity Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "a_real",
+      "name": "A Real",
+      "type": "float",
+      "default": 1,
+      "min": -100,
+      "max": 100
+    },
+    {
+      "id": "a_imaginary",
+      "name": "A Imaginary",
+      "type": "float",
+      "default": 0,
+      "min": -100,
+      "max": 100
+    },
+    {
+      "id": "b_real",
+      "name": "B Real",
+      "type": "float",
+      "default": 0,
+      "min": -100,
+      "max": 100
+    },
+    {
+      "id": "b_imaginary",
+      "name": "B Imaginary",
+      "type": "float",
+      "default": 0,
+      "min": -100,
+      "max": 100
+    },
+    {
+      "id": "c_real",
+      "name": "C Real",
+      "type": "float",
+      "default": 0,
+      "min": -100,
+      "max": 100
+    },
+    {
+      "id": "c_imaginary",
+      "name": "C Imaginary",
+      "type": "float",
+      "default": 0,
+      "min": -100,
+      "max": 100
+    },
+    {
+      "id": "d_real",
+      "name": "D Real",
+      "type": "float",
+      "default": 1,
+      "min": -100,
+      "max": 100
+    },
+    {
+      "id": "d_imaginary",
+      "name": "D Imaginary",
+      "type": "float",
+      "default": 0,
+      "min": -100,
+      "max": 100
+    },
+    {
+      "id": "axis",
+      "name": "Height Axis",
+      "type": "choice",
+      "default": 1,
+      "options": [
+        "X",
+        "Y",
+        "Z"
+      ]
+    },
+    {
+      "id": "denominator_floor",
+      "name": "Denominator Floor",
+      "type": "float",
+      "default": 1e-06,
+      "min": 1e-08,
+      "max": 0.1
+    },
+    {
+      "id": "maximum_output",
+      "name": "Maximum Output Magnitude",
+      "type": "float",
+      "default": 10000,
+      "min": 1,
+      "max": 1000000.0
+    }
+  ],
+  "helpers": "struct MakerHMB {vec3 p;float scale;float height;float valid;};\nvec2 maker_hmb_mul(vec2 a,vec2 b){return vec2(a.x*b.x-a.y*b.y,a.x*b.y+a.y*b.x);}\nvec2 maker_hmb_conj(vec2 a){return vec2(a.x,-a.y);}\nvec2 maker_hmb_coeff(vec2 a,vec2 b){return all(isnan(a))?b:a;}\nMakerHMB maker_hmb(vec3 p,vec2 a,vec2 b,vec2 c,vec2 d,float ar,float ai,float br,float bi,float cr,float ci,float dr,float di,float axis,float eps,float cap){\n MakerHMB bad=MakerHMB(vec3(0.0),0.0,0.0,0.0);\n a=maker_hmb_coeff(a,vec2(ar,ai));b=maker_hmb_coeff(b,vec2(br,bi));c=maker_hmb_coeff(c,vec2(cr,ci));d=maker_hmb_coeff(d,vec2(dr,di));\n if(any(isnan(p))||any(isinf(p))||any(greaterThan(abs(p),vec3(1e8)))||any(isnan(a))||any(isinf(a))||any(isnan(b))||any(isinf(b))||any(isnan(c))||any(isinf(c))||any(isnan(d))||any(isinf(d)))return bad;\n vec3 q=axis<0.5?p.yzx:(axis<1.5?p.zxy:p.xyz);float h=q.z;if(h<=0.0)return bad;\n float s=max(max(max(abs(a.x),abs(a.y)),max(abs(b.x),abs(b.y))),max(max(abs(c.x),abs(c.y)),max(abs(d.x),abs(d.y))));if(s<1e-30)return bad;a/=s;b/=s;c/=s;d/=s;\n float det=length(maker_hmb_mul(a,d)-maker_hmb_mul(b,c));if(det<=1e-12)return bad;\n vec2 den=maker_hmb_mul(c,q.xy)+d;vec2 ch=c*h;float n=dot(den,den)+dot(ch,ch);if(n<eps*eps)return bad;\n vec2 num=maker_hmb_mul(a,q.xy)+b;vec2 z=(maker_hmb_mul(num,maker_hmb_conj(den))+maker_hmb_mul(a*h,maker_hmb_conj(ch)))/n;\n float scale=det/n;float ht=h*scale;vec3 outp=vec3(z,ht);if(any(isnan(outp))||any(isinf(outp))||ht<=0.0||length(outp)>cap||scale>cap)return bad;\n return MakerHMB(axis<0.5?outp.zxy:(axis<1.5?outp.yzx:outp),scale,ht,1.0);\n}",
+  "glsl_outputs": {
+    "transformed": "maker_hmb({position},{a},{b},{c},{d},{a_real},{a_imaginary},{b_real},{b_imaginary},{c_real},{c_imaginary},{d_real},{d_imaginary},{axis},{denominator_floor},{maximum_output}).p",
+    "local_scale": "maker_hmb({position},{a},{b},{c},{d},{a_real},{a_imaginary},{b_real},{b_imaginary},{c_real},{c_imaginary},{d_real},{d_imaginary},{axis},{denominator_floor},{maximum_output}).scale",
+    "height": "maker_hmb({position},{a},{b},{c},{d},{a_real},{a_imaginary},{b_real},{b_imaginary},{c_real},{c_imaginary},{d_real},{d_imaginary},{axis},{denominator_floor},{maximum_output}).height",
+    "validity": "maker_hmb({position},{a},{b},{c},{d},{a_real},{a_imaginary},{b_real},{b_imaginary},{c_real},{c_imaginary},{d_real},{d_imaginary},{axis},{denominator_floor},{maximum_output}).valid"
+  }
+}

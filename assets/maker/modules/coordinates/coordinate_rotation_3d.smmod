@@ -4,6 +4,7 @@
   "name": "Coordinate Rotation 3D",
   "category": "Coordinates",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "description": "Applies right-handed rotations directly to a three-dimensional coordinate.",
   "uses": "Animated sampling coordinates, spherical projections and procedural geometry.",
   "notes": "Angles are degrees; animation speeds are degrees per second. Fixed rotation order X then Y then Z. Rotates around the origin. Rotation Modulation adds per-axis angles in degrees before conversion to radians. Axis-Angle mode uses a normalized axis, ignores Euler controls and returns the input unchanged for a zero axis. Angle modulation is in degrees.",

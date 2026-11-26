@@ -1,0 +1,120 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.toroidal_coordinate_mapping_3d",
+  "name": "Toroidal Coordinate Mapping 3D",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Map a spatial position to coordinates relative to a circular centerline.",
+  "uses": "Map a spatial position to coordinates relative to a circular centerline.",
+  "notes": "Axis X uses YZ, Y uses ZX, Z uses XY. Toroidal vector is (major angle, minor angle, centerline distance). Angles in radians, offsets in degrees affect angular outputs only. Cross-section and centerline remain physical. At the axis choose positive first radial direction; at the centerline choose zero minor angle before offset. Coordinates and radius multiplier are bounded.",
+  "header_color": "#65758B",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "semantic_role": "position3d",
+      "default": "vec3(maker_uv,0.0)"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec3",
+      "semantic_role": "position3d",
+      "default": "vec3(0.0)"
+    },
+    {
+      "id": "radius_multiplier",
+      "name": "Radius Multiplier",
+      "type": "float",
+      "semantic_role": "",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "cross_section",
+      "name": "Cross-Section Coordinate",
+      "type": "vec2",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "toroidal",
+      "name": "Toroidal Coordinate",
+      "type": "vec3",
+      "semantic_role": ""
+    },
+    {
+      "id": "centerline",
+      "name": "Centerline Position",
+      "type": "vec3",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "major_angle",
+      "name": "Major Angle",
+      "type": "float",
+      "semantic_role": "angle"
+    },
+    {
+      "id": "minor_angle",
+      "name": "Minor Angle",
+      "type": "float",
+      "semantic_role": "angle"
+    },
+    {
+      "id": "distance",
+      "name": "Centerline Distance",
+      "type": "float",
+      "semantic_role": "distance"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "major_radius",
+      "name": "Major Radius",
+      "type": "float",
+      "default": 2,
+      "min": 0.001,
+      "max": 100
+    },
+    {
+      "id": "axis",
+      "name": "Cylinder Axis",
+      "type": "choice",
+      "default": 2,
+      "options": [
+        "X",
+        "Y",
+        "Z"
+      ]
+    },
+    {
+      "id": "major_offset",
+      "name": "Major Angular Offset",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "minor_offset",
+      "name": "Minor Angular Offset",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    }
+  ],
+  "helpers": "struct MakerTCM3 {vec2 cross_section;vec3 toroidal;vec3 centerline;};\nMakerTCM3 maker_tcm3(vec3 p,vec3 c,float mult,float radius,float axis,float mo,float mi){\n if(any(isnan(p))||any(isinf(p)))p=vec3(0.0);\n if(any(isnan(c))||any(isinf(c)))c=vec3(0.0);\n if(isnan(mult)||isinf(mult))mult=1.0;\n c=clamp(c,vec3(-1e6),vec3(1e6));vec3 v=clamp(p,vec3(-1e6),vec3(1e6))-c;\n vec3 q=axis<0.5?v.yzx:(axis<1.5?v.zxy:v);\n float r=clamp(radius*clamp(mult,0.0,100.0),0.001,10000.0),rho=length(q.xy);\n vec2 radial=rho>1e-8?q.xy/rho:vec2(1.0,0.0);\n vec2 cs=vec2(rho-r,q.z);float d=length(cs);\n float a=rho>1e-8?atan(radial.y,radial.x):0.0;\n float b=d>1e-8?atan(cs.y,cs.x):0.0;\n vec3 line=vec3(radial*r,0.0);line=axis<0.5?line.zxy:(axis<1.5?line.yzx:line);\n const float tau=6.28318530718;const float pi=3.14159265359;\n a=mod(a+radians(mo)+pi,tau)-pi;b=mod(b+radians(mi)+pi,tau)-pi;\n return MakerTCM3(cs,vec3(a,b,d),c+line);\n}",
+  "glsl_outputs": {
+    "cross_section": "maker_tcm3({position},{center},{radius_multiplier},{major_radius},{axis},{major_offset},{minor_offset}).cross_section",
+    "toroidal": "maker_tcm3({position},{center},{radius_multiplier},{major_radius},{axis},{major_offset},{minor_offset}).toroidal",
+    "centerline": "maker_tcm3({position},{center},{radius_multiplier},{major_radius},{axis},{major_offset},{minor_offset}).centerline",
+    "major_angle": "maker_tcm3({position},{center},{radius_multiplier},{major_radius},{axis},{major_offset},{minor_offset}).toroidal.x",
+    "minor_angle": "maker_tcm3({position},{center},{radius_multiplier},{major_radius},{axis},{major_offset},{minor_offset}).toroidal.y",
+    "distance": "maker_tcm3({position},{center},{radius_multiplier},{major_radius},{axis},{major_offset},{minor_offset}).toroidal.z"
+  }
+}

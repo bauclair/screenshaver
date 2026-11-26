@@ -4,6 +4,7 @@
   "name": "Rotated Harmonic Field 3D",
   "category": "Fields",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "description": "Accumulates three-axis harmonic signals across rotated frequency layers.",
   "uses": "Structured turbulence, density fields and abstract spatial textures.",
   "notes": "Rotation is around the origin; zero axis disables rotation. Animation speed is phase radians per second. Maximum and Minimum compare amplitude-weighted active layers; zero-weight layers are excluded. Normalized sum divides by weight sum; normalized output rescales Sum by weight sum and maps signed responses to 0–1. Alternating polarity starts positive and flips each layer; normalization uses absolute weights and signed mapping for all alternating responses. Interlayer rotation uses zero-based layer index or the positive frequency progression ratio (independent of external multiplier, including zero). Angles wrap before trigonometry; scaling applies even with a zero rotation axis. Large frequencies and scales may alias or lose precision.",

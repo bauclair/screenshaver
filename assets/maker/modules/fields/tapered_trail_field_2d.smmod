@@ -4,6 +4,7 @@
   "name": "Tapered Trail Field 2D",
   "category": "Fields",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "header_color": "#398F94",
   "terminal": false,
   "description": "Finite directional soft trail with variable half-width and longitudinal attenuation.",

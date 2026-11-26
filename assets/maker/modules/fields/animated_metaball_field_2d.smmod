@@ -1,0 +1,189 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.animated_metaball_field_2d",
+  "name": "Animated Metaball Field 2D",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "terminal": false,
+  "header_color": "#597D69",
+  "description": "Animated Gaussian implicit density with analytical spatial gradient.",
+  "uses": "Procedural fields and material composition.",
+  "notes": "Motion and pulse frequencies are cycles per time unit. Extents are center travel limits. Radius endpoints are sorted before pulsing. Shape blends Euclidean and Chebyshev distance; ties use the mean subgradient. Normal treats density as height, not an exact 3D surface. Density is unclamped. Time and coordinates are bounded.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "time_offset",
+      "name": "Time Offset",
+      "type": "float",
+      "default": "0.0",
+      "semantic_role": "time"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "density",
+      "name": "Density",
+      "type": "float",
+      "semantic_role": "intensity"
+    },
+    {
+      "id": "mask",
+      "name": "Surface Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    },
+    {
+      "id": "gradient_magnitude",
+      "name": "Gradient Magnitude",
+      "type": "float"
+    },
+    {
+      "id": "gradient",
+      "name": "Spatial Gradient",
+      "type": "vec2"
+    },
+    {
+      "id": "normal",
+      "name": "Surface Normal",
+      "type": "vec3",
+      "semantic_role": "normal3d"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "count",
+      "name": "Blob Count",
+      "type": "float",
+      "default": 12,
+      "min": 1,
+      "max": 64
+    },
+    {
+      "id": "rmin",
+      "name": "Minimum Radius",
+      "type": "float",
+      "default": 0.1,
+      "min": 0.001,
+      "max": 5
+    },
+    {
+      "id": "rmax",
+      "name": "Maximum Radius",
+      "type": "float",
+      "default": 0.35,
+      "min": 0.001,
+      "max": 5
+    },
+    {
+      "id": "ex",
+      "name": "Horizontal Extent",
+      "type": "float",
+      "default": 1.5,
+      "min": 0.01,
+      "max": 10
+    },
+    {
+      "id": "ey",
+      "name": "Vertical Extent",
+      "type": "float",
+      "default": 1,
+      "min": 0.01,
+      "max": 10
+    },
+    {
+      "id": "speed",
+      "name": "Motion Speed",
+      "type": "float",
+      "default": 0.25,
+      "min": -5,
+      "max": 5
+    },
+    {
+      "id": "variation",
+      "name": "Motion Variation",
+      "type": "float",
+      "default": 0.5,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "pulse",
+      "name": "Radius Variation",
+      "type": "float",
+      "default": 0.25,
+      "min": 0,
+      "max": 0.95
+    },
+    {
+      "id": "freq",
+      "name": "Radius Pulse Frequency",
+      "type": "float",
+      "default": 0.5,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "falloff",
+      "name": "Field Falloff",
+      "type": "float",
+      "default": 2,
+      "min": 0.01,
+      "max": 16
+    },
+    {
+      "id": "shape",
+      "name": "Shape Blend",
+      "type": "float",
+      "default": 0,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "threshold",
+      "name": "Surface Threshold",
+      "type": "float",
+      "default": 0.5,
+      "min": 0,
+      "max": 64
+    },
+    {
+      "id": "softness",
+      "name": "Edge Softness",
+      "type": "float",
+      "default": 0.03,
+      "min": 0,
+      "max": 4
+    },
+    {
+      "id": "strength",
+      "name": "Normal Strength",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 16
+    },
+    {
+      "id": "seed",
+      "name": "Seed",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 65535
+    }
+  ],
+  "helpers": "uint maker_amf_hash(uint x){x ^= x >> 16u; x *= 0x7feb352du; x ^= x >> 15u; x *= 0x846ca68bu; return x ^ (x >> 16u);}\nfloat maker_amf_rand(uint x){return float(maker_amf_hash(x)>>8u)/16777216.0;}\nstruct MakerAMF {float density; float mask; float gradient_magnitude; vec2 gradient; vec3 normal;};\nMakerAMF maker_amf_eval(vec2 p,float t,float count,float rmin,float rmax,float ex,float ey,float speed,float variation,float pulse,float freq,float falloff,float shape,float threshold,float softness,float strength,float seed){\n if(any(isnan(p)) || any(isinf(p)) || any(greaterThan(abs(p),vec2(1e6)))) return MakerAMF(0.0,0.0,0.0,vec2(0.0),vec3(0,0,1));\n t=(isnan(t)||isinf(t))?0.0:clamp(t,-1e6,1e6);\n float density=0.0; vec2 grad=vec2(0.0); int n=int(clamp(floor(count+0.5),1.0,64.0));\n float lo=max(min(rmin,rmax),0.001), hi=max(max(rmin,rmax),lo); uint s=uint(clamp(floor(seed+0.5),0.0,65535.0));\n for(int i=0;i<64;++i){if(i>=n)break;\n uint b=s*1024u+uint(i)*16u;\n float phaseX=6.28318530718*maker_amf_rand(b),phaseY=6.28318530718*maker_amf_rand(b+1u);\n float vx=speed*(1.0+variation*(2.0*maker_amf_rand(b+2u)-1.0));\n float vy=speed*(1.0+variation*(2.0*maker_amf_rand(b+3u)-1.0));\n vec2 c=vec2(ex*sin(phaseX+6.28318530718*vx*t),ey*sin(phaseY+6.28318530718*vy*t));\n float r=max(0.001,mix(lo,hi,maker_amf_rand(b+4u))*(1.0+pulse*sin(6.28318530718*(freq*t+maker_amf_rand(b+5u)))));\n vec2 q=p-c; float e=length(q), m=max(abs(q.x),abs(q.y));\n vec2 de=e>0.0?q/e:vec2(0.0); vec2 dm=abs(q.x)>abs(q.y)?vec2(sign(q.x),0.0):abs(q.y)>abs(q.x)?vec2(0.0,sign(q.y)):0.5*sign(q);\n float d=mix(e,m,shape), k=falloff/(r*r); float w=exp(-k*d*d);\n density+=w; grad+=(-2.0*k*d*w)*mix(de,dm,shape);\n }\n float mask=softness>0.0?smoothstep(threshold-softness,threshold+softness,density):step(threshold,density);\n return MakerAMF(density,mask,length(grad),grad,normalize(vec3(-strength*grad,1.0)));\n}",
+  "glsl_outputs": {
+    "density": "maker_amf_eval({position},(u_time+{time_offset}),{count},{rmin},{rmax},{ex},{ey},{speed},{variation},{pulse},{freq},{falloff},{shape},{threshold},{softness},{strength},{seed}).density",
+    "mask": "maker_amf_eval({position},(u_time+{time_offset}),{count},{rmin},{rmax},{ex},{ey},{speed},{variation},{pulse},{freq},{falloff},{shape},{threshold},{softness},{strength},{seed}).mask",
+    "gradient_magnitude": "maker_amf_eval({position},(u_time+{time_offset}),{count},{rmin},{rmax},{ex},{ey},{speed},{variation},{pulse},{freq},{falloff},{shape},{threshold},{softness},{strength},{seed}).gradient_magnitude",
+    "gradient": "maker_amf_eval({position},(u_time+{time_offset}),{count},{rmin},{rmax},{ex},{ey},{speed},{variation},{pulse},{freq},{falloff},{shape},{threshold},{softness},{strength},{seed}).gradient",
+    "normal": "maker_amf_eval({position},(u_time+{time_offset}),{count},{rmin},{rmax},{ex},{ey},{speed},{variation},{pulse},{freq},{falloff},{shape},{threshold},{softness},{strength},{seed}).normal"
+  }
+}

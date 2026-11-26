@@ -4,6 +4,7 @@
   "name": "Soft Line Distance Mask 2D",
   "category": "Fields",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "header_color": "#4B9A86",
   "description": "Generates a soft mask around a single infinite straight line in a 2D coordinate plane.",
   "uses": "Line art, isolated stripes, geometric contours and spatial masks.",

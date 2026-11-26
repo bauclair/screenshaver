@@ -4,6 +4,7 @@
   "name": "RGB Beer\u2013Lambert Transmittance",
   "category": "Lighting",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "description": "Applies independent exponential absorption to RGB channels.",
   "uses": "Colored glass, fog and wavelength-dependent attenuation.",
   "notes": "Nonnegative density, distance and extinction. Optical depth is capped at 80. Incident HDR color is not clamped.",

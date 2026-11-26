@@ -1,6 +1,7 @@
 {
   "schema_version": 1,
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "terminal": false,
   "id": "screenshaver.geometry.gyroid_surface_field_3d",
   "name": "Gyroid Surface Field 3D",

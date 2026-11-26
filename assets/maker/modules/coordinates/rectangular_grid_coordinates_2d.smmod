@@ -4,6 +4,7 @@
   "name": "Rectangular Grid Coordinates 2D",
   "category": "Coordinates",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "description": "Quantizes a position into rectangular cells with an adjustable interior mask.",
   "uses": "Mosaics, pixel patterns, quantized sampling and tiled effects.",
   "notes": "Local Position is centered in each cell in coordinate units. Cell Index is floor-based, including negative coordinates. Gaps are total fractions of cell size; softness is measured in normalized cell units and fades inward. Zero gap leaves that axis fully open; a full gap closes it.",

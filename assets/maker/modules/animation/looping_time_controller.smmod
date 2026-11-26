@@ -4,6 +4,7 @@
   "name": "Looping Time Controller",
   "category": "Animation",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "description": "Converts continuous time to a stable repeating cycle.",
   "uses": "Looped procedural animation, synchronization, and cycle-based sequencing.",
   "notes": "Duration is in seconds and is clamped away from zero. Cycle Time is expressed in seconds; Progress ranges from 0 to 1.",

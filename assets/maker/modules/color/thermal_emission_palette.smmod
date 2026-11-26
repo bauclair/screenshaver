@@ -4,6 +4,7 @@
   "name": "Thermal Emission Palette",
   "category": "Color",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "header_color": "#B86A3C",
   "description": "Approximate thermal radiation colors from temperature using Planck spectral radiance at representative visible wavelengths.",
   "uses": "Fire, heated surfaces, lava, incandescent effects and temperature-driven color ramps.",

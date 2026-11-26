@@ -4,6 +4,7 @@
   "name": "Interpolated Procedural Sequence",
   "category": "Animation",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "description": "Interpolates deterministic scalar states at evenly spaced time boundaries.",
   "uses": "Procedural parameter animation, evolving geometry and material variation.",
   "notes": "State Index is the signed floor of time divided by duration. Transition Progress is the raw fractional state progress, independent of easing. Random states use integer hashing; phase settings affect sine and cosine only. State coordinate is clamped to +/- 8388606 for safe integer conversion and adjacent-state precision; extreme times saturate. Reversed value endpoints invert the output range.",

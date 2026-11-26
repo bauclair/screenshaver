@@ -4,6 +4,7 @@
   "name": "Dielectric Refraction Direction 3D",
   "category": "Geometry",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "description": "Analytical Snell refraction and reflection at a dielectric interface.",
   "uses": "Analytical Snell refraction and reflection at a dielectric interface.",
   "notes": "Incident direction points toward interface; normal points outward in automatic mode. Forced modes select media explicitly. Invalid directions or normals return zero directions and zero TIR mask.",

@@ -4,6 +4,7 @@
   "name": "Temporal Frequency Layering 3D",
   "category": "Fields",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "header_color": "#398F94",
   "description": "Repeatedly samples a connected position-dependent scalar 3D field with independently scaled spatial and temporal frequencies.",
   "uses": "Animated fractal noise, layered cellular fields, turbulence and parallax-like motion.",

@@ -4,6 +4,7 @@
   "name": "Field Traversal",
   "category": "Fields",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "header_color": "#477D9A",
   "description": "Integrates an animated procedural density field along a view ray.",
   "uses": "Procedural volumetric streaks, layered light, and glowing abstract shapes.",

@@ -1,6 +1,7 @@
 {
   "schema_version": 1,
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "terminal": false,
   "helpers": "",
   "id": "screenshaver.geometry.point_segment_distance_2d",

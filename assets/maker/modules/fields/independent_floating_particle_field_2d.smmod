@@ -4,6 +4,7 @@
   "name": "Independent Floating Particle Field 2D",
   "category": "Fields",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "terminal": false,
   "header_color": "#597D69",
   "description": "Finite deterministic collection of independently drifting luminous particles with periodic boundaries.",

@@ -4,6 +4,7 @@
   "name": "Fibonacci Sphere Point Distribution",
   "category": "Geometry",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "description": "Generate an indexed golden-angle point on a sphere.",
   "uses": "Spherical sampling, particle placement and distributed geometry.",
   "notes": "Count rounded and clamped to 1\u20134096; index rounded and clamped to valid range.",

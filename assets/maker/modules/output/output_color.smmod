@@ -1,6 +1,7 @@
 {
   "schema_version": 1,
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "uses": "Connect a Color3 output to display the resulting shader.",
   "notes": "Only one terminal node is allowed; disconnected output shows a dark fallback.",
   "inputs": [

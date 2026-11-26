@@ -4,6 +4,7 @@
   "name": "Morphing Field",
   "category": "Fields",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "header_color": "#5A78A8",
   "description": "Animated scalar field built from smooth 3D value noise and independent sinusoidal modulation.",
   "uses": "Organic animated patterns and field-guided effects.",

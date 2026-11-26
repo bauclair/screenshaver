@@ -4,6 +4,7 @@
   "name": "Ellipsoid Distance Field 3D",
   "category": "Geometry",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "description": "Conservative signed distance bound for an axis-aligned ellipsoid.",
   "uses": "Implicit geometry and conservative sphere tracing.",
   "notes": "Exact for equal radii; otherwise a conservative bound. Center is an offset, not a sampling coordinate.",

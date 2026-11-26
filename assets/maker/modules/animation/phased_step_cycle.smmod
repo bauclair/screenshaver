@@ -4,6 +4,7 @@
   "name": "Phased Step Cycle",
   "category": "Animation",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "description": "Phased Step Cycle procedural geometry and animation utility.",
   "uses": "Phased Step Cycle procedural geometry and animation utility.",
   "notes": "Phase in cycles. Travel extent is half range. Positive index lag delays phase. Signed amplitude scales both offsets.",

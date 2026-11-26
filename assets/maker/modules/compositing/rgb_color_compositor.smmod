@@ -4,6 +4,7 @@
   "name": "RGB Color Compositor",
   "category": "Compositing",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "description": "Combines two RGB signals using component-wise arithmetic.",
   "uses": "Color layering, HDR accumulation, subtractive effects, and modulation.",
   "notes": "Gains are applied before the selected operation. Output clamping is optional and disabled by default.",

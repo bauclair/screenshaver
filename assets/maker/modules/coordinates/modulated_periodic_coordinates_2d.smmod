@@ -1,0 +1,127 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.modulated_periodic_coordinates_2d",
+  "name": "Modulated Periodic Coordinates 2D",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Repeat planar coordinates using spatially variable per-axis frequencies.",
+  "uses": "Repeat planar coordinates using spatially variable per-axis frequencies.",
+  "notes": "Effective frequency is positive and bounded. Phase offsets are in cycles and shift cell boundaries positively. Centered local coordinates range from -0.5 to 0.5 in cell units; positive convention ranges from 0 to 1. Cell Center Distance always measures physical distance to the cell center. Spatial modulation is not an exact SDF transform. Extreme coordinates and cell indices are bounded.",
+  "header_color": "#65758B",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "semantic_role": "position2d",
+      "default": "maker_uv"
+    },
+    {
+      "id": "frequency_multiplier",
+      "name": "Frequency Multiplier",
+      "type": "float",
+      "semantic_role": "",
+      "default": "1.0"
+    },
+    {
+      "id": "axis_multiplier",
+      "name": "Axis Frequency Multiplier",
+      "type": "vec2",
+      "semantic_role": "",
+      "default": "vec2(1.0)"
+    },
+    {
+      "id": "phase_offset",
+      "name": "Phase Offset",
+      "type": "vec2",
+      "semantic_role": "",
+      "default": "vec2(0.0)"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "local",
+      "name": "Local Coordinate",
+      "type": "vec2",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "normalized",
+      "name": "Normalized Local Coordinate",
+      "type": "vec2",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "cell",
+      "name": "Cell Index",
+      "type": "vec2",
+      "semantic_role": ""
+    },
+    {
+      "id": "frequency",
+      "name": "Effective Frequency",
+      "type": "vec2",
+      "semantic_role": ""
+    },
+    {
+      "id": "distance",
+      "name": "Cell Center Distance",
+      "type": "float",
+      "semantic_role": "distance"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "x_frequency",
+      "name": "X Frequency",
+      "type": "float",
+      "default": 3,
+      "min": 0.001,
+      "max": 100
+    },
+    {
+      "id": "y_frequency",
+      "name": "Y Frequency",
+      "type": "float",
+      "default": 3,
+      "min": 0.001,
+      "max": 100
+    },
+    {
+      "id": "x_phase",
+      "name": "X Phase",
+      "type": "float",
+      "default": 0,
+      "min": -100,
+      "max": 100
+    },
+    {
+      "id": "y_phase",
+      "name": "Y Phase",
+      "type": "float",
+      "default": 0,
+      "min": -100,
+      "max": 100
+    },
+    {
+      "id": "convention",
+      "name": "Output Convention",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Centered",
+        "Positive"
+      ]
+    }
+  ],
+  "helpers": "struct MakerMPC2 {vec2 local;vec2 normalized;vec2 cell;vec2 frequency;float distance;};\nMakerMPC2 maker_mpc2(vec2 p,float mult,vec2 am,vec2 phase,float fx,float fy,float px,float py,float mode){\n if(any(isnan(p))||any(isinf(p)))p=vec2(0.0);\n if(isnan(mult)||isinf(mult))mult=1.0;\n if(any(isnan(am))||any(isinf(am)))am=vec2(1.0);\n if(any(isnan(phase))||any(isinf(phase)))phase=vec2(0.0);\n vec2 freq=clamp(vec2(fx,fy)*clamp(mult,0.0,1000.0)*clamp(am,vec2(0.0),vec2(1000.0)),vec2(0.001),vec2(10000.0));\n vec2 t=clamp(clamp(p,vec2(-1e6),vec2(1e6))*freq-clamp(phase,vec2(-1e6),vec2(1e6))-vec2(px,py),vec2(-1e6),vec2(1e6));\n vec2 cell=floor(t),u=t-cell,centered=u-0.5;\n vec2 local=mode<0.5?centered:u;\n return MakerMPC2(local/freq,local,cell,freq,length(centered/freq));\n}",
+  "glsl_outputs": {
+    "local": "maker_mpc2({position},{frequency_multiplier},{axis_multiplier},{phase_offset},{x_frequency},{y_frequency},{x_phase},{y_phase},{convention}).local",
+    "normalized": "maker_mpc2({position},{frequency_multiplier},{axis_multiplier},{phase_offset},{x_frequency},{y_frequency},{x_phase},{y_phase},{convention}).normalized",
+    "cell": "maker_mpc2({position},{frequency_multiplier},{axis_multiplier},{phase_offset},{x_frequency},{y_frequency},{x_phase},{y_phase},{convention}).cell",
+    "frequency": "maker_mpc2({position},{frequency_multiplier},{axis_multiplier},{phase_offset},{x_frequency},{y_frequency},{x_phase},{y_phase},{convention}).frequency",
+    "distance": "maker_mpc2({position},{frequency_multiplier},{axis_multiplier},{phase_offset},{x_frequency},{y_frequency},{x_phase},{y_phase},{convention}).distance"
+  }
+}

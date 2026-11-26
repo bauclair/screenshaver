@@ -4,6 +4,7 @@
   "name": "Geodesic Dual Cell Field 3D",
   "category": "Fields",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "description": "Local three-vertex angular partition; not exact global Voronoi. Metric in radians, negative inside, gap is total separation. Local index is not a global cell ID.",
   "uses": "Procedural geometry and animation compositions.",
   "notes": "Local three-vertex angular partition; not exact global Voronoi. Metric in radians, negative inside, gap is total separation. Local index is not a global cell ID.",

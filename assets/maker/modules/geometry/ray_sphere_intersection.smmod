@@ -1,6 +1,7 @@
 {
   "schema_version": 1,
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "terminal": false,
   "id": "screenshaver.geometry.ray_sphere_intersection",
   "name": "Ray\u2013Sphere Intersection",

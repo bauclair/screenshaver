@@ -1,6 +1,7 @@
 {
   "schema_version": 1,
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "terminal": false,
   "id": "screenshaver.lighting.layered_refractive_boundary_traversal",
   "name": "Layered Refractive Boundary Traversal",

@@ -4,6 +4,7 @@
   "name": "3D Dot Noise",
   "category": "Noise",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "header_color": "#6D729A",
   "description": "Smooth 3D lattice value noise from independently chosen integer-coordinate hashing.",
   "uses": "Reusable scalar field detail and procedural modulation.",

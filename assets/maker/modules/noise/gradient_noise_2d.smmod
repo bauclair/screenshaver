@@ -4,6 +4,7 @@
   "name": "Gradient Noise 2D",
   "category": "Noise",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "description": "Interpolated unit lattice gradients in two dimensions.",
   "uses": "Interpolated unit lattice gradients in two dimensions.",
   "notes": "Signed output includes amplitude; normalized output clamps 0.5 + 0.5 times signed output. Domain repeats every 65536 lattice units; extreme coordinates lose float precision.",

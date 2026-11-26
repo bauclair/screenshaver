@@ -4,6 +4,7 @@
   "name": "Lattice Crossing Highlight",
   "category": "Lighting",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "header_color": "#CBA64C",
   "description": "Extracts intersection cores and soft crossing halos from two independent scalar masks.",
   "uses": "Highlights crossings of lattice lines, ribbons, rings and other overlapping masks.",

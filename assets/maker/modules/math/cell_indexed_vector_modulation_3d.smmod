@@ -1,0 +1,174 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.math.cell_indexed_vector_modulation_3d",
+  "name": "Cell-Indexed Vector Modulation 3D",
+  "category": "Math",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Maps a cell index through an adjustable three-by-three matrix and vector offset.",
+  "uses": "Cell-dependent rotation, scaling, displacement and animation phase.",
+  "notes": "Output = multiplier * matrix * cell index + offset. Input indices are not rounded. Periodic mode wraps each component into [0, period). Index components are bounded to +/-1e6 and multiplier to +/-100; nonfinite inputs return zero. Large values may lose periodic precision in GLSL float arithmetic. Outputs are unitless; match coefficients to downstream units.",
+  "header_color": "#65758B",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "cell_index",
+      "name": "Cell Index",
+      "type": "vec3",
+      "default": "vec3(0.0)"
+    },
+    {
+      "id": "multiplier",
+      "name": "Modulation Multiplier",
+      "type": "float",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "modulation",
+      "name": "Modulation Vector",
+      "type": "vec3"
+    },
+    {
+      "id": "x_modulation",
+      "name": "X Modulation",
+      "type": "float"
+    },
+    {
+      "id": "y_modulation",
+      "name": "Y Modulation",
+      "type": "float"
+    },
+    {
+      "id": "z_modulation",
+      "name": "Z Modulation",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "x_from_x",
+      "name": "X from X",
+      "type": "float",
+      "default": 1,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "x_from_y",
+      "name": "X from Y",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "x_from_z",
+      "name": "X from Z",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "y_from_x",
+      "name": "Y from X",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "y_from_y",
+      "name": "Y from Y",
+      "type": "float",
+      "default": 1,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "y_from_z",
+      "name": "Y from Z",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "z_from_x",
+      "name": "Z from X",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "z_from_y",
+      "name": "Z from Y",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "z_from_z",
+      "name": "Z from Z",
+      "type": "float",
+      "default": 1,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "x_offset",
+      "name": "X Offset",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "y_offset",
+      "name": "Y Offset",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "z_offset",
+      "name": "Z Offset",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "mode",
+      "name": "Output Mode",
+      "type": "choice",
+      "default": 0,
+      "min": 0,
+      "max": 1,
+      "options": [
+        "Unwrapped",
+        "Periodic"
+      ]
+    },
+    {
+      "id": "period",
+      "name": "Output Period",
+      "type": "float",
+      "default": 360,
+      "min": 0.001,
+      "max": 10000
+    }
+  ],
+  "helpers": "vec3 maker_cell_index_modulation(vec3 idx,float gain,vec3 rowX,vec3 rowY,vec3 rowZ,vec3 bias,float mode,float period){\n    if(any(isnan(idx)) || any(isinf(idx)) || isnan(gain) || isinf(gain)) return vec3(0.0);\n    idx=clamp(idx,vec3(-1e6),vec3(1e6));\n    gain=clamp(gain,-100.0,100.0);\n    vec3 v=gain*vec3(dot(rowX,idx),dot(rowY,idx),dot(rowZ,idx))+bias;\n    if(mode>=0.5){\n        float p=clamp(period,0.001,10000.0);\n        v=mod(v,vec3(p));\n        v=clamp(v,vec3(0.0),vec3(p));\n        v=vec3(v.x>=p?0.0:v.x,v.y>=p?0.0:v.y,v.z>=p?0.0:v.z);\n    }\n    return v;\n}",
+  "glsl_outputs": {
+    "modulation": "maker_cell_index_modulation({cell_index},{multiplier},vec3({x_from_x},{x_from_y},{x_from_z}),vec3({y_from_x},{y_from_y},{y_from_z}),vec3({z_from_x},{z_from_y},{z_from_z}),vec3({x_offset},{y_offset},{z_offset}),{mode},{period})",
+    "x_modulation": "maker_cell_index_modulation({cell_index},{multiplier},vec3({x_from_x},{x_from_y},{x_from_z}),vec3({y_from_x},{y_from_y},{y_from_z}),vec3({z_from_x},{z_from_y},{z_from_z}),vec3({x_offset},{y_offset},{z_offset}),{mode},{period}).x",
+    "y_modulation": "maker_cell_index_modulation({cell_index},{multiplier},vec3({x_from_x},{x_from_y},{x_from_z}),vec3({y_from_x},{y_from_y},{y_from_z}),vec3({z_from_x},{z_from_y},{z_from_z}),vec3({x_offset},{y_offset},{z_offset}),{mode},{period}).y",
+    "z_modulation": "maker_cell_index_modulation({cell_index},{multiplier},vec3({x_from_x},{x_from_y},{x_from_z}),vec3({y_from_x},{y_from_y},{y_from_z}),vec3({z_from_x},{z_from_y},{z_from_z}),vec3({x_offset},{y_offset},{z_offset}),{mode},{period}).z"
+  }
+}

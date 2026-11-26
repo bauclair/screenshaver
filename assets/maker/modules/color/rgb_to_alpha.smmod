@@ -4,6 +4,7 @@
   "name": "RGB-to-Alpha",
   "category": "Color",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "header_color": "#B46A35",
   "description": "Computes a scalar alpha/extrusion value from the sum of RGB channels.",
   "uses": "Brightness-driven opacity and scalar extrusion masks.",

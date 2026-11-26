@@ -4,6 +4,7 @@
   "name": "Circular Arc Distance 2D",
   "category": "Geometry",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "description": "Nearest point and distance to a finite circular arc.",
   "uses": "Nearest point and distance to a finite circular arc.",
   "notes": "Angles and modulation are degrees. Center samples select the middle angle; antipodal ties select the starting endpoint. Zero extent has progress zero. Stroke distance is distance to centerline minus half width.",

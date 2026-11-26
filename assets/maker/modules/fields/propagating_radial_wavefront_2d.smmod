@@ -4,6 +4,7 @@
   "name": "Propagating Radial Wavefront 2D",
   "category": "Fields",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "description": "Generates a moving circular boundary with independent region masks.",
   "uses": "Shockwaves, ripples, sonar and turbulent radial effects.",
   "notes": "Time is externally controlled. Positive displacement expands the local radius; negative displacement contracts it. Current Radius includes displacement and is clamped nonnegative. Interior and Exterior are complementary smooth masks; Front Mask is a separate annular mask. Spatially varying displacement makes Signed Front Distance a radial residual rather than an exact SDF.",

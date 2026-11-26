@@ -4,6 +4,7 @@
   "name": "Ray-to-Segment Distance 3D",
   "category": "Geometry",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "description": "Finds closest points on a forward ray and finite segment by comparing feasible interior and boundary solutions.",
   "uses": "Analytical spatial proximity, procedural beams and geometry masks.",
   "notes": "Direction is normalized internally; zero or invalid direction collapses to the origin. Segments shorter than tolerance collapse to their start. Near-parallel configurations below angular tolerance use boundary solutions, which can approximate the minimum. Invalid positions become zero; finite positions bounded to +/-1e12.",

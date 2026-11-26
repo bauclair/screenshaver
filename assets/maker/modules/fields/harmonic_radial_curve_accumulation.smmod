@@ -1,6 +1,7 @@
 {
   "schema_version": 1,
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "terminal": false,
   "id": "screenshaver.fields.harmonic_radial_curve_accumulation",
   "name": "Harmonic Radial Curve Accumulation",

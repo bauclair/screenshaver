@@ -4,6 +4,7 @@
   "name": "Animated Layered Particle Field",
   "category": "Fields",
   "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
   "terminal": false,
   "header_color": "#597D69",
   "description": "Animated, depth-layered field of softly edged circular particles with adjustable density, movement and size.",
