@@ -1,0 +1,133 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.geometry.concave_star_polygon_distance_field_2d",
+  "name": "Concave Star Polygon Distance Field 2D",
+  "category": "Geometry",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Exact polygon boundary distance before offset; offset contours are not guaranteed exact distances.",
+  "uses": "Concave Star Polygon Distance Field 2D",
+  "notes": "Exact polygon boundary distance before offset; offset contours are not guaranteed exact distances.",
+  "header_color": "#527D94",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec2",
+      "default": "vec2(0.0)"
+    },
+    {
+      "id": "size_multiplier",
+      "name": "Size Multiplier",
+      "type": "float",
+      "default": "1.0"
+    },
+    {
+      "id": "time_offset",
+      "name": "Time Offset",
+      "type": "float",
+      "default": "0.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "signed_distance",
+      "name": "Signed Distance",
+      "type": "float"
+    },
+    {
+      "id": "exterior_distance",
+      "name": "Exterior Distance",
+      "type": "float"
+    },
+    {
+      "id": "interior_depth",
+      "name": "Interior Depth",
+      "type": "float"
+    },
+    {
+      "id": "interior_mask",
+      "name": "Interior Mask",
+      "type": "float"
+    },
+    {
+      "id": "soft_mask",
+      "name": "Soft Mask",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "star_points",
+      "name": "Star Points",
+      "type": "float",
+      "default": 5,
+      "min": 3,
+      "max": 32
+    },
+    {
+      "id": "outer_radius",
+      "name": "Outer Radius",
+      "type": "float",
+      "default": 0.5,
+      "min": 0.001,
+      "max": 100
+    },
+    {
+      "id": "inner_radius_ratio",
+      "name": "Inner Radius Ratio",
+      "type": "float",
+      "default": 0.45,
+      "min": 0.01,
+      "max": 1
+    },
+    {
+      "id": "orientation",
+      "name": "Orientation",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "rotation_speed",
+      "name": "Rotation Speed",
+      "type": "float",
+      "default": 0,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "boundary_offset",
+      "name": "Boundary Offset",
+      "type": "float",
+      "default": 0,
+      "min": -1,
+      "max": 1
+    },
+    {
+      "id": "edge_softness",
+      "name": "Edge Softness",
+      "type": "float",
+      "default": 0.005,
+      "min": 0,
+      "max": 1
+    }
+  ],
+  "helpers": "struct MakerB315ConcaveStarPolygonDistanceField2D {float signed_distance;float exterior_distance;float interior_depth;float interior_mask;float soft_mask;};\nMakerB315ConcaveStarPolygonDistanceField2D maker_b315_concave_star_polygon_distance_field_2d(vec2 position,vec2 center,float size_multiplier,float time_offset,float star_points,float outer_radius,float inner_radius_ratio,float orientation,float rotation_speed,float boundary_offset,float edge_softness,float tm){\nvec2 q=clamp(position-center,-1e6,1e6);int n=2*int(clamp(floor(star_points+.5),3.,32.));float r=outer_radius*clamp(abs(size_multiplier),1e-5,100.);float phase=radians(orientation)+rotation_speed*(tm+time_offset);float d=1e20;bool inside=false;for(int i=0;i<64;i++){if(i>=n)break;float a=phase+6.28318530718*float(i)/float(n),b=phase+6.28318530718*float(i+1)/float(n);vec2 u=r*(i%2==0?1.:inner_radius_ratio)*vec2(cos(a),sin(a));vec2 v=r*(i%2==0?inner_radius_ratio:1.)*vec2(cos(b),sin(b));vec2 e=v-u;float h=clamp(dot(q-u,e)/max(dot(e,e),1e-30),0.,1.);d=min(d,length(q-u-h*e));if((u.y>q.y)!=(v.y>q.y)){if(q.x<u.x+(v.x-u.x)*(q.y-u.y)/(v.y-u.y))inside=!inside;}}d=(inside?-d:d)-boundary_offset;float m=d<=0.?1.:0.;return MakerB315ConcaveStarPolygonDistanceField2D(d,max(d,0.),max(-d,0.),m,edge_softness>0.?1.-smoothstep(-edge_softness,edge_softness,d):m);\n}",
+  "glsl_outputs": {
+    "signed_distance": "maker_b315_concave_star_polygon_distance_field_2d({position},{center},{size_multiplier},{time_offset},{star_points},{outer_radius},{inner_radius_ratio},{orientation},{rotation_speed},{boundary_offset},{edge_softness},u_time).signed_distance",
+    "exterior_distance": "maker_b315_concave_star_polygon_distance_field_2d({position},{center},{size_multiplier},{time_offset},{star_points},{outer_radius},{inner_radius_ratio},{orientation},{rotation_speed},{boundary_offset},{edge_softness},u_time).exterior_distance",
+    "interior_depth": "maker_b315_concave_star_polygon_distance_field_2d({position},{center},{size_multiplier},{time_offset},{star_points},{outer_radius},{inner_radius_ratio},{orientation},{rotation_speed},{boundary_offset},{edge_softness},u_time).interior_depth",
+    "interior_mask": "maker_b315_concave_star_polygon_distance_field_2d({position},{center},{size_multiplier},{time_offset},{star_points},{outer_radius},{inner_radius_ratio},{orientation},{rotation_speed},{boundary_offset},{edge_softness},u_time).interior_mask",
+    "soft_mask": "maker_b315_concave_star_polygon_distance_field_2d({position},{center},{size_multiplier},{time_offset},{star_points},{outer_radius},{inner_radius_ratio},{orientation},{rotation_speed},{boundary_offset},{edge_softness},u_time).soft_mask"
+  }
+}

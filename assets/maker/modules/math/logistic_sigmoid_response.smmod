@@ -1,0 +1,68 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.math.logistic_sigmoid_response",
+  "name": "Logistic Sigmoid Response",
+  "category": "Math",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Stable logistic response and derivative with respect to Value.",
+  "uses": "Logistic Sigmoid Response",
+  "notes": "Stable logistic response and derivative with respect to Value.",
+  "header_color": "#527D94",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "value",
+      "name": "Value",
+      "type": "float",
+      "default": "0.0"
+    },
+    {
+      "id": "strength_multiplier",
+      "name": "Strength Multiplier",
+      "type": "float",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "normalized_response",
+      "name": "Normalized Response",
+      "type": "float"
+    },
+    {
+      "id": "signed_response",
+      "name": "Signed Response",
+      "type": "float"
+    },
+    {
+      "id": "response_derivative",
+      "name": "Response Derivative",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "strength",
+      "name": "Strength",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 64
+    },
+    {
+      "id": "midpoint",
+      "name": "Midpoint",
+      "type": "float",
+      "default": 0,
+      "min": -100,
+      "max": 100
+    }
+  ],
+  "helpers": "struct MakerB315LogisticSigmoidResponse {float normalized_response;float signed_response;float response_derivative;};\nMakerB315LogisticSigmoidResponse maker_b315_logistic_sigmoid_response(float value,float strength_multiplier,float strength,float midpoint,float tm){\nfloat k=strength*clamp(strength_multiplier,-100.,100.);float x=k*(value-midpoint);if(isnan(x))x=0.;float e=exp(-abs(x));float y=x>=0.?1./(1.+e):e/(1.+e);return MakerB315LogisticSigmoidResponse(y,2.*y-1.,k*e/((1.+e)*(1.+e)));\n}",
+  "glsl_outputs": {
+    "normalized_response": "maker_b315_logistic_sigmoid_response({value},{strength_multiplier},{strength},{midpoint},u_time).normalized_response",
+    "signed_response": "maker_b315_logistic_sigmoid_response({value},{strength_multiplier},{strength},{midpoint},u_time).signed_response",
+    "response_derivative": "maker_b315_logistic_sigmoid_response({value},{strength_multiplier},{strength},{midpoint},u_time).response_derivative"
+  }
+}

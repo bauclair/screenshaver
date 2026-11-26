@@ -1,0 +1,143 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.orthogonal_product_flare_field_2d",
+  "name": "Orthogonal Product Flare Field 2D",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Product-based perpendicular flares with radial attenuation; rotation speed in radians per second.",
+  "uses": "Orthogonal Product Flare Field 2D",
+  "notes": "Product-based perpendicular flares with radial attenuation; rotation speed in radians per second.",
+  "header_color": "#527D94",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec2",
+      "default": "vec2(0.0)"
+    },
+    {
+      "id": "strength_multiplier",
+      "name": "Strength Multiplier",
+      "type": "float",
+      "default": "1.0"
+    },
+    {
+      "id": "time_offset",
+      "name": "Time Offset",
+      "type": "float",
+      "default": "0.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "combined_flare",
+      "name": "Combined Flare",
+      "type": "float"
+    },
+    {
+      "id": "primary_flare",
+      "name": "Primary Flare",
+      "type": "float"
+    },
+    {
+      "id": "secondary_flare",
+      "name": "Secondary Flare",
+      "type": "float"
+    },
+    {
+      "id": "radial_envelope",
+      "name": "Radial Envelope",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "product_sharpness",
+      "name": "Product Sharpness",
+      "type": "float",
+      "default": 12,
+      "min": 0.01,
+      "max": 1024
+    },
+    {
+      "id": "response_exponent",
+      "name": "Response Exponent",
+      "type": "float",
+      "default": 1,
+      "min": 0.25,
+      "max": 8
+    },
+    {
+      "id": "primary_strength",
+      "name": "Primary Strength",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "secondary_strength",
+      "name": "Secondary Strength",
+      "type": "float",
+      "default": 0.35,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "secondary_angle",
+      "name": "Secondary Angle",
+      "type": "float",
+      "default": 45,
+      "min": 0,
+      "max": 180
+    },
+    {
+      "id": "orientation",
+      "name": "Orientation",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "rotation_speed",
+      "name": "Rotation Speed",
+      "type": "float",
+      "default": 0,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "flare_reach",
+      "name": "Flare Reach",
+      "type": "float",
+      "default": 1,
+      "min": 0.001,
+      "max": 100
+    },
+    {
+      "id": "radial_falloff",
+      "name": "Radial Falloff",
+      "type": "float",
+      "default": 2,
+      "min": 0.1,
+      "max": 16
+    }
+  ],
+  "helpers": "struct MakerB315OrthogonalProductFlareField2D {float combined_flare;float primary_flare;float secondary_flare;float radial_envelope;};\nMakerB315OrthogonalProductFlareField2D maker_b315_orthogonal_product_flare_field_2d(vec2 position,vec2 center,float strength_multiplier,float time_offset,float product_sharpness,float response_exponent,float primary_strength,float secondary_strength,float secondary_angle,float orientation,float rotation_speed,float flare_reach,float radial_falloff,float tm){\nvec2 q=clamp(position-center,-1e6,1e6); if(any(isnan(q)))q=vec2(0);float a=radians(orientation)+rotation_speed*(tm+time_offset);q=mat2(cos(a),sin(a),-sin(a),cos(a))*q;float b=radians(secondary_angle);vec2 r=mat2(cos(b),sin(b),-sin(b),cos(b))*q;float e=exp(-pow(min(length(q)/flare_reach,100.0),radial_falloff));float g=clamp(strength_multiplier,0.,100.);float x=primary_strength*g*e*pow(max(0.,1.-product_sharpness*abs(q.x*q.y)),response_exponent);float y=secondary_strength*g*e*pow(max(0.,1.-product_sharpness*abs(r.x*r.y)),response_exponent);return MakerB315OrthogonalProductFlareField2D(x+y,x,y,e);\n}",
+  "glsl_outputs": {
+    "combined_flare": "maker_b315_orthogonal_product_flare_field_2d({position},{center},{strength_multiplier},{time_offset},{product_sharpness},{response_exponent},{primary_strength},{secondary_strength},{secondary_angle},{orientation},{rotation_speed},{flare_reach},{radial_falloff},u_time).combined_flare",
+    "primary_flare": "maker_b315_orthogonal_product_flare_field_2d({position},{center},{strength_multiplier},{time_offset},{product_sharpness},{response_exponent},{primary_strength},{secondary_strength},{secondary_angle},{orientation},{rotation_speed},{flare_reach},{radial_falloff},u_time).primary_flare",
+    "secondary_flare": "maker_b315_orthogonal_product_flare_field_2d({position},{center},{strength_multiplier},{time_offset},{product_sharpness},{response_exponent},{primary_strength},{secondary_strength},{secondary_angle},{orientation},{rotation_speed},{flare_reach},{radial_falloff},u_time).secondary_flare",
+    "radial_envelope": "maker_b315_orthogonal_product_flare_field_2d({position},{center},{strength_multiplier},{time_offset},{product_sharpness},{response_exponent},{primary_strength},{secondary_strength},{secondary_angle},{orientation},{rotation_speed},{flare_reach},{radial_falloff},u_time).radial_envelope"
+  }
+}

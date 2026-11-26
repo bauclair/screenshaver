@@ -1,0 +1,117 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.compositing.alpha_aware_rgb_compositor",
+  "name": "Alpha-Aware RGB Compositor",
+  "category": "Compositing",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Porter-Duff over composition; opacity gain rescales premultiplied inputs consistently.",
+  "uses": "Alpha-Aware RGB Compositor",
+  "notes": "Porter-Duff over composition; opacity gain rescales premultiplied inputs consistently.",
+  "header_color": "#527D94",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "front_color",
+      "name": "Front Color",
+      "type": "vec3",
+      "default": "vec3(1.0)"
+    },
+    {
+      "id": "front_opacity",
+      "name": "Front Opacity",
+      "type": "float",
+      "default": "1.0"
+    },
+    {
+      "id": "back_color",
+      "name": "Back Color",
+      "type": "vec3",
+      "default": "vec3(0.0)"
+    },
+    {
+      "id": "back_opacity",
+      "name": "Back Opacity",
+      "type": "float",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "straight_rgb",
+      "name": "Straight RGB",
+      "type": "vec3"
+    },
+    {
+      "id": "premultiplied_rgb",
+      "name": "Premultiplied RGB",
+      "type": "vec3"
+    },
+    {
+      "id": "combined_opacity",
+      "name": "Combined Opacity",
+      "type": "float"
+    },
+    {
+      "id": "transmittance",
+      "name": "Transmittance",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "composition_order",
+      "name": "Composition Order",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Front Over Back",
+        "Back Over Front"
+      ]
+    },
+    {
+      "id": "input_color_representation",
+      "name": "Input Color Representation",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Straight RGB",
+        "Premultiplied RGB"
+      ]
+    },
+    {
+      "id": "front_opacity_gain",
+      "name": "Front Opacity Gain",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "back_opacity_gain",
+      "name": "Back Opacity Gain",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "color_range",
+      "name": "Color Range",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Unrestricted",
+        "Nonnegative",
+        "Clamped"
+      ]
+    }
+  ],
+  "helpers": "struct MakerB315AlphaAwareRgbCompositor {vec3 straight_rgb;vec3 premultiplied_rgb;float combined_opacity;float transmittance;};\nMakerB315AlphaAwareRgbCompositor maker_b315_alpha_aware_rgb_compositor(vec3 front_color,float front_opacity,vec3 back_color,float back_opacity,float composition_order,float input_color_representation,float front_opacity_gain,float back_opacity_gain,float color_range,float tm){\nfloat af=clamp(front_opacity,0.,1.),ab=clamp(back_opacity,0.,1.);vec3 cf=front_color,cb=back_color;if(input_color_representation>.5){cf=af>1e-8?cf/af:vec3(0);cb=ab>1e-8?cb/ab:vec3(0);}af=clamp(af*front_opacity_gain,0.,1.);ab=clamp(ab*back_opacity_gain,0.,1.);float a=af+ab*(1.-af);vec3 p=composition_order<.5?cf*af+cb*ab*(1.-af):cb*ab+cf*af*(1.-ab);vec3 c=a>1e-8?p/a:vec3(0);if(color_range>1.5)c=clamp(c,0.,1.);else if(color_range>.5)c=max(c,vec3(0));return MakerB315AlphaAwareRgbCompositor(c,c*a,a,1.-a);\n}",
+  "glsl_outputs": {
+    "straight_rgb": "maker_b315_alpha_aware_rgb_compositor({front_color},{front_opacity},{back_color},{back_opacity},{composition_order},{input_color_representation},{front_opacity_gain},{back_opacity_gain},{color_range},u_time).straight_rgb",
+    "premultiplied_rgb": "maker_b315_alpha_aware_rgb_compositor({front_color},{front_opacity},{back_color},{back_opacity},{composition_order},{input_color_representation},{front_opacity_gain},{back_opacity_gain},{color_range},u_time).premultiplied_rgb",
+    "combined_opacity": "maker_b315_alpha_aware_rgb_compositor({front_color},{front_opacity},{back_color},{back_opacity},{composition_order},{input_color_representation},{front_opacity_gain},{back_opacity_gain},{color_range},u_time).combined_opacity",
+    "transmittance": "maker_b315_alpha_aware_rgb_compositor({front_color},{front_opacity},{back_color},{back_opacity},{composition_order},{input_color_representation},{front_opacity_gain},{back_opacity_gain},{color_range},u_time).transmittance"
+  }
+}

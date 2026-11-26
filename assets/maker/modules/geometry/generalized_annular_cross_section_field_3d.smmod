@@ -1,0 +1,132 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.geometry.generalized_annular_cross_section_field_3d",
+  "name": "Generalized Annular Cross-Section Field 3D",
+  "category": "Geometry",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Conservative distance from a Lipschitz bound on the scaled power norm; not exact Euclidean distance. Use Conservative Distance for traversal.",
+  "uses": "Generalized Annular Cross-Section Field 3D",
+  "notes": "Conservative distance from a Lipschitz bound on the scaled power norm; not exact Euclidean distance. Use Conservative Distance for traversal.",
+  "header_color": "#527D94",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "default": "vec3(maker_uv,0.0)",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec3",
+      "default": "vec3(0.0)"
+    },
+    {
+      "id": "size_multiplier",
+      "name": "Size Multiplier",
+      "type": "float",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "implicit_field",
+      "name": "Implicit Field",
+      "type": "float"
+    },
+    {
+      "id": "conservative_distance",
+      "name": "Conservative Distance",
+      "type": "float"
+    },
+    {
+      "id": "radial_distance",
+      "name": "Radial Distance",
+      "type": "float"
+    },
+    {
+      "id": "axial_distance",
+      "name": "Axial Distance",
+      "type": "float"
+    },
+    {
+      "id": "interior_mask",
+      "name": "Interior Mask",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "major_radius",
+      "name": "Major Radius",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 100
+    },
+    {
+      "id": "radial_half_width",
+      "name": "Radial Half Width",
+      "type": "float",
+      "default": 0.3,
+      "min": 0.001,
+      "max": 100
+    },
+    {
+      "id": "axial_half_height",
+      "name": "Axial Half Height",
+      "type": "float",
+      "default": 0.2,
+      "min": 0.001,
+      "max": 100
+    },
+    {
+      "id": "cross_section_exponent",
+      "name": "Cross-Section Exponent",
+      "type": "float",
+      "default": 4,
+      "min": 1,
+      "max": 16
+    },
+    {
+      "id": "axial_clipping",
+      "name": "Axial Clipping",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Off",
+        "On"
+      ]
+    },
+    {
+      "id": "clipping_half_height",
+      "name": "Clipping Half Height",
+      "type": "float",
+      "default": 0.2,
+      "min": 0.001,
+      "max": 100
+    },
+    {
+      "id": "rotation_axis",
+      "name": "Rotation Axis",
+      "type": "choice",
+      "default": 1,
+      "options": [
+        "X",
+        "Y",
+        "Z"
+      ]
+    }
+  ],
+  "helpers": "struct MakerB315GeneralizedAnnularCrossSectionField3D {float implicit_field;float conservative_distance;float radial_distance;float axial_distance;float interior_mask;};\nMakerB315GeneralizedAnnularCrossSectionField3D maker_b315_generalized_annular_cross_section_field_3d(vec3 position,vec3 center,float size_multiplier,float major_radius,float radial_half_width,float axial_half_height,float cross_section_exponent,float axial_clipping,float clipping_half_height,float rotation_axis,float tm){\nvec3 q=clamp(position-center,-1e6,1e6);if(rotation_axis<.5)q=q.yxz;else if(rotation_axis>1.5)q=q.xzy;float s=clamp(abs(size_multiplier),1e-5,100.);float a=radial_half_width*s,b=axial_half_height*s;float r=length(q.xz)-major_radius*s,y=q.y;vec2 v=abs(vec2(r/a,y/b));float m=max(v.x,v.y);float p=cross_section_exponent;float norm=m>0.?m*pow(pow(v.x/m,p)+pow(v.y/m,p),1./p):0.;float field=norm-1.;float bound=min(a,b)/pow(2.,max(0.,1./p-.5));float d=field*bound;if(axial_clipping>.5){float clip=abs(y)-clipping_half_height*s;d=max(d,clip);field=max(field,clip/bound);}return MakerB315GeneralizedAnnularCrossSectionField3D(field,d,r,y,d<=0.?1.:0.);\n}",
+  "glsl_outputs": {
+    "implicit_field": "maker_b315_generalized_annular_cross_section_field_3d({position},{center},{size_multiplier},{major_radius},{radial_half_width},{axial_half_height},{cross_section_exponent},{axial_clipping},{clipping_half_height},{rotation_axis},u_time).implicit_field",
+    "conservative_distance": "maker_b315_generalized_annular_cross_section_field_3d({position},{center},{size_multiplier},{major_radius},{radial_half_width},{axial_half_height},{cross_section_exponent},{axial_clipping},{clipping_half_height},{rotation_axis},u_time).conservative_distance",
+    "radial_distance": "maker_b315_generalized_annular_cross_section_field_3d({position},{center},{size_multiplier},{major_radius},{radial_half_width},{axial_half_height},{cross_section_exponent},{axial_clipping},{clipping_half_height},{rotation_axis},u_time).radial_distance",
+    "axial_distance": "maker_b315_generalized_annular_cross_section_field_3d({position},{center},{size_multiplier},{major_radius},{radial_half_width},{axial_half_height},{cross_section_exponent},{axial_clipping},{clipping_half_height},{rotation_axis},u_time).axial_distance",
+    "interior_mask": "maker_b315_generalized_annular_cross_section_field_3d({position},{center},{size_multiplier},{major_radius},{radial_half_width},{axial_half_height},{cross_section_exponent},{axial_clipping},{clipping_half_height},{rotation_axis},u_time).interior_mask"
+  }
+}

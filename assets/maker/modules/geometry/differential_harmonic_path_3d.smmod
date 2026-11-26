@@ -1,0 +1,151 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.geometry.differential_harmonic_path_3d",
+  "name": "Differential Harmonic Path 3D",
+  "category": "Geometry",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Analytical path derivatives with respect to path parameter, not time.",
+  "uses": "Differential Harmonic Path 3D",
+  "notes": "Analytical path derivatives with respect to path parameter, not time.",
+  "header_color": "#527D94",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "path_parameter",
+      "name": "Path Parameter",
+      "type": "float",
+      "default": "0.0"
+    },
+    {
+      "id": "origin",
+      "name": "Origin",
+      "type": "vec3",
+      "default": "vec3(0.0)"
+    },
+    {
+      "id": "time_offset",
+      "name": "Time Offset",
+      "type": "float",
+      "default": "0.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3"
+    },
+    {
+      "id": "first_derivative",
+      "name": "First Derivative",
+      "type": "vec3"
+    },
+    {
+      "id": "second_derivative",
+      "name": "Second Derivative",
+      "type": "vec3"
+    },
+    {
+      "id": "unit_tangent",
+      "name": "Unit Tangent",
+      "type": "vec3"
+    },
+    {
+      "id": "curvature",
+      "name": "Curvature",
+      "type": "float"
+    },
+    {
+      "id": "parameter_speed",
+      "name": "Parameter Speed",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "horizontal_amplitude",
+      "name": "Horizontal Amplitude",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 100
+    },
+    {
+      "id": "vertical_amplitude",
+      "name": "Vertical Amplitude",
+      "type": "float",
+      "default": 0.7,
+      "min": 0,
+      "max": 100
+    },
+    {
+      "id": "horizontal_frequency",
+      "name": "Horizontal Frequency",
+      "type": "float",
+      "default": 0.3,
+      "min": 0,
+      "max": 32
+    },
+    {
+      "id": "vertical_frequency",
+      "name": "Vertical Frequency",
+      "type": "float",
+      "default": 0.4,
+      "min": 0,
+      "max": 32
+    },
+    {
+      "id": "horizontal_phase",
+      "name": "Horizontal Phase",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "vertical_phase",
+      "name": "Vertical Phase",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "longitudinal_scale",
+      "name": "Longitudinal Scale",
+      "type": "float",
+      "default": 1,
+      "min": 0.001,
+      "max": 100
+    },
+    {
+      "id": "animation_speed",
+      "name": "Animation Speed",
+      "type": "float",
+      "default": 0,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "longitudinal_axis",
+      "name": "Longitudinal Axis",
+      "type": "choice",
+      "default": 2,
+      "options": [
+        "X",
+        "Y",
+        "Z"
+      ]
+    }
+  ],
+  "helpers": "struct MakerB315DifferentialHarmonicPath3D {vec3 position;vec3 first_derivative;vec3 second_derivative;vec3 unit_tangent;float curvature;float parameter_speed;};\nMakerB315DifferentialHarmonicPath3D maker_b315_differential_harmonic_path_3d(float path_parameter,vec3 origin,float time_offset,float horizontal_amplitude,float vertical_amplitude,float horizontal_frequency,float vertical_frequency,float horizontal_phase,float vertical_phase,float longitudinal_scale,float animation_speed,float longitudinal_axis,float tm){\nfloat s=clamp(path_parameter,-1e6,1e6);float t=animation_speed*(tm+time_offset);float a=horizontal_frequency*s+radians(horizontal_phase)+t,b=vertical_frequency*s+radians(vertical_phase)+t;vec3 p=vec3(horizontal_amplitude*sin(a),vertical_amplitude*sin(b),longitudinal_scale*s);vec3 d=vec3(horizontal_amplitude*horizontal_frequency*cos(a),vertical_amplitude*vertical_frequency*cos(b),longitudinal_scale);vec3 dd=vec3(-horizontal_amplitude*horizontal_frequency*horizontal_frequency*sin(a),-vertical_amplitude*vertical_frequency*vertical_frequency*sin(b),0.);if(longitudinal_axis<.5){p=p.zxy;d=d.zxy;dd=dd.zxy;}else if(longitudinal_axis<1.5){p=p.yzx;d=d.yzx;dd=dd.yzx;}float speed=length(d);return MakerB315DifferentialHarmonicPath3D(p+origin,d,dd,d/max(speed,1e-8),length(cross(d,dd))/max(speed*speed*speed,1e-12),speed);\n}",
+  "glsl_outputs": {
+    "position": "maker_b315_differential_harmonic_path_3d({path_parameter},{origin},{time_offset},{horizontal_amplitude},{vertical_amplitude},{horizontal_frequency},{vertical_frequency},{horizontal_phase},{vertical_phase},{longitudinal_scale},{animation_speed},{longitudinal_axis},u_time).position",
+    "first_derivative": "maker_b315_differential_harmonic_path_3d({path_parameter},{origin},{time_offset},{horizontal_amplitude},{vertical_amplitude},{horizontal_frequency},{vertical_frequency},{horizontal_phase},{vertical_phase},{longitudinal_scale},{animation_speed},{longitudinal_axis},u_time).first_derivative",
+    "second_derivative": "maker_b315_differential_harmonic_path_3d({path_parameter},{origin},{time_offset},{horizontal_amplitude},{vertical_amplitude},{horizontal_frequency},{vertical_frequency},{horizontal_phase},{vertical_phase},{longitudinal_scale},{animation_speed},{longitudinal_axis},u_time).second_derivative",
+    "unit_tangent": "maker_b315_differential_harmonic_path_3d({path_parameter},{origin},{time_offset},{horizontal_amplitude},{vertical_amplitude},{horizontal_frequency},{vertical_frequency},{horizontal_phase},{vertical_phase},{longitudinal_scale},{animation_speed},{longitudinal_axis},u_time).unit_tangent",
+    "curvature": "maker_b315_differential_harmonic_path_3d({path_parameter},{origin},{time_offset},{horizontal_amplitude},{vertical_amplitude},{horizontal_frequency},{vertical_frequency},{horizontal_phase},{vertical_phase},{longitudinal_scale},{animation_speed},{longitudinal_axis},u_time).curvature",
+    "parameter_speed": "maker_b315_differential_harmonic_path_3d({path_parameter},{origin},{time_offset},{horizontal_amplitude},{vertical_amplitude},{horizontal_frequency},{vertical_frequency},{horizontal_phase},{vertical_phase},{longitudinal_scale},{animation_speed},{longitudinal_axis},u_time).parameter_speed"
+  }
+}
