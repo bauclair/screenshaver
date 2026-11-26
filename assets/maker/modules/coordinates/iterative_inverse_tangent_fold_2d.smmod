@@ -1,0 +1,142 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.iterative_inverse_tangent_fold_2d",
+  "name": "Iterative Inverse Tangent Fold 2D",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Bounded iterative inverse tangent compression with optional periodic folding and rotation.",
+  "uses": "Bounded iterative inverse tangent compression with optional periodic folding and rotation.",
+  "notes": "Rotation and increment in degrees; speed in radians per second. Radius statistics include completed iterations only. Folded Position is centered on Center.",
+  "header_color": "#527D94",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "semantic_role": "position2d",
+      "default": "maker_uv"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec2",
+      "default": "vec2(0.0)"
+    },
+    {
+      "id": "time_offset",
+      "name": "Time Offset",
+      "type": "float",
+      "semantic_role": "time",
+      "default": "0.0"
+    },
+    {
+      "id": "strength_multiplier",
+      "name": "Strength Multiplier",
+      "type": "float",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "folded",
+      "name": "Folded Position",
+      "type": "vec2",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "final_radius",
+      "name": "Final Radius",
+      "type": "float"
+    },
+    {
+      "id": "minimum_radius",
+      "name": "Minimum Radius",
+      "type": "float"
+    },
+    {
+      "id": "mean_radius",
+      "name": "Mean Radius",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "iterations",
+      "name": "Iterations",
+      "type": "float",
+      "default": 4,
+      "min": 1,
+      "max": 16
+    },
+    {
+      "id": "strength",
+      "name": "Compression Strength",
+      "type": "float",
+      "default": 1,
+      "min": 0.01,
+      "max": 16
+    },
+    {
+      "id": "scale",
+      "name": "Coordinate Scale",
+      "type": "float",
+      "default": 1,
+      "min": 0.1,
+      "max": 8
+    },
+    {
+      "id": "period",
+      "name": "Fold Period",
+      "type": "float",
+      "default": 1,
+      "min": 0.1,
+      "max": 10
+    },
+    {
+      "id": "rotation",
+      "name": "Rotation",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "speed",
+      "name": "Rotation Speed",
+      "type": "float",
+      "default": 0,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "increment",
+      "name": "Rotation Increment",
+      "type": "float",
+      "default": 0,
+      "min": -180,
+      "max": 180
+    },
+    {
+      "id": "mode",
+      "name": "Fold Mode",
+      "type": "choice",
+      "default": 1,
+      "min": 0,
+      "max": 2,
+      "options": [
+        "None",
+        "Periodic",
+        "Mirrored"
+      ]
+    }
+  ],
+  "helpers": "struct MakerITF { vec2 folded; float final_radius; float minimum_radius; float mean_radius; };\nMakerITF maker_itf_eval(vec2 pos,vec2 center,float toff,float sm,float iterations,float strength,float scale,float period,float rotation,float speed,float increment,float mode){\n if(any(isnan(pos))||any(isinf(pos))||any(isnan(center))||any(isinf(center))||isnan(toff)||isinf(toff)||isnan(sm)||isinf(sm))return MakerITF(vec2(0.0),0.0,0.0,0.0);\n center=clamp(center,vec2(-1e6),vec2(1e6));\n vec2 q=clamp(pos,vec2(-1e6),vec2(1e6))-center;\n float k=strength*clamp(sm,0.0,16.0), a=radians(rotation)+speed*clamp(u_time+toff,-1e5,1e5);\n int n=int(clamp(floor(iterations+0.5),1.0,16.0));\n float mn=1e20,total=0.0,r=0.0;\n for(int i=0;i<16;i++){\n  if(i>=n)break;\n  q=atan(k*q)*scale;\n  if(mode>=0.5 && mode<1.5)q=mod(q+0.5*period,period)-0.5*period;\n  else if(mode>=1.5)q=0.5*period-abs(mod(q+0.5*period,2.0*period)-period);\n  float angle=a+float(i)*radians(increment), cs=cos(angle), sn=sin(angle);\n  q=vec2(cs*q.x-sn*q.y,sn*q.x+cs*q.y);\n  r=length(q); mn=min(mn,r); total+=r;\n }\n return MakerITF(center+q,r,mn,total/float(n));\n}",
+  "glsl_outputs": {
+    "folded": "maker_itf_eval({position},{center},{time_offset},{strength_multiplier},{iterations},{strength},{scale},{period},{rotation},{speed},{increment},{mode}).folded",
+    "final_radius": "maker_itf_eval({position},{center},{time_offset},{strength_multiplier},{iterations},{strength},{scale},{period},{rotation},{speed},{increment},{mode}).final_radius",
+    "minimum_radius": "maker_itf_eval({position},{center},{time_offset},{strength_multiplier},{iterations},{strength},{scale},{period},{rotation},{speed},{increment},{mode}).minimum_radius",
+    "mean_radius": "maker_itf_eval({position},{center},{time_offset},{strength_multiplier},{iterations},{strength},{scale},{period},{rotation},{speed},{increment},{mode}).mean_radius"
+  }
+}

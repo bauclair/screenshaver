@@ -1,0 +1,145 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.depth_dependent_tapered_mask_2d",
+  "name": "Depth-Dependent Tapered Mask 2D",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Directional mask with longitudinally varying transverse width.",
+  "uses": "Directional mask with longitudinally varying transverse width.",
+  "notes": "Orientation zero points along positive Y; angle modulation is radians. Boundary Response is signed transverse excess, not Euclidean distance. Forward/backward modes hard-gate the longitudinal region; bidirectional uses absolute longitudinal distance.",
+  "header_color": "#348F8B",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "semantic_role": "position2d",
+      "default": "maker_uv"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec2",
+      "default": "vec2(0.0)"
+    },
+    {
+      "id": "width_multiplier",
+      "name": "Width Multiplier",
+      "type": "float",
+      "default": "1.0"
+    },
+    {
+      "id": "angle_modulation",
+      "name": "Angle Modulation",
+      "type": "float",
+      "semantic_role": "angle",
+      "default": "0.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "mask",
+      "name": "Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    },
+    {
+      "id": "boundary",
+      "name": "Boundary Response",
+      "type": "float"
+    },
+    {
+      "id": "width",
+      "name": "Local Half-Width",
+      "type": "float"
+    },
+    {
+      "id": "longitudinal",
+      "name": "Longitudinal Distance",
+      "type": "float"
+    },
+    {
+      "id": "transverse",
+      "name": "Transverse Distance",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "initial_width",
+      "name": "Initial Half-Width",
+      "type": "float",
+      "default": 0.1,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "taper",
+      "name": "Taper Rate",
+      "type": "float",
+      "default": 0.5,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "max_width",
+      "name": "Maximum Half-Width",
+      "type": "float",
+      "default": 10,
+      "min": 0.001,
+      "max": 100
+    },
+    {
+      "id": "softness",
+      "name": "Edge Softness",
+      "type": "float",
+      "default": 0.05,
+      "min": 0,
+      "max": 2
+    },
+    {
+      "id": "orientation",
+      "name": "Orientation",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "extension",
+      "name": "Extension Mode",
+      "type": "choice",
+      "default": 0,
+      "min": 0,
+      "max": 2,
+      "options": [
+        "Forward",
+        "Backward",
+        "Bidirectional"
+      ]
+    },
+    {
+      "id": "response",
+      "name": "Edge Response",
+      "type": "choice",
+      "default": 1,
+      "min": 0,
+      "max": 2,
+      "options": [
+        "Hard",
+        "Smooth",
+        "Exponential"
+      ]
+    }
+  ],
+  "helpers": "struct MakerDTM { float mask; float boundary; float width; float longitudinal; float transverse; };\nMakerDTM maker_dtm_eval(vec2 pos,vec2 center,float wm,float am,float initial,float taper,float maxw,float soft,float angle,float extension,float response){\n if(any(isnan(pos))||any(isinf(pos))||any(isnan(center))||any(isinf(center))||isnan(wm)||isinf(wm)||isnan(am)||isinf(am))return MakerDTM(0.0,0.0,0.0,0.0,0.0);\n vec2 q=clamp(pos,vec2(-1e6),vec2(1e6))-clamp(center,vec2(-1e6),vec2(1e6));\n float a=radians(angle)+clamp(am,-1e5,1e5),c=cos(a),s=sin(a);\n float longitudinal=dot(q,vec2(-s,c)), transverse=abs(dot(q,vec2(c,s)));\n float z=extension<0.5?longitudinal:(extension<1.5?-longitudinal:abs(longitudinal));\n float w=clamp(max(0.0,initial+taper*max(z,0.0))*clamp(wm,0.0,100.0),0.0,maxw);\n float d=transverse-w, m=0.0;\n if(z>=0.0 && w>0.0){\n  if(response<0.5||soft<=0.0)m=d<=0.0?1.0:0.0;\n  else if(response<1.5)m=1.0-smoothstep(0.0,soft,max(d,0.0));\n  else m=exp(-min(max(d,0.0)/max(soft,1e-6),80.0));\n }\n return MakerDTM(m,d,w,longitudinal,transverse);\n}",
+  "glsl_outputs": {
+    "mask": "maker_dtm_eval({position},{center},{width_multiplier},{angle_modulation},{initial_width},{taper},{max_width},{softness},{orientation},{extension},{response}).mask",
+    "boundary": "maker_dtm_eval({position},{center},{width_multiplier},{angle_modulation},{initial_width},{taper},{max_width},{softness},{orientation},{extension},{response}).boundary",
+    "width": "maker_dtm_eval({position},{center},{width_multiplier},{angle_modulation},{initial_width},{taper},{max_width},{softness},{orientation},{extension},{response}).width",
+    "longitudinal": "maker_dtm_eval({position},{center},{width_multiplier},{angle_modulation},{initial_width},{taper},{max_width},{softness},{orientation},{extension},{response}).longitudinal",
+    "transverse": "maker_dtm_eval({position},{center},{width_multiplier},{angle_modulation},{initial_width},{taper},{max_width},{softness},{orientation},{extension},{response}).transverse"
+  }
+}

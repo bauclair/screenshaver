@@ -1,0 +1,143 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.perspective_plane_coordinates_2d",
+  "name": "Perspective Plane Coordinates 2D",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Analytical perspective mapping of a plane with bounded depth and horizon visibility.",
+  "uses": "Analytical perspective mapping of a plane with bounded depth and horizon visibility.",
+  "notes": "Positive local Y is above horizon. Both mode mirrors depth across horizon. Offset applied after projection; depth is unscaled axial depth. Invalid inputs return zero; visibility fades near horizon and is zero beyond maximum depth.",
+  "header_color": "#527D94",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "semantic_role": "position2d",
+      "default": "maker_uv"
+    },
+    {
+      "id": "offset",
+      "name": "Coordinate Offset",
+      "type": "vec2",
+      "semantic_role": "offset2d",
+      "default": "vec2(0.0)"
+    },
+    {
+      "id": "horizon_offset",
+      "name": "Horizon Offset",
+      "type": "float",
+      "default": "0.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "projected",
+      "name": "Projected Coordinates",
+      "type": "vec2",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "depth",
+      "name": "Depth",
+      "type": "float"
+    },
+    {
+      "id": "horizon_distance",
+      "name": "Horizon Distance",
+      "type": "float"
+    },
+    {
+      "id": "visibility",
+      "name": "Visibility Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    },
+    {
+      "id": "projection_scale",
+      "name": "Projection Scale",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "plane_distance",
+      "name": "Plane Distance",
+      "type": "float",
+      "default": 1,
+      "min": 0.001,
+      "max": 100
+    },
+    {
+      "id": "focal",
+      "name": "Focal Length",
+      "type": "float",
+      "default": 1,
+      "min": 0.01,
+      "max": 10
+    },
+    {
+      "id": "horizon",
+      "name": "Horizon Position",
+      "type": "float",
+      "default": 0,
+      "min": -2,
+      "max": 2
+    },
+    {
+      "id": "scale",
+      "name": "Projection Scale",
+      "type": "float",
+      "default": 1,
+      "min": 0.001,
+      "max": 100
+    },
+    {
+      "id": "orientation",
+      "name": "Horizon Orientation",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "softness",
+      "name": "Horizon Softness",
+      "type": "float",
+      "default": 0.01,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "max_depth",
+      "name": "Maximum Depth",
+      "type": "float",
+      "default": 1000,
+      "min": 1,
+      "max": 10000
+    },
+    {
+      "id": "region",
+      "name": "Projection Region",
+      "type": "choice",
+      "default": 0,
+      "min": 0,
+      "max": 2,
+      "options": [
+        "Below",
+        "Above",
+        "Both"
+      ]
+    }
+  ],
+  "helpers": "struct MakerPPC { vec2 projected; float depth; float horizon_distance; float visibility; float projection_scale; };\nMakerPPC maker_ppc_eval(vec2 pos,vec2 off,float ho,float h,float f,float horizon,float scale,float angle,float soft,float maxd,float region){\n if(any(isnan(pos))||any(isinf(pos))||any(isnan(off))||any(isinf(off))||isnan(ho)||isinf(ho))return MakerPPC(vec2(0),0.0,0.0,0.0,0.0);\n pos=clamp(pos,vec2(-1e6),vec2(1e6)); off=clamp(off,vec2(-1e6),vec2(1e6));\n float a=radians(angle),c=cos(a),s=sin(a); vec2 q=vec2(dot(pos,vec2(c,s)),dot(pos,vec2(-s,c)));\n float y=q.y-horizon-clamp(ho,-1e6,1e6), d=abs(y), floor_d=h*f/maxd;\n float factor=h/max(d,floor_d), depth=f*factor;\n bool valid=d>=floor_d && (region>=1.5 || (region<0.5 ? y<0.0 : y>0.0));\n float vis=valid?(soft>0.0?smoothstep(0.0,soft,d):1.0):0.0;\n return MakerPPC(vec2(q.x*factor,depth)*scale+off,depth,y,vis,factor*scale);\n}",
+  "glsl_outputs": {
+    "projected": "maker_ppc_eval({position},{offset},{horizon_offset},{plane_distance},{focal},{horizon},{scale},{orientation},{softness},{max_depth},{region}).projected",
+    "depth": "maker_ppc_eval({position},{offset},{horizon_offset},{plane_distance},{focal},{horizon},{scale},{orientation},{softness},{max_depth},{region}).depth",
+    "horizon_distance": "maker_ppc_eval({position},{offset},{horizon_offset},{plane_distance},{focal},{horizon},{scale},{orientation},{softness},{max_depth},{region}).horizon_distance",
+    "visibility": "maker_ppc_eval({position},{offset},{horizon_offset},{plane_distance},{focal},{horizon},{scale},{orientation},{softness},{max_depth},{region}).visibility",
+    "projection_scale": "maker_ppc_eval({position},{offset},{horizon_offset},{plane_distance},{focal},{horizon},{scale},{orientation},{softness},{max_depth},{region}).projection_scale"
+  }
+}

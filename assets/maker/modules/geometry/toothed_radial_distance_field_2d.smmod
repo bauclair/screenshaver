@@ -1,0 +1,162 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.geometry.toothed_radial_distance_field_2d",
+  "name": "Toothed Radial Distance Field 2D",
+  "category": "Geometry",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Periodic toothed radial geometry with analytical first-order distance correction.",
+  "uses": "Periodic toothed radial geometry with analytical first-order distance correction.",
+  "notes": "Negative inside. Raw Radial Field includes ring boundaries. Tooth Profile is normalized to 0\u20131. Radius multiplier scales all radii and tooth height; angle modulation is radians. Corrected distance is approximate, not an exact SDF.",
+  "header_color": "#927044",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "semantic_role": "position2d",
+      "default": "maker_uv"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec2",
+      "default": "vec2(0.0)"
+    },
+    {
+      "id": "radius_multiplier",
+      "name": "Radius Multiplier",
+      "type": "float",
+      "default": "1.0"
+    },
+    {
+      "id": "angle_modulation",
+      "name": "Angle Modulation",
+      "type": "float",
+      "semantic_role": "angle",
+      "default": "0.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "distance",
+      "name": "Distance Estimate",
+      "type": "float",
+      "semantic_role": "distance"
+    },
+    {
+      "id": "raw",
+      "name": "Raw Radial Field",
+      "type": "float",
+      "semantic_role": "distance"
+    },
+    {
+      "id": "mask",
+      "name": "Interior Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    },
+    {
+      "id": "profile",
+      "name": "Tooth Profile",
+      "type": "float"
+    },
+    {
+      "id": "radius",
+      "name": "Local Radius",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "nominal",
+      "name": "Nominal Radius",
+      "type": "float",
+      "default": 0.5,
+      "min": 0.001,
+      "max": 100
+    },
+    {
+      "id": "teeth",
+      "name": "Tooth Count",
+      "type": "float",
+      "default": 16,
+      "min": 3,
+      "max": 128
+    },
+    {
+      "id": "height",
+      "name": "Tooth Height",
+      "type": "float",
+      "default": 0.1,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "sharpness",
+      "name": "Tooth Sharpness",
+      "type": "float",
+      "default": 4,
+      "min": 0.1,
+      "max": 16
+    },
+    {
+      "id": "border",
+      "name": "Border Radius",
+      "type": "float",
+      "default": 0.3,
+      "min": 0.001,
+      "max": 100
+    },
+    {
+      "id": "orientation",
+      "name": "Orientation",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "softness",
+      "name": "Edge Softness",
+      "type": "float",
+      "default": 0.01,
+      "min": 0,
+      "max": 2
+    },
+    {
+      "id": "mode",
+      "name": "Geometry Mode",
+      "type": "choice",
+      "default": 0,
+      "min": 0,
+      "max": 2,
+      "options": [
+        "External Ring",
+        "Internal Ring",
+        "Solid"
+      ]
+    },
+    {
+      "id": "correction",
+      "name": "Distance Correction",
+      "type": "choice",
+      "default": 1,
+      "min": 0,
+      "max": 1,
+      "options": [
+        "Raw",
+        "Analytical"
+      ]
+    }
+  ],
+  "helpers": "struct MakerTRD { float distance; float raw; float mask; float profile; float radius; };\nMakerTRD maker_trd_eval(vec2 pos,vec2 center,float rm,float am,float nominal,float teeth,float height,float sharpness,float border,float orientation,float softness,float mode,float correction){\n if(any(isnan(pos))||any(isinf(pos))||any(isnan(center))||any(isinf(center))||isnan(rm)||isinf(rm)||isnan(am)||isinf(am))return MakerTRD(0.0,0.0,0.0,0.0,0.0);\n vec2 q=clamp(pos,vec2(-1e6),vec2(1e6))-clamp(center,vec2(-1e6),vec2(1e6));\n float scale=clamp(rm,0.0001,100.0), base=nominal*scale;\n float halfh=min(0.5*height*scale,0.9*base), r=length(q);\n float theta=r>1e-12?atan(q.y,q.x):0.0;\n float n=clamp(floor(teeth+0.5),3.0,128.0);\n float phase=n*(theta-radians(orientation)-mod(am,6.28318530718));\n float norm=tanh(sharpness), wave=tanh(sharpness*cos(phase));\n float radius=base+halfh*wave/norm;\n float deriv=-halfh*sharpness*n*sin(phase)*(1.0-wave*wave)/norm;\n float raw=r-radius;\n float corrected=raw;\n if(correction>=0.5 && r>max(1e-12,0.01*base)){\n  float slope=deriv/r;\n  corrected=raw/sqrt(1.0+slope*slope);\n }\n if(mode<0.5){\n  float inner=min(border*scale,0.95*(base-halfh));\n  raw=max(raw,inner-r); corrected=max(corrected,inner-r);\n }else if(mode<1.5){\n  float outer=max(border*scale,1.05*(base+halfh));\n  raw=max(-raw,r-outer); corrected=max(-corrected,r-outer);\n }\n float mask=softness>0.0?1.0-smoothstep(-softness,softness,corrected):(corrected<=0.0?1.0:0.0);\n return MakerTRD(corrected,raw,mask,0.5+0.5*wave/norm,radius);\n}",
+  "glsl_outputs": {
+    "distance": "maker_trd_eval({position},{center},{radius_multiplier},{angle_modulation},{nominal},{teeth},{height},{sharpness},{border},{orientation},{softness},{mode},{correction}).distance",
+    "raw": "maker_trd_eval({position},{center},{radius_multiplier},{angle_modulation},{nominal},{teeth},{height},{sharpness},{border},{orientation},{softness},{mode},{correction}).raw",
+    "mask": "maker_trd_eval({position},{center},{radius_multiplier},{angle_modulation},{nominal},{teeth},{height},{sharpness},{border},{orientation},{softness},{mode},{correction}).mask",
+    "profile": "maker_trd_eval({position},{center},{radius_multiplier},{angle_modulation},{nominal},{teeth},{height},{sharpness},{border},{orientation},{softness},{mode},{correction}).profile",
+    "radius": "maker_trd_eval({position},{center},{radius_multiplier},{angle_modulation},{nominal},{teeth},{height},{sharpness},{border},{orientation},{softness},{mode},{correction}).radius"
+  }
+}

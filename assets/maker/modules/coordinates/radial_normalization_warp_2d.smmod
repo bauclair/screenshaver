@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.radial_normalization_warp_2d",
+  "name": "Radial Normalization Warp 2D",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Compress planar coordinates into a bounded radial domain.",
+  "uses": "Compress planar coordinates into a bounded radial domain.",
+  "notes": "Output is centered on Center. Compression Factor includes blend strength. Radii are measured relative to Center.",
+  "header_color": "#527D94",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "semantic_role": "position2d",
+      "default": "maker_uv"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec2",
+      "default": "vec2(0.0)"
+    },
+    {
+      "id": "depth_multiplier",
+      "name": "Depth Multiplier",
+      "type": "float",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "warped",
+      "name": "Warped Position",
+      "type": "vec2",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "original_radius",
+      "name": "Original Radius",
+      "type": "float"
+    },
+    {
+      "id": "warped_radius",
+      "name": "Warped Radius",
+      "type": "float"
+    },
+    {
+      "id": "factor",
+      "name": "Compression Factor",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "depth",
+      "name": "Compression Depth",
+      "type": "float",
+      "default": 1.2,
+      "min": 0.001,
+      "max": 100
+    },
+    {
+      "id": "radius",
+      "name": "Limiting Radius",
+      "type": "float",
+      "default": 1,
+      "min": 0.001,
+      "max": 100
+    },
+    {
+      "id": "blend",
+      "name": "Blend Strength",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 1
+    }
+  ],
+  "helpers": "struct MakerRNW { vec2 warped; float original_radius; float warped_radius; float factor; };\nMakerRNW maker_rnw_eval(vec2 pos,vec2 center,float dm,float depth,float radius,float blend){\n if(any(isnan(pos))||any(isinf(pos))||any(isnan(center))||any(isinf(center))||isnan(dm)||isinf(dm))return MakerRNW(vec2(0.0),0.0,0.0,0.0);\n center=clamp(center,vec2(-1e6),vec2(1e6));\n vec2 q=clamp(pos,vec2(-1e6),vec2(1e6))-center;\n float h=depth*clamp(dm,0.0001,100.0), r=length(q);\n float factor=mix(1.0,radius/sqrt(dot(q,q)+h*h),blend);\n vec2 w=q*factor;\n return MakerRNW(center+w,r,length(w),factor);\n}",
+  "glsl_outputs": {
+    "warped": "maker_rnw_eval({position},{center},{depth_multiplier},{depth},{radius},{blend}).warped",
+    "original_radius": "maker_rnw_eval({position},{center},{depth_multiplier},{depth},{radius},{blend}).original_radius",
+    "warped_radius": "maker_rnw_eval({position},{center},{depth_multiplier},{depth},{radius},{blend}).warped_radius",
+    "factor": "maker_rnw_eval({position},{center},{depth_multiplier},{depth},{radius},{blend}).factor"
+  }
+}
