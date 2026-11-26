@@ -1,0 +1,108 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.geometry.analytical_spherical_lens_3d",
+  "name": "Analytical Spherical Lens 3D",
+  "category": "Geometry",
+  "created_by": "Screenshaver",
+  "description": "Fixed analytical traversal through a spherical dielectric.",
+  "uses": "Fixed analytical traversal through a spherical dielectric.",
+  "notes": "Miss returns zero outputs. Inside origin is entry position. TIR returns zero exit direction and transmission mask; no internal bounce. Entry TIR leaves exit position zero. Coordinates relative to center beyond 1e7 rejected; float precision limits distant or grazing rays.",
+  "header_color": "#477D9A",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "origin",
+      "name": "Ray Origin",
+      "type": "vec3",
+      "semantic_role": "position3d",
+      "default": "vec3(0,0,-4)"
+    },
+    {
+      "id": "direction",
+      "name": "Ray Direction",
+      "type": "vec3",
+      "semantic_role": "direction3d",
+      "default": "normalize(vec3(maker_uv,1.5))"
+    },
+    {
+      "id": "center",
+      "name": "Sphere Center",
+      "type": "vec3",
+      "semantic_role": "position3d",
+      "default": "vec3(0.0)"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "exit_direction",
+      "name": "Exit Direction",
+      "type": "vec3",
+      "semantic_role": "direction3d"
+    },
+    {
+      "id": "exit_position",
+      "name": "Exit Position",
+      "type": "vec3",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "entry_position",
+      "name": "Entry Position",
+      "type": "vec3",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "travel",
+      "name": "Internal Travel Distance",
+      "type": "float",
+      "semantic_role": "distance"
+    },
+    {
+      "id": "hit",
+      "name": "Hit Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    },
+    {
+      "id": "transmission",
+      "name": "Transmission Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "radius",
+      "name": "Sphere Radius",
+      "type": "float",
+      "default": 1,
+      "min": 0.01,
+      "max": 30
+    },
+    {
+      "id": "exterior",
+      "name": "Exterior Refractive Index",
+      "type": "float",
+      "default": 1,
+      "min": 0.1,
+      "max": 5
+    },
+    {
+      "id": "interior",
+      "name": "Interior Refractive Index",
+      "type": "float",
+      "default": 1.5,
+      "min": 0.1,
+      "max": 5
+    }
+  ],
+  "helpers": "vec3 maker_sl3_unit(vec3 v){if(any(isnan(v))||any(isinf(v)))return vec3(0.0);float m=max(max(abs(v.x),abs(v.y)),abs(v.z));if(m==0.0)return vec3(0.0);v/=m;return v*inversesqrt(dot(v,v));}\nstruct MakerSL3Result {vec3 direction;vec3 exit_pos;vec3 entry_pos;float travel;float hit;float transmission;};\nvec3 maker_sl3_bend(vec3 d,vec3 n,float eta){float c=clamp(-dot(d,n),0.0,1.0);float k=1.0-eta*eta*(1.0-c*c);if(k<0.0)return vec3(0.0);return maker_sl3_unit(eta*d+(eta*c-sqrt(k))*n);}\nMakerSL3Result maker_sl3_eval(vec3 o,vec3 d,vec3 center,float radius,float ext,float interior){\n MakerSL3Result r=MakerSL3Result(vec3(0.0),vec3(0.0),vec3(0.0),0.0,0.0,0.0);\n if(any(isnan(o))||any(isinf(o))||any(isnan(center))||any(isinf(center)))return r;\n d=maker_sl3_unit(d);if(dot(d,d)==0.0)return r;\n vec3 v=o-center;if(any(greaterThan(abs(v),vec3(1e7)))return r;\n float b=dot(v,d);vec3 perp=v-b*d;float h2=radius*radius-dot(perp,perp);if(h2<0.0)return r;\n float h=sqrt(h2);float nearT=-b-h;float farT=-b+h;if(farT<0.0)return r;\n bool inside=dot(v,v)<radius*radius;vec3 entry;vec3 internal=d;\n if(inside){entry=v;}else{if(nearT<0.0)return r;entry=perp-h*d;}\n r.hit=1.0;r.entry_pos=center+entry;\n if(!inside){vec3 n=maker_sl3_unit(entry);internal=maker_sl3_bend(d,n,ext/interior);if(dot(internal,internal)==0.0)return r;}\n float t;if(inside){t=farT;}else{t=max(0.0,-2.0*dot(entry,internal));}\n vec3 exitLocal=entry+t*internal; r.exit_pos=center+exitLocal;r.travel=t;\n vec3 nout=maker_sl3_unit(exitLocal);r.direction=maker_sl3_bend(internal,-nout,interior/ext);\n if(dot(r.direction,r.direction)>0.0)r.transmission=1.0;return r;\n}",
+  "glsl_outputs": {
+    "exit_direction": "maker_sl3_eval({origin},{direction},{center},{radius},{exterior},{interior}).direction",
+    "exit_position": "maker_sl3_eval({origin},{direction},{center},{radius},{exterior},{interior}).exit_pos",
+    "entry_position": "maker_sl3_eval({origin},{direction},{center},{radius},{exterior},{interior}).entry_pos",
+    "travel": "maker_sl3_eval({origin},{direction},{center},{radius},{exterior},{interior}).travel",
+    "hit": "maker_sl3_eval({origin},{direction},{center},{radius},{exterior},{interior}).hit",
+    "transmission": "maker_sl3_eval({origin},{direction},{center},{radius},{exterior},{interior}).transmission"
+  }
+}

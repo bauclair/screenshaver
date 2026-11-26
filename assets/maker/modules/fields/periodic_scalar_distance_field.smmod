@@ -1,0 +1,109 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.periodic_scalar_distance_field",
+  "name": "Periodic Scalar Distance Field",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "description": "Repeating signed scalar bands with external modulation.",
+  "uses": "Repeating signed scalar bands with external modulation.",
+  "notes": "Phase locates the center of cell zero. Duty modulation is additive; period multiplier is positive and bounded. Distance is in scalar coordinate units, not necessarily a spatial SDF. Duty zero has no mask; duty one has full mask.",
+  "header_color": "#538A73",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "coordinate",
+      "name": "Scalar Coordinate",
+      "type": "float",
+      "semantic_role": "",
+      "default": "maker_uv.x"
+    },
+    {
+      "id": "period_multiplier",
+      "name": "Period Multiplier",
+      "type": "float",
+      "semantic_role": "",
+      "default": "1.0"
+    },
+    {
+      "id": "duty_modulation",
+      "name": "Duty Cycle Modulation",
+      "type": "float",
+      "semantic_role": "",
+      "default": "0.0"
+    },
+    {
+      "id": "phase_modulation",
+      "name": "Phase Modulation",
+      "type": "float",
+      "semantic_role": "",
+      "default": "0.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "distance",
+      "name": "Signed Distance",
+      "type": "float",
+      "semantic_role": "distance"
+    },
+    {
+      "id": "mask",
+      "name": "Band Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    },
+    {
+      "id": "cell_index",
+      "name": "Cell Index",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "local_coordinate",
+      "name": "Local Coordinate",
+      "type": "float",
+      "semantic_role": ""
+    }
+  ],
+  "parameters": [
+    {
+      "id": "period",
+      "name": "Period",
+      "type": "float",
+      "default": 1,
+      "min": 0.001,
+      "max": 100
+    },
+    {
+      "id": "duty",
+      "name": "Duty Cycle",
+      "type": "float",
+      "default": 0.5,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "phase",
+      "name": "Phase Offset",
+      "type": "float",
+      "default": 0,
+      "min": -100,
+      "max": 100
+    },
+    {
+      "id": "softness",
+      "name": "Edge Softness",
+      "type": "float",
+      "default": 0.02,
+      "min": 0,
+      "max": 10
+    }
+  ],
+  "helpers": "float maker_psdf_finite(float x,float fallback){return (isnan(x)||isinf(x))?fallback:clamp(x,-1e6,1e6);}\nvec4 maker_psdf(float x,float mul,float dm,float pm,float period,float duty,float phase,float softness){\n float p=clamp(period*clamp(maker_psdf_finite(mul,1.0),0.001,1000.0),0.001,10000.0);\n float q=clamp((maker_psdf_finite(x,0.0)-phase-maker_psdf_finite(pm,0.0))/p,-1e6,1e6);\n float cell=floor(q+0.5), local=(q-cell)*p;\n float width=clamp(duty+maker_psdf_finite(dm,0.0),0.0,1.0);\n float d=abs(local)-0.5*p*width;\n float m=width<=0.0?0.0:(width>=1.0?1.0:(softness>0.0?1.0-smoothstep(-softness,softness,d):step(d,0.0)));\n return vec4(d,m,cell,local);\n}",
+  "glsl_outputs": {
+    "distance": "maker_psdf({coordinate},{period_multiplier},{duty_modulation},{phase_modulation},{period},{duty},{phase},{softness}).x",
+    "mask": "maker_psdf({coordinate},{period_multiplier},{duty_modulation},{phase_modulation},{period},{duty},{phase},{softness}).y",
+    "cell_index": "maker_psdf({coordinate},{period_multiplier},{duty_modulation},{phase_modulation},{period},{duty},{phase},{softness}).z",
+    "local_coordinate": "maker_psdf({coordinate},{period_multiplier},{duty_modulation},{phase_modulation},{period},{duty},{phase},{softness}).w"
+  }
+}

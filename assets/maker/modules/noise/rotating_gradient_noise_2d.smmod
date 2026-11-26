@@ -1,0 +1,120 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.noise.rotating_gradient_noise_2d",
+  "name": "Rotating Gradient Noise 2D",
+  "category": "Noise",
+  "created_by": "Screenshaver",
+  "description": "Animated lattice gradients with analytical spatial derivatives.",
+  "uses": "Evolving noise, gradient displacement and curl fields.",
+  "notes": "Gradient and curl differentiate signed noise with respect to position at fixed time. Domain repeats every 65536 lattice units. Rotation speed is degrees per second.",
+  "header_color": "#398F94",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "semantic_role": "position2d",
+      "default": "maker_uv"
+    },
+    {
+      "id": "time_offset",
+      "name": "Time Offset",
+      "type": "float",
+      "semantic_role": "time",
+      "default": "0.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "signed_noise",
+      "name": "Signed Noise",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "normalized_noise",
+      "name": "Normalized Noise",
+      "type": "float",
+      "semantic_role": "intensity"
+    },
+    {
+      "id": "gradient",
+      "name": "Spatial Gradient",
+      "type": "vec2",
+      "semantic_role": ""
+    },
+    {
+      "id": "curl",
+      "name": "Curl Vector",
+      "type": "vec2",
+      "semantic_role": ""
+    },
+    {
+      "id": "magnitude",
+      "name": "Gradient Magnitude",
+      "type": "float",
+      "semantic_role": "intensity"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "frequency",
+      "name": "Frequency",
+      "type": "float",
+      "default": 4,
+      "min": 0.01,
+      "max": 100
+    },
+    {
+      "id": "amplitude",
+      "name": "Amplitude",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 8
+    },
+    {
+      "id": "seed",
+      "name": "Seed",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 65535
+    },
+    {
+      "id": "speed",
+      "name": "Rotation Speed",
+      "type": "float",
+      "default": 45,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "phase",
+      "name": "Initial Phase",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "interpolation",
+      "name": "Interpolation Mode",
+      "type": "choice",
+      "default": 1,
+      "options": [
+        "Cubic",
+        "Quintic"
+      ]
+    }
+  ],
+  "helpers": "uint maker_rgn2_hash(uint x){x ^= x >> 16u; x *= 0x7feb352du; x ^= x >> 15u; x *= 0x846ca68bu; return x ^ (x >> 16u);}\nvec2 maker_rgn2_grad(ivec2 c,uint seed,float phase){uint h=maker_rgn2_hash(uint(c.x)^maker_rgn2_hash(uint(c.y)^seed));float a=float(h & 65535u)*0.00009587379924+phase;return vec2(cos(a),sin(a));}\nvec3 maker_rgn2_eval(vec2 p,float t,float freq,float amp,float seed,float speed,float phase,float mode){\n if(any(isnan(p))||any(isinf(p))||isnan(t)||isinf(t)) return vec3(0.0);\n vec2 q=mod(clamp(p,vec2(-1e8),vec2(1e8))*freq,65536.0); ivec2 c=ivec2(floor(q));vec2 f=fract(q);\n vec2 w=mode<0.5?f*f*(3.0-2.0*f):f*f*f*(f*(6.0*f-15.0)+10.0);\n vec2 dw=mode<0.5?6.0*f*(1.0-f):30.0*f*f*(f-1.0)*(f-1.0);\n float a=radians(mod(clamp(t,-1e8,1e8)*speed+phase,360.0));uint s=uint(clamp(seed,0.0,65535.0));\n vec2 g0=maker_rgn2_grad(c,s,a),g1=maker_rgn2_grad((c+ivec2(1,0))%65536,s,a),g2=maker_rgn2_grad((c+ivec2(0,1))%65536,s,a),g3=maker_rgn2_grad((c+ivec2(1,1))%65536,s,a);\n float v0=dot(g0,f),v1=dot(g1,f-vec2(1,0)),v2=dot(g2,f-vec2(0,1)),v3=dot(g3,f-vec2(1));\n float lo=mix(v0,v1,w.x),hi=mix(v2,v3,w.x);\n vec2 dlo=mix(g0,g1,w.x)+vec2((v1-v0)*dw.x,0),dhi=mix(g2,g3,w.x)+vec2((v3-v2)*dw.x,0);\n vec2 grad=(mix(dlo,dhi,w.y)+vec2(0,(hi-lo)*dw.y))*freq;\n if(abs(p.x)>1e8) grad.x=0.0;if(abs(p.y)>1e8) grad.y=0.0;\n return vec3(mix(lo,hi,w.y),grad)*amp*0.70710678118;\n}",
+  "glsl_outputs": {
+    "signed_noise": "maker_rgn2_eval({position},u_time+{time_offset},{frequency},{amplitude},{seed},{speed},{phase},{interpolation}).x",
+    "normalized_noise": "clamp(0.5+0.5*maker_rgn2_eval({position},u_time+{time_offset},{frequency},{amplitude},{seed},{speed},{phase},{interpolation}).x,0.0,1.0)",
+    "gradient": "maker_rgn2_eval({position},u_time+{time_offset},{frequency},{amplitude},{seed},{speed},{phase},{interpolation}).yz",
+    "curl": "maker_rgn2_eval({position},u_time+{time_offset},{frequency},{amplitude},{seed},{speed},{phase},{interpolation}).zy*vec2(1.0,-1.0)",
+    "magnitude": "length(maker_rgn2_eval({position},u_time+{time_offset},{frequency},{amplitude},{seed},{speed},{phase},{interpolation}).yz)"
+  }
+}

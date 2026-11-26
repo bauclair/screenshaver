@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.lighting.reciprocal_angular_light_response",
+  "name": "Reciprocal Angular Light Response",
+  "category": "Lighting",
+  "created_by": "Screenshaver",
+  "description": "Bounded reciprocal angular illumination.",
+  "uses": "Bounded reciprocal angular illumination.",
+  "notes": "Directions point toward the reference and light. Forward Only suppresses nonpositive alignment. Invalid or zero directions yield zero outputs.",
+  "header_color": "#A07652",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "reference",
+      "name": "Reference Direction",
+      "type": "vec3",
+      "semantic_role": "direction3d",
+      "default": "vec3(0.0,0.0,1.0)"
+    },
+    {
+      "id": "light",
+      "name": "Light Direction",
+      "type": "vec3",
+      "semantic_role": "direction3d",
+      "default": "vec3(0.0,0.0,1.0)"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "response",
+      "name": "Light Response",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "normalized",
+      "name": "Normalized Response",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "alignment",
+      "name": "Angular Alignment",
+      "type": "float",
+      "semantic_role": ""
+    }
+  ],
+  "parameters": [
+    {
+      "id": "focus",
+      "name": "Focus",
+      "type": "float",
+      "default": 32,
+      "min": 0,
+      "max": 1024
+    },
+    {
+      "id": "intensity",
+      "name": "Intensity",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 32
+    },
+    {
+      "id": "exponent",
+      "name": "Response Exponent",
+      "type": "float",
+      "default": 1,
+      "min": 0.1,
+      "max": 8
+    },
+    {
+      "id": "hemisphere",
+      "name": "Hemisphere Mode",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Full Sphere",
+        "Forward Only"
+      ]
+    }
+  ],
+  "helpers": "vec3 maker_ralr(vec3 a,vec3 b,float k,float I,float e,float mode){if(any(isnan(a))||any(isinf(a))||any(isnan(b))||any(isinf(b)))return vec3(0.0);float ma=max(max(abs(a.x),abs(a.y)),abs(a.z)),mb=max(max(abs(b.x),abs(b.y)),abs(b.z));if(ma<1e-12||mb<1e-12)return vec3(0.0);float c=clamp(dot(normalize(a/ma),normalize(b/mb)),-1.0,1.0);float w=pow(1.0/(1.0+k*(1.0-c)),e);if(mode>0.5&&c<=0.0)w=0.0;return vec3(I*w,w,c);}",
+  "glsl_outputs": {
+    "response": "maker_ralr({reference},{light},{focus},{intensity},{exponent},{hemisphere}).x",
+    "normalized": "maker_ralr({reference},{light},{focus},{intensity},{exponent},{hemisphere}).y",
+    "alignment": "maker_ralr({reference},{light},{focus},{intensity},{exponent},{hemisphere}).z"
+  }
+}

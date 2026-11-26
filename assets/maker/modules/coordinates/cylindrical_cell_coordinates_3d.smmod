@@ -1,0 +1,135 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.cylindrical_cell_coordinates_3d",
+  "name": "Cylindrical Cell Coordinates 3D",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "description": "Partition cylindrical space into radial, angular and axial cells.",
+  "uses": "Partition cylindrical space into radial, angular and axial cells.",
+  "notes": "Cylindrical coordinates are radius, angle in radians, axial coordinate. Angular offset and radial/axial phases shift cell boundaries; local coordinates are centered in each cell. Axis X uses YZ, Y uses ZX, Z uses XY. Angular offset is radians.",
+  "header_color": "#65758B",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "semantic_role": "position3d",
+      "default": "vec3(maker_uv,0.0)"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec3",
+      "semantic_role": "position3d",
+      "default": "vec3(0.0)"
+    },
+    {
+      "id": "angular_offset",
+      "name": "Angular Offset",
+      "type": "float",
+      "semantic_role": "angle",
+      "default": "0.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "cylindrical",
+      "name": "Cylindrical Coordinate",
+      "type": "vec3",
+      "semantic_role": ""
+    },
+    {
+      "id": "cell_index",
+      "name": "Cell Index",
+      "type": "vec3",
+      "semantic_role": ""
+    },
+    {
+      "id": "local",
+      "name": "Local Cell Coordinate",
+      "type": "vec3",
+      "semantic_role": ""
+    },
+    {
+      "id": "radius",
+      "name": "Radius",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "angle",
+      "name": "Angle",
+      "type": "float",
+      "semantic_role": "angle"
+    },
+    {
+      "id": "axial",
+      "name": "Axial Coordinate",
+      "type": "float",
+      "semantic_role": ""
+    }
+  ],
+  "parameters": [
+    {
+      "id": "radial_spacing",
+      "name": "Radial Spacing",
+      "type": "float",
+      "default": 1,
+      "min": 0.001,
+      "max": 100
+    },
+    {
+      "id": "sectors",
+      "name": "Angular Sector Count",
+      "type": "float",
+      "default": 8,
+      "min": 1,
+      "max": 128
+    },
+    {
+      "id": "axial_spacing",
+      "name": "Axial Spacing",
+      "type": "float",
+      "default": 1,
+      "min": 0.001,
+      "max": 100
+    },
+    {
+      "id": "axis",
+      "name": "Cylinder Axis",
+      "type": "choice",
+      "default": 2,
+      "options": [
+        "X",
+        "Y",
+        "Z"
+      ]
+    },
+    {
+      "id": "radial_phase",
+      "name": "Radial Phase",
+      "type": "float",
+      "default": 0,
+      "min": -100,
+      "max": 100
+    },
+    {
+      "id": "axial_phase",
+      "name": "Axial Phase",
+      "type": "float",
+      "default": 0,
+      "min": -100,
+      "max": 100
+    }
+  ],
+  "helpers": "struct MakerCCC3 {vec3 cylindrical;vec3 cell;vec3 local;};\nMakerCCC3 maker_ccc3(vec3 p,vec3 c,float offset,float rs,float sectors,float zs,float axis,float rp,float zp){\n if(any(isnan(p))||any(isinf(p)))p=vec3(0.0);if(any(isnan(c))||any(isinf(c)))c=vec3(0.0);\n vec3 v=clamp(p,vec3(-1e6),vec3(1e6))-clamp(c,vec3(-1e6),vec3(1e6));\n vec3 q=axis<0.5?v.yzx:(axis<1.5?v.zxy:v);\n float r=length(q.xy),a=r>1e-10?atan(q.y,q.x):0.0;\n if(isnan(offset)||isinf(offset))offset=0.0;\n float tau=6.28318530718,n=clamp(floor(sectors+0.5),1.0,128.0),w=tau/n;\n float angular=mod(a-mod(offset,tau),tau);\n vec3 units=vec3(max(rs,0.001),w,max(zs,0.001));\n vec3 t=vec3(r-rp,angular,q.z-zp)/units;\n t=clamp(t,vec3(-1e6),vec3(1e6));vec3 cell=floor(t);cell.y=min(cell.y,n-1.0);\n return MakerCCC3(vec3(r,a,q.z),cell,(t-cell-0.5)*units);\n}",
+  "glsl_outputs": {
+    "cylindrical": "maker_ccc3({position},{center},{angular_offset},{radial_spacing},{sectors},{axial_spacing},{axis},{radial_phase},{axial_phase}).cylindrical",
+    "cell_index": "maker_ccc3({position},{center},{angular_offset},{radial_spacing},{sectors},{axial_spacing},{axis},{radial_phase},{axial_phase}).cell",
+    "local": "maker_ccc3({position},{center},{angular_offset},{radial_spacing},{sectors},{axial_spacing},{axis},{radial_phase},{axial_phase}).local",
+    "radius": "maker_ccc3({position},{center},{angular_offset},{radial_spacing},{sectors},{axial_spacing},{axis},{radial_phase},{axial_phase}).cylindrical.x",
+    "angle": "maker_ccc3({position},{center},{angular_offset},{radial_spacing},{sectors},{axial_spacing},{axis},{radial_phase},{axial_phase}).cylindrical.y",
+    "axial": "maker_ccc3({position},{center},{angular_offset},{radial_spacing},{sectors},{axial_spacing},{axis},{radial_phase},{axial_phase}).cylindrical.z"
+  }
+}

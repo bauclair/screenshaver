@@ -1,0 +1,144 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.cylindrical_cell_rotation_3d",
+  "name": "Cylindrical Cell Rotation 3D",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "description": "Rotate radial and axial cells independently around a cylinder axis.",
+  "uses": "Rotate radial and axial cells independently around a cylinder axis.",
+  "notes": "Speed and influences are degrees per second; modulation adds degrees to the final angle. Time offset is seconds. Rotation is discontinuous at cell boundaries; not an exact SDF-preserving warp.",
+  "header_color": "#65758B",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "semantic_role": "position3d",
+      "default": "vec3(maker_uv,0.0)"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec3",
+      "semantic_role": "position3d",
+      "default": "vec3(0.0)"
+    },
+    {
+      "id": "time_offset",
+      "name": "Time Offset",
+      "type": "float",
+      "semantic_role": "time",
+      "default": "0.0"
+    },
+    {
+      "id": "rotation_modulation",
+      "name": "Rotation Modulation",
+      "type": "float",
+      "semantic_role": "angle",
+      "default": "0.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "rotated_position",
+      "name": "Rotated Position",
+      "type": "vec3",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "rotation_angle",
+      "name": "Rotation Angle",
+      "type": "float",
+      "semantic_role": "angle"
+    },
+    {
+      "id": "radial_index",
+      "name": "Radial Cell Index",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "axial_index",
+      "name": "Axial Cell Index",
+      "type": "float",
+      "semantic_role": ""
+    }
+  ],
+  "parameters": [
+    {
+      "id": "radial_spacing",
+      "name": "Radial Spacing",
+      "type": "float",
+      "default": 1,
+      "min": 0.001,
+      "max": 100
+    },
+    {
+      "id": "axial_spacing",
+      "name": "Axial Spacing",
+      "type": "float",
+      "default": 1,
+      "min": 0.001,
+      "max": 100
+    },
+    {
+      "id": "speed",
+      "name": "Base Rotation Speed",
+      "type": "float",
+      "default": 30,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "radial_influence",
+      "name": "Radial Influence",
+      "type": "float",
+      "default": 15,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "axial_influence",
+      "name": "Axial Influence",
+      "type": "float",
+      "default": 10,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "combined_influence",
+      "name": "Combined Influence",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "phase",
+      "name": "Initial Phase",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "axis",
+      "name": "Cylinder Axis",
+      "type": "choice",
+      "default": 2,
+      "options": [
+        "X",
+        "Y",
+        "Z"
+      ]
+    }
+  ],
+  "helpers": "struct MakerCCR3 {vec3 position;float angle;float radial;float axial;};\nMakerCCR3 maker_ccr3(vec3 p,vec3 c,float time,float modulation,float rs,float zs,float speed,float ri,float zi,float ci,float phase,float axis){\n if(any(isnan(p))||any(isinf(p)))p=vec3(0.0);if(any(isnan(c))||any(isinf(c)))c=vec3(0.0);\n c=clamp(c,vec3(-1e6),vec3(1e6));vec3 v=clamp(p,vec3(-1e6),vec3(1e6))-c;\n vec3 q=axis<0.5?v.yzx:(axis<1.5?v.zxy:v);\n float r=floor(clamp(length(q.xy)/max(rs,0.001),0.0,1e6));float z=floor(clamp(q.z/max(zs,0.001),-1e6,1e6));\n if(isnan(time)||isinf(time))time=0.0;if(isnan(modulation)||isinf(modulation))modulation=0.0;\n float rate=clamp(speed+ri*r+zi*z+ci*r*z,-1e8,1e8);\n float a=radians(mod(rate*clamp(time,-1e6,1e6)+phase+mod(modulation,360.0),360.0));\n float cs=cos(a),sn=sin(a);q.xy=vec2(cs*q.x-sn*q.y,sn*q.x+cs*q.y);\n v=axis<0.5?q.zxy:(axis<1.5?q.yzx:q);\n return MakerCCR3(v+c,a,r,z);\n}",
+  "glsl_outputs": {
+    "rotated_position": "maker_ccr3({position},{center},u_time+{time_offset},{rotation_modulation},{radial_spacing},{axial_spacing},{speed},{radial_influence},{axial_influence},{combined_influence},{phase},{axis}).position",
+    "rotation_angle": "maker_ccr3({position},{center},u_time+{time_offset},{rotation_modulation},{radial_spacing},{axial_spacing},{speed},{radial_influence},{axial_influence},{combined_influence},{phase},{axis}).angle",
+    "radial_index": "maker_ccr3({position},{center},u_time+{time_offset},{rotation_modulation},{radial_spacing},{axial_spacing},{speed},{radial_influence},{axial_influence},{combined_influence},{phase},{axis}).radial",
+    "axial_index": "maker_ccr3({position},{center},u_time+{time_offset},{rotation_modulation},{radial_spacing},{axial_spacing},{speed},{radial_influence},{axial_influence},{combined_influence},{phase},{axis}).axial"
+  }
+}

@@ -1,0 +1,99 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.noise.gradient_noise_2d",
+  "name": "Gradient Noise 2D",
+  "category": "Noise",
+  "created_by": "Screenshaver",
+  "description": "Interpolated unit lattice gradients in two dimensions.",
+  "uses": "Interpolated unit lattice gradients in two dimensions.",
+  "notes": "Signed output includes amplitude; normalized output clamps 0.5 + 0.5 times signed output. Domain repeats every 65536 lattice units; extreme coordinates lose float precision.",
+  "header_color": "#398F94",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "semantic_role": "position2d",
+      "default": "maker_uv"
+    },
+    {
+      "id": "time_offset",
+      "name": "Time Offset",
+      "type": "float",
+      "semantic_role": "time",
+      "default": "0.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "signed_noise",
+      "name": "Signed Noise",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "normalized_noise",
+      "name": "Normalized Noise",
+      "type": "float",
+      "semantic_role": "intensity"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "frequency",
+      "name": "Frequency",
+      "type": "float",
+      "default": 4,
+      "min": 0.01,
+      "max": 100
+    },
+    {
+      "id": "amplitude",
+      "name": "Amplitude",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 8
+    },
+    {
+      "id": "seed",
+      "name": "Seed",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 65535
+    },
+    {
+      "id": "speed",
+      "name": "Animation Speed",
+      "type": "float",
+      "default": 0.2,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "angle",
+      "name": "Animation Direction",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "interpolation",
+      "name": "Interpolation Mode",
+      "type": "choice",
+      "default": 1,
+      "options": [
+        "Cubic",
+        "Quintic"
+      ]
+    }
+  ],
+  "helpers": "uint maker_gn2_hash(uint x){x ^= x >> 16u; x *= 0x7feb352du; x ^= x >> 15u; x *= 0x846ca68bu; return x ^ (x >> 16u);}\nvec2 maker_gn2_grad(ivec2 c,uint seed){uint h=maker_gn2_hash(uint(c.x)^maker_gn2_hash(uint(c.y)^seed)); float a=float(h & 65535u)*0.00009587379924; return vec2(cos(a),sin(a));}\nfloat maker_gn2_eval(vec2 p,float t,float freq,float amp,float seed,float speed,float angle,float mode){\n if(any(isnan(p))||any(isinf(p))) p=vec2(0.0); if(isnan(t)||isinf(t)) t=0.0;\n float a=radians(angle); vec2 q=mod(clamp(p,vec2(-1e8),vec2(1e8))*freq+clamp(t,-1e8,1e8)*speed*vec2(cos(a),sin(a)),65536.0);\n ivec2 c=ivec2(floor(q)); vec2 f=fract(q); vec2 w=mode<0.5?f*f*(3.0-2.0*f):f*f*f*(f*(6.0*f-15.0)+10.0);\n uint s=uint(clamp(seed,0.0,65535.0));\n float a0=dot(maker_gn2_grad(c,s),f); float b=dot(maker_gn2_grad((c+ivec2(1,0))%65536,s),f-vec2(1,0));\n float d=dot(maker_gn2_grad((c+ivec2(0,1))%65536,s),f-vec2(0,1)); float e=dot(maker_gn2_grad((c+ivec2(1,1))%65536,s),f-vec2(1));\n return clamp(mix(mix(a0,b,w.x),mix(d,e,w.x),w.y)*0.70710678118,-1.0,1.0)*amp;\n}",
+  "glsl_outputs": {
+    "signed_noise": "maker_gn2_eval({position},u_time+{time_offset},{frequency},{amplitude},{seed},{speed},{angle},{interpolation})",
+    "normalized_noise": "clamp(0.5+0.5*maker_gn2_eval({position},u_time+{time_offset},{frequency},{amplitude},{seed},{speed},{angle},{interpolation}),0.0,1.0)"
+  }
+}

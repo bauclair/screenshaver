@@ -1,0 +1,69 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.vector_coordinate_displacement_2d",
+  "name": "Vector Coordinate Displacement 2D",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "description": "Apply an external vector displacement to a position.",
+  "uses": "Gradient-driven warping, flow and general coordinate offsets.",
+  "notes": "Direct mode preserves magnitude. Normalized mode uses unit direction. Magnitude Limited caps the final scaled offset. Maximum Displacement applies only in Magnitude Limited mode.",
+  "header_color": "#65758B",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "semantic_role": "position2d",
+      "default": "maker_uv"
+    },
+    {
+      "id": "displacement",
+      "name": "Displacement",
+      "type": "vec2",
+      "semantic_role": "offset2d",
+      "default": "vec2(0.0)"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "warped_position",
+      "name": "Warped Position",
+      "type": "vec2",
+      "semantic_role": "position2d"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "strength",
+      "name": "Displacement Strength",
+      "type": "float",
+      "default": 1,
+      "min": -16,
+      "max": 16
+    },
+    {
+      "id": "maximum",
+      "name": "Maximum Displacement",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 100
+    },
+    {
+      "id": "mode",
+      "name": "Displacement Mode",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Direct",
+        "Normalized",
+        "Magnitude Limited"
+      ]
+    }
+  ],
+  "helpers": "vec2 maker_vcd2(vec2 p,vec2 v,float strength,float maximum,float mode){\n if(any(isnan(p))||any(isinf(p))) p=vec2(0.0);\n if(any(isnan(v))||any(isinf(v))) v=vec2(0.0);\n v=clamp(v,vec2(-1e8),vec2(1e8));float m=length(v);\n if(mode>=0.5 && mode<1.5) v=m>1e-12?v/m:vec2(0.0);\n v*=strength;\n if(mode>=1.5){m=length(v);if(m>maximum && m>0.0)v*=maximum/m;}\n return clamp(p,vec2(-1e8),vec2(1e8))+v;\n}",
+  "glsl_outputs": {
+    "warped_position": "maker_vcd2({position},{displacement},{strength},{maximum},{mode})"
+  }
+}
