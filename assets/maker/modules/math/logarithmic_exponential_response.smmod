@@ -1,0 +1,112 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.math.logarithmic_exponential_response",
+  "name": "Logarithmic and Exponential Response",
+  "category": "Math",
+  "created_by": "Screenshaver",
+  "description": "Applies bounded logarithmic and exponential scalar transfer functions.",
+  "uses": "Nonlinear animation, density shaping, noise redistribution and brightness compression.",
+  "notes": "Unconnected Value uses animation time. Gain and bias precede response. Strength scales the argument in raw modes and controls curvature in normalized modes. Unsigned logarithms clamp their argument to Domain Floor. Exponential arguments are limited to [-60,60]. Normalized modes clamp input to [0,1] and approach a linear response at zero strength. Output gain and bias apply to all modes. Absolute Response is the magnitude of Response; Normalized Response clamps the final Response to [0,1]. NaN input is replaced by zero; extreme input is bounded to +/-1e20. Signed Logarithm supports reverse time.",
+  "header_color": "#65758B",
+  "inputs": [
+    {
+      "id": "value",
+      "name": "Value",
+      "type": "float",
+      "default": "u_time"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "response",
+      "name": "Response",
+      "type": "float"
+    },
+    {
+      "id": "absolute",
+      "name": "Absolute Response",
+      "type": "float"
+    },
+    {
+      "id": "normalized",
+      "name": "Normalized Response",
+      "type": "float",
+      "semantic_role": "intensity"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "mode",
+      "name": "Response Mode",
+      "type": "choice",
+      "default": 3,
+      "min": 0,
+      "max": 7,
+      "options": [
+        "Natural Logarithm",
+        "Base-2 Logarithm",
+        "Base-10 Logarithm",
+        "Signed Logarithm",
+        "Natural Exponential",
+        "Base-2 Exponential",
+        "Normalized Logarithmic",
+        "Normalized Exponential"
+      ]
+    },
+    {
+      "id": "gain",
+      "name": "Input Gain",
+      "type": "float",
+      "default": 1,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "bias",
+      "name": "Input Bias",
+      "type": "float",
+      "default": 0,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "strength",
+      "name": "Response Strength",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 16
+    },
+    {
+      "id": "domain_floor",
+      "name": "Domain Floor",
+      "type": "float",
+      "default": 0.0001,
+      "min": 1e-06,
+      "max": 1
+    },
+    {
+      "id": "output_gain",
+      "name": "Output Gain",
+      "type": "float",
+      "default": 1,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "output_bias",
+      "name": "Output Bias",
+      "type": "float",
+      "default": 0,
+      "min": -10,
+      "max": 10
+    }
+  ],
+  "helpers": "float maker_log_exp_response(float v,float mode,float gain,float bias,float strength,float domainFloor,float outputGain,float outputBias){\n    if(isnan(v)) v=0.0;\n    float x=clamp(v,-1e20,1e20)*gain+bias;\n    float k=clamp(strength,0.0,16.0);\n    float e=max(domainFloor,1e-6);\n    int m=int(clamp(floor(mode+0.5),0.0,7.0));\n    float y=0.0;\n    if(m==0) y=log(max(k*x,e));\n    else if(m==1) y=log2(max(k*x,e));\n    else if(m==2) y=log(max(k*x,e))/log(10.0);\n    else if(m==3) y=sign(x)*log(1.0+k*abs(x));\n    else if(m==4) y=exp(clamp(k*x,-60.0,60.0));\n    else if(m==5) y=exp2(clamp(k*x,-60.0,60.0));\n    else {\n        float u=clamp(x,0.0,1.0);\n        if(k<0.001) y=u;\n        else if(m==6) y=log(1.0+k*u)/log(1.0+k);\n        else y=(exp(k*u)-1.0)/(exp(k)-1.0);\n    }\n    return y*outputGain+outputBias;\n}",
+  "glsl_outputs": {
+    "response": "maker_log_exp_response({value},{mode},{gain},{bias},{strength},{domain_floor},{output_gain},{output_bias})",
+    "absolute": "abs(maker_log_exp_response({value},{mode},{gain},{bias},{strength},{domain_floor},{output_gain},{output_bias}))",
+    "normalized": "clamp(maker_log_exp_response({value},{mode},{gain},{bias},{strength},{domain_floor},{output_gain},{output_bias}),0.0,1.0)"
+  },
+  "terminal": false
+}

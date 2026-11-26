@@ -1,0 +1,122 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.modular_cell_classification_2d",
+  "name": "Modular Cell Classification 2D",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "description": "Classifies rectangular grid cells using weighted integer coordinates and positive modular arithmetic.",
+  "uses": "Spatial masks, repeating material assignments and mosaics.",
+  "notes": "Integer controls round to nearest integer (ties toward positive infinity). Selected class wraps modulo class count. Local position is centered in each cell, in input units. Class index is the callable scalar output.",
+  "header_color": "#647DA0",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "origin",
+      "name": "Origin",
+      "type": "vec2",
+      "default": "vec2(0.0)"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "class_index",
+      "name": "Class Index",
+      "type": "float"
+    },
+    {
+      "id": "normalized_class",
+      "name": "Normalized Class",
+      "type": "float"
+    },
+    {
+      "id": "class_mask",
+      "name": "Class Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    },
+    {
+      "id": "cell_id",
+      "name": "Cell ID",
+      "type": "vec2"
+    },
+    {
+      "id": "local_position",
+      "name": "Local Position",
+      "type": "vec2",
+      "semantic_role": "offset2d"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "cell_width",
+      "name": "Cell Width",
+      "type": "float",
+      "default": 0.25,
+      "min": 0.001,
+      "max": 100
+    },
+    {
+      "id": "cell_height",
+      "name": "Cell Height",
+      "type": "float",
+      "default": 0.25,
+      "min": 0.001,
+      "max": 100
+    },
+    {
+      "id": "x_weight",
+      "name": "X Weight",
+      "type": "float",
+      "default": 1,
+      "min": -32,
+      "max": 32
+    },
+    {
+      "id": "y_weight",
+      "name": "Y Weight",
+      "type": "float",
+      "default": 1,
+      "min": -32,
+      "max": 32
+    },
+    {
+      "id": "class_count",
+      "name": "Class Count",
+      "type": "float",
+      "default": 3,
+      "min": 2,
+      "max": 16
+    },
+    {
+      "id": "class_offset",
+      "name": "Class Offset",
+      "type": "float",
+      "default": 0,
+      "min": -32,
+      "max": 32
+    },
+    {
+      "id": "selected_class",
+      "name": "Selected Class",
+      "type": "float",
+      "default": 0,
+      "min": 0,
+      "max": 15
+    }
+  ],
+  "helpers": "struct MakerModularCell { float index; float normalized; float mask; vec2 cell; vec2 local; };\nMakerModularCell maker_modular_cell(vec2 p, vec2 origin, vec2 size, vec2 weights, float count, float offset, float selected) {\n    vec2 s = max(abs(size), vec2(0.001));\n    vec2 q = (p-origin)/s;\n    vec2 cell = floor(q);\n    float n = clamp(floor(count+0.5),2.0,16.0);\n    vec2 w = floor(weights+0.5);\n    float index = mod(dot(mod(cell,vec2(n)),mod(w,vec2(n)))+mod(floor(offset+0.5),n),n);\n    float target = mod(floor(selected+0.5),n);\n    return MakerModularCell(index,index/(n-1.0),float(index==target),cell,(fract(q)-0.5)*s);\n}",
+  "glsl_outputs": {
+    "class_index": "maker_modular_cell({position},{origin},vec2({cell_width},{cell_height}),vec2({x_weight},{y_weight}),{class_count},{class_offset},{selected_class}).index",
+    "normalized_class": "maker_modular_cell({position},{origin},vec2({cell_width},{cell_height}),vec2({x_weight},{y_weight}),{class_count},{class_offset},{selected_class}).normalized",
+    "class_mask": "maker_modular_cell({position},{origin},vec2({cell_width},{cell_height}),vec2({x_weight},{y_weight}),{class_count},{class_offset},{selected_class}).mask",
+    "cell_id": "maker_modular_cell({position},{origin},vec2({cell_width},{cell_height}),vec2({x_weight},{y_weight}),{class_count},{class_offset},{selected_class}).cell",
+    "local_position": "maker_modular_cell({position},{origin},vec2({cell_width},{cell_height}),vec2({x_weight},{y_weight}),{class_count},{class_offset},{selected_class}).local"
+  }
+}

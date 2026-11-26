@@ -1,0 +1,140 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.compositing.dominant_weighted_color_selector",
+  "name": "Dominant Weighted Color Selector",
+  "category": "Compositing",
+  "created_by": "Screenshaver",
+  "description": "Selects an entire RGB signal by greatest scalar weight without blending.",
+  "uses": "Discrete materials, competing masks and light selection.",
+  "notes": "Ties prefer A, then B, then C. NaN inputs use the corresponding adjustable default. Signed finite weights are compared as supplied; weighted color multiplies the winning RGB by its signed weight without clamping.",
+  "header_color": "#429F91",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "color_a",
+      "name": "Color A",
+      "type": "vec3",
+      "default": "vec3(uintBitsToFloat(0x7fc00000u))",
+      "semantic_role": "color"
+    },
+    {
+      "id": "weight_a",
+      "name": "Weight A",
+      "type": "float",
+      "default": "uintBitsToFloat(0x7fc00000u)"
+    },
+    {
+      "id": "color_b",
+      "name": "Color B",
+      "type": "vec3",
+      "default": "vec3(uintBitsToFloat(0x7fc00000u))",
+      "semantic_role": "color"
+    },
+    {
+      "id": "weight_b",
+      "name": "Weight B",
+      "type": "float",
+      "default": "uintBitsToFloat(0x7fc00000u)"
+    },
+    {
+      "id": "color_c",
+      "name": "Color C",
+      "type": "vec3",
+      "default": "vec3(uintBitsToFloat(0x7fc00000u))",
+      "semantic_role": "color"
+    },
+    {
+      "id": "weight_c",
+      "name": "Weight C",
+      "type": "float",
+      "default": "uintBitsToFloat(0x7fc00000u)"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "color",
+      "name": "Color",
+      "type": "vec3",
+      "semantic_role": "color"
+    },
+    {
+      "id": "weighted_color",
+      "name": "Weighted Color",
+      "type": "vec3",
+      "semantic_role": "color"
+    },
+    {
+      "id": "winning_weight",
+      "name": "Winning Weight",
+      "type": "float"
+    },
+    {
+      "id": "winning_index",
+      "name": "Winning Index",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "default_color_a",
+      "name": "Default Color A",
+      "type": "color3",
+      "default": [
+        1,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "default_weight_a",
+      "name": "Default Weight A",
+      "type": "float",
+      "default": 1,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "default_color_b",
+      "name": "Default Color B",
+      "type": "color3",
+      "default": [
+        0,
+        1,
+        0
+      ]
+    },
+    {
+      "id": "default_weight_b",
+      "name": "Default Weight B",
+      "type": "float",
+      "default": 0,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "default_color_c",
+      "name": "Default Color C",
+      "type": "color3",
+      "default": [
+        0,
+        0,
+        1
+      ]
+    },
+    {
+      "id": "default_weight_c",
+      "name": "Default Weight C",
+      "type": "float",
+      "default": 0,
+      "min": -10,
+      "max": 10
+    }
+  ],
+  "helpers": "vec3 maker_dominant_default_color(vec3 value, vec3 fallback) { return any(isnan(value)) ? fallback : value; }\nfloat maker_dominant_default_weight(float value, float fallback) { return isnan(value) ? fallback : value; }\nstruct MakerDominantColor { vec3 color; float weight; float index; };\nMakerDominantColor maker_dominant_color(vec3 a,float wa,vec3 b,float wb,vec3 c,float wc) {\n    if (wa>=wb && wa>=wc) return MakerDominantColor(a,wa,0.0);\n    if (wb>=wc) return MakerDominantColor(b,wb,1.0);\n    return MakerDominantColor(c,wc,2.0);\n}",
+  "glsl_outputs": {
+    "color": "maker_dominant_color(maker_dominant_default_color({color_a},{default_color_a}),maker_dominant_default_weight({weight_a},{default_weight_a}),maker_dominant_default_color({color_b},{default_color_b}),maker_dominant_default_weight({weight_b},{default_weight_b}),maker_dominant_default_color({color_c},{default_color_c}),maker_dominant_default_weight({weight_c},{default_weight_c})).color",
+    "weighted_color": "(maker_dominant_color(maker_dominant_default_color({color_a},{default_color_a}),maker_dominant_default_weight({weight_a},{default_weight_a}),maker_dominant_default_color({color_b},{default_color_b}),maker_dominant_default_weight({weight_b},{default_weight_b}),maker_dominant_default_color({color_c},{default_color_c}),maker_dominant_default_weight({weight_c},{default_weight_c})).color*maker_dominant_color(maker_dominant_default_color({color_a},{default_color_a}),maker_dominant_default_weight({weight_a},{default_weight_a}),maker_dominant_default_color({color_b},{default_color_b}),maker_dominant_default_weight({weight_b},{default_weight_b}),maker_dominant_default_color({color_c},{default_color_c}),maker_dominant_default_weight({weight_c},{default_weight_c})).weight)",
+    "winning_weight": "maker_dominant_color(maker_dominant_default_color({color_a},{default_color_a}),maker_dominant_default_weight({weight_a},{default_weight_a}),maker_dominant_default_color({color_b},{default_color_b}),maker_dominant_default_weight({weight_b},{default_weight_b}),maker_dominant_default_color({color_c},{default_color_c}),maker_dominant_default_weight({weight_c},{default_weight_c})).weight",
+    "winning_index": "maker_dominant_color(maker_dominant_default_color({color_a},{default_color_a}),maker_dominant_default_weight({weight_a},{default_weight_a}),maker_dominant_default_color({color_b},{default_color_b}),maker_dominant_default_weight({weight_b},{default_weight_b}),maker_dominant_default_color({color_c},{default_color_c}),maker_dominant_default_weight({weight_c},{default_weight_c})).index"
+  }
+}

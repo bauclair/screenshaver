@@ -22,6 +22,8 @@ impl Library {
       ("geometry/two_bone_joint_solver_3d.smmod",include_str!("../assets/maker/modules/geometry/two_bone_joint_solver_3d.smmod")),
       ("coordinates/geometric_sequence_coordinates.smmod",include_str!("../assets/maker/modules/coordinates/geometric_sequence_coordinates.smmod")),
       ("geometry/spherical_orbital_path_3d.smmod",include_str!("../assets/maker/modules/geometry/spherical_orbital_path_3d.smmod")),
+      ("fields/modular_cell_classification_2d.smmod",include_str!("../assets/maker/modules/fields/modular_cell_classification_2d.smmod")),
+      ("compositing/dominant_weighted_color_selector.smmod",include_str!("../assets/maker/modules/compositing/dominant_weighted_color_selector.smmod")),
       ("geometry/harmonic_motion_path_2d.smmod",include_str!("../assets/maker/modules/geometry/harmonic_motion_path_2d.smmod")),
       ("geometry/sdf_capsule.smmod",include_str!("../assets/maker/modules/geometry/sdf_capsule.smmod")),
       ("geometry/sdf_icosahedron.smmod",include_str!("../assets/maker/modules/geometry/sdf_icosahedron.smmod")),
@@ -46,6 +48,7 @@ impl Library {
        ("fields/sparse_random_cell_field_2d.smmod",include_str!("../assets/maker/modules/fields/sparse_random_cell_field_2d.smmod")),
       ("coordinates/rectangular_grid_coordinates_2d.smmod",include_str!("../assets/maker/modules/coordinates/rectangular_grid_coordinates_2d.smmod")),
       ("math/scalar_response_shaping.smmod",include_str!("../assets/maker/modules/math/scalar_response_shaping.smmod")),
+      ("math/logarithmic_exponential_response.smmod",include_str!("../assets/maker/modules/math/logarithmic_exponential_response.smmod")),
       ("color/multi_stop_rgb_gradient.smmod",include_str!("../assets/maker/modules/color/multi_stop_rgb_gradient.smmod")),
 
     ("fields/propagating_radial_wavefront_2d.smmod",include_str!("../assets/maker/modules/fields/propagating_radial_wavefront_2d.smmod")),
