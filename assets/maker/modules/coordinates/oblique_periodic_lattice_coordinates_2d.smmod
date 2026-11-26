@@ -1,0 +1,143 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.oblique_periodic_lattice_coordinates_2d",
+  "name": "Oblique Periodic Lattice Coordinates 2D",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Transform planar coordinates into independently coupled periodic lattice axes.",
+  "uses": "Transform planar coordinates into independently coupled periodic lattice axes.",
+  "notes": "Rotation precedes the linear transformation; phase is in transformed units. Cell Index identifies the unmirrored tile. Centered and Mirrored coordinates are centered within each cell; Positive starts at zero. Cell Radius is measured from the cell center in every mode. Boundary Distance is in transformed space, not world-space Euclidean distance. Singular matrices are allowed. Nonfinite inputs return zero.",
+  "header_color": "#527D94",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec2",
+      "default": "vec2(0.0)"
+    },
+    {
+      "id": "phase",
+      "name": "Phase Offset",
+      "type": "vec2",
+      "default": "vec2(0.0)"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "local",
+      "name": "Local Coordinates",
+      "type": "vec2",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "cell",
+      "name": "Cell Index",
+      "type": "vec2"
+    },
+    {
+      "id": "transformed",
+      "name": "Transformed Coordinates",
+      "type": "vec2",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "radius",
+      "name": "Cell Radius",
+      "type": "float"
+    },
+    {
+      "id": "boundary",
+      "name": "Boundary Distance",
+      "type": "float",
+      "semantic_role": "distance"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "sx",
+      "name": "X Axis Scale",
+      "type": "float",
+      "default": 1,
+      "min": 0.01,
+      "max": 32
+    },
+    {
+      "id": "sy",
+      "name": "Y Axis Scale",
+      "type": "float",
+      "default": 1,
+      "min": 0.01,
+      "max": 32
+    },
+    {
+      "id": "xy",
+      "name": "X-from-Y Coupling",
+      "type": "float",
+      "default": 0.5,
+      "min": -8,
+      "max": 8
+    },
+    {
+      "id": "yx",
+      "name": "Y-from-X Coupling",
+      "type": "float",
+      "default": 0.5,
+      "min": -8,
+      "max": 8
+    },
+    {
+      "id": "px",
+      "name": "X Period",
+      "type": "float",
+      "default": 1,
+      "min": 0.01,
+      "max": 100
+    },
+    {
+      "id": "py",
+      "name": "Y Period",
+      "type": "float",
+      "default": 1,
+      "min": 0.01,
+      "max": 100
+    },
+    {
+      "id": "rotation",
+      "name": "Rotation",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "mode",
+      "name": "Repeat Mode",
+      "type": "choice",
+      "default": 0,
+      "min": 0,
+      "max": 2,
+      "options": [
+        "Centered",
+        "Positive",
+        "Mirrored"
+      ]
+    }
+  ],
+  "helpers": "struct MakerOPL { vec2 local; vec2 cell; vec2 transformed; float radius; float boundary; };\nMakerOPL maker_opl_eval(vec2 p,vec2 center,vec2 phase,float sx,float sy,float xy,float yx,float px,float py,float rotation,float mode){\n if(any(isnan(p))||any(isinf(p))||any(isnan(center))||any(isinf(center))||any(isnan(phase))||any(isinf(phase)))return MakerOPL(vec2(0.0),vec2(0.0),vec2(0.0),0.0,0.0);\n vec2 q=clamp(p,vec2(-1e6),vec2(1e6))-clamp(center,vec2(-1e6),vec2(1e6));\n float a=radians(rotation), c=cos(a), s=sin(a);\n q=vec2(c*q.x-s*q.y,s*q.x+c*q.y);\n vec2 t=clamp(vec2(sx*q.x+xy*q.y,yx*q.x+sy*q.y)+clamp(phase,vec2(-1e6),vec2(1e6)),vec2(-1e5),vec2(1e5));\n vec2 period=max(vec2(px,py),vec2(0.01));\n vec2 u=t/period+vec2(mode<0.5||mode>=1.5?0.5:0.0);\n vec2 cell=floor(u), f=fract(u), centered=(f-0.5)*period;\n vec2 local=centered;\n if(mode>=0.5&&mode<1.5)local=f*period;\n else if(mode>=1.5)local=centered*(1.0-2.0*mod(cell,2.0));\n vec2 b=min(f,1.0-f)*period;\n return MakerOPL(local,cell,t,length(centered),min(b.x,b.y));\n}",
+  "glsl_outputs": {
+    "local": "maker_opl_eval({position},{center},{phase},{sx},{sy},{xy},{yx},{px},{py},{rotation},{mode}).local",
+    "cell": "maker_opl_eval({position},{center},{phase},{sx},{sy},{xy},{yx},{px},{py},{rotation},{mode}).cell",
+    "transformed": "maker_opl_eval({position},{center},{phase},{sx},{sy},{xy},{yx},{px},{py},{rotation},{mode}).transformed",
+    "radius": "maker_opl_eval({position},{center},{phase},{sx},{sy},{xy},{yx},{px},{py},{rotation},{mode}).radius",
+    "boundary": "maker_opl_eval({position},{center},{phase},{sx},{sy},{xy},{yx},{px},{py},{rotation},{mode}).boundary"
+  }
+}

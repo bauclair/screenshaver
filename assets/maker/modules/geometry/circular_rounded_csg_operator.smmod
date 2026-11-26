@@ -1,0 +1,80 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.geometry.circular_rounded_csg_operator",
+  "name": "Circular-Rounded CSG Operator",
+  "category": "Geometry",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Circular junction rounding for scalar distance fields.",
+  "uses": "Circular junction rounding for scalar distance fields.",
+  "notes": "Distance approximation at nonorthogonal junctions. Difference subtracts B from A. Contribution is rounded minus hard distance.",
+  "header_color": "#527D94",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "a",
+      "name": "Distance A",
+      "type": "float",
+      "default": "0.0"
+    },
+    {
+      "id": "b",
+      "name": "Distance B",
+      "type": "float",
+      "default": "0.0"
+    },
+    {
+      "id": "multiplier",
+      "name": "Radius Multiplier",
+      "type": "float",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "distance",
+      "name": "Combined Distance",
+      "type": "float",
+      "semantic_role": "distance"
+    },
+    {
+      "id": "hard",
+      "name": "Hard Combined Distance",
+      "type": "float"
+    },
+    {
+      "id": "contribution",
+      "name": "Rounding Contribution",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "operation",
+      "name": "Operation",
+      "type": "choice",
+      "default": 0,
+      "min": 0,
+      "max": 2,
+      "options": [
+        "Union",
+        "Intersection",
+        "Difference"
+      ]
+    },
+    {
+      "id": "radius",
+      "name": "Rounding Radius",
+      "type": "float",
+      "default": 0.1,
+      "min": 0,
+      "max": 10
+    }
+  ],
+  "helpers": "struct MakerCRC {float distance;float hard;float contribution;};\nMakerCRC maker_crc(float a,float b,float m,float op,float radius){if(isnan(a)||isinf(a)||isnan(b)||isinf(b)||isnan(m)||isinf(m))return MakerCRC(0.,0.,0.);a=clamp(a,-1e6,1e6);b=clamp(b,-1e6,1e6);float r=radius*clamp(m,0.,100.);if(op>1.5)b=-b;float s=op>.5?-1.:1.;a*=s;b*=s;float hard=min(a,b);float d=hard;if(r>0.&&a<r&&b<r)d=r-length(vec2(r-a,r-b));return MakerCRC(s*d,s*hard,s*(d-hard));}",
+  "glsl_outputs": {
+    "distance": "maker_crc({a},{b},{multiplier},{operation},{radius}).distance",
+    "hard": "maker_crc({a},{b},{multiplier},{operation},{radius}).hard",
+    "contribution": "maker_crc({a},{b},{multiplier},{operation},{radius}).contribution"
+  }
+}

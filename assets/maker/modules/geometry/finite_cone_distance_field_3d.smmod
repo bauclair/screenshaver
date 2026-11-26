@@ -1,0 +1,102 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.geometry.finite_cone_distance_field_3d",
+  "name": "Finite Cone Distance Field 3D",
+  "category": "Geometry",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Oriented finite solid distance field.",
+  "uses": "Oriented finite solid distance field.",
+  "notes": "Center is the axial midpoint. Zero axis falls back to +Y. Dimensions are bounded.",
+  "header_color": "#527D94",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "default": "vec3(maker_uv,0.0)",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec3",
+      "default": "vec3(0.0)"
+    },
+    {
+      "id": "axis",
+      "name": "Axis",
+      "type": "vec3",
+      "default": "vec3(0.0,1.0,0.0)"
+    },
+    {
+      "id": "radius_multiplier",
+      "name": "Radius Multiplier",
+      "type": "float",
+      "default": "1.0"
+    },
+    {
+      "id": "height_multiplier",
+      "name": "Height Multiplier",
+      "type": "float",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "distance",
+      "name": "Signed Distance",
+      "type": "float",
+      "semantic_role": "distance"
+    },
+    {
+      "id": "radial",
+      "name": "Radial Distance",
+      "type": "float"
+    },
+    {
+      "id": "axial",
+      "name": "Axial Position",
+      "type": "float"
+    },
+    {
+      "id": "inside",
+      "name": "Interior Mask",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "base",
+      "name": "Base Radius",
+      "type": "float",
+      "default": 0.5,
+      "min": 0,
+      "max": 100
+    },
+    {
+      "id": "tip",
+      "name": "Tip Radius",
+      "type": "float",
+      "default": 0,
+      "min": 0,
+      "max": 100
+    },
+    {
+      "id": "height",
+      "name": "Height",
+      "type": "float",
+      "default": 1,
+      "min": 0.001,
+      "max": 100
+    }
+  ],
+  "helpers": "struct MakerFCNE {float distance;float radial;float axial;float inside;};\nMakerFCNE maker_fcne(vec3 p,vec3 c,vec3 axis,float rm,float hm,float base,float tip,float height){\n if(any(isnan(p))||any(isinf(p))||any(isnan(c))||any(isinf(c))||any(isnan(axis))||any(isinf(axis))||isnan(rm)||isinf(rm)||isnan(hm)||isinf(hm))return MakerFCNE(0.,0.,0.,0.);\n vec3 q=clamp(p,-1e6,1e6)-clamp(c,-1e6,1e6);axis=clamp(axis,-1e6,1e6);float al=length(axis);vec3 n=al>1e-8?axis/al:vec3(0,1,0);float z=dot(q,n),r=length(q-z*n),h=max(.001,height*clamp(hm,.0001,100.));\n float a=base*clamp(rm,0.,100.),b=tip*clamp(rm,0.,100.);vec2 x=vec2(r,z),start=vec2(a,-h*.5),end=vec2(b,h*.5),v=end-start;float side=length(x-start-v*clamp(dot(x-start,v)/dot(v,v),0.,1.));float cap0=length(vec2(max(r-a,0.),z+h*.5)),cap1=length(vec2(max(r-b,0.),z-h*.5));float d=min(side,min(cap0,cap1));bool inside=abs(z)<=h*.5&&r<=mix(a,b,clamp(z/h+.5,0.,1.));if(inside)d=-d;\nreturn MakerFCNE(d,r,z,inside?1.:0.);\n}",
+  "glsl_outputs": {
+    "distance": "maker_fcne({position},{center},{axis},{radius_multiplier},{height_multiplier},{base},{tip},{height}).distance",
+    "radial": "maker_fcne({position},{center},{axis},{radius_multiplier},{height_multiplier},{base},{tip},{height}).radial",
+    "axial": "maker_fcne({position},{center},{axis},{radius_multiplier},{height_multiplier},{base},{tip},{height}).axial",
+    "inside": "maker_fcne({position},{center},{axis},{radius_multiplier},{height_multiplier},{base},{tip},{height}).inside"
+  }
+}

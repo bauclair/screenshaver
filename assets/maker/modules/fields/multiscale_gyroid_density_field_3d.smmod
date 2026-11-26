@@ -1,0 +1,150 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.multiscale_gyroid_density_field_3d",
+  "name": "Multiscale Gyroid Density Field 3D",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Bounded multiscale periodic density.",
+  "uses": "Bounded multiscale periodic density.",
+  "notes": "Normalized Field maps the selected response to 0\u20131. Signed Field is the weighted signed gyroid mean. Density is thresholded normalized response. Rotation is about a fixed diagonal axis.",
+  "header_color": "#527D94",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "default": "vec3(maker_uv,0.0)",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "time_offset",
+      "name": "Time Offset",
+      "type": "float",
+      "default": "0.0"
+    },
+    {
+      "id": "frequency_multiplier",
+      "name": "Frequency Multiplier",
+      "type": "float",
+      "default": "1.0"
+    },
+    {
+      "id": "density_multiplier",
+      "name": "Density Multiplier",
+      "type": "float",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "density",
+      "name": "Density",
+      "type": "float"
+    },
+    {
+      "id": "signed_field",
+      "name": "Signed Field",
+      "type": "float"
+    },
+    {
+      "id": "normalized_field",
+      "name": "Normalized Field",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "layers",
+      "name": "Layers",
+      "type": "float",
+      "default": 5,
+      "min": 1,
+      "max": 8
+    },
+    {
+      "id": "frequency",
+      "name": "Base Frequency",
+      "type": "float",
+      "default": 1,
+      "min": 0.01,
+      "max": 32
+    },
+    {
+      "id": "progression",
+      "name": "Frequency Progression",
+      "type": "float",
+      "default": 2,
+      "min": 0.5,
+      "max": 4
+    },
+    {
+      "id": "decay",
+      "name": "Amplitude Decay",
+      "type": "float",
+      "default": 0.5,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "rotation",
+      "name": "Rotation per Layer",
+      "type": "float",
+      "default": 30,
+      "min": -180,
+      "max": 180
+    },
+    {
+      "id": "distortion",
+      "name": "Coordinate Distortion",
+      "type": "float",
+      "default": 0.1,
+      "min": 0,
+      "max": 2
+    },
+    {
+      "id": "speed",
+      "name": "Animation Speed",
+      "type": "float",
+      "default": 0.5,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "threshold",
+      "name": "Density Threshold",
+      "type": "float",
+      "default": 0.3,
+      "min": -1,
+      "max": 1
+    },
+    {
+      "id": "gain",
+      "name": "Density Gain",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "response",
+      "name": "Field Response",
+      "type": "choice",
+      "default": 1,
+      "min": 0,
+      "max": 2,
+      "options": [
+        "Signed",
+        "Absolute",
+        "Ridged"
+      ]
+    }
+  ],
+  "helpers": "struct MakerMGD {float density;float signed_field;float normalized_field;};\nMakerMGD maker_mgd(vec3 p,float t,float fm,float dm,float layers,float freq,float prog,float decay,float rot,float dist,float speed,float threshold,float gain,float mode){\n if(any(isnan(p))||any(isinf(p))||isnan(t)||isinf(t)||isnan(fm)||isinf(fm)||isnan(dm)||isinf(dm)||isnan(u_time)||isinf(u_time))return MakerMGD(0.,0.,0.);\n p=clamp(p,vec3(-1e4),vec3(1e4)); t=clamp(t,-1e5,1e5)+clamp(u_time,-1e5,1e5);freq*=clamp(fm,-16.,16.);\n float a=radians(rot),c=cos(a),s=sin(a),w=1.,total=0.,signedSum=0.,responseSum=0.;vec3 axis=vec3(0.577350269);\n for(int i=0;i<8;i++){if(i>=int(clamp(floor(layers+.5),1.,8.)))break;\n vec3 q=p*freq+vec3(t*speed);q+=dist*sin(q.zxy);\n float g=clamp(dot(sin(q),cos(q.yzx))/3.,-1.,1.);\n signedSum+=w*g;responseSum+=w*(mode<.5?.5+.5*g:mode<1.5?abs(g):1.-abs(g));total+=w;\n p=p*c+cross(axis,p)*s+axis*dot(axis,p)*(1.-c);freq=clamp(freq*prog,-4096.,4096.);w*=decay;}\n float n=clamp(responseSum/max(total,1e-6),0.,1.);return MakerMGD(max(0.,n-threshold)*gain*clamp(dm,0.,16.),signedSum/max(total,1e-6),n);\n}",
+  "glsl_outputs": {
+    "density": "maker_mgd({position},{time_offset},{frequency_multiplier},{density_multiplier},{layers},{frequency},{progression},{decay},{rotation},{distortion},{speed},{threshold},{gain},{response}).density",
+    "signed_field": "maker_mgd({position},{time_offset},{frequency_multiplier},{density_multiplier},{layers},{frequency},{progression},{decay},{rotation},{distortion},{speed},{threshold},{gain},{response}).signed_field",
+    "normalized_field": "maker_mgd({position},{time_offset},{frequency_multiplier},{density_multiplier},{layers},{frequency},{progression},{decay},{rotation},{distortion},{speed},{threshold},{gain},{response}).normalized_field"
+  }
+}

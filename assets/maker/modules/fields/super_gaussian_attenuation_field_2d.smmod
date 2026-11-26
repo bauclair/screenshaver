@@ -1,0 +1,113 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.super_gaussian_attenuation_field_2d",
+  "name": "Super-Gaussian Attenuation Field 2D",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Adjustable spatial attenuation envelope.",
+  "uses": "Adjustable spatial attenuation envelope.",
+  "notes": "Width is the 1/e radius along each axis. Inverse is one minus the unit envelope, independent of intensity. Separable distance is the Lp norm.",
+  "header_color": "#527D94",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec2",
+      "default": "vec2(0.0)"
+    },
+    {
+      "id": "multiplier",
+      "name": "Width Multiplier",
+      "type": "float",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "attenuation",
+      "name": "Attenuation",
+      "type": "float"
+    },
+    {
+      "id": "inverse",
+      "name": "Inverse Attenuation",
+      "type": "float"
+    },
+    {
+      "id": "distance",
+      "name": "Normalized Distance",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "width_x",
+      "name": "X Width",
+      "type": "float",
+      "default": 0.5,
+      "min": 0.001,
+      "max": 100
+    },
+    {
+      "id": "width_y",
+      "name": "Y Width",
+      "type": "float",
+      "default": 0.5,
+      "min": 0.001,
+      "max": 100
+    },
+    {
+      "id": "exponent",
+      "name": "Exponent",
+      "type": "float",
+      "default": 6,
+      "min": 1,
+      "max": 32
+    },
+    {
+      "id": "rotation",
+      "name": "Rotation",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "mode",
+      "name": "Envelope Mode",
+      "type": "choice",
+      "default": 2,
+      "min": 0,
+      "max": 3,
+      "options": [
+        "Horizontal",
+        "Vertical",
+        "Elliptical",
+        "Separable"
+      ]
+    },
+    {
+      "id": "intensity",
+      "name": "Intensity",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 10
+    }
+  ],
+  "helpers": "struct MakerSGA {float attenuation;float inverse;float distance;};\nMakerSGA maker_sga(vec2 p,vec2 c,float m,float wx,float wy,float e,float rot,float mode,float intensity){if(any(isnan(p))||any(isinf(p))||any(isnan(c))||any(isinf(c))||isnan(m)||isinf(m))return MakerSGA(0.,0.,0.);vec2 q=clamp(p,-1e6,1e6)-clamp(c,-1e6,1e6);float a=radians(rot),co=cos(a),si=sin(a);q=abs(vec2(co*q.x+si*q.y,-si*q.x+co*q.y))/max(vec2(.001),vec2(wx,wy)*clamp(m,.0001,100.));float d=mode<.5?q.x:mode<1.5?q.y:length(q);if(mode>2.5){float k=max(q.x,q.y);d=k>0.?k*pow(pow(q.x/k,e)+pow(q.y/k,e),1./e):0.;}float v=exp(-pow(min(d,pow(80.,1./e)),e));return MakerSGA(v*intensity,1.-v,d);}",
+  "glsl_outputs": {
+    "attenuation": "maker_sga({position},{center},{multiplier},{width_x},{width_y},{exponent},{rotation},{mode},{intensity}).attenuation",
+    "inverse": "maker_sga({position},{center},{multiplier},{width_x},{width_y},{exponent},{rotation},{mode},{intensity}).inverse",
+    "distance": "maker_sga({position},{center},{multiplier},{width_x},{width_y},{exponent},{rotation},{mode},{intensity}).distance"
+  }
+}

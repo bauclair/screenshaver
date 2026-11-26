@@ -1,0 +1,144 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.directional_wave_superposition_field_2d",
+  "name": "Directional Wave Superposition Field 2D",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Superpose angularly distributed plane waves.",
+  "uses": "Superpose angularly distributed plane waves.",
+  "notes": "Angular span is divided by wave count. Normalized Field uses the bounded mean, even in Sum mode. Gradient is the derivative of the selected accumulated field within coordinate bounds.",
+  "header_color": "#527D94",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "time_offset",
+      "name": "Time Offset",
+      "type": "float",
+      "default": "0.0"
+    },
+    {
+      "id": "frequency_multiplier",
+      "name": "Frequency Multiplier",
+      "type": "float",
+      "default": "1.0"
+    },
+    {
+      "id": "phase_offset",
+      "name": "Phase Offset",
+      "type": "float",
+      "default": "0.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "field",
+      "name": "Signed Field",
+      "type": "float"
+    },
+    {
+      "id": "normalized",
+      "name": "Normalized Field",
+      "type": "float"
+    },
+    {
+      "id": "energy",
+      "name": "Wave Energy",
+      "type": "float"
+    },
+    {
+      "id": "gradient",
+      "name": "Gradient",
+      "type": "vec2"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "count",
+      "name": "Wave Count",
+      "type": "float",
+      "default": 7,
+      "min": 1,
+      "max": 32
+    },
+    {
+      "id": "frequency",
+      "name": "Frequency",
+      "type": "float",
+      "default": 12,
+      "min": 0.01,
+      "max": 128
+    },
+    {
+      "id": "orientation",
+      "name": "Orientation",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "span",
+      "name": "Angular Span",
+      "type": "float",
+      "default": 180,
+      "min": 0,
+      "max": 360
+    },
+    {
+      "id": "speed",
+      "name": "Animation Speed",
+      "type": "float",
+      "default": 1,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "increment",
+      "name": "Phase Increment",
+      "type": "float",
+      "default": 0,
+      "min": -180,
+      "max": 180
+    },
+    {
+      "id": "wave",
+      "name": "Wave Function",
+      "type": "choice",
+      "default": 1,
+      "min": 0,
+      "max": 1,
+      "options": [
+        "Sine",
+        "Cosine"
+      ]
+    },
+    {
+      "id": "accumulation",
+      "name": "Accumulation",
+      "type": "choice",
+      "default": 0,
+      "min": 0,
+      "max": 2,
+      "options": [
+        "Mean",
+        "Sum",
+        "Absolute Mean"
+      ]
+    }
+  ],
+  "helpers": "struct MakerDWS {float field;float normalized;float energy;vec2 gradient;};\nMakerDWS maker_dws(vec2 p,float t,float fm,float phase,float count,float freq,float orient,float span,float speed,float inc,float wave,float mode){\n if(any(isnan(p))||any(isinf(p))||isnan(t)||isinf(t)||isnan(fm)||isinf(fm)||isnan(phase)||isinf(phase)||isnan(u_time)||isinf(u_time))return MakerDWS(0.,0.,0.,vec2(0));\n vec2 original=p;p=clamp(p,vec2(-1e4),vec2(1e4));float n=clamp(floor(count+.5),1.,32.),k=freq*clamp(fm,-16.,16.),sum=0.,energy=0.;vec2 grad=vec2(0);float time=(clamp(t,-1e5,1e5)+clamp(u_time,-1e5,1e5))*speed+clamp(phase,-1e5,1e5);\n for(int i=0;i<32;i++){if(float(i)>=n)break;float a=radians(orient+span*float(i)/n);vec2 d=vec2(cos(a),sin(a));float x=k*dot(p,d)+time+radians(inc)*float(i);float v=wave<.5?sin(x):cos(x),dv=wave<.5?cos(x):-sin(x);energy+=v*v;if(mode>=1.5){dv*=sign(v);v=abs(v);}sum+=v;grad+=k*dv*d;}\n grad*=vec2(abs(original.x)<=1e4?1.:0.,abs(original.y)<=1e4?1.:0.);float mean=sum/n;return MakerDWS(mode>.5&&mode<1.5?sum:mean,mode>=1.5?mean:.5+.5*mean,energy/n,mode>.5&&mode<1.5?grad:grad/n);\n}",
+  "glsl_outputs": {
+    "field": "maker_dws({position},{time_offset},{frequency_multiplier},{phase_offset},{count},{frequency},{orientation},{span},{speed},{increment},{wave},{accumulation}).field",
+    "normalized": "maker_dws({position},{time_offset},{frequency_multiplier},{phase_offset},{count},{frequency},{orientation},{span},{speed},{increment},{wave},{accumulation}).normalized",
+    "energy": "maker_dws({position},{time_offset},{frequency_multiplier},{phase_offset},{count},{frequency},{orientation},{span},{speed},{increment},{wave},{accumulation}).energy",
+    "gradient": "maker_dws({position},{time_offset},{frequency_multiplier},{phase_offset},{count},{frequency},{orientation},{span},{speed},{increment},{wave},{accumulation}).gradient"
+  }
+}

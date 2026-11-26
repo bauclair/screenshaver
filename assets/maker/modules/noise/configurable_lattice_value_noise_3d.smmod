@@ -1,0 +1,115 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.noise.configurable_lattice_value_noise_3d",
+  "name": "Configurable Lattice Value Noise 3D",
+  "category": "Noise",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Interpolated scalar noise with adjustable weighted lattice projection.",
+  "uses": "Interpolated scalar noise with adjustable weighted lattice projection.",
+  "notes": "Coefficients are rounded integers. Equal weighted lattice sums intentionally share hash values. Animation translates all three sampling axes. Frequency Multiplier is bounded to +/-16 and sample coordinates to +/-1000000. Nonfinite inputs return zero outputs.",
+  "header_color": "#806B99",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "default": "vec3(maker_uv,0.0)",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "time_offset",
+      "name": "Time Offset",
+      "type": "float",
+      "default": "0.0",
+      "semantic_role": "time"
+    },
+    {
+      "id": "frequency_multiplier",
+      "name": "Frequency Multiplier",
+      "type": "float",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "noise",
+      "name": "Noise",
+      "type": "float"
+    },
+    {
+      "id": "signed_noise",
+      "name": "Signed Noise",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "frequency",
+      "name": "Frequency",
+      "type": "float",
+      "default": 4,
+      "min": 0.001,
+      "max": 256
+    },
+    {
+      "id": "cx",
+      "name": "X Lattice Coefficient",
+      "type": "float",
+      "default": 1,
+      "min": 1,
+      "max": 257
+    },
+    {
+      "id": "cy",
+      "name": "Y Lattice Coefficient",
+      "type": "float",
+      "default": 43,
+      "min": 1,
+      "max": 257
+    },
+    {
+      "id": "cz",
+      "name": "Z Lattice Coefficient",
+      "type": "float",
+      "default": 47,
+      "min": 1,
+      "max": 257
+    },
+    {
+      "id": "seed",
+      "name": "Seed",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 65535
+    },
+    {
+      "id": "speed",
+      "name": "Animation Speed",
+      "type": "float",
+      "default": 1,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "interpolation",
+      "name": "Interpolation",
+      "type": "choice",
+      "default": 1,
+      "min": 0,
+      "max": 2,
+      "options": [
+        "Linear",
+        "Cubic",
+        "Quintic"
+      ]
+    }
+  ],
+  "helpers": "struct MakerCLVN { float noise; float signed_noise; };\nfloat maker_clvn_hash(int n,uint seed){\n uint h=uint(n+800000000) ^ (seed*747796405u);\n h^=h>>16u; h*=2246822519u; h^=h>>13u; h*=3266489917u; h^=h>>16u;\n return float(h & 16777215u)/16777215.0;\n}\nMakerCLVN maker_clvn_eval(vec3 p,float offset,float mult,float freq,float cx,float cy,float cz,float seed,float speed,float interp){\n if(any(isnan(p))||any(isinf(p))||isnan(offset)||isinf(offset)||isnan(mult)||isinf(mult)||isnan(u_time)||isinf(u_time))return MakerCLVN(0.0,0.0);\n vec3 q=clamp(clamp(p,vec3(-1e6),vec3(1e6))*freq*clamp(mult,-16.0,16.0)+vec3(speed*(clamp(u_time,-1e5,1e5)+clamp(offset,-1e5,1e5))),vec3(-1e6),vec3(1e6));\n ivec3 cell=ivec3(floor(q)), c=ivec3(clamp(floor(vec3(cx,cy,cz)+0.5),vec3(1.0),vec3(257.0)));\n int n=cell.x*c.x+cell.y*c.y+cell.z*c.z;\n uint s=uint(clamp(floor(seed+0.5),0.0,65535.0));\n vec3 w=fract(q);\n if(interp>=1.5)w=w*w*w*(w*(6.0*w-15.0)+10.0); else if(interp>=0.5)w=w*w*(3.0-2.0*w);\n float a=mix(maker_clvn_hash(n,s),maker_clvn_hash(n+c.x,s),w.x);\n float b=mix(maker_clvn_hash(n+c.y,s),maker_clvn_hash(n+c.y+c.x,s),w.x);\n float d=mix(maker_clvn_hash(n+c.z,s),maker_clvn_hash(n+c.z+c.x,s),w.x);\n float e=mix(maker_clvn_hash(n+c.z+c.y,s),maker_clvn_hash(n+c.z+c.y+c.x,s),w.x);\n float v=clamp(mix(mix(a,b,w.y),mix(d,e,w.y),w.z),0.0,1.0);\n return MakerCLVN(v,2.0*v-1.0);\n}",
+  "glsl_outputs": {
+    "noise": "maker_clvn_eval({position},{time_offset},{frequency_multiplier},{frequency},{cx},{cy},{cz},{seed},{speed},{interpolation}).noise",
+    "signed_noise": "maker_clvn_eval({position},{time_offset},{frequency_multiplier},{frequency},{cx},{cy},{cz},{seed},{speed},{interpolation}).signed_noise"
+  }
+}

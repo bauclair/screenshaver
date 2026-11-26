@@ -1,0 +1,166 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.rotating_angular_sweep_field_2d",
+  "name": "Rotating Angular Sweep Field 2D",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Directional angular trail and radial clipping.",
+  "uses": "Directional angular trail and radial clipping.",
+  "notes": "Positive rotation is counterclockwise in mathematical XY. Negative speed reverses trail direction. Zero speed uses positive direction. Angular Distance is trailing angle in radians. Sweep Phase is turns in [0,1). Beam Width is full angular width.",
+  "header_color": "#527D94",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec2",
+      "default": "vec2(0.0)"
+    },
+    {
+      "id": "time_offset",
+      "name": "Time Offset",
+      "type": "float",
+      "default": "0.0"
+    },
+    {
+      "id": "angle_modulation",
+      "name": "Angle Modulation",
+      "type": "float",
+      "default": "0.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "intensity",
+      "name": "Sweep Intensity",
+      "type": "float"
+    },
+    {
+      "id": "angular_distance",
+      "name": "Angular Distance",
+      "type": "float"
+    },
+    {
+      "id": "beam",
+      "name": "Beam Mask",
+      "type": "float"
+    },
+    {
+      "id": "radial",
+      "name": "Radial Mask",
+      "type": "float"
+    },
+    {
+      "id": "phase",
+      "name": "Sweep Phase",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "speed",
+      "name": "Rotation Speed",
+      "type": "float",
+      "default": 1,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "initial",
+      "name": "Initial Angle",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "trail",
+      "name": "Trail Length",
+      "type": "float",
+      "default": 120,
+      "min": 0.1,
+      "max": 360
+    },
+    {
+      "id": "width",
+      "name": "Beam Width",
+      "type": "float",
+      "default": 2,
+      "min": 0.1,
+      "max": 180
+    },
+    {
+      "id": "decay",
+      "name": "Decay Strength",
+      "type": "float",
+      "default": 4,
+      "min": 0,
+      "max": 32
+    },
+    {
+      "id": "outer",
+      "name": "Outer Radius",
+      "type": "float",
+      "default": 0.5,
+      "min": 0.001,
+      "max": 100
+    },
+    {
+      "id": "inner",
+      "name": "Inner Radius",
+      "type": "float",
+      "default": 0,
+      "min": 0,
+      "max": 100
+    },
+    {
+      "id": "softness",
+      "name": "Radial Softness",
+      "type": "float",
+      "default": 0.01,
+      "min": 0,
+      "max": 2
+    },
+    {
+      "id": "function",
+      "name": "Decay Function",
+      "type": "choice",
+      "default": 1,
+      "min": 0,
+      "max": 2,
+      "options": [
+        "Linear",
+        "Exponential",
+        "Reciprocal"
+      ]
+    },
+    {
+      "id": "clipping",
+      "name": "Radial Clipping",
+      "type": "choice",
+      "default": 1,
+      "min": 0,
+      "max": 1,
+      "options": [
+        "Disabled",
+        "Enabled"
+      ]
+    }
+  ],
+  "helpers": "struct MakerRAS {float intensity;float angular_distance;float beam;float radial;float phase;};\nMakerRAS maker_ras(vec2 p,vec2 center,float t,float modAngle,float speed,float initial,float trail,float width,float decay,float outer,float inner,float soft,float mode,float clipping){\n if(any(isnan(p))||any(isinf(p))||any(isnan(center))||any(isinf(center))||isnan(t)||isinf(t)||isnan(modAngle)||isinf(modAngle)||isnan(u_time)||isinf(u_time))return MakerRAS(0.,0.,0.,0.,0.);\n const float tau=6.28318530718;vec2 q=clamp(p,vec2(-1e6),vec2(1e6))-clamp(center,vec2(-1e6),vec2(1e6));float r=length(q);float a=mod(radians(initial)+speed*(clamp(t,-1e5,1e5)+clamp(u_time,-1e5,1e5))+clamp(modAngle,-1e5,1e5),tau);float theta=r>1e-8?atan(q.y,q.x):a;float d=mod((a-theta)*(speed<0.?-1.:1.),tau),u=d/max(radians(trail),1e-6);float v=0.;if(u<=1.)v=mode<.5?max(0.,1.-u):mode<1.5?exp(-decay*u):1./(1.+decay*u);\n float beam=1.-step(radians(width)*.5,min(d,tau-d));float radial=1.;inner=min(inner,outer);if(clipping>.5){radial=soft>0.?1.-smoothstep(outer,outer+soft,r):1.-step(outer,r);if(inner>0.)radial*=soft>0.?smoothstep(max(0.,inner-soft),inner,r):step(inner,r);}return MakerRAS(max(v,beam)*radial,d,beam,radial,a/tau);\n}",
+  "glsl_outputs": {
+    "intensity": "maker_ras({position},{center},{time_offset},{angle_modulation},{speed},{initial},{trail},{width},{decay},{outer},{inner},{softness},{function},{clipping}).intensity",
+    "angular_distance": "maker_ras({position},{center},{time_offset},{angle_modulation},{speed},{initial},{trail},{width},{decay},{outer},{inner},{softness},{function},{clipping}).angular_distance",
+    "beam": "maker_ras({position},{center},{time_offset},{angle_modulation},{speed},{initial},{trail},{width},{decay},{outer},{inner},{softness},{function},{clipping}).beam",
+    "radial": "maker_ras({position},{center},{time_offset},{angle_modulation},{speed},{initial},{trail},{width},{decay},{outer},{inner},{softness},{function},{clipping}).radial",
+    "phase": "maker_ras({position},{center},{time_offset},{angle_modulation},{speed},{initial},{trail},{width},{decay},{outer},{inner},{softness},{function},{clipping}).phase"
+  }
+}
