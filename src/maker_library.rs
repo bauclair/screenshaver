@@ -9,7 +9,20 @@ impl Library {
  fn load()->Self{
     let mut result=Self{modules:BTreeMap::new(),categories:BTreeMap::new(),sources:BTreeMap::new(),errors:Vec::new(),catalog_fingerprint:0xcbf29ce484222325};
     let official=[
-        ("lighting/dielectric_fresnel_response.smmod", include_str!("../assets/maker/modules/lighting/dielectric_fresnel_response.smmod")),
+
+      ("fields/iterative_orbit_correlation_field_3d.smmod",include_str!("../assets/maker/modules/fields/iterative_orbit_correlation_field_3d.smmod")),
+      ("geometry/radial_branched_distance_field_2d.smmod",include_str!("../assets/maker/modules/geometry/radial_branched_distance_field_2d.smmod")),
+      ("coordinates/complex_plane_transformation_3d.smmod",include_str!("../assets/maker/modules/coordinates/complex_plane_transformation_3d.smmod")),
+      ("fields/periodic_cell_envelope_2d.smmod",include_str!("../assets/maker/modules/fields/periodic_cell_envelope_2d.smmod")),
+      ("fields/nonlinear_harmonic_feedback_field_2d.smmod",include_str!("../assets/maker/modules/fields/nonlinear_harmonic_feedback_field_2d.smmod")),
+      ("math/differentiable_absolute_response.smmod",include_str!("../assets/maker/modules/math/differentiable_absolute_response.smmod")),
+      ("noise/simplex_gradient_noise_3d.smmod", include_str!("../assets/maker/modules/noise/simplex_gradient_noise_3d.smmod")),
+        ("math/wavelength_dependent_refractive_index.smmod", include_str!("../assets/maker/modules/math/wavelength_dependent_refractive_index.smmod")),
+        ("color/xyz_linear_rgb_conversion.smmod", include_str!("../assets/maker/modules/color/xyz_linear_rgb_conversion.smmod")),
+        ("fields/ordered_bayer_sampling_field_2d.smmod", include_str!("../assets/maker/modules/fields/ordered_bayer_sampling_field_2d.smmod")),
+        ("coordinates/radially_modulated_rotation_2d.smmod", include_str!("../assets/maker/modules/coordinates/radially_modulated_rotation_2d.smmod")),
+        ("coordinates/recursive_rectangular_subdivision_field_2d.smmod", include_str!("../assets/maker/modules/coordinates/recursive_rectangular_subdivision_field_2d.smmod")),
+        ("math/rational_sigmoid_response.smmod",include_str!("../assets/maker/modules/math/rational_sigmoid_response.smmod")),        ("lighting/dielectric_fresnel_response.smmod", include_str!("../assets/maker/modules/lighting/dielectric_fresnel_response.smmod")),
         ("lighting/rgb_beer_lambert_transmittance.smmod", include_str!("../assets/maker/modules/lighting/rgb_beer_lambert_transmittance.smmod")),
         ("coordinates/vector_alignment_rotation_3d.smmod", include_str!("../assets/maker/modules/coordinates/vector_alignment_rotation_3d.smmod")),
       ("coordinates/cyclic_exponential_coordinate_scaling_2d.smmod",include_str!("../assets/maker/modules/coordinates/cyclic_exponential_coordinate_scaling_2d.smmod")),
@@ -95,6 +108,11 @@ impl Library {
       ("fields/super_gaussian_attenuation_field_2d.smmod",include_str!("../assets/maker/modules/fields/super_gaussian_attenuation_field_2d.smmod")),
       ("geometry/circular_rounded_csg_operator.smmod",include_str!("../assets/maker/modules/geometry/circular_rounded_csg_operator.smmod")),
       ("geometry/three_point_oriented_plane_field_3d.smmod",include_str!("../assets/maker/modules/geometry/three_point_oriented_plane_field_3d.smmod")),
+      ("fields/iterative_inversion_orbit_field_2d.smmod",include_str!("../assets/maker/modules/fields/iterative_inversion_orbit_field_2d.smmod")),
+      ("coordinates/independently_scrolling_cell_coordinates_2d.smmod",include_str!("../assets/maker/modules/coordinates/independently_scrolling_cell_coordinates_2d.smmod")),
+      ("coordinates/arc_length_radial_cell_coordinates_3d.smmod",include_str!("../assets/maker/modules/coordinates/arc_length_radial_cell_coordinates_3d.smmod")),
+      ("geometry/rounded_box_distance_field_3d.smmod",include_str!("../assets/maker/modules/geometry/rounded_box_distance_field_3d.smmod")),
+      ("color/parametric_harmonic_rgb_palette.smmod",include_str!("../assets/maker/modules/color/parametric_harmonic_rgb_palette.smmod")),
       ("geometry/finite_capped_cylinder_distance_field_3d.smmod",include_str!("../assets/maker/modules/geometry/finite_capped_cylinder_distance_field_3d.smmod")),
       ("geometry/finite_cone_distance_field_3d.smmod",include_str!("../assets/maker/modules/geometry/finite_cone_distance_field_3d.smmod")),
       ("fields/rotating_angular_sweep_field_2d.smmod",include_str!("../assets/maker/modules/fields/rotating_angular_sweep_field_2d.smmod")),

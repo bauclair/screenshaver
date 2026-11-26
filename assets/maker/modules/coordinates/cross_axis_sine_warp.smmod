@@ -8,7 +8,7 @@
   "header_color": "#287C9B",
   "description": "Bounded cross-coupled sine displacement with legacy simultaneous or sequential harmonic feedback.",
   "uses": "Liquid patterns, coupled sine distortions, animated UV warps.",
-  "notes": "Existing mode retains the original 12-step limit and final translation; new controls apply only to Sequential Harmonic mode, which rounds Iterations to nearest integer and clamps to 1–50. Per Iteration translation updates X before the Y wave. Frequency floor 0.05 prevents zero division. Low frequency and high exponent can produce very large displacements; use moderate settings.",
+  "notes": "Existing mode retains the original 12-step limit and final translation; new controls apply only to Sequential Harmonic mode, which rounds Iterations to nearest integer and clamps to 1\u201350. Per Iteration translation updates X before the Y wave. Frequency floor 0.05 prevents zero division. Low frequency and high exponent can produce very large displacements; use moderate settings.",
   "inputs": [
     {
       "id": "position",
@@ -132,9 +132,48 @@
       "default": 1,
       "min": 0.05,
       "max": 5
+    },
+    {
+      "id": "rotation_per_iteration",
+      "name": "Rotation Per Iteration",
+      "type": "float",
+      "default": 0.0,
+      "min": -180.0,
+      "max": 180.0
+    },
+    {
+      "id": "rotation_animation_speed",
+      "name": "Rotation Animation Speed",
+      "type": "float",
+      "default": 0.0,
+      "min": -10.0,
+      "max": 10.0
+    },
+    {
+      "id": "axis_activation",
+      "name": "Axis Activation",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Both",
+        "X",
+        "Y"
+      ]
+    },
+    {
+      "id": "activation_pattern",
+      "name": "Activation Pattern",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Every Iteration",
+        "Odd Iterations",
+        "Even Iterations",
+        "Alternating Axes"
+      ]
     }
   ],
-  "helpers": "vec2 maker_cross_warp_independent(vec2 p,float time,float iterations,float strength,float scale,float speed,float xb,float yb){vec2 q=p;float t=time*speed;int count=clamp(int(iterations+0.5),1,12);for(int j=0;j<12;j++){if(j>=count)break;float k=float(j)+1.0;vec2 v=vec2(sin(scale*q.y*(1.0+0.3*k)+t+0.7*k),cos(scale*q.x*(1.0+0.2*k)-t+0.9*k));q+=strength*v/(k*float(count));}return q+vec2(xb,yb);}\nvec2 maker_cross_warp_modes(vec2 p,float time,float iterations,float strength,float scale,float speed,float xb,float yb,float mode,float translation,float exponent,float xp,float yp,float xm,float ym){\n if(mode<0.5)return maker_cross_warp_independent(p,time,iterations,strength,scale,speed,xb,yb);\n int count=int(clamp(floor(iterations+0.5),1.0,50.0));\n float base=max(scale,0.05), t=time*speed;\n vec2 q=p, shift=vec2(xb,yb); bool each=translation>=0.5;\n for(int j=0;j<50;++j){if(j>=count)break;\n float harmonic=base*float(j+1);\n float amplitude=strength/pow(harmonic,clamp(exponent,0.0,3.0));\n q.x+=amplitude*sin(harmonic*xm*q.y+t+radians(xp));\n if(each)q.x+=shift.x;\n q.y+=amplitude*sin(harmonic*ym*q.x+t+radians(yp));\n if(each)q.y+=shift.y;\n }\n return each?q:q+shift;\n}\n",
-  "glsl": "maker_cross_warp_modes({position},u_time,{iterations},{strength},{scale},{speed},{x_boost},{y_boost},{feedback_mode},{translation_mode},{amplitude_exponent},{x_wave_phase},{y_wave_phase},{x_frequency_multiplier},{y_frequency_multiplier})",
+  "helpers": "vec2 maker_cross_warp_independent(vec2 p,float time,float iterations,float strength,float scale,float speed,float xb,float yb){vec2 q=p;float t=time*speed;int count=clamp(int(iterations+0.5),1,12);for(int j=0;j<12;j++){if(j>=count)break;float k=float(j)+1.0;vec2 v=vec2(sin(scale*q.y*(1.0+0.3*k)+t+0.7*k),cos(scale*q.x*(1.0+0.2*k)-t+0.9*k));q+=strength*v/(k*float(count));}return q+vec2(xb,yb);}\nvec2 maker_cross_warp_modes(vec2 p,float time,float iterations,float strength,float scale,float speed,float xb,float yb,float mode,float translation,float exponent,float xp,float yp,float xm,float ym,float rotation_per_iteration,float rotation_animation_speed,float axis_activation,float activation_pattern){\n if(mode<0.5 && rotation_per_iteration==0. && rotation_animation_speed==0. && axis_activation<.5 && activation_pattern<.5)return maker_cross_warp_independent(p,time,iterations,strength,scale,speed,xb,yb);\n int count=int(clamp(floor(iterations+0.5),1.0,50.0));\n float base=max(scale,0.05), t=time*speed;\n vec2 q=p, shift=vec2(xb,yb); bool each=translation>=0.5;\n for(int j=0;j<50;++j){if(j>=count)break;\n float a=radians(rotation_per_iteration)+time*rotation_animation_speed; if(a!=0.)q=mat2(cos(a),sin(a),-sin(a),cos(a))*q; bool odd=(j%2)==0; bool enabled_axis=activation_pattern<.5 || activation_pattern>2.5 || (activation_pattern<1.5?odd:!odd); bool ax=enabled_axis && axis_activation<1.5 && (activation_pattern<2.5||odd); bool ay=enabled_axis && (axis_activation<.5||axis_activation>1.5) && (activation_pattern<2.5||!odd); float harmonic=base*float(j+1);\n float amplitude=strength/pow(harmonic,clamp(exponent,0.0,3.0));\n if(ax)q.x+=amplitude*sin(harmonic*xm*q.y+t+radians(xp));\n if(each)q.x+=shift.x;\n if(ay)q.y+=amplitude*sin(harmonic*ym*q.x+t+radians(yp));\n if(each)q.y+=shift.y;\n }\n return each?q:q+shift;\n}\n",
+  "glsl": "maker_cross_warp_modes({position},u_time,{iterations},{strength},{scale},{speed},{x_boost},{y_boost},{feedback_mode},{translation_mode},{amplitude_exponent},{x_wave_phase},{y_wave_phase},{x_frequency_multiplier},{y_frequency_multiplier},{rotation_per_iteration},{rotation_animation_speed},{axis_activation},{activation_pattern})",
   "terminal": false
 }

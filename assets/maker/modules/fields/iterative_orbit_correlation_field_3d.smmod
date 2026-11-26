@@ -1,0 +1,176 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.iterative_orbit_correlation_field_3d",
+  "name": "Iterative Orbit Correlation Field 3D",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Iterative Orbit Correlation Field 3D",
+  "uses": "Iterative Orbit Correlation Field 3D",
+  "notes": "Bounded procedural mathematical response.",
+  "header_color": "#527D94",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "default": "vec3(maker_uv,0.0)",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "reference_vector",
+      "name": "Reference Vector",
+      "type": "vec3",
+      "default": "vec3(1.0,0.0,0.0)"
+    },
+    {
+      "id": "translation",
+      "name": "Translation",
+      "type": "vec3",
+      "default": "vec3(0.0)"
+    },
+    {
+      "id": "time_offset",
+      "name": "Time Offset",
+      "type": "float",
+      "default": "0.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "correlation_field",
+      "name": "Correlation Field",
+      "type": "float"
+    },
+    {
+      "id": "minimum_correlation",
+      "name": "Minimum Correlation",
+      "type": "float"
+    },
+    {
+      "id": "maximum_correlation",
+      "name": "Maximum Correlation",
+      "type": "float"
+    },
+    {
+      "id": "final_position",
+      "name": "Final Position",
+      "type": "vec3"
+    },
+    {
+      "id": "mean_response",
+      "name": "Mean Response",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "iterations",
+      "name": "Iterations",
+      "type": "float",
+      "default": 6.0,
+      "min": 1.0,
+      "max": 16.0
+    },
+    {
+      "id": "inversion_gain",
+      "name": "Inversion Gain",
+      "type": "float",
+      "default": 1.0,
+      "min": 0.01,
+      "max": 10.0
+    },
+    {
+      "id": "minimum_radius",
+      "name": "Minimum Radius",
+      "type": "float",
+      "default": 0.01,
+      "min": 0.0001,
+      "max": 1.0
+    },
+    {
+      "id": "response_strength",
+      "name": "Response Strength",
+      "type": "float",
+      "default": 8.0,
+      "min": 0.0,
+      "max": 64.0
+    },
+    {
+      "id": "weight_decay",
+      "name": "Weight Decay",
+      "type": "float",
+      "default": 0.8,
+      "min": 0.0,
+      "max": 1.0
+    },
+    {
+      "id": "rotation_per_iteration",
+      "name": "Rotation Per Iteration",
+      "type": "float",
+      "default": 0.0,
+      "min": -180.0,
+      "max": 180.0
+    },
+    {
+      "id": "animation_speed",
+      "name": "Animation Speed",
+      "type": "float",
+      "default": 0.0,
+      "min": -10.0,
+      "max": 10.0
+    },
+    {
+      "id": "orbit_transformation",
+      "name": "Orbit Transformation",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Folded Inversion",
+        "Inversion and Complex Square"
+      ]
+    },
+    {
+      "id": "correlation_metric",
+      "name": "Correlation Metric",
+      "type": "choice",
+      "default": 1,
+      "options": [
+        "Dot Product",
+        "Normalized Dot",
+        "Cross Magnitude"
+      ]
+    },
+    {
+      "id": "response_mode",
+      "name": "Response Mode",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Orthogonal",
+        "Aligned",
+        "Opposed"
+      ]
+    },
+    {
+      "id": "transformation_plane",
+      "name": "Transformation Plane",
+      "type": "choice",
+      "default": 1,
+      "options": [
+        "XY",
+        "YZ",
+        "XZ"
+      ]
+    }
+  ],
+  "helpers": "struct MakerB303IterativeOrbitCorrelationField3D {float correlation_field;float minimum_correlation;float maximum_correlation;vec3 final_position;float mean_response;};\nMakerB303IterativeOrbitCorrelationField3D maker_b303_iterative_orbit_correlation_field_3d(vec3 position,vec3 reference_vector,vec3 translation,float time_offset,float iterations,float inversion_gain,float minimum_radius,float response_strength,float weight_decay,float rotation_per_iteration,float animation_speed,float orbit_transformation,float correlation_metric,float response_mode,float transformation_plane,float tm){\nif(any(isnan(position))||any(isinf(position))||any(isnan(reference_vector))||any(isinf(reference_vector))||any(isnan(translation))||any(isinf(translation))||isnan(time_offset)||isinf(time_offset)||isnan(iterations)||isinf(iterations)||isnan(inversion_gain)||isinf(inversion_gain)||isnan(minimum_radius)||isinf(minimum_radius)||isnan(response_strength)||isinf(response_strength)||isnan(weight_decay)||isinf(weight_decay)||isnan(rotation_per_iteration)||isinf(rotation_per_iteration)||isnan(animation_speed)||isinf(animation_speed)||isnan(orbit_transformation)||isinf(orbit_transformation)||isnan(correlation_metric)||isinf(correlation_metric)||isnan(response_mode)||isinf(response_mode)||isnan(transformation_plane)||isinf(transformation_plane))return MakerB303IterativeOrbitCorrelationField3D(float(0.0),float(0.0),float(0.0),vec3(0.0),float(0.0));\nvec3 q=clamp(position,-1e5,1e5),refv=clamp(reference_vector,-1e5,1e5);float a=radians(rotation_per_iteration)+clamp(tm+time_offset,-1e6,1e6)*animation_speed;mat2 rot=mat2(cos(a),sin(a),-sin(a),cos(a));int n=int(clamp(round(iterations),1.,16.));float lo=1e30,hi=-1e30,total=0.,sum=0.,w=1.,ws=0.;for(int i=0;i<16;i++){if(i>=n)break;q=inversion_gain*q/max(dot(q,q),minimum_radius*minimum_radius);if(orbit_transformation<.5)q=abs(q);else{vec2 z=transformation_plane<.5?q.xy:transformation_plane<1.5?q.yz:q.xz;z=vec2(z.x*z.x-z.y*z.y,2.*z.x*z.y);if(transformation_plane<.5)q.xy=z;else if(transformation_plane<1.5)q.yz=z;else q.xz=z;}q.xy=rot*q.xy;q=clamp(q+clamp(translation,-1e5,1e5),-1e5,1e5);float c=dot(q,refv);if(correlation_metric>.5&&correlation_metric<1.5)c=clamp(c/max(length(q)*length(refv),1e-12),-1.,1.);else if(correlation_metric>=1.5)c=length(cross(q,refv));float v=response_mode<.5?exp(-response_strength*abs(c)):response_mode<1.5?1.-exp(-response_strength*max(c,0.)):1.-exp(-response_strength*max(-c,0.));lo=min(lo,c);hi=max(hi,c);total+=w*v;ws+=w;sum+=v;w*=weight_decay;}return MakerB303IterativeOrbitCorrelationField3D(total/max(ws,1e-8),lo,hi,q,sum/float(n));\n}",
+  "glsl_outputs": {
+    "correlation_field": "maker_b303_iterative_orbit_correlation_field_3d({position},{reference_vector},{translation},{time_offset},{iterations},{inversion_gain},{minimum_radius},{response_strength},{weight_decay},{rotation_per_iteration},{animation_speed},{orbit_transformation},{correlation_metric},{response_mode},{transformation_plane},u_time).correlation_field",
+    "minimum_correlation": "maker_b303_iterative_orbit_correlation_field_3d({position},{reference_vector},{translation},{time_offset},{iterations},{inversion_gain},{minimum_radius},{response_strength},{weight_decay},{rotation_per_iteration},{animation_speed},{orbit_transformation},{correlation_metric},{response_mode},{transformation_plane},u_time).minimum_correlation",
+    "maximum_correlation": "maker_b303_iterative_orbit_correlation_field_3d({position},{reference_vector},{translation},{time_offset},{iterations},{inversion_gain},{minimum_radius},{response_strength},{weight_decay},{rotation_per_iteration},{animation_speed},{orbit_transformation},{correlation_metric},{response_mode},{transformation_plane},u_time).maximum_correlation",
+    "final_position": "maker_b303_iterative_orbit_correlation_field_3d({position},{reference_vector},{translation},{time_offset},{iterations},{inversion_gain},{minimum_radius},{response_strength},{weight_decay},{rotation_per_iteration},{animation_speed},{orbit_transformation},{correlation_metric},{response_mode},{transformation_plane},u_time).final_position",
+    "mean_response": "maker_b303_iterative_orbit_correlation_field_3d({position},{reference_vector},{translation},{time_offset},{iterations},{inversion_gain},{minimum_radius},{response_strength},{weight_decay},{rotation_per_iteration},{animation_speed},{orbit_transformation},{correlation_metric},{response_mode},{transformation_plane},u_time).mean_response"
+  }
+}

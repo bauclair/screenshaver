@@ -1,0 +1,154 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.independently_scrolling_cell_coordinates_2d",
+  "name": "Independently Scrolling Cell Coordinates 2D",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Strip identity is fixed before scrolling. Local and scrolled coordinates are center-relative. Time is bounded to avoid overflow.",
+  "uses": "Strip identity is fixed before scrolling. Local and scrolled coordinates are center-relative. Time is bounded to avoid overflow.",
+  "notes": "Strip identity is fixed before scrolling. Local and scrolled coordinates are center-relative. Time is bounded to avoid overflow.",
+  "header_color": "#527D94",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec2",
+      "default": "vec2(0.0)"
+    },
+    {
+      "id": "time_offset",
+      "name": "Time Offset",
+      "type": "float",
+      "default": "u_time"
+    },
+    {
+      "id": "speed_multiplier",
+      "name": "Speed Multiplier",
+      "type": "float",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "local",
+      "name": "Local Coordinates",
+      "type": "vec2",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "cell",
+      "name": "Cell Index",
+      "type": "vec2"
+    },
+    {
+      "id": "scrolled",
+      "name": "Scrolled Coordinates",
+      "type": "vec2",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "strip",
+      "name": "Strip Index",
+      "type": "float"
+    },
+    {
+      "id": "strip_speed",
+      "name": "Strip Speed",
+      "type": "float"
+    },
+    {
+      "id": "random_value",
+      "name": "Random Value",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "width",
+      "name": "Strip Width",
+      "type": "float",
+      "default": 0.15,
+      "min": 0.001,
+      "max": 100
+    },
+    {
+      "id": "cell_length",
+      "name": "Cell Length",
+      "type": "float",
+      "default": 0.2,
+      "min": 0.001,
+      "max": 100
+    },
+    {
+      "id": "speed",
+      "name": "Base Speed",
+      "type": "float",
+      "default": 0.25,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "variation",
+      "name": "Speed Variation",
+      "type": "float",
+      "default": 0.5,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "phase_variation",
+      "name": "Phase Variation",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "seed",
+      "name": "Seed",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 65535
+    },
+    {
+      "id": "axis",
+      "name": "Scroll Axis",
+      "type": "choice",
+      "default": 1,
+      "options": [
+        "Horizontal",
+        "Vertical"
+      ]
+    },
+    {
+      "id": "direction",
+      "name": "Direction Mode",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Uniform",
+        "Alternating",
+        "Random"
+      ]
+    }
+  ],
+  "helpers": "struct MakerB296IndependentlyScrollingCellCoordinates2D {vec2 local;vec2 cell;vec2 scrolled;float strip;float strip_speed;float random_value;};\nMakerB296IndependentlyScrollingCellCoordinates2D maker_b296_independently_scrolling_cell_coordinates_2d(vec2 position,vec2 center,float time_offset,float speed_multiplier,float width,float cell_length,float speed,float variation,float phase_variation,float seed,float axis,float direction){\nif((any(isnan(position))||any(isinf(position)))||(any(isnan(center))||any(isinf(center)))||(isnan(time_offset)||isinf(time_offset))||(isnan(speed_multiplier)||isinf(speed_multiplier))||(isnan(width)||isinf(width))||(isnan(cell_length)||isinf(cell_length))||(isnan(speed)||isinf(speed))||(isnan(variation)||isinf(variation))||(isnan(phase_variation)||isinf(phase_variation))||(isnan(seed)||isinf(seed))||(isnan(axis)||isinf(axis))||(isnan(direction)||isinf(direction)))return MakerB296IndependentlyScrollingCellCoordinates2D(vec2(0.0),vec2(0.0),vec2(0.0),0.0,0.0,0.0);\nvec2 q=clamp(position,-1e5,1e5)-clamp(center,-1e5,1e5); bool horizontal=axis<.5; if(horizontal)q=q.yx; float strip=floor(q.x/width); uint h=uint(int(strip)+300000000)^uint(round(seed)); h^=h>>16u;h*=0x7feb352du;h^=h>>15u;h*=0x846ca68bu;h^=h>>16u;float r=float(h&0xffffffu)/16777216.;float phase=float((h>>8u)&0xffffffu)/16777216.;float v=speed*clamp(speed_multiplier,-100.,100.)*(1.+variation*(2.*r-1.));if(direction>.5&&direction<1.5)v*=mod(strip,2.)<.5?1.:-1.;else if(direction>1.5)v*=r<.5?-1.:1.;q.y=clamp(q.y-v*clamp(time_offset,-1e6,1e6)+phase*phase_variation*cell_length,-1e7,1e7);vec2 dim=vec2(width,cell_length),cell=floor(q/dim),local=(fract(q/dim)-.5)*dim;return MakerB296IndependentlyScrollingCellCoordinates2D(horizontal?local.yx:local,horizontal?cell.yx:cell,horizontal?q.yx:q,strip,v,r);\n}",
+  "glsl_outputs": {
+    "local": "maker_b296_independently_scrolling_cell_coordinates_2d({position},{center},{time_offset},{speed_multiplier},{width},{cell_length},{speed},{variation},{phase_variation},{seed},{axis},{direction}).local",
+    "cell": "maker_b296_independently_scrolling_cell_coordinates_2d({position},{center},{time_offset},{speed_multiplier},{width},{cell_length},{speed},{variation},{phase_variation},{seed},{axis},{direction}).cell",
+    "scrolled": "maker_b296_independently_scrolling_cell_coordinates_2d({position},{center},{time_offset},{speed_multiplier},{width},{cell_length},{speed},{variation},{phase_variation},{seed},{axis},{direction}).scrolled",
+    "strip": "maker_b296_independently_scrolling_cell_coordinates_2d({position},{center},{time_offset},{speed_multiplier},{width},{cell_length},{speed},{variation},{phase_variation},{seed},{axis},{direction}).strip",
+    "strip_speed": "maker_b296_independently_scrolling_cell_coordinates_2d({position},{center},{time_offset},{speed_multiplier},{width},{cell_length},{speed},{variation},{phase_variation},{seed},{axis},{direction}).strip_speed",
+    "random_value": "maker_b296_independently_scrolling_cell_coordinates_2d({position},{center},{time_offset},{speed_multiplier},{width},{cell_length},{speed},{variation},{phase_variation},{seed},{axis},{direction}).random_value"
+  }
+}

@@ -1,0 +1,68 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.math.rational_sigmoid_response",
+  "name": "Rational Sigmoid Response",
+  "category": "Math",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Rational Sigmoid Response",
+  "uses": "Rational Sigmoid Response",
+  "notes": "Bounded procedural mathematical response.",
+  "header_color": "#527D94",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "value",
+      "name": "Value",
+      "type": "float",
+      "default": "0.0"
+    },
+    {
+      "id": "strength_multiplier",
+      "name": "Strength Multiplier",
+      "type": "float",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "signed_response",
+      "name": "Signed Response",
+      "type": "float"
+    },
+    {
+      "id": "normalized_response",
+      "name": "Normalized Response",
+      "type": "float"
+    },
+    {
+      "id": "response_derivative",
+      "name": "Response Derivative",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "strength",
+      "name": "Strength",
+      "type": "float",
+      "default": 1.0,
+      "min": 0.0,
+      "max": 32.0
+    },
+    {
+      "id": "input_bias",
+      "name": "Input Bias",
+      "type": "float",
+      "default": 0.0,
+      "min": -10.0,
+      "max": 10.0
+    }
+  ],
+  "helpers": "struct MakerB303RationalSigmoidResponse {float signed_response;float normalized_response;float response_derivative;};\nMakerB303RationalSigmoidResponse maker_b303_rational_sigmoid_response(float value,float strength_multiplier,float strength,float input_bias,float tm){\nif(isnan(value)||isinf(value)||isnan(strength_multiplier)||isinf(strength_multiplier)||isnan(strength)||isinf(strength)||isnan(input_bias)||isinf(input_bias))return MakerB303RationalSigmoidResponse(float(0.0),float(0.0),float(0.0));\nfloat k=strength*clamp(strength_multiplier,0.,100.);float x=k*(clamp(value,-1e10,1e10)+input_bias);float den=1.+abs(x);float s=x/den;return MakerB303RationalSigmoidResponse(s,.5+.5*s,k/(den*den));\n}",
+  "glsl_outputs": {
+    "signed_response": "maker_b303_rational_sigmoid_response({value},{strength_multiplier},{strength},{input_bias},u_time).signed_response",
+    "normalized_response": "maker_b303_rational_sigmoid_response({value},{strength_multiplier},{strength},{input_bias},u_time).normalized_response",
+    "response_derivative": "maker_b303_rational_sigmoid_response({value},{strength_multiplier},{strength},{input_bias},u_time).response_derivative"
+  }
+}

@@ -1,0 +1,153 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.nonlinear_harmonic_feedback_field_2d",
+  "name": "Nonlinear Harmonic Feedback Field 2D",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Nonlinear Harmonic Feedback Field 2D",
+  "uses": "Nonlinear Harmonic Feedback Field 2D",
+  "notes": "Bounded procedural mathematical response.",
+  "header_color": "#527D94",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "time_offset",
+      "name": "Time Offset",
+      "type": "float",
+      "default": "0.0"
+    },
+    {
+      "id": "initial_state",
+      "name": "Initial State",
+      "type": "float",
+      "default": "0.0"
+    },
+    {
+      "id": "frequency_multiplier",
+      "name": "Frequency Multiplier",
+      "type": "float",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "signed_field",
+      "name": "Signed Field",
+      "type": "float"
+    },
+    {
+      "id": "normalized_field",
+      "name": "Normalized Field",
+      "type": "float"
+    },
+    {
+      "id": "mean_response",
+      "name": "Mean Response",
+      "type": "float"
+    },
+    {
+      "id": "peak_magnitude",
+      "name": "Peak Magnitude",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "iterations",
+      "name": "Iterations",
+      "type": "float",
+      "default": 6.0,
+      "min": 1.0,
+      "max": 16.0
+    },
+    {
+      "id": "wave_count",
+      "name": "Wave Count",
+      "type": "float",
+      "default": 4.0,
+      "min": 1.0,
+      "max": 8.0
+    },
+    {
+      "id": "spatial_frequency",
+      "name": "Spatial Frequency",
+      "type": "float",
+      "default": 10.0,
+      "min": 0.01,
+      "max": 64.0
+    },
+    {
+      "id": "angular_span",
+      "name": "Angular Span",
+      "type": "float",
+      "default": 180.0,
+      "min": 0.0,
+      "max": 360.0
+    },
+    {
+      "id": "phase_feedback",
+      "name": "Phase Feedback",
+      "type": "float",
+      "default": 2.0,
+      "min": -16.0,
+      "max": 16.0
+    },
+    {
+      "id": "frequency_feedback",
+      "name": "Frequency Feedback",
+      "type": "float",
+      "default": 0.5,
+      "min": -4.0,
+      "max": 4.0
+    },
+    {
+      "id": "state_retention",
+      "name": "State Retention",
+      "type": "float",
+      "default": 0.5,
+      "min": -1.0,
+      "max": 1.0
+    },
+    {
+      "id": "response_strength",
+      "name": "Response Strength",
+      "type": "float",
+      "default": 1.0,
+      "min": 0.01,
+      "max": 16.0
+    },
+    {
+      "id": "animation_speed",
+      "name": "Animation Speed",
+      "type": "float",
+      "default": 1.0,
+      "min": -10.0,
+      "max": 10.0
+    },
+    {
+      "id": "response_mode",
+      "name": "Response Mode",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Rational",
+        "Tanh"
+      ]
+    }
+  ],
+  "helpers": "struct MakerB303NonlinearHarmonicFeedbackField2D {float signed_field;float normalized_field;float mean_response;float peak_magnitude;};\nMakerB303NonlinearHarmonicFeedbackField2D maker_b303_nonlinear_harmonic_feedback_field_2d(vec2 position,float time_offset,float initial_state,float frequency_multiplier,float iterations,float wave_count,float spatial_frequency,float angular_span,float phase_feedback,float frequency_feedback,float state_retention,float response_strength,float animation_speed,float response_mode,float tm){\nif(any(isnan(position))||any(isinf(position))||isnan(time_offset)||isinf(time_offset)||isnan(initial_state)||isinf(initial_state)||isnan(frequency_multiplier)||isinf(frequency_multiplier)||isnan(iterations)||isinf(iterations)||isnan(wave_count)||isinf(wave_count)||isnan(spatial_frequency)||isinf(spatial_frequency)||isnan(angular_span)||isinf(angular_span)||isnan(phase_feedback)||isinf(phase_feedback)||isnan(frequency_feedback)||isinf(frequency_feedback)||isnan(state_retention)||isinf(state_retention)||isnan(response_strength)||isinf(response_strength)||isnan(animation_speed)||isinf(animation_speed)||isnan(response_mode)||isinf(response_mode))return MakerB303NonlinearHarmonicFeedbackField2D(float(0.0),float(0.0),float(0.0),float(0.0));\nint n=int(clamp(round(iterations),1.,16.)),w=int(clamp(round(wave_count),1.,8.));float s=clamp(initial_state,-1.,1.),sum=0.,peak=0.;for(int i=0;i<16;i++){if(i>=n)break;float v=0.;for(int j=0;j<8;j++){if(j>=w)break;float a=radians(angular_span)*float(j)/float(w);v+=sin(dot(clamp(position,-1e5,1e5),vec2(cos(a),sin(a)))*spatial_frequency*clamp(frequency_multiplier,-16.,16.)*(1.+frequency_feedback*s)+phase_feedback*s+clamp(tm+time_offset,-1e6,1e6)*animation_speed);}float z=response_strength*(state_retention*s+v/float(w));s=response_mode<.5?z/(1.+abs(z)):tanh(z);sum+=s;peak=max(peak,abs(s));}return MakerB303NonlinearHarmonicFeedbackField2D(s,.5+.5*s,sum/float(n),peak);\n}",
+  "glsl_outputs": {
+    "signed_field": "maker_b303_nonlinear_harmonic_feedback_field_2d({position},{time_offset},{initial_state},{frequency_multiplier},{iterations},{wave_count},{spatial_frequency},{angular_span},{phase_feedback},{frequency_feedback},{state_retention},{response_strength},{animation_speed},{response_mode},u_time).signed_field",
+    "normalized_field": "maker_b303_nonlinear_harmonic_feedback_field_2d({position},{time_offset},{initial_state},{frequency_multiplier},{iterations},{wave_count},{spatial_frequency},{angular_span},{phase_feedback},{frequency_feedback},{state_retention},{response_strength},{animation_speed},{response_mode},u_time).normalized_field",
+    "mean_response": "maker_b303_nonlinear_harmonic_feedback_field_2d({position},{time_offset},{initial_state},{frequency_multiplier},{iterations},{wave_count},{spatial_frequency},{angular_span},{phase_feedback},{frequency_feedback},{state_retention},{response_strength},{animation_speed},{response_mode},u_time).mean_response",
+    "peak_magnitude": "maker_b303_nonlinear_harmonic_feedback_field_2d({position},{time_offset},{initial_state},{frequency_multiplier},{iterations},{wave_count},{spatial_frequency},{angular_span},{phase_feedback},{frequency_feedback},{state_retention},{response_strength},{animation_speed},{response_mode},u_time).peak_magnitude"
+  }
+}

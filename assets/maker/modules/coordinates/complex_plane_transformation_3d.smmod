@@ -1,0 +1,128 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.complex_plane_transformation_3d",
+  "name": "Complex Plane Transformation 3D",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Complex Plane Transformation 3D",
+  "uses": "Complex Plane Transformation 3D",
+  "notes": "Bounded procedural mathematical response.",
+  "header_color": "#527D94",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "default": "vec3(maker_uv,0.0)",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec3",
+      "default": "vec3(0.0)"
+    },
+    {
+      "id": "scale_multiplier",
+      "name": "Scale Multiplier",
+      "type": "float",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "transformed_position",
+      "name": "Transformed Position",
+      "type": "vec3"
+    },
+    {
+      "id": "original_magnitude",
+      "name": "Original Magnitude",
+      "type": "float"
+    },
+    {
+      "id": "transformed_magnitude",
+      "name": "Transformed Magnitude",
+      "type": "float"
+    },
+    {
+      "id": "nominal_scale",
+      "name": "Nominal Scale",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "complex_plane",
+      "name": "Complex Plane",
+      "type": "choice",
+      "default": 1,
+      "options": [
+        "XY",
+        "YZ",
+        "XZ"
+      ]
+    },
+    {
+      "id": "transformation",
+      "name": "Transformation",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Square",
+        "Cube",
+        "Reciprocal",
+        "Conjugate"
+      ]
+    },
+    {
+      "id": "input_scale",
+      "name": "Input Scale",
+      "type": "float",
+      "default": 1.0,
+      "min": 0.001,
+      "max": 32.0
+    },
+    {
+      "id": "output_scale",
+      "name": "Output Scale",
+      "type": "float",
+      "default": 1.0,
+      "min": 0.001,
+      "max": 32.0
+    },
+    {
+      "id": "rotation",
+      "name": "Rotation",
+      "type": "float",
+      "default": 0.0,
+      "min": -360.0,
+      "max": 360.0
+    },
+    {
+      "id": "minimum_magnitude",
+      "name": "Minimum Magnitude",
+      "type": "float",
+      "default": 0.001,
+      "min": 0.0001,
+      "max": 1.0
+    },
+    {
+      "id": "blend",
+      "name": "Blend",
+      "type": "float",
+      "default": 1.0,
+      "min": 0.0,
+      "max": 1.0
+    }
+  ],
+  "helpers": "struct MakerB303ComplexPlaneTransformation3D {vec3 transformed_position;float original_magnitude;float transformed_magnitude;float nominal_scale;};\nMakerB303ComplexPlaneTransformation3D maker_b303_complex_plane_transformation_3d(vec3 position,vec3 center,float scale_multiplier,float complex_plane,float transformation,float input_scale,float output_scale,float rotation,float minimum_magnitude,float blend,float tm){\nif(any(isnan(position))||any(isinf(position))||any(isnan(center))||any(isinf(center))||isnan(scale_multiplier)||isinf(scale_multiplier)||isnan(complex_plane)||isinf(complex_plane)||isnan(transformation)||isinf(transformation)||isnan(input_scale)||isinf(input_scale)||isnan(output_scale)||isinf(output_scale)||isnan(rotation)||isinf(rotation)||isnan(minimum_magnitude)||isinf(minimum_magnitude)||isnan(blend)||isinf(blend))return MakerB303ComplexPlaneTransformation3D(vec3(0.0),float(0.0),float(0.0),float(0.0));\nvec3 p=clamp(position,-1e5,1e5)-clamp(center,-1e5,1e5);vec2 z=complex_plane<.5?p.xy:complex_plane<1.5?p.yz:p.xz;float original=length(z),k=input_scale*clamp(scale_multiplier,-32.,32.);z=clamp(z*k,-1e5,1e5);float r=length(z),a=radians(rotation);vec2 w;float d;if(transformation<.5){w=vec2(z.x*z.x-z.y*z.y,2.*z.x*z.y);d=2.*r;}else if(transformation<1.5){w=vec2(z.x*(z.x*z.x-3.*z.y*z.y),z.y*(3.*z.x*z.x-z.y*z.y));d=3.*r*r;}else if(transformation<2.5){float den=max(dot(z,z),minimum_magnitude*minimum_magnitude);w=vec2(z.x,-z.y)/den;d=1./den;}else{w=vec2(z.x,-z.y);d=1.;}w=clamp(output_scale*mat2(cos(a),sin(a),-sin(a),cos(a))*w,-1e6,1e6);if(complex_plane<.5)p.xy=mix(p.xy,w,blend);else if(complex_plane<1.5)p.yz=mix(p.yz,w,blend);else p.xz=mix(p.xz,w,blend);return MakerB303ComplexPlaneTransformation3D(p+clamp(center,-1e5,1e5),original,length(w),d*abs(k)*output_scale);\n}",
+  "glsl_outputs": {
+    "transformed_position": "maker_b303_complex_plane_transformation_3d({position},{center},{scale_multiplier},{complex_plane},{transformation},{input_scale},{output_scale},{rotation},{minimum_magnitude},{blend},u_time).transformed_position",
+    "original_magnitude": "maker_b303_complex_plane_transformation_3d({position},{center},{scale_multiplier},{complex_plane},{transformation},{input_scale},{output_scale},{rotation},{minimum_magnitude},{blend},u_time).original_magnitude",
+    "transformed_magnitude": "maker_b303_complex_plane_transformation_3d({position},{center},{scale_multiplier},{complex_plane},{transformation},{input_scale},{output_scale},{rotation},{minimum_magnitude},{blend},u_time).transformed_magnitude",
+    "nominal_scale": "maker_b303_complex_plane_transformation_3d({position},{center},{scale_multiplier},{complex_plane},{transformation},{input_scale},{output_scale},{rotation},{minimum_magnitude},{blend},u_time).nominal_scale"
+  }
+}

@@ -1,0 +1,153 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.arc_length_radial_cell_coordinates_3d",
+  "name": "Arc-Length Radial Cell Coordinates 3D",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Angular offset is radians; radial phase is a length offset to first ring. Local axes are tangent, axial, radial regardless of selected world axis. One ring only.",
+  "uses": "Angular offset is radians; radial phase is a length offset to first ring. Local axes are tangent, axial, radial regardless of selected world axis. One ring only.",
+  "notes": "Angular offset is radians; radial phase is a length offset to first ring. Local axes are tangent, axial, radial regardless of selected world axis. One ring only.",
+  "header_color": "#527D94",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "default": "vec3(maker_uv,0.0)",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec3",
+      "default": "vec3(0.0)"
+    },
+    {
+      "id": "angular_offset",
+      "name": "Angular Offset",
+      "type": "float",
+      "default": "0.0"
+    },
+    {
+      "id": "radial_phase",
+      "name": "Radial Phase",
+      "type": "float",
+      "default": "0.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "local",
+      "name": "Local Position",
+      "type": "vec3",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "cell_center",
+      "name": "Cell Center",
+      "type": "vec3",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "ring",
+      "name": "Ring Index",
+      "type": "float"
+    },
+    {
+      "id": "sector",
+      "name": "Sector Index",
+      "type": "float"
+    },
+    {
+      "id": "count",
+      "name": "Sector Count",
+      "type": "float"
+    },
+    {
+      "id": "ring_radius",
+      "name": "Ring Radius",
+      "type": "float"
+    },
+    {
+      "id": "cell_angle",
+      "name": "Cell Angle",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "spacing",
+      "name": "Radial Spacing",
+      "type": "float",
+      "default": 0.5,
+      "min": 0.001,
+      "max": 100
+    },
+    {
+      "id": "tangent",
+      "name": "Tangential Spacing",
+      "type": "float",
+      "default": 0.5,
+      "min": 0.001,
+      "max": 100
+    },
+    {
+      "id": "first",
+      "name": "First Ring Radius",
+      "type": "float",
+      "default": 0.5,
+      "min": 0.001,
+      "max": 100
+    },
+    {
+      "id": "phase",
+      "name": "Ring Phase Increment",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "max_sectors",
+      "name": "Maximum Sectors",
+      "type": "float",
+      "default": 256,
+      "min": 1,
+      "max": 1024
+    },
+    {
+      "id": "axis",
+      "name": "Axis",
+      "type": "choice",
+      "default": 1,
+      "options": [
+        "X",
+        "Y",
+        "Z"
+      ]
+    },
+    {
+      "id": "selection",
+      "name": "Ring Selection",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Nearest",
+        "Inner",
+        "Outer"
+      ]
+    }
+  ],
+  "helpers": "struct MakerB296ArcLengthRadialCellCoordinates3D {vec3 local;vec3 cell_center;float ring;float sector;float count;float ring_radius;float cell_angle;};\nMakerB296ArcLengthRadialCellCoordinates3D maker_b296_arc_length_radial_cell_coordinates_3d(vec3 position,vec3 center,float angular_offset,float radial_phase,float spacing,float tangent,float first,float phase,float max_sectors,float axis,float selection){\nif((any(isnan(position))||any(isinf(position)))||(any(isnan(center))||any(isinf(center)))||(isnan(angular_offset)||isinf(angular_offset))||(isnan(radial_phase)||isinf(radial_phase))||(isnan(spacing)||isinf(spacing))||(isnan(tangent)||isinf(tangent))||(isnan(first)||isinf(first))||(isnan(phase)||isinf(phase))||(isnan(max_sectors)||isinf(max_sectors))||(isnan(axis)||isinf(axis))||(isnan(selection)||isinf(selection)))return MakerB296ArcLengthRadialCellCoordinates3D(vec3(0.0),vec3(0.0),0.0,0.0,0.0,0.0,0.0);\nvec3 c=clamp(center,-1e5,1e5),q=clamp(position,-1e5,1e5)-c; int ax=int(round(axis)); vec3 v=ax==0?q.yxz:(ax==2?q.xzy:q);float r=length(v.xz),start=max(.001,first+clamp(radial_phase,-100.,100.));float u=(r-start)/spacing;float ring=max(0.,selection<.5?floor(u+.5):(selection<1.5?floor(u):ceil(u)));float rr=start+ring*spacing;float count=clamp(round(6.283185307*rr/tangent),1.,round(max_sectors));float step_angle=6.283185307/count;float offset=mod(angular_offset+ring*radians(phase),6.283185307);float a=r>1e-8?atan(v.z,v.x):0.;float sector=mod(floor((a-offset)/step_angle+.5),count);float angle=mod(offset+sector*step_angle,6.283185307);vec2 radial=vec2(cos(angle),sin(angle)),tanvec=vec2(-radial.y,radial.x),delta=v.xz-rr*radial;vec3 local=vec3(dot(delta,tanvec),v.y,dot(delta,radial)),cc=vec3(rr*radial.x,0.,rr*radial.y);cc=ax==0?cc.yxz:(ax==2?cc.xzy:cc);return MakerB296ArcLengthRadialCellCoordinates3D(local,cc+c,ring,sector,count,rr,angle);\n}",
+  "glsl_outputs": {
+    "local": "maker_b296_arc_length_radial_cell_coordinates_3d({position},{center},{angular_offset},{radial_phase},{spacing},{tangent},{first},{phase},{max_sectors},{axis},{selection}).local",
+    "cell_center": "maker_b296_arc_length_radial_cell_coordinates_3d({position},{center},{angular_offset},{radial_phase},{spacing},{tangent},{first},{phase},{max_sectors},{axis},{selection}).cell_center",
+    "ring": "maker_b296_arc_length_radial_cell_coordinates_3d({position},{center},{angular_offset},{radial_phase},{spacing},{tangent},{first},{phase},{max_sectors},{axis},{selection}).ring",
+    "sector": "maker_b296_arc_length_radial_cell_coordinates_3d({position},{center},{angular_offset},{radial_phase},{spacing},{tangent},{first},{phase},{max_sectors},{axis},{selection}).sector",
+    "count": "maker_b296_arc_length_radial_cell_coordinates_3d({position},{center},{angular_offset},{radial_phase},{spacing},{tangent},{first},{phase},{max_sectors},{axis},{selection}).count",
+    "ring_radius": "maker_b296_arc_length_radial_cell_coordinates_3d({position},{center},{angular_offset},{radial_phase},{spacing},{tangent},{first},{phase},{max_sectors},{axis},{selection}).ring_radius",
+    "cell_angle": "maker_b296_arc_length_radial_cell_coordinates_3d({position},{center},{angular_offset},{radial_phase},{spacing},{tangent},{first},{phase},{max_sectors},{axis},{selection}).cell_angle"
+  }
+}

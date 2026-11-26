@@ -1,0 +1,76 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.math.differentiable_absolute_response",
+  "name": "Differentiable Absolute Response",
+  "category": "Math",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Differentiable Absolute Response",
+  "uses": "Differentiable Absolute Response",
+  "notes": "Bounded procedural mathematical response.",
+  "header_color": "#527D94",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "value",
+      "name": "Value",
+      "type": "float",
+      "default": "0.0"
+    },
+    {
+      "id": "width_multiplier",
+      "name": "Width Multiplier",
+      "type": "float",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "smooth_absolute",
+      "name": "Smooth Absolute",
+      "type": "float"
+    },
+    {
+      "id": "hard_absolute",
+      "name": "Hard Absolute",
+      "type": "float"
+    },
+    {
+      "id": "derivative",
+      "name": "Derivative",
+      "type": "float"
+    },
+    {
+      "id": "smoothing_difference",
+      "name": "Smoothing Difference",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "smoothing_width",
+      "name": "Smoothing Width",
+      "type": "float",
+      "default": 0.1,
+      "min": 0.0,
+      "max": 10.0
+    },
+    {
+      "id": "approximation",
+      "name": "Approximation",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Compact Polynomial",
+        "Square Root"
+      ]
+    }
+  ],
+  "helpers": "struct MakerB303DifferentiableAbsoluteResponse {float smooth_absolute;float hard_absolute;float derivative;float smoothing_difference;};\nMakerB303DifferentiableAbsoluteResponse maker_b303_differentiable_absolute_response(float value,float width_multiplier,float smoothing_width,float approximation,float tm){\nif(isnan(value)||isinf(value)||isnan(width_multiplier)||isinf(width_multiplier)||isnan(smoothing_width)||isinf(smoothing_width)||isnan(approximation)||isinf(approximation))return MakerB303DifferentiableAbsoluteResponse(float(0.0),float(0.0),float(0.0),float(0.0));\nfloat x=clamp(value,-1e10,1e10),a=abs(x),k=smoothing_width*clamp(width_multiplier,0.,100.);float s=a,d=sign(x);if(k>1e-8){if(approximation>.5){s=sqrt(x*x+k*k);d=x/s;}else if(a<k){s=.5*k+.5*x*x/k;d=x/k;}}return MakerB303DifferentiableAbsoluteResponse(s,a,d,s-a);\n}",
+  "glsl_outputs": {
+    "smooth_absolute": "maker_b303_differentiable_absolute_response({value},{width_multiplier},{smoothing_width},{approximation},u_time).smooth_absolute",
+    "hard_absolute": "maker_b303_differentiable_absolute_response({value},{width_multiplier},{smoothing_width},{approximation},u_time).hard_absolute",
+    "derivative": "maker_b303_differentiable_absolute_response({value},{width_multiplier},{smoothing_width},{approximation},u_time).derivative",
+    "smoothing_difference": "maker_b303_differentiable_absolute_response({value},{width_multiplier},{smoothing_width},{approximation},u_time).smoothing_difference"
+  }
+}

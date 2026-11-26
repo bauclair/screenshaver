@@ -1,0 +1,185 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.color.parametric_harmonic_rgb_palette",
+  "name": "Parametric Harmonic RGB Palette",
+  "category": "Color",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Independent signed coefficients. Phase in degrees; animation speed in palette-index units per second. Luminance is weighted output RGB.",
+  "uses": "Independent signed coefficients. Phase in degrees; animation speed in palette-index units per second. Luminance is weighted output RGB.",
+  "notes": "Independent signed coefficients. Phase in degrees; animation speed in palette-index units per second. Luminance is weighted output RGB.",
+  "header_color": "#527D94",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "index",
+      "name": "Palette Index",
+      "type": "float",
+      "default": "0.0"
+    },
+    {
+      "id": "time_offset",
+      "name": "Time Offset",
+      "type": "float",
+      "default": "u_time"
+    },
+    {
+      "id": "frequency_multiplier",
+      "name": "Frequency Multiplier",
+      "type": "float",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "color",
+      "name": "Color",
+      "type": "vec3",
+      "semantic_role": "color"
+    },
+    {
+      "id": "raw",
+      "name": "Raw Color",
+      "type": "vec3",
+      "semantic_role": "color"
+    },
+    {
+      "id": "luminance",
+      "name": "Luminance",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "red_bias",
+      "name": "Red Bias",
+      "type": "float",
+      "default": 0.5,
+      "min": -4,
+      "max": 4
+    },
+    {
+      "id": "green_bias",
+      "name": "Green Bias",
+      "type": "float",
+      "default": 0.5,
+      "min": -4,
+      "max": 4
+    },
+    {
+      "id": "blue_bias",
+      "name": "Blue Bias",
+      "type": "float",
+      "default": 0.5,
+      "min": -4,
+      "max": 4
+    },
+    {
+      "id": "red_amplitude",
+      "name": "Red Amplitude",
+      "type": "float",
+      "default": 0.5,
+      "min": -4,
+      "max": 4
+    },
+    {
+      "id": "green_amplitude",
+      "name": "Green Amplitude",
+      "type": "float",
+      "default": 0.5,
+      "min": -4,
+      "max": 4
+    },
+    {
+      "id": "blue_amplitude",
+      "name": "Blue Amplitude",
+      "type": "float",
+      "default": 0.5,
+      "min": -4,
+      "max": 4
+    },
+    {
+      "id": "red_frequency",
+      "name": "Red Frequency",
+      "type": "float",
+      "default": 1,
+      "min": -32,
+      "max": 32
+    },
+    {
+      "id": "green_frequency",
+      "name": "Green Frequency",
+      "type": "float",
+      "default": 1,
+      "min": -32,
+      "max": 32
+    },
+    {
+      "id": "blue_frequency",
+      "name": "Blue Frequency",
+      "type": "float",
+      "default": 1,
+      "min": -32,
+      "max": 32
+    },
+    {
+      "id": "red_phase",
+      "name": "Red Phase",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "green_phase",
+      "name": "Green Phase",
+      "type": "float",
+      "default": 120,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "blue_phase",
+      "name": "Blue Phase",
+      "type": "float",
+      "default": 240,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "speed",
+      "name": "Animation Speed",
+      "type": "float",
+      "default": 0,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "wave",
+      "name": "Wave Function",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Cosine",
+        "Sine"
+      ]
+    },
+    {
+      "id": "mode",
+      "name": "Output Mode",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Clamped",
+        "Nonnegative",
+        "Unrestricted"
+      ]
+    }
+  ],
+  "helpers": "struct MakerB296ParametricHarmonicRgbPalette {vec3 color;vec3 raw;float luminance;};\nMakerB296ParametricHarmonicRgbPalette maker_b296_parametric_harmonic_rgb_palette(float index,float time_offset,float frequency_multiplier,float red_bias,float green_bias,float blue_bias,float red_amplitude,float green_amplitude,float blue_amplitude,float red_frequency,float green_frequency,float blue_frequency,float red_phase,float green_phase,float blue_phase,float speed,float wave,float mode){\nif((isnan(index)||isinf(index))||(isnan(time_offset)||isinf(time_offset))||(isnan(frequency_multiplier)||isinf(frequency_multiplier))||(isnan(red_bias)||isinf(red_bias))||(isnan(green_bias)||isinf(green_bias))||(isnan(blue_bias)||isinf(blue_bias))||(isnan(red_amplitude)||isinf(red_amplitude))||(isnan(green_amplitude)||isinf(green_amplitude))||(isnan(blue_amplitude)||isinf(blue_amplitude))||(isnan(red_frequency)||isinf(red_frequency))||(isnan(green_frequency)||isinf(green_frequency))||(isnan(blue_frequency)||isinf(blue_frequency))||(isnan(red_phase)||isinf(red_phase))||(isnan(green_phase)||isinf(green_phase))||(isnan(blue_phase)||isinf(blue_phase))||(isnan(speed)||isinf(speed))||(isnan(wave)||isinf(wave))||(isnan(mode)||isinf(mode)))return MakerB296ParametricHarmonicRgbPalette(vec3(0.0),vec3(0.0),0.0);\nfloat t=clamp(index,-1e5,1e5)+clamp(time_offset,-1e6,1e6)*speed;vec3 a=vec3(red_bias,green_bias,blue_bias),b=vec3(red_amplitude,green_amplitude,blue_amplitude),f=vec3(red_frequency,green_frequency,blue_frequency),ph=vec3(red_phase,green_phase,blue_phase)/360.;vec3 angle=6.283185307*fract(f*t*clamp(frequency_multiplier,-32.,32.)+ph);vec3 raw=a+b*(wave<.5?cos(angle):sin(angle));vec3 color=mode<.5?clamp(raw,0.,1.):(mode<1.5?max(raw,0.):raw);return MakerB296ParametricHarmonicRgbPalette(color,raw,dot(color,vec3(.2126,.7152,.0722)));\n}",
+  "glsl_outputs": {
+    "color": "maker_b296_parametric_harmonic_rgb_palette({index},{time_offset},{frequency_multiplier},{red_bias},{green_bias},{blue_bias},{red_amplitude},{green_amplitude},{blue_amplitude},{red_frequency},{green_frequency},{blue_frequency},{red_phase},{green_phase},{blue_phase},{speed},{wave},{mode}).color",
+    "raw": "maker_b296_parametric_harmonic_rgb_palette({index},{time_offset},{frequency_multiplier},{red_bias},{green_bias},{blue_bias},{red_amplitude},{green_amplitude},{blue_amplitude},{red_frequency},{green_frequency},{blue_frequency},{red_phase},{green_phase},{blue_phase},{speed},{wave},{mode}).raw",
+    "luminance": "maker_b296_parametric_harmonic_rgb_palette({index},{time_offset},{frequency_multiplier},{red_bias},{green_bias},{blue_bias},{red_amplitude},{green_amplitude},{blue_amplitude},{red_frequency},{green_frequency},{blue_frequency},{red_phase},{green_phase},{blue_phase},{speed},{wave},{mode}).luminance"
+  }
+}

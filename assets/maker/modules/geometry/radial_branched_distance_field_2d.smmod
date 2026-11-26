@@ -1,0 +1,165 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.geometry.radial_branched_distance_field_2d",
+  "name": "Radial Branched Distance Field 2D",
+  "category": "Geometry",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Radial Branched Distance Field 2D",
+  "uses": "Radial Branched Distance Field 2D",
+  "notes": "Bounded procedural mathematical response.",
+  "header_color": "#527D94",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec2",
+      "default": "vec2(0.0)"
+    },
+    {
+      "id": "radius_multiplier",
+      "name": "Radius Multiplier",
+      "type": "float",
+      "default": "1.0"
+    },
+    {
+      "id": "time_offset",
+      "name": "Time Offset",
+      "type": "float",
+      "default": "0.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "combined_distance",
+      "name": "Combined Distance",
+      "type": "float"
+    },
+    {
+      "id": "spoke_distance",
+      "name": "Spoke Distance",
+      "type": "float"
+    },
+    {
+      "id": "branch_distance",
+      "name": "Branch Distance",
+      "type": "float"
+    },
+    {
+      "id": "interior_mask",
+      "name": "Interior Mask",
+      "type": "float"
+    },
+    {
+      "id": "soft_mask",
+      "name": "Soft Mask",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "radius",
+      "name": "Radius",
+      "type": "float",
+      "default": 0.5,
+      "min": 0.001,
+      "max": 100.0
+    },
+    {
+      "id": "spoke_count",
+      "name": "Spoke Count",
+      "type": "float",
+      "default": 6.0,
+      "min": 2.0,
+      "max": 12.0
+    },
+    {
+      "id": "branch_count",
+      "name": "Branch Count",
+      "type": "float",
+      "default": 3.0,
+      "min": 0.0,
+      "max": 6.0
+    },
+    {
+      "id": "spoke_width",
+      "name": "Spoke Width",
+      "type": "float",
+      "default": 0.015,
+      "min": 0.001,
+      "max": 1.0
+    },
+    {
+      "id": "branch_width",
+      "name": "Branch Width",
+      "type": "float",
+      "default": 0.01,
+      "min": 0.001,
+      "max": 1.0
+    },
+    {
+      "id": "branch_length",
+      "name": "Branch Length",
+      "type": "float",
+      "default": 0.25,
+      "min": 0.0,
+      "max": 1.0
+    },
+    {
+      "id": "branch_angle",
+      "name": "Branch Angle",
+      "type": "float",
+      "default": 45.0,
+      "min": 0.0,
+      "max": 90.0
+    },
+    {
+      "id": "branch_taper",
+      "name": "Branch Taper",
+      "type": "float",
+      "default": 0.3,
+      "min": 0.0,
+      "max": 1.0
+    },
+    {
+      "id": "orientation",
+      "name": "Orientation",
+      "type": "float",
+      "default": 0.0,
+      "min": -360.0,
+      "max": 360.0
+    },
+    {
+      "id": "rotation_speed",
+      "name": "Rotation Speed",
+      "type": "float",
+      "default": 0.0,
+      "min": -10.0,
+      "max": 10.0
+    },
+    {
+      "id": "edge_softness",
+      "name": "Edge Softness",
+      "type": "float",
+      "default": 0.005,
+      "min": 0.0,
+      "max": 1.0
+    }
+  ],
+  "helpers": "struct MakerB303RadialBranchedDistanceField2D {float combined_distance;float spoke_distance;float branch_distance;float interior_mask;float soft_mask;};\nMakerB303RadialBranchedDistanceField2D maker_b303_radial_branched_distance_field_2d(vec2 position,vec2 center,float radius_multiplier,float time_offset,float radius,float spoke_count,float branch_count,float spoke_width,float branch_width,float branch_length,float branch_angle,float branch_taper,float orientation,float rotation_speed,float edge_softness,float tm){\nif(any(isnan(position))||any(isinf(position))||any(isnan(center))||any(isinf(center))||isnan(radius_multiplier)||isinf(radius_multiplier)||isnan(time_offset)||isinf(time_offset)||isnan(radius)||isinf(radius)||isnan(spoke_count)||isinf(spoke_count)||isnan(branch_count)||isinf(branch_count)||isnan(spoke_width)||isinf(spoke_width)||isnan(branch_width)||isinf(branch_width)||isnan(branch_length)||isinf(branch_length)||isnan(branch_angle)||isinf(branch_angle)||isnan(branch_taper)||isinf(branch_taper)||isnan(orientation)||isinf(orientation)||isnan(rotation_speed)||isinf(rotation_speed)||isnan(edge_softness)||isinf(edge_softness))return MakerB303RadialBranchedDistanceField2D(float(0.0),float(0.0),float(0.0),float(0.0),float(0.0));\nvec2 p=clamp(position,-1e5,1e5)-clamp(center,-1e5,1e5);float r=radius*clamp(radius_multiplier,.0001,100.);int n=int(clamp(round(spoke_count),2.,12.)),b=int(clamp(round(branch_count),0.,6.));float ds=1e9,db=1e9;for(int i=0;i<12;i++){if(i>=n)break;float a=radians(orientation)+clamp(tm+time_offset,-1e6,1e6)*rotation_speed+6.2831853*float(i)/float(n);vec2 v=vec2(cos(a),sin(a));vec2 q=vec2(dot(p,v),dot(p,vec2(-v.y,v.x)));ds=min(ds,length(q-vec2(clamp(q.x,0.,r),0.))-spoke_width);for(int j=0;j<6;j++){if(j>=b)break;float t=float(j+1)/float(b+1);vec2 h=q-vec2(r*t,0.);for(int k=0;k<2;k++){float ang=radians(branch_angle)*(k==0?-1.:1.);vec2 e=r*branch_length*(1.-branch_taper*t)*vec2(cos(ang),sin(ang));db=min(db,length(h-e*clamp(dot(h,e)/max(dot(e,e),1e-20),0.,1.))-branch_width);}}}float d=min(ds,db);return MakerB303RadialBranchedDistanceField2D(d,ds,db,d<=0.?1.:0.,edge_softness>0.?1.-smoothstep(-edge_softness,edge_softness,d):float(d<=0.));\n}",
+  "glsl_outputs": {
+    "combined_distance": "maker_b303_radial_branched_distance_field_2d({position},{center},{radius_multiplier},{time_offset},{radius},{spoke_count},{branch_count},{spoke_width},{branch_width},{branch_length},{branch_angle},{branch_taper},{orientation},{rotation_speed},{edge_softness},u_time).combined_distance",
+    "spoke_distance": "maker_b303_radial_branched_distance_field_2d({position},{center},{radius_multiplier},{time_offset},{radius},{spoke_count},{branch_count},{spoke_width},{branch_width},{branch_length},{branch_angle},{branch_taper},{orientation},{rotation_speed},{edge_softness},u_time).spoke_distance",
+    "branch_distance": "maker_b303_radial_branched_distance_field_2d({position},{center},{radius_multiplier},{time_offset},{radius},{spoke_count},{branch_count},{spoke_width},{branch_width},{branch_length},{branch_angle},{branch_taper},{orientation},{rotation_speed},{edge_softness},u_time).branch_distance",
+    "interior_mask": "maker_b303_radial_branched_distance_field_2d({position},{center},{radius_multiplier},{time_offset},{radius},{spoke_count},{branch_count},{spoke_width},{branch_width},{branch_length},{branch_angle},{branch_taper},{orientation},{rotation_speed},{edge_softness},u_time).interior_mask",
+    "soft_mask": "maker_b303_radial_branched_distance_field_2d({position},{center},{radius_multiplier},{time_offset},{radius},{spoke_count},{branch_count},{spoke_width},{branch_width},{branch_length},{branch_angle},{branch_taper},{orientation},{rotation_speed},{edge_softness},u_time).soft_mask"
+  }
+}

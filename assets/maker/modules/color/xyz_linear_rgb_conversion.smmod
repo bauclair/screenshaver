@@ -1,0 +1,98 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.color.xyz_linear_rgb_conversion",
+  "name": "XYZ and Linear RGB Conversion",
+  "category": "Color",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "XYZ and Linear RGB Conversion",
+  "uses": "XYZ and Linear RGB Conversion",
+  "notes": "D65 white point. Gamut mask tests linear RGB before output clipping. No transfer curve applied.",
+  "header_color": "#527D94",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "color_components",
+      "name": "Color Components",
+      "type": "vec3",
+      "default": "vec3(0.5)"
+    },
+    {
+      "id": "intensity_multiplier",
+      "name": "Intensity Multiplier",
+      "type": "float",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "converted_components",
+      "name": "Converted Components",
+      "type": "vec3"
+    },
+    {
+      "id": "raw_components",
+      "name": "Raw Components",
+      "type": "vec3"
+    },
+    {
+      "id": "luminance",
+      "name": "Luminance",
+      "type": "float"
+    },
+    {
+      "id": "gamut_mask",
+      "name": "Gamut Mask",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "conversion_direction",
+      "name": "Conversion Direction",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "XYZ to Linear RGB",
+        "Linear RGB to XYZ"
+      ]
+    },
+    {
+      "id": "rgb_color_space",
+      "name": "Rgb Color Space",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "sRGB / Rec.709",
+        "Display P3",
+        "Rec.2020"
+      ]
+    },
+    {
+      "id": "output_range",
+      "name": "Output Range",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Unrestricted",
+        "Nonnegative",
+        "Clamped"
+      ]
+    },
+    {
+      "id": "intensity",
+      "name": "Intensity",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 100
+    }
+  ],
+  "helpers": "\nstruct MakerB309XyzLinearRgbConversion {vec3 converted_components;vec3 raw_components;float luminance;float gamut_mask;};\nMakerB309XyzLinearRgbConversion maker_b309_xyz_linear_rgb_conversion(vec3 color_components,float intensity_multiplier,float conversion_direction,float rgb_color_space,float output_range,float intensity,float tm){\nmat3 m=mat3(.4123908,.2126390,.0193308,.3575843,.7151687,.1191948,.1804808,.0721923,.9505322);if(rgb_color_space>.5)m=mat3(.4865709,.2289746,0.,.2656677,.6917385,.0451134,.1982173,.0792869,1.0439444);if(rgb_color_space>1.5)m=mat3(.636958,.2627002,0.,.1446169,.6779981,.0280727,.168881,.0593017,1.0609851);vec3 q=clamp(color_components,-1e10,1e10)*intensity*clamp(intensity_multiplier,0.,100.);if(any(isnan(q)))q=vec3(0);vec3 xyz=conversion_direction<.5?q:m*q;vec3 rgb=conversion_direction<.5?inverse(m)*q:q;vec3 raw=conversion_direction<.5?rgb:xyz;float mask=all(greaterThanEqual(rgb,vec3(-1e-6)))&&all(lessThanEqual(rgb,vec3(1.000001)))?1.:0.;vec3 outv=output_range<.5?raw:(output_range<1.5?max(raw,vec3(0)):clamp(raw,0.,1.));return MakerB309XyzLinearRgbConversion(outv,raw,xyz.y,mask);\n}",
+  "glsl_outputs": {
+    "converted_components": "maker_b309_xyz_linear_rgb_conversion({color_components},{intensity_multiplier},{conversion_direction},{rgb_color_space},{output_range},{intensity},u_time).converted_components",
+    "raw_components": "maker_b309_xyz_linear_rgb_conversion({color_components},{intensity_multiplier},{conversion_direction},{rgb_color_space},{output_range},{intensity},u_time).raw_components",
+    "luminance": "maker_b309_xyz_linear_rgb_conversion({color_components},{intensity_multiplier},{conversion_direction},{rgb_color_space},{output_range},{intensity},u_time).luminance",
+    "gamut_mask": "maker_b309_xyz_linear_rgb_conversion({color_components},{intensity_multiplier},{conversion_direction},{rgb_color_space},{output_range},{intensity},u_time).gamut_mask"
+  }
+}

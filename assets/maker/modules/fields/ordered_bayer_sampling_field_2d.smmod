@@ -1,0 +1,122 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.ordered_bayer_sampling_field_2d",
+  "name": "Ordered Bayer Sampling Field 2D",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Ordered Bayer Sampling Field 2D",
+  "uses": "Ordered Bayer Sampling Field 2D",
+  "notes": "",
+  "header_color": "#527D94",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "threshold",
+      "name": "Threshold",
+      "type": "float",
+      "default": "0.5"
+    },
+    {
+      "id": "scale_multiplier",
+      "name": "Scale Multiplier",
+      "type": "float",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "sample_offset",
+      "name": "Sample Offset",
+      "type": "float"
+    },
+    {
+      "id": "threshold_mask",
+      "name": "Threshold Mask",
+      "type": "float"
+    },
+    {
+      "id": "matrix_index",
+      "name": "Matrix Index",
+      "type": "float"
+    },
+    {
+      "id": "centered_offset",
+      "name": "Centered Offset",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "matrix_size",
+      "name": "Matrix Size",
+      "type": "choice",
+      "default": 2,
+      "options": [
+        "2 x 2",
+        "4 x 4",
+        "8 x 8",
+        "16 x 16"
+      ]
+    },
+    {
+      "id": "cell_scale",
+      "name": "Cell Scale",
+      "type": "float",
+      "default": 1,
+      "min": 0.001,
+      "max": 1024
+    },
+    {
+      "id": "x_offset",
+      "name": "X Offset",
+      "type": "float",
+      "default": 0,
+      "min": -1024,
+      "max": 1024
+    },
+    {
+      "id": "y_offset",
+      "name": "Y Offset",
+      "type": "float",
+      "default": 0,
+      "min": -1024,
+      "max": 1024
+    },
+    {
+      "id": "pattern_orientation",
+      "name": "Pattern Orientation",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Original",
+        "Transposed",
+        "Rotated"
+      ]
+    },
+    {
+      "id": "invert_pattern",
+      "name": "Invert Pattern",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Off",
+        "On"
+      ]
+    }
+  ],
+  "helpers": "\nstruct MakerB309OrderedBayerSamplingField2D {float sample_offset;float threshold_mask;float matrix_index;float centered_offset;};\nMakerB309OrderedBayerSamplingField2D maker_b309_ordered_bayer_sampling_field_2d(vec2 position,float threshold,float scale_multiplier,float matrix_size,float cell_scale,float x_offset,float y_offset,float pattern_orientation,float invert_pattern,float tm){\nint bits=1+int(clamp(round(matrix_size),0.,3.));int n=1<<bits;vec2 q=position*cell_scale*clamp(scale_multiplier,0.,100.)+vec2(x_offset,y_offset);if(any(isnan(q))||any(isinf(q)))q=vec2(0);ivec2 ij=ivec2(mod(floor(q),float(n)));if(pattern_orientation>.5)ij=ij.yx;if(pattern_orientation>1.5)ij.x=n-1-ij.x;int idx=0;for(int j=0;j<4;j++){if(j>=bits)break;int x=(ij.x>>j)&1,y=(ij.y>>j)&1;idx=idx*4+2*(x^y)+y;}if(invert_pattern>.5)idx=n*n-1-idx;float a=(float(idx)+.5)/float(n*n);return MakerB309OrderedBayerSamplingField2D(a,a<clamp(threshold,0.,1.)?1.:0.,float(idx),a-.5);\n}",
+  "glsl_outputs": {
+    "sample_offset": "maker_b309_ordered_bayer_sampling_field_2d({position},{threshold},{scale_multiplier},{matrix_size},{cell_scale},{x_offset},{y_offset},{pattern_orientation},{invert_pattern},u_time).sample_offset",
+    "threshold_mask": "maker_b309_ordered_bayer_sampling_field_2d({position},{threshold},{scale_multiplier},{matrix_size},{cell_scale},{x_offset},{y_offset},{pattern_orientation},{invert_pattern},u_time).threshold_mask",
+    "matrix_index": "maker_b309_ordered_bayer_sampling_field_2d({position},{threshold},{scale_multiplier},{matrix_size},{cell_scale},{x_offset},{y_offset},{pattern_orientation},{invert_pattern},u_time).matrix_index",
+    "centered_offset": "maker_b309_ordered_bayer_sampling_field_2d({position},{threshold},{scale_multiplier},{matrix_size},{cell_scale},{x_offset},{y_offset},{pattern_orientation},{invert_pattern},u_time).centered_offset"
+  }
+}

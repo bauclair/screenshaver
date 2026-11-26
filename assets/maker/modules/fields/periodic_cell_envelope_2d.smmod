@@ -1,0 +1,132 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.periodic_cell_envelope_2d",
+  "name": "Periodic Cell Envelope 2D",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Periodic Cell Envelope 2D",
+  "uses": "Periodic Cell Envelope 2D",
+  "notes": "Bounded procedural mathematical response.",
+  "header_color": "#527D94",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "phase_offset",
+      "name": "Phase Offset",
+      "type": "vec2",
+      "default": "vec2(0.0)"
+    },
+    {
+      "id": "frequency_multiplier",
+      "name": "Frequency Multiplier",
+      "type": "float",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "envelope",
+      "name": "Envelope",
+      "type": "float"
+    },
+    {
+      "id": "inverse_envelope",
+      "name": "Inverse Envelope",
+      "type": "float"
+    },
+    {
+      "id": "local_coordinates",
+      "name": "Local Coordinates",
+      "type": "vec2"
+    },
+    {
+      "id": "cell_index",
+      "name": "Cell Index",
+      "type": "vec2"
+    },
+    {
+      "id": "boundary_distance",
+      "name": "Boundary Distance",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "x_frequency",
+      "name": "X Frequency",
+      "type": "float",
+      "default": 4.0,
+      "min": 0.01,
+      "max": 128.0
+    },
+    {
+      "id": "y_frequency",
+      "name": "Y Frequency",
+      "type": "float",
+      "default": 4.0,
+      "min": 0.01,
+      "max": 128.0
+    },
+    {
+      "id": "x_exponent",
+      "name": "X Exponent",
+      "type": "float",
+      "default": 1.0,
+      "min": 0.25,
+      "max": 8.0
+    },
+    {
+      "id": "y_exponent",
+      "name": "Y Exponent",
+      "type": "float",
+      "default": 1.0,
+      "min": 0.25,
+      "max": 8.0
+    },
+    {
+      "id": "rotation",
+      "name": "Rotation",
+      "type": "float",
+      "default": 0.0,
+      "min": -360.0,
+      "max": 360.0
+    },
+    {
+      "id": "envelope_function",
+      "name": "Envelope Function",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Polynomial",
+        "Sine"
+      ]
+    },
+    {
+      "id": "axis_combination",
+      "name": "Axis Combination",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Product",
+        "Minimum",
+        "Maximum"
+      ]
+    }
+  ],
+  "helpers": "struct MakerB303PeriodicCellEnvelope2D {float envelope;float inverse_envelope;vec2 local_coordinates;vec2 cell_index;float boundary_distance;};\nMakerB303PeriodicCellEnvelope2D maker_b303_periodic_cell_envelope_2d(vec2 position,vec2 phase_offset,float frequency_multiplier,float x_frequency,float y_frequency,float x_exponent,float y_exponent,float rotation,float envelope_function,float axis_combination,float tm){\nif(any(isnan(position))||any(isinf(position))||any(isnan(phase_offset))||any(isinf(phase_offset))||isnan(frequency_multiplier)||isinf(frequency_multiplier)||isnan(x_frequency)||isinf(x_frequency)||isnan(y_frequency)||isinf(y_frequency)||isnan(x_exponent)||isinf(x_exponent)||isnan(y_exponent)||isinf(y_exponent)||isnan(rotation)||isinf(rotation)||isnan(envelope_function)||isinf(envelope_function)||isnan(axis_combination)||isinf(axis_combination))return MakerB303PeriodicCellEnvelope2D(float(0.0),float(0.0),vec2(0.0),vec2(0.0),float(0.0));\nfloat a=radians(rotation);vec2 q=mat2(cos(a),sin(a),-sin(a),cos(a))*clamp(position,-1e5,1e5)*vec2(x_frequency,y_frequency)*clamp(frequency_multiplier,-16.,16.)+clamp(phase_offset,-1e5,1e5);vec2 f=fract(q),v=envelope_function<.5?4.*f*(1.-f):sin(3.14159265*f);v=pow(clamp(v,0.,1.),vec2(x_exponent,y_exponent));float e=axis_combination<.5?v.x*v.y:axis_combination<1.5?min(v.x,v.y):max(v.x,v.y);vec2 b=min(f,1.-f);return MakerB303PeriodicCellEnvelope2D(e,1.-e,f,floor(q),min(b.x,b.y));\n}",
+  "glsl_outputs": {
+    "envelope": "maker_b303_periodic_cell_envelope_2d({position},{phase_offset},{frequency_multiplier},{x_frequency},{y_frequency},{x_exponent},{y_exponent},{rotation},{envelope_function},{axis_combination},u_time).envelope",
+    "inverse_envelope": "maker_b303_periodic_cell_envelope_2d({position},{phase_offset},{frequency_multiplier},{x_frequency},{y_frequency},{x_exponent},{y_exponent},{rotation},{envelope_function},{axis_combination},u_time).inverse_envelope",
+    "local_coordinates": "maker_b303_periodic_cell_envelope_2d({position},{phase_offset},{frequency_multiplier},{x_frequency},{y_frequency},{x_exponent},{y_exponent},{rotation},{envelope_function},{axis_combination},u_time).local_coordinates",
+    "cell_index": "maker_b303_periodic_cell_envelope_2d({position},{phase_offset},{frequency_multiplier},{x_frequency},{y_frequency},{x_exponent},{y_exponent},{rotation},{envelope_function},{axis_combination},u_time).cell_index",
+    "boundary_distance": "maker_b303_periodic_cell_envelope_2d({position},{phase_offset},{frequency_multiplier},{x_frequency},{y_frequency},{x_exponent},{y_exponent},{rotation},{envelope_function},{axis_combination},u_time).boundary_distance"
+  }
+}

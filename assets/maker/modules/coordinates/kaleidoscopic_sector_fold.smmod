@@ -68,9 +68,27 @@
         "Mirrored",
         "Rotational"
       ]
+    },
+    {
+      "id": "angular_smoothing",
+      "name": "Angular Smoothing",
+      "type": "float",
+      "default": 0.0,
+      "min": 0.0,
+      "max": 0.24
+    },
+    {
+      "id": "smoothing_profile",
+      "name": "Smoothing Profile",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Compact Polynomial",
+        "Square Root"
+      ]
     }
   ],
-  "helpers": "vec2 maker_kaleidoscopic_sector_fold(vec2 p,float sectors,float rotation,float speed,float scale,float mode){\n float n=clamp(floor(sectors+0.5),2.0,32.0);\n float sector=6.28318530718/n;\n if(dot(p,p)==0.0) return vec2(0.0);\n float angle=atan(p.y,p.x)-rotation-u_time*speed;\n float folded=abs(mod(angle+0.5*sector,sector)-0.5*sector);\n if(mode>=0.5) folded=mod(angle+0.5*sector,sector)-0.5*sector;\n return vec2(cos(folded),sin(folded))*length(p)*max(scale,0.0001);\n}",
+  "helpers": "vec2 maker_kaleidoscopic_sector_fold(vec2 p,float sectors,float rotation,float speed,float scale,float mode,float angular_smoothing,float smoothing_profile){\n float n=clamp(floor(sectors+0.5),2.0,32.0);\n float sector=6.28318530718/n;\n if(dot(p,p)==0.0) return vec2(0.0);\n float angle=atan(p.y,p.x)-rotation-u_time*speed;\n float folded=abs(mod(angle+0.5*sector,sector)-0.5*sector);\n if(mode<.5 && angular_smoothing>0.){float k=sector*clamp(angular_smoothing,0.,.24);float a=folded;float b=.5*sector-a;if(a<k)folded=smoothing_profile<.5?.5*k+.5*a*a/k:k*(sqrt(1.+a*a/(k*k))*1.41421356237-1.);else if(b<k)folded=.5*sector-(smoothing_profile<.5?.5*k+.5*b*b/k:k*(sqrt(1.+b*b/(k*k))*1.41421356237-1.));}\n if(mode>=0.5) folded=mod(angle+0.5*sector,sector)-0.5*sector;\n return vec2(cos(folded),sin(folded))*length(p)*max(scale,0.0001);\n}",
   "terminal": false,
-  "glsl": "maker_kaleidoscopic_sector_fold({position},{sectors},{rotation},{speed},{scale},{symmetry_mode})"
+  "glsl": "maker_kaleidoscopic_sector_fold({position},{sectors},{rotation},{speed},{scale},{symmetry_mode},{angular_smoothing},{smoothing_profile})"
 }

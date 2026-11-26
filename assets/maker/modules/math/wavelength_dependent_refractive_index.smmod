@@ -1,0 +1,117 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.math.wavelength_dependent_refractive_index",
+  "name": "Wavelength-Dependent Refractive Index",
+  "category": "Math",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Wavelength-Dependent Refractive Index",
+  "uses": "Wavelength-Dependent Refractive Index",
+  "notes": "Relative IOR is incident surrounding medium / material. Invalid wavelength uses reference wavelength; multiplier scales dispersion around reference.",
+  "header_color": "#527D94",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "wavelength",
+      "name": "Wavelength",
+      "type": "float",
+      "default": "550.0"
+    },
+    {
+      "id": "dispersion_multiplier",
+      "name": "Dispersion Multiplier",
+      "type": "float",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "refractive_index",
+      "name": "Refractive Index",
+      "type": "float"
+    },
+    {
+      "id": "relative_refractive_index",
+      "name": "Relative Refractive Index",
+      "type": "float"
+    },
+    {
+      "id": "dispersion_offset",
+      "name": "Dispersion Offset",
+      "type": "float"
+    },
+    {
+      "id": "validity",
+      "name": "Validity",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "cauchy_a",
+      "name": "Cauchy A",
+      "type": "float",
+      "default": 1.5,
+      "min": 1,
+      "max": 4
+    },
+    {
+      "id": "cauchy_b",
+      "name": "Cauchy B",
+      "type": "float",
+      "default": 0.004,
+      "min": 0,
+      "max": 0.1
+    },
+    {
+      "id": "cauchy_c",
+      "name": "Cauchy C",
+      "type": "float",
+      "default": 0,
+      "min": 0,
+      "max": 0.01
+    },
+    {
+      "id": "reference_wavelength",
+      "name": "Reference Wavelength",
+      "type": "float",
+      "default": 550,
+      "min": 380,
+      "max": 780
+    },
+    {
+      "id": "surrounding_medium_ior",
+      "name": "Surrounding Medium Ior",
+      "type": "float",
+      "default": 1,
+      "min": 1,
+      "max": 3
+    },
+    {
+      "id": "dispersion_model",
+      "name": "Dispersion Model",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Cauchy",
+        "Linear",
+        "Constant"
+      ]
+    },
+    {
+      "id": "linear_dispersion",
+      "name": "Linear Dispersion",
+      "type": "float",
+      "default": 0.02,
+      "min": -0.5,
+      "max": 0.5
+    }
+  ],
+  "helpers": "\nstruct MakerB309WavelengthDependentRefractiveIndex {float refractive_index;float relative_refractive_index;float dispersion_offset;float validity;};\nMakerB309WavelengthDependentRefractiveIndex maker_b309_wavelength_dependent_refractive_index(float wavelength,float dispersion_multiplier,float cauchy_a,float cauchy_b,float cauchy_c,float reference_wavelength,float surrounding_medium_ior,float dispersion_model,float linear_dispersion,float tm){\nfloat valid=(wavelength>=380.&&wavelength<=780.)?1.:0.;float w=valid>0.?wavelength:reference_wavelength;float l=w*.001,r=reference_wavelength*.001;float d=cauchy_b/(l*l)+cauchy_c/pow(l,4.);float ref=cauchy_b/(r*r)+cauchy_c/pow(r,4.);float off=dispersion_model<.5?(d-ref):(dispersion_model<1.5?linear_dispersion*(reference_wavelength-w)/200.:0.);float n0=cauchy_a+(dispersion_model<.5?ref:0.);float n=max(1.,n0+off*clamp(dispersion_multiplier,0.,100.));return MakerB309WavelengthDependentRefractiveIndex(n,surrounding_medium_ior/n,n-n0,valid);\n}",
+  "glsl_outputs": {
+    "refractive_index": "maker_b309_wavelength_dependent_refractive_index({wavelength},{dispersion_multiplier},{cauchy_a},{cauchy_b},{cauchy_c},{reference_wavelength},{surrounding_medium_ior},{dispersion_model},{linear_dispersion},u_time).refractive_index",
+    "relative_refractive_index": "maker_b309_wavelength_dependent_refractive_index({wavelength},{dispersion_multiplier},{cauchy_a},{cauchy_b},{cauchy_c},{reference_wavelength},{surrounding_medium_ior},{dispersion_model},{linear_dispersion},u_time).relative_refractive_index",
+    "dispersion_offset": "maker_b309_wavelength_dependent_refractive_index({wavelength},{dispersion_multiplier},{cauchy_a},{cauchy_b},{cauchy_c},{reference_wavelength},{surrounding_medium_ior},{dispersion_model},{linear_dispersion},u_time).dispersion_offset",
+    "validity": "maker_b309_wavelength_dependent_refractive_index({wavelength},{dispersion_multiplier},{cauchy_a},{cauchy_b},{cauchy_c},{reference_wavelength},{surrounding_medium_ior},{dispersion_model},{linear_dispersion},u_time).validity"
+  }
+}

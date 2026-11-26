@@ -1,0 +1,113 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.noise.simplex_gradient_noise_3d",
+  "name": "Simplex Gradient Noise 3D",
+  "category": "Noise",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Simplex Gradient Noise 3D",
+  "uses": "Simplex Gradient Noise 3D",
+  "notes": "Gradient is with respect to input position; normalized noise is clamped.",
+  "header_color": "#527D94",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "default": "vec3(maker_uv,0.0)",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "frequency_multiplier",
+      "name": "Frequency Multiplier",
+      "type": "float",
+      "default": "1.0"
+    },
+    {
+      "id": "time_offset",
+      "name": "Time Offset",
+      "type": "float",
+      "default": "0.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "signed_noise",
+      "name": "Signed Noise",
+      "type": "float"
+    },
+    {
+      "id": "normalized_noise",
+      "name": "Normalized Noise",
+      "type": "float"
+    },
+    {
+      "id": "gradient",
+      "name": "Gradient",
+      "type": "vec3"
+    },
+    {
+      "id": "gradient_magnitude",
+      "name": "Gradient Magnitude",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "frequency",
+      "name": "Frequency",
+      "type": "float",
+      "default": 4,
+      "min": 0.001,
+      "max": 128
+    },
+    {
+      "id": "amplitude",
+      "name": "Amplitude",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "seed",
+      "name": "Seed",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 65535
+    },
+    {
+      "id": "x_animation_speed",
+      "name": "X Animation Speed",
+      "type": "float",
+      "default": 0,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "y_animation_speed",
+      "name": "Y Animation Speed",
+      "type": "float",
+      "default": 0,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "z_animation_speed",
+      "name": "Z Animation Speed",
+      "type": "float",
+      "default": 0.25,
+      "min": -10,
+      "max": 10
+    }
+  ],
+  "helpers": "uint maker_b309_hash(uint x){x^=x>>16u;x*=0x7feb352du;x^=x>>15u;x*=0x846ca68bu;return x^(x>>16u);}vec3 maker_b309_grad(ivec3 i,uint s){uint h=maker_b309_hash(uint(i.x)^maker_b309_hash(uint(i.y))^maker_b309_hash(uint(i.z)+s));float z=2.*float(h&65535u)/65535.-1.;float a=6.2831853*float(h>>16u)/65536.;return vec3(sqrt(max(0.,1.-z*z))*vec2(cos(a),sin(a)),z);}\nstruct MakerB309SimplexGradientNoise3D {float signed_noise;float normalized_noise;vec3 gradient;float gradient_magnitude;};\nMakerB309SimplexGradientNoise3D maker_b309_simplex_gradient_noise_3d(vec3 position,float frequency_multiplier,float time_offset,float frequency,float amplitude,float seed,float x_animation_speed,float y_animation_speed,float z_animation_speed,float tm){\nfloat freq=frequency*clamp(frequency_multiplier,0.,100.);vec3 q=clamp(position*freq+vec3(x_animation_speed,y_animation_speed,z_animation_speed)*(tm+time_offset),-1e6,1e6);if(any(isnan(q))||any(isinf(q)))return MakerB309SimplexGradientNoise3D(0.,.5,vec3(0),0.);vec3 cell=floor(q+dot(q,vec3(1./3.)));vec3 x=q-cell+dot(cell,vec3(1./6.));vec3 a=vec3(0),b=vec3(1);if(x.x>=x.y){if(x.y>=x.z){a.x=1.;b.z=0.;}else if(x.x>=x.z){a.x=1.;b.y=0.;}else{a.z=1.;b.y=0.;}}else{if(x.x>=x.z){a.y=1.;b.z=0.;}else if(x.y>=x.z){a.y=1.;b.x=0.;}else{a.z=1.;b.x=0.;}}float n=0.;vec3 g=vec3(0);for(int i=0;i<4;i++){vec3 o=i==0?vec3(0):(i==1?a:(i==2?b:vec3(1)));vec3 d=x-o+float(i)/6.;float w=max(0.,.6-dot(d,d));vec3 h=maker_b309_grad(ivec3(cell+o),uint(seed));float z=dot(h,d);float w3=w*w*w;n+=w3*w*z;g+=w3*w*h-8.*w3*z*d;}n*=32.*amplitude;g*=32.*amplitude*freq;return MakerB309SimplexGradientNoise3D(n,clamp(.5+.5*n,0.,1.),g,length(g));\n}",
+  "glsl_outputs": {
+    "signed_noise": "maker_b309_simplex_gradient_noise_3d({position},{frequency_multiplier},{time_offset},{frequency},{amplitude},{seed},{x_animation_speed},{y_animation_speed},{z_animation_speed},u_time).signed_noise",
+    "normalized_noise": "maker_b309_simplex_gradient_noise_3d({position},{frequency_multiplier},{time_offset},{frequency},{amplitude},{seed},{x_animation_speed},{y_animation_speed},{z_animation_speed},u_time).normalized_noise",
+    "gradient": "maker_b309_simplex_gradient_noise_3d({position},{frequency_multiplier},{time_offset},{frequency},{amplitude},{seed},{x_animation_speed},{y_animation_speed},{z_animation_speed},u_time).gradient",
+    "gradient_magnitude": "maker_b309_simplex_gradient_noise_3d({position},{frequency_multiplier},{time_offset},{frequency},{amplitude},{seed},{x_animation_speed},{y_animation_speed},{z_animation_speed},u_time).gradient_magnitude"
+  }
+}

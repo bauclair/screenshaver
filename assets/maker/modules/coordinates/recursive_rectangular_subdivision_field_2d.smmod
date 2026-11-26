@@ -1,0 +1,168 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.recursive_rectangular_subdivision_field_2d",
+  "name": "Recursive Rectangular Subdivision Field 2D",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Recursive Rectangular Subdivision Field 2D",
+  "uses": "Recursive Rectangular Subdivision Field 2D",
+  "notes": "Boundary response is one at the edge and decays inward. Coordinates and dimensions use original position units.",
+  "header_color": "#527D94",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "phase_offset",
+      "name": "Phase Offset",
+      "type": "vec2",
+      "default": "vec2(0.0)"
+    },
+    {
+      "id": "scale_multiplier",
+      "name": "Scale Multiplier",
+      "type": "float",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "local_coordinates",
+      "name": "Local Coordinates",
+      "type": "vec2"
+    },
+    {
+      "id": "region_center",
+      "name": "Region Center",
+      "type": "vec2"
+    },
+    {
+      "id": "region_size",
+      "name": "Region Size",
+      "type": "vec2"
+    },
+    {
+      "id": "boundary_distance",
+      "name": "Boundary Distance",
+      "type": "float"
+    },
+    {
+      "id": "boundary_response",
+      "name": "Boundary Response",
+      "type": "float"
+    },
+    {
+      "id": "branch_fraction",
+      "name": "Branch Fraction",
+      "type": "float"
+    },
+    {
+      "id": "region_random_value",
+      "name": "Region Random Value",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "subdivision_depth",
+      "name": "Subdivision Depth",
+      "type": "float",
+      "default": 8,
+      "min": 1,
+      "max": 16
+    },
+    {
+      "id": "initial_cell_width",
+      "name": "Initial Cell Width",
+      "type": "float",
+      "default": 1,
+      "min": 0.001,
+      "max": 100
+    },
+    {
+      "id": "initial_cell_height",
+      "name": "Initial Cell Height",
+      "type": "float",
+      "default": 1,
+      "min": 0.001,
+      "max": 100
+    },
+    {
+      "id": "split_variation",
+      "name": "Split Variation",
+      "type": "float",
+      "default": 0.6,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "minimum_split_fraction",
+      "name": "Minimum Split Fraction",
+      "type": "float",
+      "default": 0.2,
+      "min": 0.1,
+      "max": 0.45
+    },
+    {
+      "id": "seed",
+      "name": "Seed",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 65535
+    },
+    {
+      "id": "boundary_width",
+      "name": "Boundary Width",
+      "type": "float",
+      "default": 0.01,
+      "min": 0.0001,
+      "max": 1
+    },
+    {
+      "id": "boundary_falloff",
+      "name": "Boundary Falloff",
+      "type": "float",
+      "default": 2,
+      "min": 0.25,
+      "max": 16
+    },
+    {
+      "id": "axis_selection",
+      "name": "Axis Selection",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Alternating",
+        "Longest Axis",
+        "Random"
+      ]
+    },
+    {
+      "id": "pattern_mode",
+      "name": "Pattern Mode",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Repeated",
+        "Cell-Specific"
+      ]
+    }
+  ],
+  "helpers": "uint maker_b309_recthash(uint x){x^=x>>16u;x*=0x7feb352du;x^=x>>15u;x*=0x846ca68bu;return x^(x>>16u);}\nstruct MakerB309RecursiveRectangularSubdivisionField2D {vec2 local_coordinates;vec2 region_center;vec2 region_size;float boundary_distance;float boundary_response;float branch_fraction;float region_random_value;};\nMakerB309RecursiveRectangularSubdivisionField2D maker_b309_recursive_rectangular_subdivision_field_2d(vec2 position,vec2 phase_offset,float scale_multiplier,float subdivision_depth,float initial_cell_width,float initial_cell_height,float split_variation,float minimum_split_fraction,float seed,float boundary_width,float boundary_falloff,float axis_selection,float pattern_mode,float tm){\nvec2 size=vec2(initial_cell_width,initial_cell_height)/max(.0001,clamp(scale_multiplier,0.,100.));vec2 q=clamp(position+phase_offset,-1e6,1e6);if(any(isnan(q)))q=vec2(0);vec2 cell=floor(q/size),lo=cell*size;vec2 local=clamp((q-lo)/size,0.,1.);uint state=uint(seed);if(pattern_mode>.5)state=maker_b309_recthash(state^uint(int(clamp(cell.x,-2147483000.,2147483000.)))^maker_b309_recthash(uint(int(clamp(cell.y,-2147483000.,2147483000.)))));int depth=int(clamp(round(subdivision_depth),1.,16.));float upper=0.;for(int j=0;j<16;j++){if(j>=depth)break;state=maker_b309_recthash(state+uint(j)+1u);float u=float(state&65535u)/65535.;int a=j%2;if(axis_selection>.5)a=size.x>=size.y?0:1;if(axis_selection>1.5)a=int((state>>16u)&1u);float split=.5+(u-.5)*split_variation*(1.-2.*minimum_split_fraction);if(local[a]>=split){lo[a]+=size[a]*split;size[a]*=1.-split;local[a]=(local[a]-split)/(1.-split);upper+=1.;state^=0x9e3779b9u;}else{size[a]*=split;local[a]/=split;}}vec2 edge=min(local,1.-local)*size;float d=max(0.,min(edge.x,edge.y));return MakerB309RecursiveRectangularSubdivisionField2D(local,lo+.5*size-phase_offset,size,d,exp(-pow(min(d/boundary_width,1e6),boundary_falloff)),upper/float(depth),float(maker_b309_recthash(state)&65535u)/65535.);\n}",
+  "glsl_outputs": {
+    "local_coordinates": "maker_b309_recursive_rectangular_subdivision_field_2d({position},{phase_offset},{scale_multiplier},{subdivision_depth},{initial_cell_width},{initial_cell_height},{split_variation},{minimum_split_fraction},{seed},{boundary_width},{boundary_falloff},{axis_selection},{pattern_mode},u_time).local_coordinates",
+    "region_center": "maker_b309_recursive_rectangular_subdivision_field_2d({position},{phase_offset},{scale_multiplier},{subdivision_depth},{initial_cell_width},{initial_cell_height},{split_variation},{minimum_split_fraction},{seed},{boundary_width},{boundary_falloff},{axis_selection},{pattern_mode},u_time).region_center",
+    "region_size": "maker_b309_recursive_rectangular_subdivision_field_2d({position},{phase_offset},{scale_multiplier},{subdivision_depth},{initial_cell_width},{initial_cell_height},{split_variation},{minimum_split_fraction},{seed},{boundary_width},{boundary_falloff},{axis_selection},{pattern_mode},u_time).region_size",
+    "boundary_distance": "maker_b309_recursive_rectangular_subdivision_field_2d({position},{phase_offset},{scale_multiplier},{subdivision_depth},{initial_cell_width},{initial_cell_height},{split_variation},{minimum_split_fraction},{seed},{boundary_width},{boundary_falloff},{axis_selection},{pattern_mode},u_time).boundary_distance",
+    "boundary_response": "maker_b309_recursive_rectangular_subdivision_field_2d({position},{phase_offset},{scale_multiplier},{subdivision_depth},{initial_cell_width},{initial_cell_height},{split_variation},{minimum_split_fraction},{seed},{boundary_width},{boundary_falloff},{axis_selection},{pattern_mode},u_time).boundary_response",
+    "branch_fraction": "maker_b309_recursive_rectangular_subdivision_field_2d({position},{phase_offset},{scale_multiplier},{subdivision_depth},{initial_cell_width},{initial_cell_height},{split_variation},{minimum_split_fraction},{seed},{boundary_width},{boundary_falloff},{axis_selection},{pattern_mode},u_time).branch_fraction",
+    "region_random_value": "maker_b309_recursive_rectangular_subdivision_field_2d({position},{phase_offset},{scale_multiplier},{subdivision_depth},{initial_cell_width},{initial_cell_height},{split_variation},{minimum_split_fraction},{seed},{boundary_width},{boundary_falloff},{axis_selection},{pattern_mode},u_time).region_random_value"
+  }
+}
