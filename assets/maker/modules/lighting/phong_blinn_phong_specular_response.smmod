@@ -1,0 +1,97 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.lighting.phong_blinn_phong_specular_response",
+  "name": "Phong and Blinn–Phong Specular Response",
+  "category": "Lighting",
+  "created_by": "Screenshaver",
+  "description": "Computes independent scalar diffuse and specular illumination and a reflected light direction.",
+  "uses": "Reusable procedural illumination and material shading.",
+  "notes": "Light and view vectors point away from the surface toward the light and viewer. Invalid or zero vectors produce zero contributions as applicable. Specular requires front-facing light and view. Reflection is independent of viewing direction. No color or attenuation is applied.",
+  "header_color": "#477D9A",
+  "inputs": [
+    {
+      "id": "normal",
+      "name": "Surface Normal",
+      "type": "vec3",
+      "default": "vec3(0.0,0.0,1.0)",
+      "semantic_role": "normal3d"
+    },
+    {
+      "id": "light",
+      "name": "Light Direction",
+      "type": "vec3",
+      "default": "vec3(0.5,0.5,1.0)",
+      "semantic_role": "direction3d"
+    },
+    {
+      "id": "view",
+      "name": "View Direction",
+      "type": "vec3",
+      "default": "vec3(0.0,0.0,1.0)",
+      "semantic_role": "direction3d"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "specular",
+      "name": "Specular Intensity",
+      "type": "float",
+      "semantic_role": "intensity"
+    },
+    {
+      "id": "diffuse",
+      "name": "Diffuse Intensity",
+      "type": "float",
+      "semantic_role": "intensity"
+    },
+    {
+      "id": "reflection",
+      "name": "Reflection Direction",
+      "type": "vec3",
+      "semantic_role": "direction3d"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "model",
+      "name": "Reflection Model",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Phong",
+        "Blinn–Phong"
+      ]
+    },
+    {
+      "id": "shininess",
+      "name": "Shininess",
+      "type": "float",
+      "default": 32,
+      "min": 1,
+      "max": 256
+    },
+    {
+      "id": "specular_strength",
+      "name": "Specular Strength",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 16
+    },
+    {
+      "id": "diffuse_strength",
+      "name": "Diffuse Strength",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 16
+    }
+  ],
+  "helpers": "vec3 maker_phong_unit(vec3 v){\n    if(any(isnan(v)) || any(isinf(v))) return vec3(0.0);\n    float s=max(max(abs(v.x),abs(v.y)),abs(v.z));\n    if(s<1e-20) return vec3(0.0);\n    vec3 u=v/s;\n    return u*inversesqrt(dot(u,u));\n}\nvec3 maker_phong_reflection(vec3 normal,vec3 light){\n    vec3 n=maker_phong_unit(normal), l=maker_phong_unit(light);\n    if(dot(n,n)<0.5 || dot(l,l)<0.5) return vec3(0.0);\n    return reflect(-l,n);\n}\nvec2 maker_phong_response(vec3 normal,vec3 light,vec3 view,float model,float shininess,float ss,float ds){\n    vec3 n=maker_phong_unit(normal), l=maker_phong_unit(light), v=maker_phong_unit(view);\n    float nl=clamp(dot(n,l),0.0,1.0);\n    float diffuse=nl*max(ds,0.0);\n    if(nl<=0.0 || dot(n,v)<=0.0) return vec2(0.0,diffuse);\n    float base=model<0.5 ? dot(reflect(-l,n),v) : dot(n,maker_phong_unit(l+v));\n    float spec=pow(clamp(base,0.0,1.0),clamp(shininess,1.0,256.0))*max(ss,0.0);\n    return vec2(spec,diffuse);\n}",
+  "glsl_outputs": {
+    "specular": "maker_phong_response({normal},{light},{view},{model},{shininess},{specular_strength},{diffuse_strength}).x",
+    "diffuse": "maker_phong_response({normal},{light},{view},{model},{shininess},{specular_strength},{diffuse_strength}).y",
+    "reflection": "maker_phong_reflection({normal},{light})"
+  },
+  "terminal": false
+}

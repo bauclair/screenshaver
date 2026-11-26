@@ -1,0 +1,92 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.geometry.ray_to_segment_distance_3d",
+  "name": "Ray-to-Segment Distance 3D",
+  "category": "Geometry",
+  "created_by": "Screenshaver",
+  "description": "Finds closest points on a forward ray and finite segment by comparing feasible interior and boundary solutions.",
+  "uses": "Analytical spatial proximity, procedural beams and geometry masks.",
+  "notes": "Direction is normalized internally; zero or invalid direction collapses to the origin. Segments shorter than tolerance collapse to their start. Near-parallel configurations below angular tolerance use boundary solutions, which can approximate the minimum. Invalid positions become zero; finite positions bounded to +/-1e12.",
+  "header_color": "#477D9A",
+  "inputs": [
+    {
+      "id": "origin",
+      "name": "Ray Origin",
+      "type": "vec3",
+      "semantic_role": "position3d",
+      "default": "vec3(0.0)"
+    },
+    {
+      "id": "direction",
+      "name": "Ray Direction",
+      "type": "vec3",
+      "semantic_role": "direction3d",
+      "default": "vec3(0.0,0.0,1.0)"
+    },
+    {
+      "id": "start",
+      "name": "Segment Start",
+      "type": "vec3",
+      "semantic_role": "position3d",
+      "default": "vec3(-0.5,0.5,1.0)"
+    },
+    {
+      "id": "end",
+      "name": "Segment End",
+      "type": "vec3",
+      "semantic_role": "position3d",
+      "default": "vec3(0.5,0.5,1.0)"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "distance",
+      "name": "Distance",
+      "type": "float",
+      "semantic_role": "distance"
+    },
+    {
+      "id": "ray_point",
+      "name": "Ray Closest Point",
+      "type": "vec3",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "segment_point",
+      "name": "Segment Closest Point",
+      "type": "vec3",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "travel",
+      "name": "Ray Travel Distance",
+      "type": "float",
+      "semantic_role": "distance"
+    },
+    {
+      "id": "fraction",
+      "name": "Segment Fraction",
+      "type": "float",
+      "semantic_role": ""
+    }
+  ],
+  "parameters": [
+    {
+      "id": "tolerance",
+      "name": "Numerical Tolerance",
+      "type": "float",
+      "default": 1e-08,
+      "min": 1e-12,
+      "max": 0.001
+    }
+  ],
+  "helpers": "vec3 maker_ray_seg_position(vec3 p){\n    if(any(isnan(p)) || any(isinf(p))) return vec3(0.0);\n    return clamp(p,vec3(-1e12),vec3(1e12));\n}\nvec3 maker_ray_seg_unit(vec3 d){\n    if(any(isnan(d)) || any(isinf(d))) return vec3(0.0);\n    float m=max(max(abs(d.x),abs(d.y)),abs(d.z));\n    if(m==0.0) return vec3(0.0);\n    vec3 q=d/m;\n    return q*inversesqrt(dot(q,q));\n}\nvoid maker_ray_seg_candidate(vec3 w,vec3 d,vec3 e,float t,float s,inout vec3 best){\n    vec3 delta=t*d-w-s*e;\n    float sq=dot(delta,delta);\n    if(sq<best.z) best=vec3(t,s,sq);\n}\nvec3 maker_ray_seg_solve(vec3 o,vec3 d,vec3 a,vec3 b,float tolerance){\n    o=maker_ray_seg_position(o); a=maker_ray_seg_position(a); b=maker_ray_seg_position(b);\n    d=maker_ray_seg_unit(d);\n    vec3 w=a-o, ab=b-a;\n    float len=length(ab), tol=clamp(tolerance,1e-12,1e-3);\n    vec3 e=len>tol?ab/len:vec3(0.0);\n    if(len<=tol) len=0.0;\n    float t=max(0.0,dot(w,d));\n    vec3 delta=t*d-w;\n    vec3 best=vec3(t,0.0,dot(delta,delta));\n    maker_ray_seg_candidate(w,d,e,max(0.0,dot(w+len*e,d)),len,best);\n    maker_ray_seg_candidate(w,d,e,0.0,clamp(-dot(w,e),0.0,len),best);\n    vec3 n=cross(d,e);\n    float det=dot(n,n);\n    if(det>tol*tol){\n        float ti=dot(cross(w,e),n)/det;\n        float si=dot(cross(w,d),n)/det;\n        if(ti>=0.0 && si>=0.0 && si<=len) maker_ray_seg_candidate(w,d,e,ti,si,best);\n    }\n    return vec3(best.x,len>0.0?best.y/len:0.0,sqrt(max(0.0,best.z)));\n}\nvec3 maker_ray_seg_ray_point(vec3 o,vec3 d,vec3 a,vec3 b,float tol){\n    return maker_ray_seg_position(o)+maker_ray_seg_unit(d)*maker_ray_seg_solve(o,d,a,b,tol).x;\n}\nvec3 maker_ray_seg_segment_point(vec3 o,vec3 d,vec3 a,vec3 b,float tol){\n    return mix(maker_ray_seg_position(a),maker_ray_seg_position(b),maker_ray_seg_solve(o,d,a,b,tol).y);\n}",
+  "glsl_outputs": {
+    "distance": "maker_ray_seg_solve({origin},{direction},{start},{end},{tolerance}).z",
+    "ray_point": "maker_ray_seg_ray_point({origin},{direction},{start},{end},{tolerance})",
+    "segment_point": "maker_ray_seg_segment_point({origin},{direction},{start},{end},{tolerance})",
+    "travel": "maker_ray_seg_solve({origin},{direction},{start},{end},{tolerance}).x",
+    "fraction": "maker_ray_seg_solve({origin},{direction},{start},{end},{tolerance}).y"
+  },
+  "terminal": false
+}

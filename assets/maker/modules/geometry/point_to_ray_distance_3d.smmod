@@ -1,0 +1,80 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.geometry.point_to_ray_distance_3d",
+  "name": "Point-to-Ray Distance 3D",
+  "category": "Geometry",
+  "created_by": "Screenshaver",
+  "description": "Projects a point onto a ray or infinite line and reports the closest separation.",
+  "uses": "Analytical spatial proximity, procedural beams and geometry masks.",
+  "notes": "Direction is normalized internally. Zero or invalid direction collapses to the origin. Invalid positions become zero; finite positions are bounded to +/-1e12. Offset points from closest point toward input point.",
+  "header_color": "#477D9A",
+  "inputs": [
+    {
+      "id": "point",
+      "name": "Point",
+      "type": "vec3",
+      "semantic_role": "position3d",
+      "default": "vec3(0.5,0.5,1.0)"
+    },
+    {
+      "id": "origin",
+      "name": "Ray Origin",
+      "type": "vec3",
+      "semantic_role": "position3d",
+      "default": "vec3(0.0)"
+    },
+    {
+      "id": "direction",
+      "name": "Ray Direction",
+      "type": "vec3",
+      "semantic_role": "direction3d",
+      "default": "vec3(0.0,0.0,1.0)"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "distance",
+      "name": "Distance",
+      "type": "float",
+      "semantic_role": "distance"
+    },
+    {
+      "id": "closest",
+      "name": "Closest Point",
+      "type": "vec3",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "travel",
+      "name": "Ray Travel Distance",
+      "type": "float",
+      "semantic_role": "distance"
+    },
+    {
+      "id": "offset",
+      "name": "Offset",
+      "type": "vec3",
+      "semantic_role": ""
+    }
+  ],
+  "parameters": [
+    {
+      "id": "mode",
+      "name": "Projection Mode",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Ray",
+        "Infinite Line"
+      ]
+    }
+  ],
+  "helpers": "vec3 maker_point_ray_position(vec3 p){\n    if(any(isnan(p)) || any(isinf(p))) return vec3(0.0);\n    return clamp(p,vec3(-1e12),vec3(1e12));\n}\nvec3 maker_point_ray_unit(vec3 d){\n    if(any(isnan(d)) || any(isinf(d))) return vec3(0.0);\n    float m=max(max(abs(d.x),abs(d.y)),abs(d.z));\n    if(m==0.0) return vec3(0.0);\n    vec3 q=d/m;\n    return q*inversesqrt(dot(q,q));\n}\nvec4 maker_point_ray_project(vec3 p,vec3 o,vec3 d,float mode){\n    p=maker_point_ray_position(p); o=maker_point_ray_position(o); d=maker_point_ray_unit(d);\n    float t=dot(p-o,d);\n    if(mode<0.5) t=max(0.0,t);\n    return vec4(o+t*d,t);\n}\nvec3 maker_point_ray_offset(vec3 p,vec3 o,vec3 d,float mode){\n    return maker_point_ray_position(p)-maker_point_ray_project(p,o,d,mode).xyz;\n}",
+  "glsl_outputs": {
+    "distance": "length(maker_point_ray_offset({point},{origin},{direction},{mode}))",
+    "closest": "maker_point_ray_project({point},{origin},{direction},{mode}).xyz",
+    "travel": "maker_point_ray_project({point},{origin},{direction},{mode}).w",
+    "offset": "maker_point_ray_offset({point},{origin},{direction},{mode})"
+  },
+  "terminal": false
+}
