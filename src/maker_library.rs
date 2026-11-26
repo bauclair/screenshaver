@@ -22,6 +22,7 @@ impl Library {
       ("geometry/two_bone_joint_solver_3d.smmod",include_str!("../assets/maker/modules/geometry/two_bone_joint_solver_3d.smmod")),
       ("coordinates/geometric_sequence_coordinates.smmod",include_str!("../assets/maker/modules/coordinates/geometric_sequence_coordinates.smmod")),
       ("geometry/spherical_orbital_path_3d.smmod",include_str!("../assets/maker/modules/geometry/spherical_orbital_path_3d.smmod")),
+      ("geometry/harmonic_motion_path_2d.smmod",include_str!("../assets/maker/modules/geometry/harmonic_motion_path_2d.smmod")),
       ("geometry/sdf_capsule.smmod",include_str!("../assets/maker/modules/geometry/sdf_capsule.smmod")),
       ("geometry/sdf_icosahedron.smmod",include_str!("../assets/maker/modules/geometry/sdf_icosahedron.smmod")),
       ("coordinates/concentric_ring_coordinates_2d.smmod",include_str!("../assets/maker/modules/coordinates/concentric_ring_coordinates_2d.smmod")),

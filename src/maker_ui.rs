@@ -626,6 +626,7 @@ fn safety_profile(id:&str)->Option<(u64,u64)> {
         "screenshaver.geometry.spherical_aperture_mask" => (1024, 1),
         "screenshaver.geometry.spherical_inversion_3d" => (8, 1),
         "screenshaver.geometry.spherical_orbital_path_3d" => (55, 1),
+        "screenshaver.geometry.harmonic_motion_path_2d" => (256, 1),
         "screenshaver.geometry.triangle_edge_mask" => (15, 1),
         "screenshaver.geometry.two_bone_joint_solver_3d" => (46, 1),
         "screenshaver.geometry.warped_plane_field" => (8, 1),
@@ -671,29 +672,102 @@ fn safety_profile(id:&str)->Option<(u64,u64)> {
         _ => return None,
     })
 }
-fn safety_work(graph:&Graph)->u64 {
-    fn visit(graph:&Graph,id:NodeId,cache:&mut HashMap<NodeId,u64>,active:&mut std::collections::HashSet<NodeId>)->u64 {
-        if let Some(&v)=cache.get(&id){return v}
-        if !active.insert(id){return u64::MAX}
-        let Some(n)=graph.node(id) else{return u64::MAX};
-        let Some((local,multiplier))=safety_profile(&n.module_id) else{return u64::MAX};
-        let mut work=local;
-        for c in graph.connections.iter().filter(|c|c.to==id){
-            work=work.saturating_add(visit(graph,c.from,cache,active).saturating_mul(multiplier));
-        }
-        active.remove(&id);cache.insert(id,work);work
+// Provisional split of the existing 15,360-unit maximum. Keep a fixed
+// allowance and preserve the old maximum exactly at 24 iterations.
+fn fold_iteration_work(value:Option<f64>)->u64 {
+    let count=value.map(|v|v as f32).filter(|v|v.is_finite())
+        .map(|v|(v+0.5).floor().clamp(1.0,24.0) as u64).unwrap_or(24);
+    768+608*count
+}
+fn node_safety_profile(n:&crate::maker_graph::Node)->Option<(u64,u64)> {
+    let (local,multiplier)=safety_profile(&n.module_id)?;
+    let local=if n.module_id=="screenshaver.coordinates.iterative_coordinate_fold_2d" {
+        fold_iteration_work(n.parameters.get("iterations").and_then(|v|v.as_f64()))
+    }else{local};
+    Some((local,multiplier))
+}
+// Walk once in dependency order, then propagate evaluation multiplicities
+// from the terminal. Ordinary graphs share main() locals. For any callable
+// or amplified graph retain the historical per-edge conservative accounting.
+pub(crate) fn safety_work(graph:&Graph)->Result<(u64,Vec<(NodeId,u64,u64)>),String> {
+    safety_work_mode(graph,false)
+}
+// Only live preview uses the audited edge correction. Worker admission stays
+// conservative until separate discovery regression testing is completed.
+fn safety_work_mode(graph:&Graph,live:bool)->Result<(u64,Vec<(NodeId,u64,u64)>),String> {
+    fn visit(graph:&Graph,id:NodeId,seen:&mut std::collections::HashSet<NodeId>,
+        active:&mut std::collections::HashSet<NodeId>,order:&mut Vec<NodeId>)->Result<(),String>{
+        if seen.contains(&id){return Ok(())}
+        if !active.insert(id){return Err("Rendering deferred: cyclic safety dependency".into())}
+        if graph.node(id).is_none(){return Err("Rendering deferred: missing safety dependency".into())}
+        for c in graph.connections.iter().filter(|c|c.to==id){visit(graph,c.from,seen,active,order)?;}
+        active.remove(&id);seen.insert(id);order.push(id);Ok(())
     }
-    graph.nodes.iter().find(|n|n.definition().terminal).map(|n|visit(graph,n.id,&mut HashMap::new(),&mut std::collections::HashSet::new())).unwrap_or(u64::MAX)
+    let out=graph.nodes.iter().find(|n|n.definition().terminal).ok_or("Missing output")?.id;
+    let mut order=Vec::new();
+    visit(graph,out,&mut std::collections::HashSet::new(),&mut std::collections::HashSet::new(),&mut order)?;
+    let mut profiles=HashMap::new();
+    let mut amplified=false;
+    for &id in &order {
+        let n=graph.node(id).ok_or("Missing safety dependency")?;
+        let profile=node_safety_profile(n).ok_or_else(||format!("Rendering deferred: unknown safety profile for {} (node {})",n.display_name(),id))?;
+        amplified |= profile.1!=1 || n.definition().inputs.iter().any(|p|p.ty.starts_with("field"));
+        profiles.insert(id,profile);
+    }
+    let mut counts=HashMap::<NodeId,u64>::new();counts.insert(out,1);
+    let mut total=0u64;let mut details=Vec::new();
+    for &id in order.iter().rev(){
+        let (local,multiplier)=profiles[&id];
+        let count=counts.get(&id).copied().unwrap_or(0);
+        let contribution=local.saturating_mul(count);
+        total=total.saturating_add(contribution);details.push((id,count,contribution));
+        for c in graph.connections.iter().filter(|c|c.to==id){
+            let entry=counts.entry(c.from).or_insert(0);
+            // Field Traversal's position is a value argument, evaluated once
+            // per invocation. Its seed remains sampled inside the 16-step loop.
+            // Other consumers retain their existing conservative multipliers.
+            let edge_multiplier=if live && graph.node(id).is_some_and(|n|
+                n.module_id=="screenshaver.fields.traversal") && c.to_port==1 {1}else{multiplier};
+            *entry=if amplified {entry.saturating_add(count.saturating_mul(edge_multiplier))}else{1};
+        }
+    }
+    details.sort_by(|a,b|b.2.cmp(&a.2).then_with(||a.0.cmp(&b.0)));
+    Ok((total,details))
 }
 // Provisional conservative threshold; calibration requires real GPU measurements.
 const MAX_FRAME_WORK:u64=500_000_000;
+// Expanded live-preview allowance is limited to known ordinary, non-amplified
+// official modules. Discovery and callable graphs retain the original ceiling.
+pub(crate) fn adaptive_preview_work(graph:&Graph)->Result<(u64,u64),String>{
+    graph.validate_renderable()?;
+    if graph_source_cost(graph)>MAX_COMPILE_COST{return Err("Rendering deferred: source complexity budget".into())}
+    let (work,_)=safety_work_mode(graph,true)?;
+    let reachable=graph.output_reachable_ids();
+    let ordinary=graph.nodes.iter().filter(|n|reachable.contains(&n.id)).all(|n|
+        n.module_id.starts_with("screenshaver.") && n.definition().category!="Test" &&
+        !n.definition().inputs.iter().any(|p|p.ty.starts_with("field")) &&
+        safety_profile(&n.module_id).is_some_and(|(_,m)|m==1));
+    Ok((work,if ordinary{5_000_000_000}else{MAX_FRAME_WORK}))
+}
 pub(crate) fn rendering_admission(graph:&Graph,w:i32,h:i32)->Result<(),String>{
+    rendering_admission_impl(graph,w,h,MAX_FRAME_WORK,false)
+}
+pub(crate) fn rendering_admission_with_limit(graph:&Graph,w:i32,h:i32,limit:u64)->Result<(),String>{
+    rendering_admission_impl(graph,w,h,limit,true)
+}
+fn rendering_admission_impl(graph:&Graph,w:i32,h:i32,limit:u64,live:bool)->Result<(),String>{
     graph.validate_renderable()?;
     if w<=0 || h<=0{return Err("Preview dimensions unavailable".into())}
     if graph_source_cost(graph)>MAX_COMPILE_COST{return Err("Rendering deferred: source complexity budget".into())}
-    let work=safety_work(graph);
+    let (work,details)=safety_work_mode(graph,live)?;
     let frame=work.saturating_mul(w as u64).saturating_mul(h as u64);
-    if frame>MAX_FRAME_WORK{return Err(format!("Rendering deferred: estimated frame work {frame} exceeds {MAX_FRAME_WORK} ({}x{}); reduce complexity or preview size",w,h))}
+    if frame>limit{
+        let breakdown=details.iter().take(4).map(|(id,count,cost)|{
+            let name=graph.node(*id).map(|n|n.display_name()).unwrap_or("Unknown");
+            format!("{name} #{id}: {cost} (x{count})")
+        }).collect::<Vec<_>>().join("; ");
+        return Err(format!("Rendering deferred: estimated frame work {frame} exceeds {limit} ({w}x{h}; {work} units/pixel); top contributors: {breakdown}; reduce complexity or preview size"))
+    }
     Ok(())
 }
 
@@ -993,10 +1067,10 @@ fn shared_connection_count(a:&[(NodeId,usize,NodeId,usize)],b:&[(NodeId,usize,No
 
 // Pick from a bounded, semantically ranked shortlist. A repeated edge costs
 // two penalty units; semantic compatibility remains a preference, not a rule.
-fn select_diverse_gpu_indices(graphs:&[Graph],ranked:&[(u32,u64,usize)],limit:usize)->Vec<usize>{
+fn select_diverse_gpu_indices(graphs:&[CompactCandidate],ranked:&[(u32,u64,usize)],limit:usize)->Vec<usize>{
     const DIVERSITY_POOL:usize=1024;
     let pool=&ranked[..ranked.len().min(DIVERSITY_POOL)];
-    let keys:Vec<_>=pool.iter().map(|(_,_,i)|connection_key(&graphs[*i])).collect();
+    let keys:Vec<_>=pool.iter().map(|(_,_,i)|graphs[*i].key()).collect();
     let mut chosen=Vec::<usize>::new();
     let mut used=vec![false;pool.len()];
     for _ in 0..limit.min(pool.len()) {
@@ -1086,6 +1160,26 @@ impl ConnectionFeasibility {
         index
     }
 }
+#[derive(Clone)]
+struct CompactCandidate {
+    connections: Vec<crate::maker_graph::Connection>,
+    revision: u64,
+    callable: bool,
+}
+impl CompactCandidate {
+    fn capture(graph: Graph) -> Self {
+        let callable=graph_has_callable_edge(&graph);
+        Self{connections:graph.connections,revision:graph.revision,callable}
+    }
+    fn materialize(&self,base:&Graph)->Graph {
+        let mut graph=base.clone();
+        graph.connections=self.connections.clone();graph.revision=self.revision;graph
+    }
+    fn key(&self)->Vec<(NodeId,usize,NodeId,usize)> {
+        let mut key:Vec<_>=self.connections.iter().map(|c|(c.from,c.from_port,c.to,c.to_port)).collect();
+        key.sort_unstable();key
+    }
+}
 struct ConnectionSearch {
     base:Option<Graph>,
     canonical:Option<maker_discovery::ProductionEnumeration>,
@@ -1095,12 +1189,12 @@ struct ConnectionSearch {
     max_wire_connections:usize,
     discovery_error:Option<String>,
     seen:std::collections::HashSet<Vec<(NodeId,usize,NodeId,usize)>>,
-    raw:Vec<Graph>,
-    callable_raw:Vec<Graph>,
+    raw:Vec<CompactCandidate>,
+    callable_raw:Vec<CompactCandidate>,
     callable_seen:u64,
     callable_qualified:usize,
     callable_admissible:usize,
-    qualified:Vec<Graph>,
+    qualified:Vec<CompactCandidate>,
     scores:Vec<(u32,u64,usize)>,
     raw_seen:u64,
     selected_jobs:Vec<CandidateJob>,
@@ -1152,7 +1246,7 @@ impl ConnectionSearch {
     fn advance(&mut self,source_revision:u64,_jobs:&mut Vec<CandidateJob>){
         match self.stage {
             DiscoveryStage::Feasibility=>{
-                let Some(base)=self.base.take() else {return};
+                let Some(base)=self.base.clone() else {return};
                 let index=ConnectionFeasibility::build(&base,self.output);
                 crate::maker::operational_log(format_args!("[MAKER FEASIBILITY] raw_pairs={} type_compatible={} feasible={} reachable_nodes={} excluded_nodes={}",
                     index.raw_pairs,index.typed_pairs,index.feasible_pairs,index.reachable_nodes,index.excluded_nodes));
@@ -1194,7 +1288,8 @@ impl ConnectionSearch {
                     // Preserve Stage 2's structural validation boundary.
                     if (self.min_wire_connections..=self.max_wire_connections).contains(&graph.connections.len()) && graph.input_connection(self.output,0).is_some() {
                         self.raw_seen+=1;
-                        if graph_has_callable_edge(&graph) {
+                        let graph=CompactCandidate::capture(graph);
+                        if graph.callable {
                             self.callable_seen+=1;
                             // Dedicated reservoir prevents noncallable graphs from evicting every callable.
                             const CALLABLE_RESERVOIR:usize=2_000;
@@ -1229,10 +1324,11 @@ impl ConnectionSearch {
             }
             DiscoveryStage::Validate=>{
                 let end=(self.cursor+CPU_STAGE_BATCH).min(self.raw.len());
-                let checks=parallel_map(&self.raw[self.cursor..end],self.workers,|g|graph_preflight(g,self.output).is_ok());
+                let base=self.base.as_ref().expect("Discovery base retained");
+                let checks=parallel_map(&self.raw[self.cursor..end],self.workers,|g|graph_preflight(&g.materialize(base),self.output).is_ok());
                 // Compact in place only at the end of the stage; preserve deterministic order.
                 for (i,valid) in checks.into_iter().enumerate(){if !valid{self.incomplete+=1;}else{
-                    if graph_has_callable_edge(&self.raw[self.cursor+i]) {self.callable_qualified+=1;}
+                    if self.raw[self.cursor+i].callable {self.callable_qualified+=1;}
                     self.qualified.push(self.raw[self.cursor+i].clone());
                 }}
                 self.cursor=end;
@@ -1241,7 +1337,7 @@ impl ConnectionSearch {
             }
             DiscoveryStage::Deduplicate=>{
                 let end=(self.cursor+CPU_STAGE_BATCH).min(self.qualified.len());
-                let keys=parallel_map(&self.qualified[self.cursor..end],self.workers,connection_key);
+                let keys=parallel_map(&self.qualified[self.cursor..end],self.workers,CompactCandidate::key);
                 for (i,key) in keys.into_iter().enumerate(){
                     if self.seen.insert(key){self.raw.push(self.qualified[self.cursor+i].clone());}
                     else{self.duplicates+=1;}
@@ -1252,16 +1348,18 @@ impl ConnectionSearch {
             }
             DiscoveryStage::Qualify=>{
                 let end=(self.cursor+CPU_STAGE_BATCH).min(self.raw.len());
-                let scores=parallel_map(&self.raw[self.cursor..end],self.workers,|graph| {
-                    (graph_discovery_penalty(graph),discovery_priority(graph),graph_source_cost(graph),graph_compile_cost(graph))
+                let base=self.base.as_ref().expect("Discovery base retained");
+                let scores=parallel_map(&self.raw[self.cursor..end],self.workers,|candidate| {
+                    let graph=&candidate.materialize(base);
+                    (graph_discovery_penalty(graph),discovery_priority(graph),graph_source_cost(graph),graph_compile_cost(graph),candidate_admission(graph).is_ok())
                 });
-                for (i,(semantic_penalty,score,source_cost,runtime_cost)) in scores.into_iter().enumerate(){
+                for (i,(semantic_penalty,score,source_cost,runtime_cost,admitted)) in scores.into_iter().enumerate(){
                     self.min_source_cost=self.min_source_cost.min(source_cost);
                     self.max_source_cost=self.max_source_cost.max(source_cost);
                     self.min_runtime_cost=self.min_runtime_cost.min(runtime_cost);
                     self.max_runtime_cost=self.max_runtime_cost.max(runtime_cost);
-                    if candidate_admission(&self.raw[self.cursor+i]).is_ok() {
-                        if graph_has_callable_edge(&self.raw[self.cursor+i]) {self.callable_admissible+=1;}
+                    if admitted {
+                        if self.raw[self.cursor+i].callable {self.callable_admissible+=1;}
                         self.scores.push((semantic_penalty,score,self.cursor+i));
                     } else {self.deferred_complexity+=1;}
                 }
@@ -1272,9 +1370,9 @@ impl ConnectionSearch {
                         if self.min_source_cost==u64::MAX {0}else{self.min_source_cost},self.max_source_cost,
                         if self.min_runtime_cost==u64::MAX {0}else{self.min_runtime_cost},self.max_runtime_cost));
                     let constant_normal_candidates=self.scores.iter().filter(|(_,_,index)|
-                        callable_sampling_penalty(&self.raw[*index])>0).count();
+                        callable_sampling_penalty(&self.raw[*index].materialize(base))>0).count();
                     let callable_time_hints=self.scores.iter().filter(|(_,_,index)|
-                        graph_has_callable_edge(&self.raw[*index]) && graph_time_dependency_hint(&self.raw[*index])).count();
+                        self.raw[*index].callable && graph_time_dependency_hint(&self.raw[*index].materialize(base))).count();
                     crate::maker::operational_log(format_args!("[MAKER CALLABLE QUALITY] admissible_constant_normal={} admissible_time_hint={} (time hint is not measured motion)",
                         constant_normal_candidates,callable_time_hints));
                     // Preserve the semantic score and hash ordering as a deterministic
@@ -1283,20 +1381,20 @@ impl ConnectionSearch {
                     // Preserve the original GPU budget. Reserve up to eight slots for callable
                     // graphs, selected from their own semantic-ranked pool rather than the global top 1024.
                     let callable_ranked:Vec<_>=self.scores.iter().copied()
-                        .filter(|(_,_,i)|graph_has_callable_edge(&self.raw[*i])).collect();
+                        .filter(|(_,_,i)|self.raw[*i].callable).collect();
                     let mut chosen=select_diverse_gpu_indices(&self.raw,&callable_ranked,8);
                     let regular=select_diverse_gpu_indices(&self.raw,&self.scores,MAX_CONNECTION_GPU_JOBS);
                     for index in regular {
                         if chosen.len()>=MAX_CONNECTION_GPU_JOBS {break;}
                         if !chosen.contains(&index) {chosen.push(index);}
                     }
-                    let callable_selected=chosen.iter().filter(|&&i|graph_has_callable_edge(&self.raw[i])).count();
+                    let callable_selected=chosen.iter().filter(|&&i|self.raw[i].callable).count();
                     crate::maker::operational_log(format_args!("[MAKER CALLABLE PIPELINE] enumerated={} preflight_passed={} admission_passed={} gpu_selected={}",
                         self.callable_seen,self.callable_qualified,self.callable_admissible,callable_selected));
                     let selected=chosen.len();
                     let mut counts=std::collections::BTreeMap::<usize,usize>::new();
                     let mut overlap_sum=0usize;
-                    let selected_keys:Vec<_>=chosen.iter().map(|&i|connection_key(&self.raw[i])).collect();
+                    let selected_keys:Vec<_>=chosen.iter().map(|&i|self.raw[i].key()).collect();
                     for (position,&index) in chosen.iter().enumerate(){
                         *counts.entry(self.raw[index].connections.len()).or_default()+=1;
                         if position>0 {overlap_sum+=selected_keys[..position].iter()
@@ -1307,8 +1405,9 @@ impl ConnectionSearch {
                         overlap_sum as f32/(selected.saturating_sub(1).max(1) as f32)));
                     // Reverse push order because next_candidate_job() pops from the end.
                     for &index in chosen.iter().rev(){
-                        let graph=self.raw[index].clone();
-                        self.selected_jobs.push(CandidateJob{graph:graph.clone(),name:format!("Connections: {} wires",graph.connections.len()),
+                        let graph=self.raw[index].materialize(base);
+                        let name=format!("Connections: {} wires",graph.connections.len());
+                        self.selected_jobs.push(CandidateJob{graph,name,
                             source_revision,connection_candidate:true});
                     }
                     self.generated=selected;
@@ -2246,7 +2345,7 @@ impl MakerUi {
             _ => {}
         }
     }
-    pub fn frame(&mut self,dw:u32,dh:u32,ww:u32,wh:u32,scale:f32,compile_error:Option<&str>)->bool{
+    pub fn frame(&mut self,dw:u32,dh:u32,ww:u32,wh:u32,scale:f32,compile_error:Option<&str>,resolution_warning:Option<&str>)->bool{
         // CPU-only exploration is incremental. OpenGL thumbnails remain on the caller's GL thread.
         if let Some(search)=self.connection_search.as_mut(){
             if let Some(base)=self.candidate_base.as_ref(){
@@ -2607,6 +2706,7 @@ impl MakerUi {
                         .on_hover_text("Current expandable graph workspace width × height in logical graph pixels; expands as you navigate");
                     ui.separator();
                     if let Some(e)=compile_error{ui.colored_label(egui::Color32::LIGHT_RED,format!("GLSL: {}",e));}
+                    else if let Some(warning)=resolution_warning{ui.colored_label(egui::Color32::from_rgb(255,190,70),warning);}
                     else{ui.label(status.as_str());}
                 });
             });
@@ -4997,5 +5097,20 @@ mod callable_quality_regression {
         graph.connect(normal,0,output,0).unwrap();
         assert_eq!(callable_sampling_penalty(&graph),40);
         assert!(graph.validate_renderable().is_ok());
+    }
+}
+
+#[cfg(test)]
+mod safety_estimator_regression {
+    use super::*;
+    #[test]
+    fn fold_cost_preserves_maximum_and_tracks_glsl_rounding(){
+        assert_eq!(fold_iteration_work(Some(6.0)),4416);
+        assert_eq!(fold_iteration_work(Some(24.0)),15360);
+        assert_eq!(fold_iteration_work(Some(5.5)),4416);
+        assert_eq!(fold_iteration_work(Some(-1.0)),1376);
+        assert_eq!(fold_iteration_work(Some(100.0)),15360);
+        assert_eq!(fold_iteration_work(None),15360);
+        assert_eq!(fold_iteration_work(Some(f64::NAN)),15360);
     }
 }

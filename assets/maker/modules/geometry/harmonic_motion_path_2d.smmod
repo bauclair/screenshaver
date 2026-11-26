@@ -1,0 +1,156 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.geometry.harmonic_motion_path_2d",
+  "name": "Harmonic Motion Path 2D",
+  "category": "Geometry",
+  "created_by": "Screenshaver",
+  "description": "Planar motion from two independent harmonic oscillations per axis, with analytical velocity.",
+  "uses": "Moving light sources, emitters, masks and animated coordinate origins.",
+  "notes": "Frequency in Hz, phase in degrees. Negative frequency reverses phase progression. Velocity holds center, time offset and parameters fixed. Zero frequency produces a static offset. No constant speed or closure guarantee.",
+  "header_color": "#477D9A",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec2",
+      "default": "vec2(0.0)"
+    },
+    {
+      "id": "time_offset",
+      "name": "Time Offset",
+      "type": "float",
+      "default": "0.0",
+      "semantic_role": "time"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "displacement",
+      "name": "Displacement",
+      "type": "vec2",
+      "semantic_role": "offset2d"
+    },
+    {
+      "id": "velocity",
+      "name": "Velocity",
+      "type": "vec2"
+    },
+    {
+      "id": "speed",
+      "name": "Speed",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "x1_amplitude",
+      "name": "X1 Amplitude",
+      "type": "float",
+      "default": 0.4,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "x1_frequency",
+      "name": "X1 Frequency (Hz)",
+      "type": "float",
+      "default": 0.25,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "x1_phase",
+      "name": "X1 Phase (deg)",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "x2_amplitude",
+      "name": "X2 Amplitude",
+      "type": "float",
+      "default": 0.1,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "x2_frequency",
+      "name": "X2 Frequency (Hz)",
+      "type": "float",
+      "default": 0.5,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "x2_phase",
+      "name": "X2 Phase (deg)",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "y1_amplitude",
+      "name": "Y1 Amplitude",
+      "type": "float",
+      "default": 0.4,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "y1_frequency",
+      "name": "Y1 Frequency (Hz)",
+      "type": "float",
+      "default": 0.375,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "y1_phase",
+      "name": "Y1 Phase (deg)",
+      "type": "float",
+      "default": 90,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "y2_amplitude",
+      "name": "Y2 Amplitude",
+      "type": "float",
+      "default": 0.1,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "y2_frequency",
+      "name": "Y2 Frequency (Hz)",
+      "type": "float",
+      "default": 0.75,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "y2_phase",
+      "name": "Y2 Phase (deg)",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    }
+  ],
+  "helpers": "struct MakerHarmonicMotion { vec2 displacement; vec2 velocity; };\nMakerHarmonicMotion maker_harmonic_motion(float t, vec2 a1, vec2 f1, vec2 p1, vec2 a2, vec2 f2, vec2 p2) {\n    vec2 w1 = 6.283185307179586 * f1;\n    vec2 w2 = 6.283185307179586 * f2;\n    vec2 q1 = w1 * t + radians(p1);\n    vec2 q2 = w2 * t + radians(p2);\n    return MakerHarmonicMotion(a1*sin(q1)+a2*sin(q2), a1*w1*cos(q1)+a2*w2*cos(q2));\n}",
+  "glsl_outputs": {
+    "position": "({center}+maker_harmonic_motion(u_time+{time_offset},vec2({x1_amplitude},{y1_amplitude}),vec2({x1_frequency},{y1_frequency}),vec2({x1_phase},{y1_phase}),vec2({x2_amplitude},{y2_amplitude}),vec2({x2_frequency},{y2_frequency}),vec2({x2_phase},{y2_phase})).displacement)",
+    "displacement": "maker_harmonic_motion(u_time+{time_offset},vec2({x1_amplitude},{y1_amplitude}),vec2({x1_frequency},{y1_frequency}),vec2({x1_phase},{y1_phase}),vec2({x2_amplitude},{y2_amplitude}),vec2({x2_frequency},{y2_frequency}),vec2({x2_phase},{y2_phase})).displacement",
+    "velocity": "maker_harmonic_motion(u_time+{time_offset},vec2({x1_amplitude},{y1_amplitude}),vec2({x1_frequency},{y1_frequency}),vec2({x1_phase},{y1_phase}),vec2({x2_amplitude},{y2_amplitude}),vec2({x2_frequency},{y2_frequency}),vec2({x2_phase},{y2_phase})).velocity",
+    "speed": "length(maker_harmonic_motion(u_time+{time_offset},vec2({x1_amplitude},{y1_amplitude}),vec2({x1_frequency},{y1_frequency}),vec2({x1_phase},{y1_phase}),vec2({x2_amplitude},{y2_amplitude}),vec2({x2_frequency},{y2_frequency}),vec2({x2_phase},{y2_phase})).velocity)"
+  }
+}

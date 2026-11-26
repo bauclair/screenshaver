@@ -543,7 +543,7 @@ vec3 maker_reflection_trace_{id}(vec3 hitPosition,vec3 surfaceNormal,vec3 incomi
  }
  src.push_str("void main(){\n  vec2 maker_uv=(gl_FragCoord.xy-u_viewport_origin-0.5*u_resolution)/max(u_resolution.y,1.0);\n");
  if graph.input_connection(out.id,0).is_some(){
-  let c=graph.input_connection(out.id,0).unwrap();emit(graph,c.from,&mut emitted,&mut src)?;
+  let c=graph.input_connection(out.id,0).unwrap();emit(graph,c.from,&reachable,&mut emitted,&mut src)?;
   src.push_str(&format!("  fragColor=vec4(clamp(v{}_p{},0.0,1.0),1.0);\n",c.from,c.from_port));
  }else{src.push_str("  fragColor=vec4(0.015,0.02,0.04,1.0);\n")}
  src.push_str("}\n");Ok(src)
@@ -586,11 +586,11 @@ fn universal_preview_expression(graph:&Graph,id:NodeId)->String {
  }
  "maker_universal_color(maker_uv)".into()
 }
-fn emit(graph:&Graph,id:NodeId,emitted:&mut HashSet<NodeId>,src:&mut String)->Result<(),String>{
+fn emit(graph:&Graph,id:NodeId,reachable:&HashSet<NodeId>,emitted:&mut HashSet<NodeId>,src:&mut String)->Result<(),String>{
  if emitted.contains(&id){return Ok(())}
  let node=graph.node(id).ok_or("Missing upstream node")?;let m=node.definition();
  if m.terminal{return Err("Output cannot be an upstream source".into())}
- for port in 0..m.inputs.len(){if m.inputs[port].ty.starts_with("field"){continue}if let Some(c)=graph.input_connection(id,port){emit(graph,c.from,emitted,src)?}}
+ for port in 0..m.inputs.len(){if m.inputs[port].ty.starts_with("field") || (m.id=="screenshaver.fields.traversal" && port==0){continue}if let Some(c)=graph.input_connection(id,port){emit(graph,c.from,reachable,emitted,src)?}}
  let mut vars=std::collections::HashMap::new();
  for (port,p) in m.inputs.iter().enumerate(){
   let expression=if p.ty.starts_with("field") {
@@ -644,12 +644,75 @@ fn emit(graph:&Graph,id:NodeId,emitted:&mut HashSet<NodeId>,src:&mut String)->Re
   src.push_str(&format!("  v{}_p0=maker_sdf_render_{}(maker_uv,u_n{}_speed,u_n{}_max_distance,u_n{}_epsilon,u_n{}_step_scale,u_n{}_fov,u_n{}_glow_falloff,u_n{}_glow_gain,{},{},u_n{}_camera_source,v{}_p1,v{}_p2,v{}_p3,v{}_p4,v{}_p5,v{}_p6,v{}_p7);\n",id,id,id,id,id,id,id,id,id,vars["ray_origin"],vars["ray_direction"],id,id,id,id,id,id,id,id));
   emitted.insert(id);return Ok(());
  }
+ let mut expressions=Vec::new();
  for (port,output) in m.outputs.iter().enumerate(){
   if output.ty.starts_with("field"){continue}
+  // Keep every output consumed by a reachable node. This intentionally retains
+  // conservative dependencies for specialized consumers and callable contexts.
+  if !graph.connections.iter().any(|c|c.from==id && c.from_port==port && reachable.contains(&c.to)){continue}
   let expression=if m.id=="screenshaver.test.universal_test" && output.id=="preview_color" { universal_preview_expression(graph,id) } else if m.id=="screenshaver.fields.traversal" && graph.input_connection(id,0).is_some(){format!("maker_traverse_connected_{}({},{},{},{},{})",id,vars["position"],vars["depth"],vars["density"],vars["speed"],vars["mode"])}else{substitute(&m.glsl_outputs[port],&vars)?};
-  src.push_str(&format!("  {} v{}_p{}={};\n",output.ty,id,port,expression));
+  expressions.push((port,output.ty.as_str(),expression));
+ }
+ // Only explicitly audited pure helpers are eligible for common-result reuse.
+ // Never hoist arbitrary community expressions or cross sampling contexts.
+ let helper=match m.id.as_str(){
+  "screenshaver.coordinates.iterative_coordinate_fold_2d" if m.glsl_outputs.len()==5 && m.glsl_outputs.iter().all(|e| matches!(e.as_str(), "maker_iterative_coordinate_fold_2d({position},{time},{center},{iterations},{iteration_scale},{rotation},{speed},{fold_mode},{period},{symmetry},{sectors},{twist},{frequency},{response},{width},{exponent},{gain}).folded" | "maker_iterative_coordinate_fold_2d({position},{time},{center},{iterations},{iteration_scale},{rotation},{speed},{fold_mode},{period},{symmetry},{sectors},{twist},{frequency},{response},{width},{exponent},{gain}).final_radius" | "maker_iterative_coordinate_fold_2d({position},{time},{center},{iterations},{iteration_scale},{rotation},{speed},{fold_mode},{period},{symmetry},{sectors},{twist},{frequency},{response},{width},{exponent},{gain}).minimum_radius" | "maker_iterative_coordinate_fold_2d({position},{time},{center},{iterations},{iteration_scale},{rotation},{speed},{fold_mode},{period},{symmetry},{sectors},{twist},{frequency},{response},{width},{exponent},{gain}).mean_radius" | "maker_iterative_coordinate_fold_2d({position},{time},{center},{iterations},{iteration_scale},{rotation},{speed},{fold_mode},{period},{symmetry},{sectors},{twist},{frequency},{response},{width},{exponent},{gain}).accumulated_response"))=>Some(("maker_iterative_coordinate_fold_2d","MakerFold2DResult")),
+  "screenshaver.fields.euclidean_voronoi_boundary_field_2d" if m.glsl_outputs.len()==3 && m.glsl_outputs.iter().all(|e| matches!(e.as_str(), "maker_evb_sample({position},{density},{jitter}).x" | "maker_evb_sample({position},{density},{jitter}).y" | "(1.0-smoothstep(max({width},0.0001),max({width},0.0001)+max({softness},0.0001),maker_evb_sample({position},{density},{jitter}).y))"))=>Some(("maker_evb_sample","vec2")),
+  "screenshaver.geometry.spherical_orbital_path_3d" if m.glsl_outputs.len()==6 && m.glsl_outputs.iter().all(|e| matches!(e.as_str(), "maker_orbit({time}+{time_offset},{center},{radius}+{radius_modulation},{inclination},{orbital_speed},{precession_speed},{wobble_amplitude},{wobble_frequency},{initial_phase}).p" | "maker_orbit({time}+{time_offset},{center},{radius}+{radius_modulation},{inclination},{orbital_speed},{precession_speed},{wobble_amplitude},{wobble_frequency},{initial_phase}).radial" | "maker_orbit({time}+{time_offset},{center},{radius}+{radius_modulation},{inclination},{orbital_speed},{precession_speed},{wobble_amplitude},{wobble_frequency},{initial_phase}).tangent" | "maker_orbit({time}+{time_offset},{center},{radius}+{radius_modulation},{inclination},{orbital_speed},{precession_speed},{wobble_amplitude},{wobble_frequency},{initial_phase}).velocity" | "maker_orbit({time}+{time_offset},{center},{radius}+{radius_modulation},{inclination},{orbital_speed},{precession_speed},{wobble_amplitude},{wobble_frequency},{initial_phase}).lateral" | "maker_orbit({time}+{time_offset},{center},{radius}+{radius_modulation},{inclination},{orbital_speed},{precession_speed},{wobble_amplitude},{wobble_frequency},{initial_phase}).speed"))=>Some(("maker_orbit","MakerOrbit")),
+  _=>None,
+ };
+ if let Some((function,ty))=helper {
+  let temporary=format!("maker_shared_{id}");
+  if let Some(call)=reuse_audited_call(&mut expressions,function,&temporary){
+   src.push_str(&format!("  {ty} {temporary}={call};\n"));
+  }
+ }
+ for (port,ty,expression) in expressions{
+  src.push_str(&format!("  {ty} v{id}_p{port}={expression};\n"));
  }
  emitted.insert(id);Ok(())
+}
+
+// Locate a complete balanced call, not merely a prefix ending at the first ')'.
+fn audited_call(expression:&str,function:&str)->Option<String>{
+ let prefix=format!("{function}(");
+ let start=expression.find(&prefix)?;
+ let mut depth=0usize;
+ for (offset,ch) in expression[start+function.len()..].char_indices(){
+  match ch {
+   '('=>depth+=1,
+   ')'=>{depth=depth.checked_sub(1)?;if depth==0{return Some(expression[start..start+function.len()+offset+1].to_owned())}},
+   _=>{},
+  }
+ }
+ None
+}
+fn reuse_audited_call(expressions:&mut [(usize,&str,String)],function:&str,temporary:&str)->Option<String>{
+ let mut calls=Vec::new();
+ for (_,_,expression) in expressions.iter(){
+  if let Some(call)=audited_call(expression,function){calls.push(call)}
+ }
+ let first=calls.first()?.clone();
+ if calls.len()<2 || calls.iter().any(|call|call!=&first){return None}
+ for (_,_,expression) in expressions.iter_mut(){*expression=expression.replace(&first,temporary);}
+ Some(first)
+}
+#[cfg(test)]
+mod output_reuse_tests {
+ use super::*;
+ #[test] fn identical_calls_reused(){
+  let mut e=vec![(0,"float","sample(vec2(0.0),x).x".to_owned()),(1,"float","1.0-sample(vec2(0.0),x).y".to_owned())];
+  assert_eq!(reuse_audited_call(&mut e,"sample","shared").as_deref(),Some("sample(vec2(0.0),x)"));
+  assert_eq!(e[0].2,"shared.x");assert_eq!(e[1].2,"1.0-shared.y");
+ }
+ #[test] fn distinct_calls_preserved(){
+  let mut e=vec![(0,"float","sample(a).x".to_owned()),(1,"float","sample(b).y".to_owned())];
+  let original=e.clone();assert!(reuse_audited_call(&mut e,"sample","shared").is_none());assert_eq!(e,original);
+ }
+ #[test] fn single_call_preserved(){
+  let mut e=vec![(0,"float","sample(a).x".to_owned())];
+  assert!(reuse_audited_call(&mut e,"sample","shared").is_none());assert_eq!(e[0].2,"sample(a).x");
+ }
 }
 
 // A callable is one GLSL function per node output.  All functions take the sampling

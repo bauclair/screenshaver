@@ -284,7 +284,18 @@ fn spawn_candidate_worker() -> (SyncSender<WorkerRequest>,Receiver<WorkerReply>,
             let ready=read_wire_line(&mut output)?;
             if ready["status"]!="ready" {return Err(format!("Worker startup failed: {}",ready))}
             *pending.lock().map_err(|e|e.to_string())?=None;
-            while let Ok(request)=requests_rx.recv() {
+            loop {
+                let request=match requests_rx.recv_timeout(Duration::from_millis(200)) {
+                    Ok(request)=>request,
+                    Err(mpsc::RecvTimeoutError::Disconnected)=>break,
+                    Err(mpsc::RecvTimeoutError::Timeout)=>{
+                        if let Some(status)=child.0.try_wait().map_err(|e|e.to_string())? {
+                            thread_pid.store(0,Ordering::SeqCst);
+                            return Err(format!("Candidate worker exited while idle: {status}"));
+                        }
+                        continue;
+                    }
+                };
                 let encoded=wire_request(&request).to_string();
                 if encoded.len()>2_000_000{return Err("Candidate request exceeded limit".into())}
                 *pending.lock().map_err(|e|e.to_string())?=Some(Instant::now());
@@ -617,7 +628,8 @@ fn run_inner(coordinator:Option<&crate::application_coordinator::Owner>)->Result
         }
         maker_timing("preview",diagnostic_frame,preview_started);
         let ui_started=Instant::now();
-        if !ui.frame(dw,dh,ww,wh,scale,preview.error.as_deref()){break}
+        let resolution_warning=if ui.preview_active(){preview.resolution_warning()}else{None};
+        if !ui.frame(dw,dh,ww,wh,scale,preview.error.as_deref(),resolution_warning.as_deref()){break}
         if let Some(action) = ui.take_tools_action() {
             match action {
                 "start_screenshaver" => {
@@ -672,7 +684,9 @@ fn run_inner(coordinator:Option<&crate::application_coordinator::Owner>)->Result
             ui.clipboard_result(clipboard.set_clipboard_text(&report));
         }
         let swap_started=Instant::now();
+        crate::maker_preview::trace_presentation("live swap begin");
         window.gl_swap_window();
+        crate::maker_preview::trace_presentation("live swap returned");
         maker_timing("swap",diagnostic_frame,swap_started);
         maker_timing("whole-frame",diagnostic_frame,frame_started);
         std::thread::sleep(Duration::from_millis(8));
