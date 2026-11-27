@@ -1,0 +1,189 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.geometry.periodic_hyperspherical_shell_field",
+  "name": "Periodic Hyperspherical Shell Field",
+  "category": "Geometry",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Nearest-cell four-dimensional shell expression, not exact spatial slice SDF or union for overlapping shells.",
+  "uses": "Periodic Hyperspherical Shell Field",
+  "notes": "Nearest-cell four-dimensional shell expression, not exact spatial slice SDF or union for overlapping shells.",
+  "header_color": "#348F8B",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "default": "vec3(maker_uv,0.0)",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "fourth_coordinate",
+      "name": "Fourth Coordinate",
+      "type": "float",
+      "default": "0.0"
+    },
+    {
+      "id": "time_offset",
+      "name": "Time Offset",
+      "type": "float",
+      "default": "0.0"
+    },
+    {
+      "id": "radius_multiplier",
+      "name": "Radius Multiplier",
+      "type": "float",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "hyperspherical_distance_field",
+      "name": "Hyperspherical Distance Field",
+      "type": "float"
+    },
+    {
+      "id": "shell_distance",
+      "name": "Shell Distance",
+      "type": "float"
+    },
+    {
+      "id": "shell_mask",
+      "name": "Shell Mask",
+      "type": "float"
+    },
+    {
+      "id": "local_spatial_coordinates",
+      "name": "Local Spatial Coordinates",
+      "type": "vec3"
+    },
+    {
+      "id": "local_fourth_coordinate",
+      "name": "Local Fourth Coordinate",
+      "type": "float"
+    },
+    {
+      "id": "four_dimensional_radius",
+      "name": "Four Dimensional Radius",
+      "type": "float"
+    },
+    {
+      "id": "spatial_cell_identifier",
+      "name": "Spatial Cell Identifier",
+      "type": "vec3"
+    },
+    {
+      "id": "fourth_cell_identifier",
+      "name": "Fourth Cell Identifier",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "cell_period_x",
+      "name": "Cell Period X",
+      "type": "float",
+      "default": 1,
+      "min": 0.01,
+      "max": 20
+    },
+    {
+      "id": "cell_period_y",
+      "name": "Cell Period Y",
+      "type": "float",
+      "default": 1,
+      "min": 0.01,
+      "max": 20
+    },
+    {
+      "id": "cell_period_z",
+      "name": "Cell Period Z",
+      "type": "float",
+      "default": 1,
+      "min": 0.01,
+      "max": 20
+    },
+    {
+      "id": "fourth_coordinate_period",
+      "name": "Fourth Coordinate Period",
+      "type": "float",
+      "default": 1,
+      "min": 0.01,
+      "max": 20
+    },
+    {
+      "id": "hypersphere_radius",
+      "name": "Hypersphere Radius",
+      "type": "float",
+      "default": 0.25,
+      "min": 0.001,
+      "max": 10
+    },
+    {
+      "id": "shell_thickness",
+      "name": "Shell Thickness",
+      "type": "float",
+      "default": 0.02,
+      "min": 0.001,
+      "max": 2
+    },
+    {
+      "id": "fourth_coordinate_offset",
+      "name": "Fourth Coordinate Offset",
+      "type": "float",
+      "default": 0,
+      "min": -20,
+      "max": 20
+    },
+    {
+      "id": "fourth_coordinate_animation_speed",
+      "name": "Fourth Coordinate Animation Speed",
+      "type": "float",
+      "default": 0.5,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "shell_softness",
+      "name": "Shell Softness",
+      "type": "float",
+      "default": 0.01,
+      "min": 0.001,
+      "max": 1
+    },
+    {
+      "id": "geometry_mode",
+      "name": "Geometry Mode",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Shell",
+        "Solid"
+      ]
+    },
+    {
+      "id": "repetition_mode",
+      "name": "Repetition Mode",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "All Dimensions",
+        "Spatial Only",
+        "Fourth Only",
+        "None"
+      ]
+    }
+  ],
+  "helpers": "struct MakerB362PeriodicHypersphericalShellField {float hyperspherical_distance_field;float shell_distance;float shell_mask;vec3 local_spatial_coordinates;float local_fourth_coordinate;float four_dimensional_radius;vec3 spatial_cell_identifier;float fourth_cell_identifier;};\nMakerB362PeriodicHypersphericalShellField maker_b362_periodic_hyperspherical_shell_field(vec3 position,float fourth_coordinate,float time_offset,float radius_multiplier,float cell_period_x,float cell_period_y,float cell_period_z,float fourth_coordinate_period,float hypersphere_radius,float shell_thickness,float fourth_coordinate_offset,float fourth_coordinate_animation_speed,float shell_softness,float geometry_mode,float repetition_mode,float tm){\nvec4 p=vec4(position,fourth_coordinate+fourth_coordinate_offset+(tm+time_offset)*fourth_coordinate_animation_speed),period=vec4(cell_period_x,cell_period_y,cell_period_z,fourth_coordinate_period),id=floor(p/period+.5);if(repetition_mode>1.5)id.xyz=vec3(0.);if(repetition_mode>.5&&repetition_mode<1.5||repetition_mode>2.5)id.w=0.;vec4 q=p-id*period;float r=length(q),R=max(.0001,hypersphere_radius*abs(radius_multiplier)),s=abs(r-R)-shell_thickness,d=geometry_mode<.5?s:r-R;return MakerB362PeriodicHypersphericalShellField(d,s,1.-smoothstep(0.,shell_softness,s),q.xyz,q.w,r,id.xyz,id.w);\n}",
+  "glsl_outputs": {
+    "hyperspherical_distance_field": "maker_b362_periodic_hyperspherical_shell_field({position},{fourth_coordinate},{time_offset},{radius_multiplier},{cell_period_x},{cell_period_y},{cell_period_z},{fourth_coordinate_period},{hypersphere_radius},{shell_thickness},{fourth_coordinate_offset},{fourth_coordinate_animation_speed},{shell_softness},{geometry_mode},{repetition_mode},u_time).hyperspherical_distance_field",
+    "shell_distance": "maker_b362_periodic_hyperspherical_shell_field({position},{fourth_coordinate},{time_offset},{radius_multiplier},{cell_period_x},{cell_period_y},{cell_period_z},{fourth_coordinate_period},{hypersphere_radius},{shell_thickness},{fourth_coordinate_offset},{fourth_coordinate_animation_speed},{shell_softness},{geometry_mode},{repetition_mode},u_time).shell_distance",
+    "shell_mask": "maker_b362_periodic_hyperspherical_shell_field({position},{fourth_coordinate},{time_offset},{radius_multiplier},{cell_period_x},{cell_period_y},{cell_period_z},{fourth_coordinate_period},{hypersphere_radius},{shell_thickness},{fourth_coordinate_offset},{fourth_coordinate_animation_speed},{shell_softness},{geometry_mode},{repetition_mode},u_time).shell_mask",
+    "local_spatial_coordinates": "maker_b362_periodic_hyperspherical_shell_field({position},{fourth_coordinate},{time_offset},{radius_multiplier},{cell_period_x},{cell_period_y},{cell_period_z},{fourth_coordinate_period},{hypersphere_radius},{shell_thickness},{fourth_coordinate_offset},{fourth_coordinate_animation_speed},{shell_softness},{geometry_mode},{repetition_mode},u_time).local_spatial_coordinates",
+    "local_fourth_coordinate": "maker_b362_periodic_hyperspherical_shell_field({position},{fourth_coordinate},{time_offset},{radius_multiplier},{cell_period_x},{cell_period_y},{cell_period_z},{fourth_coordinate_period},{hypersphere_radius},{shell_thickness},{fourth_coordinate_offset},{fourth_coordinate_animation_speed},{shell_softness},{geometry_mode},{repetition_mode},u_time).local_fourth_coordinate",
+    "four_dimensional_radius": "maker_b362_periodic_hyperspherical_shell_field({position},{fourth_coordinate},{time_offset},{radius_multiplier},{cell_period_x},{cell_period_y},{cell_period_z},{fourth_coordinate_period},{hypersphere_radius},{shell_thickness},{fourth_coordinate_offset},{fourth_coordinate_animation_speed},{shell_softness},{geometry_mode},{repetition_mode},u_time).four_dimensional_radius",
+    "spatial_cell_identifier": "maker_b362_periodic_hyperspherical_shell_field({position},{fourth_coordinate},{time_offset},{radius_multiplier},{cell_period_x},{cell_period_y},{cell_period_z},{fourth_coordinate_period},{hypersphere_radius},{shell_thickness},{fourth_coordinate_offset},{fourth_coordinate_animation_speed},{shell_softness},{geometry_mode},{repetition_mode},u_time).spatial_cell_identifier",
+    "fourth_cell_identifier": "maker_b362_periodic_hyperspherical_shell_field({position},{fourth_coordinate},{time_offset},{radius_multiplier},{cell_period_x},{cell_period_y},{cell_period_z},{fourth_coordinate_period},{hypersphere_radius},{shell_thickness},{fourth_coordinate_offset},{fourth_coordinate_animation_speed},{shell_softness},{geometry_mode},{repetition_mode},u_time).fourth_cell_identifier"
+  }
+}

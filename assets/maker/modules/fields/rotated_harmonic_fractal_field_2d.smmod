@@ -1,0 +1,181 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.rotated_harmonic_fractal_field_2d",
+  "name": "Rotated Harmonic Fractal Field 2D",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Bounded rotated harmonic octaves; deterministic periodic basis.",
+  "uses": "Rotated Harmonic Fractal Field 2D",
+  "notes": "Bounded rotated harmonic octaves; deterministic periodic basis.",
+  "header_color": "#348F8B",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "time_offset",
+      "name": "Time Offset",
+      "type": "float",
+      "default": "0.0"
+    },
+    {
+      "id": "frequency_multiplier",
+      "name": "Frequency Multiplier",
+      "type": "float",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "signed_harmonic_field",
+      "name": "Signed Harmonic Field",
+      "type": "float"
+    },
+    {
+      "id": "normalized_field",
+      "name": "Normalized Field",
+      "type": "float"
+    },
+    {
+      "id": "harmonic_displacement",
+      "name": "Harmonic Displacement",
+      "type": "vec2"
+    },
+    {
+      "id": "peak_response",
+      "name": "Peak Response",
+      "type": "float"
+    },
+    {
+      "id": "mean_response",
+      "name": "Mean Response",
+      "type": "float"
+    },
+    {
+      "id": "final_coordinates",
+      "name": "Final Coordinates",
+      "type": "vec2"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "layers",
+      "name": "Layers",
+      "type": "float",
+      "default": 6,
+      "min": 1,
+      "max": 12
+    },
+    {
+      "id": "initial_frequency",
+      "name": "Initial Frequency",
+      "type": "float",
+      "default": 2,
+      "min": 0.1,
+      "max": 20
+    },
+    {
+      "id": "frequency_progression",
+      "name": "Frequency Progression",
+      "type": "float",
+      "default": 2,
+      "min": 1,
+      "max": 3
+    },
+    {
+      "id": "amplitude_decay",
+      "name": "Amplitude Decay",
+      "type": "float",
+      "default": 0.5,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "rotation_per_layer",
+      "name": "Rotation Per Layer",
+      "type": "float",
+      "default": 35,
+      "min": -180,
+      "max": 180
+    },
+    {
+      "id": "animation_speed",
+      "name": "Animation Speed",
+      "type": "float",
+      "default": 0.5,
+      "min": -5,
+      "max": 5
+    },
+    {
+      "id": "secondary_field_offset_x",
+      "name": "Secondary Field Offset X",
+      "type": "float",
+      "default": 1.5,
+      "min": -20,
+      "max": 20
+    },
+    {
+      "id": "secondary_field_offset_y",
+      "name": "Secondary Field Offset Y",
+      "type": "float",
+      "default": 2.5,
+      "min": -20,
+      "max": 20
+    },
+    {
+      "id": "secondary_frequency_ratio",
+      "name": "Secondary Frequency Ratio",
+      "type": "float",
+      "default": 1,
+      "min": 0.1,
+      "max": 5
+    },
+    {
+      "id": "harmonic_profile",
+      "name": "Harmonic Profile",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Product",
+        "Mean",
+        "Difference"
+      ]
+    },
+    {
+      "id": "response_mode",
+      "name": "Response Mode",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Signed",
+        "Absolute",
+        "Ridged"
+      ]
+    },
+    {
+      "id": "normalization",
+      "name": "Normalization",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Weighted Mean",
+        "Sum"
+      ]
+    }
+  ],
+  "helpers": "struct MakerB362RotatedHarmonicFractalField2D {float signed_harmonic_field;float normalized_field;vec2 harmonic_displacement;float peak_response;float mean_response;vec2 final_coordinates;};\nMakerB362RotatedHarmonicFractalField2D maker_b362_rotated_harmonic_fractal_field_2d(vec2 position,float time_offset,float frequency_multiplier,float layers,float initial_frequency,float frequency_progression,float amplitude_decay,float rotation_per_layer,float animation_speed,float secondary_field_offset_x,float secondary_field_offset_y,float secondary_frequency_ratio,float harmonic_profile,float response_mode,float normalization,float tm){\nvec2 p=position*initial_frequency*frequency_multiplier+vec2((tm+time_offset)*animation_speed),q=p*secondary_frequency_ratio+vec2(secondary_field_offset_x,secondary_field_offset_y),s=vec2(0.);float a=radians(rotation_per_layer),w=1.,ws=0.,peak=0.;mat2 m=mat2(cos(a),sin(a),-sin(a),cos(a));int n=int(clamp(round(layers),1.,12.));for(int j=0;j<12;j++){if(j>=n)break;vec2 x=sin(p),y=sin(q),v=harmonic_profile<.5?vec2(x.x*x.y,y.x*y.y):(harmonic_profile<1.5?.5*vec2(x.x+x.y,y.x+y.y):.5*vec2(x.x-x.y,y.x-y.y));if(response_mode>.5)v=response_mode<1.5?abs(v):1.-abs(v);s+=w*v;ws+=w;peak=max(peak,abs(v.x));if(j+1<n){p=m*p*frequency_progression;q=m*q*frequency_progression;}w*=amplitude_decay;}vec2 meanv=s/max(ws,1e-8),outv=normalization<.5?meanv:s;return MakerB362RotatedHarmonicFractalField2D(outv.x,response_mode<.5?.5+.5*meanv.x:meanv.x,outv,peak,meanv.x,p);\n}",
+  "glsl_outputs": {
+    "signed_harmonic_field": "maker_b362_rotated_harmonic_fractal_field_2d({position},{time_offset},{frequency_multiplier},{layers},{initial_frequency},{frequency_progression},{amplitude_decay},{rotation_per_layer},{animation_speed},{secondary_field_offset_x},{secondary_field_offset_y},{secondary_frequency_ratio},{harmonic_profile},{response_mode},{normalization},u_time).signed_harmonic_field",
+    "normalized_field": "maker_b362_rotated_harmonic_fractal_field_2d({position},{time_offset},{frequency_multiplier},{layers},{initial_frequency},{frequency_progression},{amplitude_decay},{rotation_per_layer},{animation_speed},{secondary_field_offset_x},{secondary_field_offset_y},{secondary_frequency_ratio},{harmonic_profile},{response_mode},{normalization},u_time).normalized_field",
+    "harmonic_displacement": "maker_b362_rotated_harmonic_fractal_field_2d({position},{time_offset},{frequency_multiplier},{layers},{initial_frequency},{frequency_progression},{amplitude_decay},{rotation_per_layer},{animation_speed},{secondary_field_offset_x},{secondary_field_offset_y},{secondary_frequency_ratio},{harmonic_profile},{response_mode},{normalization},u_time).harmonic_displacement",
+    "peak_response": "maker_b362_rotated_harmonic_fractal_field_2d({position},{time_offset},{frequency_multiplier},{layers},{initial_frequency},{frequency_progression},{amplitude_decay},{rotation_per_layer},{animation_speed},{secondary_field_offset_x},{secondary_field_offset_y},{secondary_frequency_ratio},{harmonic_profile},{response_mode},{normalization},u_time).peak_response",
+    "mean_response": "maker_b362_rotated_harmonic_fractal_field_2d({position},{time_offset},{frequency_multiplier},{layers},{initial_frequency},{frequency_progression},{amplitude_decay},{rotation_per_layer},{animation_speed},{secondary_field_offset_x},{secondary_field_offset_y},{secondary_frequency_ratio},{harmonic_profile},{response_mode},{normalization},u_time).mean_response",
+    "final_coordinates": "maker_b362_rotated_harmonic_fractal_field_2d({position},{time_offset},{frequency_multiplier},{layers},{initial_frequency},{frequency_progression},{amplitude_decay},{rotation_per_layer},{animation_speed},{secondary_field_offset_x},{secondary_field_offset_y},{secondary_frequency_ratio},{harmonic_profile},{response_mode},{normalization},u_time).final_coordinates"
+  }
+}

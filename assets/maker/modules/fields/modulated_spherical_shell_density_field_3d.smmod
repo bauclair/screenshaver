@@ -1,0 +1,206 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.modulated_spherical_shell_density_field_3d",
+  "name": "Modulated Spherical Shell Density Field 3D",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Density modulation defaults to one; combined density capped, component densities uncapped.",
+  "uses": "Modulated Spherical Shell Density Field 3D",
+  "notes": "Density modulation defaults to one; combined density capped, component densities uncapped.",
+  "header_color": "#348F8B",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "default": "vec3(maker_uv,0.0)",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec3",
+      "default": "vec3(0.0)"
+    },
+    {
+      "id": "radius_modulation",
+      "name": "Radius Modulation",
+      "type": "float",
+      "default": "0.0"
+    },
+    {
+      "id": "thickness_modulation",
+      "name": "Thickness Modulation",
+      "type": "float",
+      "default": "0.0"
+    },
+    {
+      "id": "density_modulation",
+      "name": "Density Modulation",
+      "type": "float",
+      "default": "1.0"
+    },
+    {
+      "id": "radius_multiplier",
+      "name": "Radius Multiplier",
+      "type": "float",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "combined_density",
+      "name": "Combined Density",
+      "type": "float"
+    },
+    {
+      "id": "shell_density",
+      "name": "Shell Density",
+      "type": "float"
+    },
+    {
+      "id": "interior_density",
+      "name": "Interior Density",
+      "type": "float"
+    },
+    {
+      "id": "outer_shock_density",
+      "name": "Outer Shock Density",
+      "type": "float"
+    },
+    {
+      "id": "radial_residual",
+      "name": "Radial Residual",
+      "type": "float"
+    },
+    {
+      "id": "effective_shell_radius",
+      "name": "Effective Shell Radius",
+      "type": "float"
+    },
+    {
+      "id": "normalized_radius",
+      "name": "Normalized Radius",
+      "type": "float"
+    },
+    {
+      "id": "radial_direction",
+      "name": "Radial Direction",
+      "type": "vec3"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "shell_radius",
+      "name": "Shell Radius",
+      "type": "float",
+      "default": 1,
+      "min": 0.01,
+      "max": 20
+    },
+    {
+      "id": "shell_thickness",
+      "name": "Shell Thickness",
+      "type": "float",
+      "default": 0.08,
+      "min": 0.001,
+      "max": 5
+    },
+    {
+      "id": "radius_modulation_strength",
+      "name": "Radius Modulation Strength",
+      "type": "float",
+      "default": 0.2,
+      "min": 0,
+      "max": 5
+    },
+    {
+      "id": "thickness_modulation_strength",
+      "name": "Thickness Modulation Strength",
+      "type": "float",
+      "default": 0.1,
+      "min": 0,
+      "max": 2
+    },
+    {
+      "id": "shell_density_gain",
+      "name": "Shell Density Gain",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "interior_density_gain",
+      "name": "Interior Density Gain",
+      "type": "float",
+      "default": 0.1,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "interior_falloff",
+      "name": "Interior Falloff",
+      "type": "float",
+      "default": 2,
+      "min": 0.1,
+      "max": 10
+    },
+    {
+      "id": "outer_shock_offset",
+      "name": "Outer Shock Offset",
+      "type": "float",
+      "default": 0.15,
+      "min": 0,
+      "max": 5
+    },
+    {
+      "id": "outer_shock_thickness",
+      "name": "Outer Shock Thickness",
+      "type": "float",
+      "default": 0.02,
+      "min": 0.001,
+      "max": 2
+    },
+    {
+      "id": "outer_shock_gain",
+      "name": "Outer Shock Gain",
+      "type": "float",
+      "default": 0.2,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "density_profile",
+      "name": "Density Profile",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Gaussian",
+        "Exponential",
+        "Compact Smooth"
+      ]
+    },
+    {
+      "id": "maximum_density",
+      "name": "Maximum Density",
+      "type": "float",
+      "default": 10,
+      "min": 1,
+      "max": 100
+    }
+  ],
+  "helpers": "struct MakerB362ModulatedSphericalShellDensityField3D {float combined_density;float shell_density;float interior_density;float outer_shock_density;float radial_residual;float effective_shell_radius;float normalized_radius;vec3 radial_direction;};\nMakerB362ModulatedSphericalShellDensityField3D maker_b362_modulated_spherical_shell_density_field_3d(vec3 position,vec3 center,float radius_modulation,float thickness_modulation,float density_modulation,float radius_multiplier,float shell_radius,float shell_thickness,float radius_modulation_strength,float thickness_modulation_strength,float shell_density_gain,float interior_density_gain,float interior_falloff,float outer_shock_offset,float outer_shock_thickness,float outer_shock_gain,float density_profile,float maximum_density,float tm){\nvec3 p=position-center;float r=length(p),R=max(.0001,shell_radius*abs(radius_multiplier)+radius_modulation_strength*radius_modulation),w=max(.0001,shell_thickness+thickness_modulation_strength*thickness_modulation),d=r-R,x=min(abs(d)/w,1e4),y=min(abs(d-outer_shock_offset)/outer_shock_thickness,1e4),g=max(0.,density_modulation);vec2 z=vec2(x,y),f=density_profile<.5?exp(-z*z):(density_profile<1.5?exp(-z):1.-smoothstep(vec2(0.),vec2(1.),z));float s=g*shell_density_gain*f.x,o=g*outer_shock_gain*f.y,i=g*interior_density_gain*pow(clamp(1.-r/R,0.,1.),interior_falloff);return MakerB362ModulatedSphericalShellDensityField3D(min(maximum_density,s+i+o),s,i,o,d,R,r/R,r>1e-8?p/r:vec3(0.));\n}",
+  "glsl_outputs": {
+    "combined_density": "maker_b362_modulated_spherical_shell_density_field_3d({position},{center},{radius_modulation},{thickness_modulation},{density_modulation},{radius_multiplier},{shell_radius},{shell_thickness},{radius_modulation_strength},{thickness_modulation_strength},{shell_density_gain},{interior_density_gain},{interior_falloff},{outer_shock_offset},{outer_shock_thickness},{outer_shock_gain},{density_profile},{maximum_density},u_time).combined_density",
+    "shell_density": "maker_b362_modulated_spherical_shell_density_field_3d({position},{center},{radius_modulation},{thickness_modulation},{density_modulation},{radius_multiplier},{shell_radius},{shell_thickness},{radius_modulation_strength},{thickness_modulation_strength},{shell_density_gain},{interior_density_gain},{interior_falloff},{outer_shock_offset},{outer_shock_thickness},{outer_shock_gain},{density_profile},{maximum_density},u_time).shell_density",
+    "interior_density": "maker_b362_modulated_spherical_shell_density_field_3d({position},{center},{radius_modulation},{thickness_modulation},{density_modulation},{radius_multiplier},{shell_radius},{shell_thickness},{radius_modulation_strength},{thickness_modulation_strength},{shell_density_gain},{interior_density_gain},{interior_falloff},{outer_shock_offset},{outer_shock_thickness},{outer_shock_gain},{density_profile},{maximum_density},u_time).interior_density",
+    "outer_shock_density": "maker_b362_modulated_spherical_shell_density_field_3d({position},{center},{radius_modulation},{thickness_modulation},{density_modulation},{radius_multiplier},{shell_radius},{shell_thickness},{radius_modulation_strength},{thickness_modulation_strength},{shell_density_gain},{interior_density_gain},{interior_falloff},{outer_shock_offset},{outer_shock_thickness},{outer_shock_gain},{density_profile},{maximum_density},u_time).outer_shock_density",
+    "radial_residual": "maker_b362_modulated_spherical_shell_density_field_3d({position},{center},{radius_modulation},{thickness_modulation},{density_modulation},{radius_multiplier},{shell_radius},{shell_thickness},{radius_modulation_strength},{thickness_modulation_strength},{shell_density_gain},{interior_density_gain},{interior_falloff},{outer_shock_offset},{outer_shock_thickness},{outer_shock_gain},{density_profile},{maximum_density},u_time).radial_residual",
+    "effective_shell_radius": "maker_b362_modulated_spherical_shell_density_field_3d({position},{center},{radius_modulation},{thickness_modulation},{density_modulation},{radius_multiplier},{shell_radius},{shell_thickness},{radius_modulation_strength},{thickness_modulation_strength},{shell_density_gain},{interior_density_gain},{interior_falloff},{outer_shock_offset},{outer_shock_thickness},{outer_shock_gain},{density_profile},{maximum_density},u_time).effective_shell_radius",
+    "normalized_radius": "maker_b362_modulated_spherical_shell_density_field_3d({position},{center},{radius_modulation},{thickness_modulation},{density_modulation},{radius_multiplier},{shell_radius},{shell_thickness},{radius_modulation_strength},{thickness_modulation_strength},{shell_density_gain},{interior_density_gain},{interior_falloff},{outer_shock_offset},{outer_shock_thickness},{outer_shock_gain},{density_profile},{maximum_density},u_time).normalized_radius",
+    "radial_direction": "maker_b362_modulated_spherical_shell_density_field_3d({position},{center},{radius_modulation},{thickness_modulation},{density_modulation},{radius_multiplier},{shell_radius},{shell_thickness},{radius_modulation_strength},{thickness_modulation_strength},{shell_density_gain},{interior_density_gain},{interior_falloff},{outer_shock_offset},{outer_shock_thickness},{outer_shock_gain},{density_profile},{maximum_density},u_time).radial_direction"
+  }
+}

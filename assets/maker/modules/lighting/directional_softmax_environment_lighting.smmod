@@ -1,0 +1,242 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.lighting.directional_softmax_environment_lighting",
+  "name": "Directional Softmax Environment Lighting",
+  "category": "Lighting",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Six directional lobes and finite-sphere option; missed sphere uses infinite direction.",
+  "uses": "Directional Softmax Environment Lighting",
+  "notes": "Six directional lobes and finite-sphere option; missed sphere uses infinite direction.",
+  "header_color": "#348F8B",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "sample_direction",
+      "name": "Sample Direction",
+      "type": "vec3",
+      "default": "vec3(0.0,0.0,1.0)"
+    },
+    {
+      "id": "sample_position",
+      "name": "Sample Position",
+      "type": "vec3",
+      "default": "vec3(0.0)"
+    },
+    {
+      "id": "roughness",
+      "name": "Roughness",
+      "type": "float",
+      "default": "0.0"
+    },
+    {
+      "id": "intensity_multiplier",
+      "name": "Intensity Multiplier",
+      "type": "float",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "environment_color",
+      "name": "Environment Color",
+      "type": "vec3"
+    },
+    {
+      "id": "environment_direction",
+      "name": "Environment Direction",
+      "type": "vec3"
+    },
+    {
+      "id": "dominant_lobe",
+      "name": "Dominant Lobe",
+      "type": "float"
+    },
+    {
+      "id": "peak_weight",
+      "name": "Peak Weight",
+      "type": "float"
+    },
+    {
+      "id": "environment_intensity",
+      "name": "Environment Intensity",
+      "type": "float"
+    },
+    {
+      "id": "strip_highlight",
+      "name": "Strip Highlight",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "environment_radius",
+      "name": "Environment Radius",
+      "type": "float",
+      "default": 4,
+      "min": 0.1,
+      "max": 100
+    },
+    {
+      "id": "environment_mode",
+      "name": "Environment Mode",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Infinite",
+        "Finite Sphere"
+      ]
+    },
+    {
+      "id": "directional_sharpness",
+      "name": "Directional Sharpness",
+      "type": "float",
+      "default": 8,
+      "min": 0.1,
+      "max": 32
+    },
+    {
+      "id": "environment_rotation",
+      "name": "Environment Rotation",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "environment_tilt",
+      "name": "Environment Tilt",
+      "type": "float",
+      "default": 0,
+      "min": -180,
+      "max": 180
+    },
+    {
+      "id": "roughness_influence",
+      "name": "Roughness Influence",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 5
+    },
+    {
+      "id": "environment_strength",
+      "name": "Environment Strength",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "positive_x_color",
+      "name": "Positive X Color",
+      "type": "color3",
+      "default": [
+        1.0,
+        0.8,
+        0.6
+      ]
+    },
+    {
+      "id": "negative_x_color",
+      "name": "Negative X Color",
+      "type": "color3",
+      "default": [
+        0.5,
+        0.7,
+        1.0
+      ]
+    },
+    {
+      "id": "positive_y_color",
+      "name": "Positive Y Color",
+      "type": "color3",
+      "default": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "id": "negative_y_color",
+      "name": "Negative Y Color",
+      "type": "color3",
+      "default": [
+        0.1,
+        0.1,
+        0.1
+      ]
+    },
+    {
+      "id": "positive_z_color",
+      "name": "Positive Z Color",
+      "type": "color3",
+      "default": [
+        0.7,
+        0.9,
+        1.0
+      ]
+    },
+    {
+      "id": "negative_z_color",
+      "name": "Negative Z Color",
+      "type": "color3",
+      "default": [
+        0.8,
+        0.6,
+        0.9
+      ]
+    },
+    {
+      "id": "strip_orientation",
+      "name": "Strip Orientation",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "strip_width",
+      "name": "Strip Width",
+      "type": "float",
+      "default": 0.1,
+      "min": 0.001,
+      "max": 1
+    },
+    {
+      "id": "strip_length",
+      "name": "Strip Length",
+      "type": "float",
+      "default": 0.8,
+      "min": 0.01,
+      "max": 1
+    },
+    {
+      "id": "strip_strength",
+      "name": "Strip Strength",
+      "type": "float",
+      "default": 0.5,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "strip_color",
+      "name": "Strip Color",
+      "type": "color3",
+      "default": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    }
+  ],
+  "helpers": "struct MakerB354DirectionalSoftmaxEnvironmentLighting {vec3 environment_color;vec3 environment_direction;float dominant_lobe;float peak_weight;float environment_intensity;float strip_highlight;};\nMakerB354DirectionalSoftmaxEnvironmentLighting maker_b354_directional_softmax_environment_lighting(vec3 sample_direction,vec3 sample_position,float roughness,float intensity_multiplier,float environment_radius,float environment_mode,float directional_sharpness,float environment_rotation,float environment_tilt,float roughness_influence,float environment_strength,vec3 positive_x_color,vec3 negative_x_color,vec3 positive_y_color,vec3 negative_y_color,vec3 positive_z_color,vec3 negative_z_color,float strip_orientation,float strip_width,float strip_length,float strip_strength,vec3 strip_color,float tm){\nvec3 d=length(sample_direction)>1e-8?normalize(sample_direction):vec3(0.,0.,1.);if(environment_mode>.5){float b=dot(sample_position,d),disc=b*b+environment_radius*environment_radius-dot(sample_position,sample_position);if(disc>=0.){float r=sqrt(disc),t=-b-r;if(t<0.)t=-b+r;if(t>=0.){vec3 p=sample_position+t*d;if(length(p)>1e-8)d=normalize(p);}}}float a=radians(environment_rotation),b=radians(environment_tilt);d.xz=mat2(cos(a),sin(a),-sin(a),cos(a))*d.xz;d.yz=mat2(cos(b),sin(b),-sin(b),cos(b))*d.yz;float k=directional_sharpness/(1.+roughness_influence*clamp(roughness,0.,1.));float scores[6]=float[6](d.x,-d.x,d.y,-d.y,d.z,-d.z);vec3 colors[6]=vec3[6](positive_x_color,negative_x_color,positive_y_color,negative_y_color,positive_z_color,negative_z_color);float mx=-1.,idx=0.;for(int j=0;j<6;j++)if(scores[j]>mx){mx=scores[j];idx=float(j);}vec3 c=vec3(0.);float sumv=0.;for(int j=0;j<6;j++){float w=exp(k*(scores[j]-mx));c+=w*colors[j];sumv+=w;}float s=radians(strip_orientation);vec2 q=mat2(cos(s),sin(s),-sin(s),cos(s))*d.xy;float strip=exp(-pow(q.x/strip_width,2.))*(1.-smoothstep(strip_length*.9,strip_length,abs(q.y)))*step(0.,d.z);c=(c/sumv+strip*strip_strength*strip_color)*environment_strength*intensity_multiplier;return MakerB354DirectionalSoftmaxEnvironmentLighting(c,d,idx,1./sumv,dot(c,vec3(.2126,.7152,.0722)),strip);\n}",
+  "glsl_outputs": {
+    "environment_color": "maker_b354_directional_softmax_environment_lighting({sample_direction},{sample_position},{roughness},{intensity_multiplier},{environment_radius},{environment_mode},{directional_sharpness},{environment_rotation},{environment_tilt},{roughness_influence},{environment_strength},{positive_x_color},{negative_x_color},{positive_y_color},{negative_y_color},{positive_z_color},{negative_z_color},{strip_orientation},{strip_width},{strip_length},{strip_strength},{strip_color},u_time).environment_color",
+    "environment_direction": "maker_b354_directional_softmax_environment_lighting({sample_direction},{sample_position},{roughness},{intensity_multiplier},{environment_radius},{environment_mode},{directional_sharpness},{environment_rotation},{environment_tilt},{roughness_influence},{environment_strength},{positive_x_color},{negative_x_color},{positive_y_color},{negative_y_color},{positive_z_color},{negative_z_color},{strip_orientation},{strip_width},{strip_length},{strip_strength},{strip_color},u_time).environment_direction",
+    "dominant_lobe": "maker_b354_directional_softmax_environment_lighting({sample_direction},{sample_position},{roughness},{intensity_multiplier},{environment_radius},{environment_mode},{directional_sharpness},{environment_rotation},{environment_tilt},{roughness_influence},{environment_strength},{positive_x_color},{negative_x_color},{positive_y_color},{negative_y_color},{positive_z_color},{negative_z_color},{strip_orientation},{strip_width},{strip_length},{strip_strength},{strip_color},u_time).dominant_lobe",
+    "peak_weight": "maker_b354_directional_softmax_environment_lighting({sample_direction},{sample_position},{roughness},{intensity_multiplier},{environment_radius},{environment_mode},{directional_sharpness},{environment_rotation},{environment_tilt},{roughness_influence},{environment_strength},{positive_x_color},{negative_x_color},{positive_y_color},{negative_y_color},{positive_z_color},{negative_z_color},{strip_orientation},{strip_width},{strip_length},{strip_strength},{strip_color},u_time).peak_weight",
+    "environment_intensity": "maker_b354_directional_softmax_environment_lighting({sample_direction},{sample_position},{roughness},{intensity_multiplier},{environment_radius},{environment_mode},{directional_sharpness},{environment_rotation},{environment_tilt},{roughness_influence},{environment_strength},{positive_x_color},{negative_x_color},{positive_y_color},{negative_y_color},{positive_z_color},{negative_z_color},{strip_orientation},{strip_width},{strip_length},{strip_strength},{strip_color},u_time).environment_intensity",
+    "strip_highlight": "maker_b354_directional_softmax_environment_lighting({sample_direction},{sample_position},{roughness},{intensity_multiplier},{environment_radius},{environment_mode},{directional_sharpness},{environment_rotation},{environment_tilt},{roughness_influence},{environment_strength},{positive_x_color},{negative_x_color},{positive_y_color},{negative_y_color},{positive_z_color},{negative_z_color},{strip_orientation},{strip_width},{strip_length},{strip_strength},{strip_color},u_time).strip_highlight"
+  }
+}

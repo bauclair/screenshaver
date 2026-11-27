@@ -1,0 +1,178 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.noise.localized_directional_kernel_noise_2d",
+  "name": "Localized Directional Kernel Noise 2D",
+  "category": "Noise",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Compactly supported directional oscillatory kernels; maximum selects strongest absolute response.",
+  "uses": "Localized Directional Kernel Noise 2D",
+  "notes": "Compactly supported directional oscillatory kernels; maximum selects strongest absolute response.",
+  "header_color": "#348F8B",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "time_offset",
+      "name": "Time Offset",
+      "type": "float",
+      "default": "0.0"
+    },
+    {
+      "id": "orientation_offset",
+      "name": "Orientation Offset",
+      "type": "float",
+      "default": "0.0"
+    },
+    {
+      "id": "scale_multiplier",
+      "name": "Scale Multiplier",
+      "type": "float",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "signed_noise",
+      "name": "Signed Noise",
+      "type": "float"
+    },
+    {
+      "id": "normalized_noise",
+      "name": "Normalized Noise",
+      "type": "float"
+    },
+    {
+      "id": "kernel_envelope",
+      "name": "Kernel Envelope",
+      "type": "float"
+    },
+    {
+      "id": "peak_response",
+      "name": "Peak Response",
+      "type": "float"
+    },
+    {
+      "id": "dominant_orientation",
+      "name": "Dominant Orientation",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "kernel_density",
+      "name": "Kernel Density",
+      "type": "float",
+      "default": 5,
+      "min": 0.1,
+      "max": 50
+    },
+    {
+      "id": "wave_frequency",
+      "name": "Wave Frequency",
+      "type": "float",
+      "default": 3,
+      "min": 0.1,
+      "max": 20
+    },
+    {
+      "id": "kernel_radius",
+      "name": "Kernel Radius",
+      "type": "float",
+      "default": 1,
+      "min": 0.1,
+      "max": 2
+    },
+    {
+      "id": "envelope_falloff",
+      "name": "Envelope Falloff",
+      "type": "float",
+      "default": 2,
+      "min": 0.1,
+      "max": 10
+    },
+    {
+      "id": "base_orientation",
+      "name": "Base Orientation",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "orientation_variation",
+      "name": "Orientation Variation",
+      "type": "float",
+      "default": 180,
+      "min": 0,
+      "max": 180
+    },
+    {
+      "id": "center_jitter",
+      "name": "Center Jitter",
+      "type": "float",
+      "default": 0.5,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "phase_variation",
+      "name": "Phase Variation",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "animation_speed",
+      "name": "Animation Speed",
+      "type": "float",
+      "default": 0.5,
+      "min": -5,
+      "max": 5
+    },
+    {
+      "id": "seed",
+      "name": "Seed",
+      "type": "float",
+      "default": 0,
+      "min": 0,
+      "max": 1000
+    },
+    {
+      "id": "kernel_profile",
+      "name": "Kernel Profile",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Gaussian",
+        "Compact Polynomial"
+      ]
+    },
+    {
+      "id": "combination_mode",
+      "name": "Combination Mode",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Weighted Mean",
+        "Sum",
+        "Maximum"
+      ]
+    }
+  ],
+  "helpers": "struct MakerB354LocalizedDirectionalKernelNoise2D {float signed_noise;float normalized_noise;float kernel_envelope;float peak_response;float dominant_orientation;};\nMakerB354LocalizedDirectionalKernelNoise2D maker_b354_localized_directional_kernel_noise_2d(vec2 position,float time_offset,float orientation_offset,float scale_multiplier,float kernel_density,float wave_frequency,float kernel_radius,float envelope_falloff,float base_orientation,float orientation_variation,float center_jitter,float phase_variation,float animation_speed,float seed,float kernel_profile,float combination_mode,float tm){\nvec2 p=position*kernel_density*scale_multiplier,cell=floor(p);float sumv=0.,weights=0.,peak=0.,best=0.,ori=0.;for(int y=-3;y<=3;y++)for(int x=-3;x<=3;x++){vec2 c=cell+vec2(x,y);vec3 h=fract(sin(vec3(dot(c,vec2(37.1,71.3)),dot(c,vec2(93.7,19.1)),dot(c,vec2(17.9,53.3)))+seed*11.7)*17341.31);vec2 q=p-c-.5-(h.xy-.5)*center_jitter;float r=length(q)/kernel_radius;if(r>=1.)continue;float a=radians(base_orientation+orientation_variation*(2.*h.z-1.))+orientation_offset;float w=kernel_profile<.5?exp(-envelope_falloff*r*r)*pow(1.-r*r,2.):pow(1.-r*r,envelope_falloff);float v=w*cos(6.2831853*(wave_frequency*dot(q,vec2(cos(a),sin(a)))+phase_variation*h.x+animation_speed*(tm+time_offset)));sumv+=v;weights+=w;if(abs(v)>peak){peak=abs(v);best=v;ori=a;}}float meanv=sumv/max(weights,1e-8);return MakerB354LocalizedDirectionalKernelNoise2D(combination_mode<.5?meanv:(combination_mode<1.5?sumv:best),.5+.5*clamp(meanv,-1.,1.),weights,peak,ori);\n}",
+  "glsl_outputs": {
+    "signed_noise": "maker_b354_localized_directional_kernel_noise_2d({position},{time_offset},{orientation_offset},{scale_multiplier},{kernel_density},{wave_frequency},{kernel_radius},{envelope_falloff},{base_orientation},{orientation_variation},{center_jitter},{phase_variation},{animation_speed},{seed},{kernel_profile},{combination_mode},u_time).signed_noise",
+    "normalized_noise": "maker_b354_localized_directional_kernel_noise_2d({position},{time_offset},{orientation_offset},{scale_multiplier},{kernel_density},{wave_frequency},{kernel_radius},{envelope_falloff},{base_orientation},{orientation_variation},{center_jitter},{phase_variation},{animation_speed},{seed},{kernel_profile},{combination_mode},u_time).normalized_noise",
+    "kernel_envelope": "maker_b354_localized_directional_kernel_noise_2d({position},{time_offset},{orientation_offset},{scale_multiplier},{kernel_density},{wave_frequency},{kernel_radius},{envelope_falloff},{base_orientation},{orientation_variation},{center_jitter},{phase_variation},{animation_speed},{seed},{kernel_profile},{combination_mode},u_time).kernel_envelope",
+    "peak_response": "maker_b354_localized_directional_kernel_noise_2d({position},{time_offset},{orientation_offset},{scale_multiplier},{kernel_density},{wave_frequency},{kernel_radius},{envelope_falloff},{base_orientation},{orientation_variation},{center_jitter},{phase_variation},{animation_speed},{seed},{kernel_profile},{combination_mode},u_time).peak_response",
+    "dominant_orientation": "maker_b354_localized_directional_kernel_noise_2d({position},{time_offset},{orientation_offset},{scale_multiplier},{kernel_density},{wave_frequency},{kernel_radius},{envelope_falloff},{base_orientation},{orientation_variation},{center_jitter},{phase_variation},{animation_speed},{seed},{kernel_profile},{combination_mode},u_time).dominant_orientation"
+  }
+}

@@ -1,0 +1,182 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.radially_modulated_affine_warp_2d",
+  "name": "Radially Modulated Affine Warp 2D",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Radially varying affine transform; local scale and shear precede strength blending.",
+  "uses": "Radially Modulated Affine Warp 2D",
+  "notes": "Radially varying affine transform; local scale and shear precede strength blending.",
+  "header_color": "#348F8B",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec2",
+      "default": "vec2(0.0)"
+    },
+    {
+      "id": "time_offset",
+      "name": "Time Offset",
+      "type": "float",
+      "default": "0.0"
+    },
+    {
+      "id": "strength_multiplier",
+      "name": "Strength Multiplier",
+      "type": "float",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "warped_coordinates",
+      "name": "Warped Coordinates",
+      "type": "vec2"
+    },
+    {
+      "id": "displacement",
+      "name": "Displacement",
+      "type": "vec2"
+    },
+    {
+      "id": "radial_distance",
+      "name": "Radial Distance",
+      "type": "float"
+    },
+    {
+      "id": "modulation_factor",
+      "name": "Modulation Factor",
+      "type": "float"
+    },
+    {
+      "id": "local_scale",
+      "name": "Local Scale",
+      "type": "vec2"
+    },
+    {
+      "id": "local_shear",
+      "name": "Local Shear",
+      "type": "vec2"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "inner_scale_x",
+      "name": "Inner Scale X",
+      "type": "float",
+      "default": 0.3,
+      "min": 0.01,
+      "max": 5
+    },
+    {
+      "id": "inner_scale_y",
+      "name": "Inner Scale Y",
+      "type": "float",
+      "default": 1,
+      "min": 0.01,
+      "max": 5
+    },
+    {
+      "id": "outer_scale_x",
+      "name": "Outer Scale X",
+      "type": "float",
+      "default": 1,
+      "min": 0.01,
+      "max": 5
+    },
+    {
+      "id": "outer_scale_y",
+      "name": "Outer Scale Y",
+      "type": "float",
+      "default": 1,
+      "min": 0.01,
+      "max": 5
+    },
+    {
+      "id": "horizontal_shear",
+      "name": "Horizontal Shear",
+      "type": "float",
+      "default": 0.5,
+      "min": -3,
+      "max": 3
+    },
+    {
+      "id": "vertical_shear",
+      "name": "Vertical Shear",
+      "type": "float",
+      "default": 0,
+      "min": -3,
+      "max": 3
+    },
+    {
+      "id": "influence_radius",
+      "name": "Influence Radius",
+      "type": "float",
+      "default": 0.5,
+      "min": 0.01,
+      "max": 10
+    },
+    {
+      "id": "falloff_exponent",
+      "name": "Falloff Exponent",
+      "type": "float",
+      "default": 2,
+      "min": 0.1,
+      "max": 8
+    },
+    {
+      "id": "orientation",
+      "name": "Orientation",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "animation_speed",
+      "name": "Animation Speed",
+      "type": "float",
+      "default": 0,
+      "min": -5,
+      "max": 5
+    },
+    {
+      "id": "falloff_profile",
+      "name": "Falloff Profile",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Rational",
+        "Gaussian",
+        "Smooth"
+      ]
+    },
+    {
+      "id": "warp_strength",
+      "name": "Warp Strength",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 2
+    }
+  ],
+  "helpers": "struct MakerB362RadiallyModulatedAffineWarp2D {vec2 warped_coordinates;vec2 displacement;float radial_distance;float modulation_factor;vec2 local_scale;vec2 local_shear;};\nMakerB362RadiallyModulatedAffineWarp2D maker_b362_radially_modulated_affine_warp_2d(vec2 position,vec2 center,float time_offset,float strength_multiplier,float inner_scale_x,float inner_scale_y,float outer_scale_x,float outer_scale_y,float horizontal_shear,float vertical_shear,float influence_radius,float falloff_exponent,float orientation,float animation_speed,float falloff_profile,float warp_strength,float tm){\nvec2 p=position-center;float r=length(p),x=pow(min(r/influence_radius,1e4),falloff_exponent),m=falloff_profile<.5?1./(1.+x):(falloff_profile<1.5?exp(-x):1.-smoothstep(0.,1.,x)),a=radians(orientation)+(tm+time_offset)*animation_speed;mat2 rot=mat2(cos(a),sin(a),-sin(a),cos(a));vec2 q=transpose(rot)*p,sc=mix(vec2(outer_scale_x,outer_scale_y),vec2(inner_scale_x,inner_scale_y),m),sh=m*vec2(horizontal_shear,vertical_shear);vec2 v=rot*(q*sc+sh*q.yx),d=(v-p)*warp_strength*strength_multiplier;return MakerB362RadiallyModulatedAffineWarp2D(position+d,d,r,m,sc,sh);\n}",
+  "glsl_outputs": {
+    "warped_coordinates": "maker_b362_radially_modulated_affine_warp_2d({position},{center},{time_offset},{strength_multiplier},{inner_scale_x},{inner_scale_y},{outer_scale_x},{outer_scale_y},{horizontal_shear},{vertical_shear},{influence_radius},{falloff_exponent},{orientation},{animation_speed},{falloff_profile},{warp_strength},u_time).warped_coordinates",
+    "displacement": "maker_b362_radially_modulated_affine_warp_2d({position},{center},{time_offset},{strength_multiplier},{inner_scale_x},{inner_scale_y},{outer_scale_x},{outer_scale_y},{horizontal_shear},{vertical_shear},{influence_radius},{falloff_exponent},{orientation},{animation_speed},{falloff_profile},{warp_strength},u_time).displacement",
+    "radial_distance": "maker_b362_radially_modulated_affine_warp_2d({position},{center},{time_offset},{strength_multiplier},{inner_scale_x},{inner_scale_y},{outer_scale_x},{outer_scale_y},{horizontal_shear},{vertical_shear},{influence_radius},{falloff_exponent},{orientation},{animation_speed},{falloff_profile},{warp_strength},u_time).radial_distance",
+    "modulation_factor": "maker_b362_radially_modulated_affine_warp_2d({position},{center},{time_offset},{strength_multiplier},{inner_scale_x},{inner_scale_y},{outer_scale_x},{outer_scale_y},{horizontal_shear},{vertical_shear},{influence_radius},{falloff_exponent},{orientation},{animation_speed},{falloff_profile},{warp_strength},u_time).modulation_factor",
+    "local_scale": "maker_b362_radially_modulated_affine_warp_2d({position},{center},{time_offset},{strength_multiplier},{inner_scale_x},{inner_scale_y},{outer_scale_x},{outer_scale_y},{horizontal_shear},{vertical_shear},{influence_radius},{falloff_exponent},{orientation},{animation_speed},{falloff_profile},{warp_strength},u_time).local_scale",
+    "local_shear": "maker_b362_radially_modulated_affine_warp_2d({position},{center},{time_offset},{strength_multiplier},{inner_scale_x},{inner_scale_y},{outer_scale_x},{outer_scale_y},{horizontal_shear},{vertical_shear},{influence_radius},{falloff_exponent},{orientation},{animation_speed},{falloff_profile},{warp_strength},u_time).local_shear"
+  }
+}

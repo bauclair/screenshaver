@@ -1,0 +1,149 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.cross_product_trigonometric_warp_3d",
+  "name": "Cross-Product Trigonometric Warp 3D",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Bounded cross-product domain warp.",
+  "uses": "Cross-Product Trigonometric Warp 3D",
+  "notes": "Bounded cross-product domain warp.",
+  "header_color": "#348F8B",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "default": "vec3(maker_uv,0.0)",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "time_offset",
+      "name": "Time Offset",
+      "type": "float",
+      "default": "0.0"
+    },
+    {
+      "id": "strength_multiplier",
+      "name": "Strength Multiplier",
+      "type": "float",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "warped_coordinates",
+      "name": "Warped Coordinates",
+      "type": "vec3"
+    },
+    {
+      "id": "displacement",
+      "name": "Displacement",
+      "type": "vec3"
+    },
+    {
+      "id": "displacement_magnitude",
+      "name": "Displacement Magnitude",
+      "type": "float"
+    },
+    {
+      "id": "first_vector",
+      "name": "First Vector",
+      "type": "vec3"
+    },
+    {
+      "id": "second_vector",
+      "name": "Second Vector",
+      "type": "vec3"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "first_frequency",
+      "name": "First Frequency",
+      "type": "float",
+      "default": 1,
+      "min": 0.01,
+      "max": 20
+    },
+    {
+      "id": "second_frequency",
+      "name": "Second Frequency",
+      "type": "float",
+      "default": 1.5,
+      "min": 0.01,
+      "max": 20
+    },
+    {
+      "id": "warp_strength",
+      "name": "Warp Strength",
+      "type": "float",
+      "default": 0.25,
+      "min": -5,
+      "max": 5
+    },
+    {
+      "id": "first_animation_speed",
+      "name": "First Animation Speed",
+      "type": "float",
+      "default": 0.5,
+      "min": -5,
+      "max": 5
+    },
+    {
+      "id": "second_animation_speed",
+      "name": "Second Animation Speed",
+      "type": "float",
+      "default": -0.3,
+      "min": -5,
+      "max": 5
+    },
+    {
+      "id": "iterations",
+      "name": "Iterations",
+      "type": "float",
+      "default": 1,
+      "min": 1,
+      "max": 8
+    },
+    {
+      "id": "iteration_decay",
+      "name": "Iteration Decay",
+      "type": "float",
+      "default": 0.8,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "vector_arrangement",
+      "name": "Vector Arrangement",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Cyclic",
+        "Parallel",
+        "Reversed"
+      ]
+    },
+    {
+      "id": "wave_profile",
+      "name": "Wave Profile",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Sinusoidal",
+        "Triangular",
+        "Softened"
+      ]
+    }
+  ],
+  "helpers": "struct MakerB354CrossProductTrigonometricWarp3D {vec3 warped_coordinates;vec3 displacement;float displacement_magnitude;vec3 first_vector;vec3 second_vector;};\nMakerB354CrossProductTrigonometricWarp3D maker_b354_cross_product_trigonometric_warp_3d(vec3 position,float time_offset,float strength_multiplier,float first_frequency,float second_frequency,float warp_strength,float first_animation_speed,float second_animation_speed,float iterations,float iteration_decay,float vector_arrangement,float wave_profile,float tm){\nvec3 p=position,a=vec3(0.),b=a;float t=tm+time_offset,w=warp_strength*strength_multiplier;int n=int(clamp(round(iterations),1.,8.));for(int j=0;j<8;j++){if(j>=n)break;vec3 x=p*first_frequency+first_animation_speed*t,y=(vector_arrangement<.5?p.yzx:(vector_arrangement<1.5?p:p.zyx))*second_frequency+second_animation_speed*t;a=sin(x);b=cos(y);if(wave_profile>.5){if(wave_profile<1.5){a=asin(clamp(a,-1.,1.))*.63661977;b=asin(clamp(b,-1.,1.))*.63661977;}else{a=a/(1.+abs(a));b=b/(1.+abs(b));}}p+=w*cross(a,b);w*=iteration_decay;}return MakerB354CrossProductTrigonometricWarp3D(p,p-position,length(p-position),a,b);\n}",
+  "glsl_outputs": {
+    "warped_coordinates": "maker_b354_cross_product_trigonometric_warp_3d({position},{time_offset},{strength_multiplier},{first_frequency},{second_frequency},{warp_strength},{first_animation_speed},{second_animation_speed},{iterations},{iteration_decay},{vector_arrangement},{wave_profile},u_time).warped_coordinates",
+    "displacement": "maker_b354_cross_product_trigonometric_warp_3d({position},{time_offset},{strength_multiplier},{first_frequency},{second_frequency},{warp_strength},{first_animation_speed},{second_animation_speed},{iterations},{iteration_decay},{vector_arrangement},{wave_profile},u_time).displacement",
+    "displacement_magnitude": "maker_b354_cross_product_trigonometric_warp_3d({position},{time_offset},{strength_multiplier},{first_frequency},{second_frequency},{warp_strength},{first_animation_speed},{second_animation_speed},{iterations},{iteration_decay},{vector_arrangement},{wave_profile},u_time).displacement_magnitude",
+    "first_vector": "maker_b354_cross_product_trigonometric_warp_3d({position},{time_offset},{strength_multiplier},{first_frequency},{second_frequency},{warp_strength},{first_animation_speed},{second_animation_speed},{iterations},{iteration_decay},{vector_arrangement},{wave_profile},u_time).first_vector",
+    "second_vector": "maker_b354_cross_product_trigonometric_warp_3d({position},{time_offset},{strength_multiplier},{first_frequency},{second_frequency},{warp_strength},{first_animation_speed},{second_animation_speed},{iterations},{iteration_decay},{vector_arrangement},{wave_profile},u_time).second_vector"
+  }
+}

@@ -1,0 +1,193 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.logarithmic_frequency_sweep_field_2d",
+  "name": "Logarithmic Frequency Sweep Field 2D",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Procedural frequency trajectory, not audio analysis; curve distance is vertical residual.",
+  "uses": "Logarithmic Frequency Sweep Field 2D",
+  "notes": "Procedural frequency trajectory, not audio analysis; curve distance is vertical residual.",
+  "header_color": "#348F8B",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "time_offset",
+      "name": "Time Offset",
+      "type": "float",
+      "default": "0.0"
+    },
+    {
+      "id": "phase_offset",
+      "name": "Phase Offset",
+      "type": "float",
+      "default": "0.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "sweep_mask",
+      "name": "Sweep Mask",
+      "type": "float"
+    },
+    {
+      "id": "glow_mask",
+      "name": "Glow Mask",
+      "type": "float"
+    },
+    {
+      "id": "frequency",
+      "name": "Frequency",
+      "type": "float"
+    },
+    {
+      "id": "normalized_frequency",
+      "name": "Normalized Frequency",
+      "type": "float"
+    },
+    {
+      "id": "curve_distance",
+      "name": "Curve Distance",
+      "type": "float"
+    },
+    {
+      "id": "playback_mask",
+      "name": "Playback Mask",
+      "type": "float"
+    },
+    {
+      "id": "playback_head_mask",
+      "name": "Playback Head Mask",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "start_frequency",
+      "name": "Start Frequency",
+      "type": "float",
+      "default": 55,
+      "min": 1,
+      "max": 20000
+    },
+    {
+      "id": "end_frequency",
+      "name": "End Frequency",
+      "type": "float",
+      "default": 440,
+      "min": 1,
+      "max": 20000
+    },
+    {
+      "id": "minimum_display_frequency",
+      "name": "Minimum Display Frequency",
+      "type": "float",
+      "default": 32,
+      "min": 1,
+      "max": 10000
+    },
+    {
+      "id": "maximum_display_frequency",
+      "name": "Maximum Display Frequency",
+      "type": "float",
+      "default": 1024,
+      "min": 10,
+      "max": 24000
+    },
+    {
+      "id": "cycle_duration",
+      "name": "Cycle Duration",
+      "type": "float",
+      "default": 10,
+      "min": 0.1,
+      "max": 120
+    },
+    {
+      "id": "sweep_start",
+      "name": "Sweep Start",
+      "type": "float",
+      "default": 0.15,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "sweep_duration",
+      "name": "Sweep Duration",
+      "type": "float",
+      "default": 0.65,
+      "min": 0.01,
+      "max": 1
+    },
+    {
+      "id": "modulation_depth",
+      "name": "Modulation Depth",
+      "type": "float",
+      "default": 0.05,
+      "min": 0,
+      "max": 2
+    },
+    {
+      "id": "modulation_frequency",
+      "name": "Modulation Frequency",
+      "type": "float",
+      "default": 2,
+      "min": 0,
+      "max": 20
+    },
+    {
+      "id": "line_width",
+      "name": "Line Width",
+      "type": "float",
+      "default": 0.005,
+      "min": 0.001,
+      "max": 0.1
+    },
+    {
+      "id": "glow_width",
+      "name": "Glow Width",
+      "type": "float",
+      "default": 0.025,
+      "min": 0.001,
+      "max": 0.25
+    },
+    {
+      "id": "sweep_profile",
+      "name": "Sweep Profile",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Smooth",
+        "Linear",
+        "Exponential"
+      ]
+    },
+    {
+      "id": "playback_mode",
+      "name": "Playback Mode",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Forward",
+        "Reverse",
+        "Ping-Pong"
+      ]
+    }
+  ],
+  "helpers": "struct MakerB354LogarithmicFrequencySweepField2D {float sweep_mask;float glow_mask;float frequency;float normalized_frequency;float curve_distance;float playback_mask;float playback_head_mask;};\nMakerB354LogarithmicFrequencySweepField2D maker_b354_logarithmic_frequency_sweep_field_2d(vec2 position,float time_offset,float phase_offset,float start_frequency,float end_frequency,float minimum_display_frequency,float maximum_display_frequency,float cycle_duration,float sweep_start,float sweep_duration,float modulation_depth,float modulation_frequency,float line_width,float glow_width,float sweep_profile,float playback_mode,float tm){\nvec2 p=position*.5+.5;float x=clamp(p.x,0.,1.),u=clamp((x-sweep_start)/sweep_duration,0.,1.),e=sweep_profile<.5?u*u*(3.-2.*u):(sweep_profile<1.5?u:u*u);float lf=mix(log2(start_frequency),log2(end_frequency),e)+modulation_depth*sin(6.2831853*(x*modulation_frequency+phase_offset));float lo=log2(minimum_display_frequency),hi=max(lo+.001,log2(maximum_display_frequency)),y=clamp((lf-lo)/(hi-lo),0.,1.),d=abs(p.y-y);float t=fract((tm+time_offset)/cycle_duration+phase_offset);if(playback_mode>.5)t=playback_mode<1.5?1.-t:1.-abs(2.*t-1.);return MakerB354LogarithmicFrequencySweepField2D(1.-smoothstep(line_width,line_width*2.,d),exp(-d/glow_width),exp2(lf),y,d,step(x,t),1.-smoothstep(line_width,line_width*2.,abs(x-t)));\n}",
+  "glsl_outputs": {
+    "sweep_mask": "maker_b354_logarithmic_frequency_sweep_field_2d({position},{time_offset},{phase_offset},{start_frequency},{end_frequency},{minimum_display_frequency},{maximum_display_frequency},{cycle_duration},{sweep_start},{sweep_duration},{modulation_depth},{modulation_frequency},{line_width},{glow_width},{sweep_profile},{playback_mode},u_time).sweep_mask",
+    "glow_mask": "maker_b354_logarithmic_frequency_sweep_field_2d({position},{time_offset},{phase_offset},{start_frequency},{end_frequency},{minimum_display_frequency},{maximum_display_frequency},{cycle_duration},{sweep_start},{sweep_duration},{modulation_depth},{modulation_frequency},{line_width},{glow_width},{sweep_profile},{playback_mode},u_time).glow_mask",
+    "frequency": "maker_b354_logarithmic_frequency_sweep_field_2d({position},{time_offset},{phase_offset},{start_frequency},{end_frequency},{minimum_display_frequency},{maximum_display_frequency},{cycle_duration},{sweep_start},{sweep_duration},{modulation_depth},{modulation_frequency},{line_width},{glow_width},{sweep_profile},{playback_mode},u_time).frequency",
+    "normalized_frequency": "maker_b354_logarithmic_frequency_sweep_field_2d({position},{time_offset},{phase_offset},{start_frequency},{end_frequency},{minimum_display_frequency},{maximum_display_frequency},{cycle_duration},{sweep_start},{sweep_duration},{modulation_depth},{modulation_frequency},{line_width},{glow_width},{sweep_profile},{playback_mode},u_time).normalized_frequency",
+    "curve_distance": "maker_b354_logarithmic_frequency_sweep_field_2d({position},{time_offset},{phase_offset},{start_frequency},{end_frequency},{minimum_display_frequency},{maximum_display_frequency},{cycle_duration},{sweep_start},{sweep_duration},{modulation_depth},{modulation_frequency},{line_width},{glow_width},{sweep_profile},{playback_mode},u_time).curve_distance",
+    "playback_mask": "maker_b354_logarithmic_frequency_sweep_field_2d({position},{time_offset},{phase_offset},{start_frequency},{end_frequency},{minimum_display_frequency},{maximum_display_frequency},{cycle_duration},{sweep_start},{sweep_duration},{modulation_depth},{modulation_frequency},{line_width},{glow_width},{sweep_profile},{playback_mode},u_time).playback_mask",
+    "playback_head_mask": "maker_b354_logarithmic_frequency_sweep_field_2d({position},{time_offset},{phase_offset},{start_frequency},{end_frequency},{minimum_display_frequency},{maximum_display_frequency},{cycle_duration},{sweep_start},{sweep_duration},{modulation_depth},{modulation_frequency},{line_width},{glow_width},{sweep_profile},{playback_mode},u_time).playback_head_mask"
+  }
+}

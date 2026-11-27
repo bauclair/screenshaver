@@ -1,0 +1,212 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.spherical_power_fractal_field_3d",
+  "name": "Spherical Power Fractal Field 3D",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Exterior fractal distance estimate only; nonescaped points return zero, not a signed interior distance.",
+  "uses": "Spherical Power Fractal Field 3D",
+  "notes": "Exterior fractal distance estimate only; nonescaped points return zero, not a signed interior distance.",
+  "header_color": "#348F8B",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "default": "vec3(maker_uv,0.0)",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec3",
+      "default": "vec3(0.0)"
+    },
+    {
+      "id": "time_offset",
+      "name": "Time Offset",
+      "type": "float",
+      "default": "0.0"
+    },
+    {
+      "id": "scale_multiplier",
+      "name": "Scale Multiplier",
+      "type": "float",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "fractal_distance_estimate",
+      "name": "Fractal Distance Estimate",
+      "type": "float"
+    },
+    {
+      "id": "orbit_trap",
+      "name": "Orbit Trap",
+      "type": "float"
+    },
+    {
+      "id": "escape_iteration",
+      "name": "Escape Iteration",
+      "type": "float"
+    },
+    {
+      "id": "normalized_iteration",
+      "name": "Normalized Iteration",
+      "type": "float"
+    },
+    {
+      "id": "escape_radius",
+      "name": "Escape Radius",
+      "type": "float"
+    },
+    {
+      "id": "escaped_mask",
+      "name": "Escaped Mask",
+      "type": "float"
+    },
+    {
+      "id": "final_orbit_position",
+      "name": "Final Orbit Position",
+      "type": "vec3"
+    },
+    {
+      "id": "derivative_estimate",
+      "name": "Derivative Estimate",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "fractal_power",
+      "name": "Fractal Power",
+      "type": "float",
+      "default": 8,
+      "min": 2,
+      "max": 12
+    },
+    {
+      "id": "maximum_iterations",
+      "name": "Maximum Iterations",
+      "type": "float",
+      "default": 8,
+      "min": 1,
+      "max": 16
+    },
+    {
+      "id": "escape_threshold",
+      "name": "Escape Threshold",
+      "type": "float",
+      "default": 2,
+      "min": 1.5,
+      "max": 8
+    },
+    {
+      "id": "fractal_scale",
+      "name": "Fractal Scale",
+      "type": "float",
+      "default": 1,
+      "min": 0.01,
+      "max": 10
+    },
+    {
+      "id": "azimuth_phase",
+      "name": "Azimuth Phase",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "inclination_phase",
+      "name": "Inclination Phase",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "phase_animation_speed",
+      "name": "Phase Animation Speed",
+      "type": "float",
+      "default": 0,
+      "min": -5,
+      "max": 5
+    },
+    {
+      "id": "distance_scale",
+      "name": "Distance Scale",
+      "type": "float",
+      "default": 0.5,
+      "min": 0.01,
+      "max": 1
+    },
+    {
+      "id": "orbit_trap_radius",
+      "name": "Orbit Trap Radius",
+      "type": "float",
+      "default": 0.5,
+      "min": 0,
+      "max": 5
+    },
+    {
+      "id": "orbit_trap_mode",
+      "name": "Orbit Trap Mode",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Minimum Radius",
+        "Axis Distance",
+        "Spherical Shell"
+      ]
+    },
+    {
+      "id": "fractal_mode",
+      "name": "Fractal Mode",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Mandelbulb",
+        "Julia"
+      ]
+    },
+    {
+      "id": "julia_constant_x",
+      "name": "Julia Constant X",
+      "type": "float",
+      "default": 0,
+      "min": -2,
+      "max": 2
+    },
+    {
+      "id": "julia_constant_y",
+      "name": "Julia Constant Y",
+      "type": "float",
+      "default": 0,
+      "min": -2,
+      "max": 2
+    },
+    {
+      "id": "julia_constant_z",
+      "name": "Julia Constant Z",
+      "type": "float",
+      "default": 0,
+      "min": -2,
+      "max": 2
+    }
+  ],
+  "helpers": "struct MakerB354SphericalPowerFractalField3D {float fractal_distance_estimate;float orbit_trap;float escape_iteration;float normalized_iteration;float escape_radius;float escaped_mask;vec3 final_orbit_position;float derivative_estimate;};\nMakerB354SphericalPowerFractalField3D maker_b354_spherical_power_fractal_field_3d(vec3 position,vec3 center,float time_offset,float scale_multiplier,float fractal_power,float maximum_iterations,float escape_threshold,float fractal_scale,float azimuth_phase,float inclination_phase,float phase_animation_speed,float distance_scale,float orbit_trap_radius,float orbit_trap_mode,float fractal_mode,float julia_constant_x,float julia_constant_y,float julia_constant_z,float tm){\nfloat scale=max(abs(fractal_scale*scale_multiplier),1e-6);vec3 p=(position-center)*scale,z=p,c=fractal_mode<.5?p:vec3(julia_constant_x,julia_constant_y,julia_constant_z);float dr=1.,r=length(z),trap=1e20,escaped=0.,it=0.,t=(tm+time_offset)*phase_animation_speed;int n=int(clamp(round(maximum_iterations),1.,16.));for(int j=0;j<=16;j++){r=length(z);trap=min(trap,orbit_trap_mode<.5?r:(orbit_trap_mode<1.5?length(z.xy):abs(r-orbit_trap_radius)));if(r>escape_threshold){escaped=1.;break;}if(j>=n)break;float theta=r>1e-8?acos(clamp(z.z/r,-1.,1.)):0.,phi=length(z.xy)>1e-8?atan(z.y,z.x):0.;dr=min(1e30,fractal_power*pow(max(r,1e-8),fractal_power-1.)*dr+(fractal_mode<.5?1.:0.));theta=theta*fractal_power+radians(inclination_phase)+t;phi=phi*fractal_power+radians(azimuth_phase)+t;z=pow(r,fractal_power)*vec3(sin(theta)*cos(phi),sin(theta)*sin(phi),cos(theta))+c;it+=1.;}float d=escaped>.5?distance_scale*r*log(max(r,1.))/max(dr,1e-8)/scale:0.;return MakerB354SphericalPowerFractalField3D(d,trap,it,it/float(n),r,escaped,z,dr);\n}",
+  "glsl_outputs": {
+    "fractal_distance_estimate": "maker_b354_spherical_power_fractal_field_3d({position},{center},{time_offset},{scale_multiplier},{fractal_power},{maximum_iterations},{escape_threshold},{fractal_scale},{azimuth_phase},{inclination_phase},{phase_animation_speed},{distance_scale},{orbit_trap_radius},{orbit_trap_mode},{fractal_mode},{julia_constant_x},{julia_constant_y},{julia_constant_z},u_time).fractal_distance_estimate",
+    "orbit_trap": "maker_b354_spherical_power_fractal_field_3d({position},{center},{time_offset},{scale_multiplier},{fractal_power},{maximum_iterations},{escape_threshold},{fractal_scale},{azimuth_phase},{inclination_phase},{phase_animation_speed},{distance_scale},{orbit_trap_radius},{orbit_trap_mode},{fractal_mode},{julia_constant_x},{julia_constant_y},{julia_constant_z},u_time).orbit_trap",
+    "escape_iteration": "maker_b354_spherical_power_fractal_field_3d({position},{center},{time_offset},{scale_multiplier},{fractal_power},{maximum_iterations},{escape_threshold},{fractal_scale},{azimuth_phase},{inclination_phase},{phase_animation_speed},{distance_scale},{orbit_trap_radius},{orbit_trap_mode},{fractal_mode},{julia_constant_x},{julia_constant_y},{julia_constant_z},u_time).escape_iteration",
+    "normalized_iteration": "maker_b354_spherical_power_fractal_field_3d({position},{center},{time_offset},{scale_multiplier},{fractal_power},{maximum_iterations},{escape_threshold},{fractal_scale},{azimuth_phase},{inclination_phase},{phase_animation_speed},{distance_scale},{orbit_trap_radius},{orbit_trap_mode},{fractal_mode},{julia_constant_x},{julia_constant_y},{julia_constant_z},u_time).normalized_iteration",
+    "escape_radius": "maker_b354_spherical_power_fractal_field_3d({position},{center},{time_offset},{scale_multiplier},{fractal_power},{maximum_iterations},{escape_threshold},{fractal_scale},{azimuth_phase},{inclination_phase},{phase_animation_speed},{distance_scale},{orbit_trap_radius},{orbit_trap_mode},{fractal_mode},{julia_constant_x},{julia_constant_y},{julia_constant_z},u_time).escape_radius",
+    "escaped_mask": "maker_b354_spherical_power_fractal_field_3d({position},{center},{time_offset},{scale_multiplier},{fractal_power},{maximum_iterations},{escape_threshold},{fractal_scale},{azimuth_phase},{inclination_phase},{phase_animation_speed},{distance_scale},{orbit_trap_radius},{orbit_trap_mode},{fractal_mode},{julia_constant_x},{julia_constant_y},{julia_constant_z},u_time).escaped_mask",
+    "final_orbit_position": "maker_b354_spherical_power_fractal_field_3d({position},{center},{time_offset},{scale_multiplier},{fractal_power},{maximum_iterations},{escape_threshold},{fractal_scale},{azimuth_phase},{inclination_phase},{phase_animation_speed},{distance_scale},{orbit_trap_radius},{orbit_trap_mode},{fractal_mode},{julia_constant_x},{julia_constant_y},{julia_constant_z},u_time).final_orbit_position",
+    "derivative_estimate": "maker_b354_spherical_power_fractal_field_3d({position},{center},{time_offset},{scale_multiplier},{fractal_power},{maximum_iterations},{escape_threshold},{fractal_scale},{azimuth_phase},{inclination_phase},{phase_animation_speed},{distance_scale},{orbit_trap_radius},{orbit_trap_mode},{fractal_mode},{julia_constant_x},{julia_constant_y},{julia_constant_z},u_time).derivative_estimate"
+  }
+}

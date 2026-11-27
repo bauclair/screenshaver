@@ -1,0 +1,178 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.expanding_comoving_coordinates_3d",
+  "name": "Expanding Comoving Coordinates 3D",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Bounded expansion; velocity at reset and power singularity is not defined and reported as zero at power origin.",
+  "uses": "Expanding Comoving Coordinates 3D",
+  "notes": "Bounded expansion; velocity at reset and power singularity is not defined and reported as zero at power origin.",
+  "header_color": "#348F8B",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "default": "vec3(maker_uv,0.0)",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec3",
+      "default": "vec3(0.0)"
+    },
+    {
+      "id": "time_offset",
+      "name": "Time Offset",
+      "type": "float",
+      "default": "0.0"
+    },
+    {
+      "id": "rate_multiplier",
+      "name": "Rate Multiplier",
+      "type": "float",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "comoving_coordinates",
+      "name": "Comoving Coordinates",
+      "type": "vec3"
+    },
+    {
+      "id": "expansion_radius",
+      "name": "Expansion Radius",
+      "type": "float"
+    },
+    {
+      "id": "expansion_velocity",
+      "name": "Expansion Velocity",
+      "type": "float"
+    },
+    {
+      "id": "normalized_radial_distance",
+      "name": "Normalized Radial Distance",
+      "type": "float"
+    },
+    {
+      "id": "elapsed_time",
+      "name": "Elapsed Time",
+      "type": "float"
+    },
+    {
+      "id": "expansion_progress",
+      "name": "Expansion Progress",
+      "type": "float"
+    },
+    {
+      "id": "active_phase_mask",
+      "name": "Active Phase Mask",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "initial_radius",
+      "name": "Initial Radius",
+      "type": "float",
+      "default": 0.1,
+      "min": 0.001,
+      "max": 10
+    },
+    {
+      "id": "final_radius",
+      "name": "Final Radius",
+      "type": "float",
+      "default": 2,
+      "min": 0.001,
+      "max": 50
+    },
+    {
+      "id": "expansion_rate",
+      "name": "Expansion Rate",
+      "type": "float",
+      "default": 0.2,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "start_delay",
+      "name": "Start Delay",
+      "type": "float",
+      "default": 0,
+      "min": 0,
+      "max": 120
+    },
+    {
+      "id": "cycle_duration",
+      "name": "Cycle Duration",
+      "type": "float",
+      "default": 20,
+      "min": 0.1,
+      "max": 300
+    },
+    {
+      "id": "power_exponent",
+      "name": "Power Exponent",
+      "type": "float",
+      "default": 0.5,
+      "min": 0.1,
+      "max": 4
+    },
+    {
+      "id": "radius_floor",
+      "name": "Radius Floor",
+      "type": "float",
+      "default": 0.001,
+      "min": 0.0001,
+      "max": 1
+    },
+    {
+      "id": "expansion_profile",
+      "name": "Expansion Profile",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Saturating",
+        "Linear",
+        "Power",
+        "Smooth"
+      ]
+    },
+    {
+      "id": "direction",
+      "name": "Direction",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Expanding",
+        "Contracting"
+      ]
+    },
+    {
+      "id": "playback_mode",
+      "name": "Playback Mode",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Loop",
+        "Once",
+        "Ping-Pong"
+      ]
+    }
+  ],
+  "helpers": "struct MakerB362ExpandingComovingCoordinates3D {vec3 comoving_coordinates;float expansion_radius;float expansion_velocity;float normalized_radial_distance;float elapsed_time;float expansion_progress;float active_phase_mask;};\nMakerB362ExpandingComovingCoordinates3D maker_b362_expanding_comoving_coordinates_3d(vec3 position,vec3 center,float time_offset,float rate_multiplier,float initial_radius,float final_radius,float expansion_rate,float start_delay,float cycle_duration,float power_exponent,float radius_floor,float expansion_profile,float direction,float playback_mode,float tm){\nfloat raw=tm+time_offset-start_delay,t=max(raw,0.),sg=1.;if(playback_mode<.5)t=mod(t,cycle_duration);else if(playback_mode<1.5){if(t>=cycle_duration)sg=0.;t=min(t,cycle_duration);}else{t=mod(t,2.*cycle_duration);if(t>cycle_duration){t=2.*cycle_duration-t;sg=-1.;}}float k=expansion_rate*max(rate_multiplier,0.),x=k*t,f=0.,v=0.;if(expansion_profile<.5){f=1.-exp(-x);v=k*exp(-x);}else if(expansion_profile<1.5){f=clamp(x,0.,1.);v=x<1.?k:0.;}else if(expansion_profile<2.5){f=pow(clamp(x,0.,1.),power_exponent);v=x>1e-6&&x<1.?k*power_exponent*pow(x,power_exponent-1.):0.;}else{float u=clamp(x,0.,1.);f=u*u*(3.-2.*u);v=6.*k*u*(1.-u);}float a=direction<.5?initial_radius:final_radius,b=direction<.5?final_radius:initial_radius,R=mix(a,b,f),r=max(R,radius_floor);vec3 q=(position-center)/r;return MakerB362ExpandingComovingCoordinates3D(q,R,raw>=0.?sg*(b-a)*v:0.,length(q),t,f,step(0.,raw)*(playback_mode> .5&&playback_mode<1.5?1.-step(cycle_duration,raw):1.));\n}",
+  "glsl_outputs": {
+    "comoving_coordinates": "maker_b362_expanding_comoving_coordinates_3d({position},{center},{time_offset},{rate_multiplier},{initial_radius},{final_radius},{expansion_rate},{start_delay},{cycle_duration},{power_exponent},{radius_floor},{expansion_profile},{direction},{playback_mode},u_time).comoving_coordinates",
+    "expansion_radius": "maker_b362_expanding_comoving_coordinates_3d({position},{center},{time_offset},{rate_multiplier},{initial_radius},{final_radius},{expansion_rate},{start_delay},{cycle_duration},{power_exponent},{radius_floor},{expansion_profile},{direction},{playback_mode},u_time).expansion_radius",
+    "expansion_velocity": "maker_b362_expanding_comoving_coordinates_3d({position},{center},{time_offset},{rate_multiplier},{initial_radius},{final_radius},{expansion_rate},{start_delay},{cycle_duration},{power_exponent},{radius_floor},{expansion_profile},{direction},{playback_mode},u_time).expansion_velocity",
+    "normalized_radial_distance": "maker_b362_expanding_comoving_coordinates_3d({position},{center},{time_offset},{rate_multiplier},{initial_radius},{final_radius},{expansion_rate},{start_delay},{cycle_duration},{power_exponent},{radius_floor},{expansion_profile},{direction},{playback_mode},u_time).normalized_radial_distance",
+    "elapsed_time": "maker_b362_expanding_comoving_coordinates_3d({position},{center},{time_offset},{rate_multiplier},{initial_radius},{final_radius},{expansion_rate},{start_delay},{cycle_duration},{power_exponent},{radius_floor},{expansion_profile},{direction},{playback_mode},u_time).elapsed_time",
+    "expansion_progress": "maker_b362_expanding_comoving_coordinates_3d({position},{center},{time_offset},{rate_multiplier},{initial_radius},{final_radius},{expansion_rate},{start_delay},{cycle_duration},{power_exponent},{radius_floor},{expansion_profile},{direction},{playback_mode},u_time).expansion_progress",
+    "active_phase_mask": "maker_b362_expanding_comoving_coordinates_3d({position},{center},{time_offset},{rate_multiplier},{initial_radius},{final_radius},{expansion_rate},{start_delay},{cycle_duration},{power_exponent},{radius_floor},{expansion_profile},{direction},{playback_mode},u_time).active_phase_mask"
+  }
+}

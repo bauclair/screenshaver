@@ -1,0 +1,162 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.lighting.thin_film_interference_rgb_response",
+  "name": "Thin-Film Interference RGB Response",
+  "category": "Lighting",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Three-wavelength artistic approximation; not spectral reflectance simulation.",
+  "uses": "Thin-Film Interference RGB Response",
+  "notes": "Three-wavelength artistic approximation; not spectral reflectance simulation.",
+  "header_color": "#348F8B",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "surface_normal",
+      "name": "Surface Normal",
+      "type": "vec3",
+      "default": "vec3(0.0,0.0,1.0)"
+    },
+    {
+      "id": "view_direction",
+      "name": "View Direction",
+      "type": "vec3",
+      "default": "vec3(0.0,0.0,1.0)"
+    },
+    {
+      "id": "thickness_multiplier",
+      "name": "Thickness Multiplier",
+      "type": "float",
+      "default": "1.0"
+    },
+    {
+      "id": "base_color",
+      "name": "Base Color",
+      "type": "vec3",
+      "default": "vec3(1.0)"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "interference_color",
+      "name": "Interference Color",
+      "type": "vec3"
+    },
+    {
+      "id": "modulated_color",
+      "name": "Modulated Color",
+      "type": "vec3"
+    },
+    {
+      "id": "optical_path_difference",
+      "name": "Optical Path Difference",
+      "type": "float"
+    },
+    {
+      "id": "interference_intensity",
+      "name": "Interference Intensity",
+      "type": "float"
+    },
+    {
+      "id": "incidence_cosine",
+      "name": "Incidence Cosine",
+      "type": "float"
+    },
+    {
+      "id": "transmitted_angle_cosine",
+      "name": "Transmitted Angle Cosine",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "film_thickness",
+      "name": "Film Thickness",
+      "type": "float",
+      "default": 400,
+      "min": 0,
+      "max": 2000
+    },
+    {
+      "id": "film_refractive_index",
+      "name": "Film Refractive Index",
+      "type": "float",
+      "default": 1.45,
+      "min": 1,
+      "max": 3
+    },
+    {
+      "id": "external_refractive_index",
+      "name": "External Refractive Index",
+      "type": "float",
+      "default": 1,
+      "min": 1,
+      "max": 2
+    },
+    {
+      "id": "interference_strength",
+      "name": "Interference Strength",
+      "type": "float",
+      "default": 0.75,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "phase_shift",
+      "name": "Phase Shift",
+      "type": "float",
+      "default": 180,
+      "min": 0,
+      "max": 360
+    },
+    {
+      "id": "red_wavelength",
+      "name": "Red Wavelength",
+      "type": "float",
+      "default": 650,
+      "min": 380,
+      "max": 780
+    },
+    {
+      "id": "green_wavelength",
+      "name": "Green Wavelength",
+      "type": "float",
+      "default": 530,
+      "min": 380,
+      "max": 780
+    },
+    {
+      "id": "blue_wavelength",
+      "name": "Blue Wavelength",
+      "type": "float",
+      "default": 460,
+      "min": 380,
+      "max": 780
+    },
+    {
+      "id": "minimum_reflectance",
+      "name": "Minimum Reflectance",
+      "type": "float",
+      "default": 0.1,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "color_strength",
+      "name": "Color Strength",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 5
+    }
+  ],
+  "helpers": "struct MakerB354ThinFilmInterferenceRgbResponse {vec3 interference_color;vec3 modulated_color;float optical_path_difference;float interference_intensity;float incidence_cosine;float transmitted_angle_cosine;};\nMakerB354ThinFilmInterferenceRgbResponse maker_b354_thin_film_interference_rgb_response(vec3 surface_normal,vec3 view_direction,float thickness_multiplier,vec3 base_color,float film_thickness,float film_refractive_index,float external_refractive_index,float interference_strength,float phase_shift,float red_wavelength,float green_wavelength,float blue_wavelength,float minimum_reflectance,float color_strength,float tm){\nfloat c=abs(dot(surface_normal,view_direction))/max(length(surface_normal)*length(view_direction),1e-8);c=clamp(c,0.,1.);float eta=external_refractive_index/film_refractive_index,s2=eta*eta*(1.-c*c),ct=sqrt(max(0.,1.-s2)),opd=2.*film_refractive_index*film_thickness*max(0.,thickness_multiplier)*ct;vec3 v=.5+.5*cos(6.2831853*opd/vec3(red_wavelength,green_wavelength,blue_wavelength)+radians(phase_shift));v=mix(vec3(minimum_reflectance),vec3(1.),v);if(s2>=1.)v=vec3(1.);v=mix(vec3(1.),v,interference_strength)*color_strength;return MakerB354ThinFilmInterferenceRgbResponse(v,base_color*v,opd,dot(v,vec3(.2126,.7152,.0722)),c,ct);\n}",
+  "glsl_outputs": {
+    "interference_color": "maker_b354_thin_film_interference_rgb_response({surface_normal},{view_direction},{thickness_multiplier},{base_color},{film_thickness},{film_refractive_index},{external_refractive_index},{interference_strength},{phase_shift},{red_wavelength},{green_wavelength},{blue_wavelength},{minimum_reflectance},{color_strength},u_time).interference_color",
+    "modulated_color": "maker_b354_thin_film_interference_rgb_response({surface_normal},{view_direction},{thickness_multiplier},{base_color},{film_thickness},{film_refractive_index},{external_refractive_index},{interference_strength},{phase_shift},{red_wavelength},{green_wavelength},{blue_wavelength},{minimum_reflectance},{color_strength},u_time).modulated_color",
+    "optical_path_difference": "maker_b354_thin_film_interference_rgb_response({surface_normal},{view_direction},{thickness_multiplier},{base_color},{film_thickness},{film_refractive_index},{external_refractive_index},{interference_strength},{phase_shift},{red_wavelength},{green_wavelength},{blue_wavelength},{minimum_reflectance},{color_strength},u_time).optical_path_difference",
+    "interference_intensity": "maker_b354_thin_film_interference_rgb_response({surface_normal},{view_direction},{thickness_multiplier},{base_color},{film_thickness},{film_refractive_index},{external_refractive_index},{interference_strength},{phase_shift},{red_wavelength},{green_wavelength},{blue_wavelength},{minimum_reflectance},{color_strength},u_time).interference_intensity",
+    "incidence_cosine": "maker_b354_thin_film_interference_rgb_response({surface_normal},{view_direction},{thickness_multiplier},{base_color},{film_thickness},{film_refractive_index},{external_refractive_index},{interference_strength},{phase_shift},{red_wavelength},{green_wavelength},{blue_wavelength},{minimum_reflectance},{color_strength},u_time).incidence_cosine",
+    "transmitted_angle_cosine": "maker_b354_thin_film_interference_rgb_response({surface_normal},{view_direction},{thickness_multiplier},{base_color},{film_thickness},{film_refractive_index},{external_refractive_index},{interference_strength},{phase_shift},{red_wavelength},{green_wavelength},{blue_wavelength},{minimum_reflectance},{color_strength},u_time).transmitted_angle_cosine"
+  }
+}

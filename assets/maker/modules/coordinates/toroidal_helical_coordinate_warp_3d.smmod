@@ -1,0 +1,186 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.toroidal_helical_coordinate_warp_3d",
+  "name": "Toroidal Helical Coordinate Warp 3D",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Integer twist and pulse counts preserve Cartesian angular seam; axis singularity uses zero angle.",
+  "uses": "Toroidal Helical Coordinate Warp 3D",
+  "notes": "Integer twist and pulse counts preserve Cartesian angular seam; axis singularity uses zero angle.",
+  "header_color": "#348F8B",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "default": "vec3(maker_uv,0.0)",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec3",
+      "default": "vec3(0.0)"
+    },
+    {
+      "id": "time_offset",
+      "name": "Time Offset",
+      "type": "float",
+      "default": "0.0"
+    },
+    {
+      "id": "strength_multiplier",
+      "name": "Strength Multiplier",
+      "type": "float",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "warped_position",
+      "name": "Warped Position",
+      "type": "vec3"
+    },
+    {
+      "id": "cross_section_coordinates",
+      "name": "Cross Section Coordinates",
+      "type": "vec2"
+    },
+    {
+      "id": "twisted_cross_section",
+      "name": "Twisted Cross Section",
+      "type": "vec2"
+    },
+    {
+      "id": "major_angle",
+      "name": "Major Angle",
+      "type": "float"
+    },
+    {
+      "id": "minor_angle",
+      "name": "Minor Angle",
+      "type": "float"
+    },
+    {
+      "id": "tube_radial_distance",
+      "name": "Tube Radial Distance",
+      "type": "float"
+    },
+    {
+      "id": "helical_phase",
+      "name": "Helical Phase",
+      "type": "float"
+    },
+    {
+      "id": "displacement",
+      "name": "Displacement",
+      "type": "vec3"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "major_radius",
+      "name": "Major Radius",
+      "type": "float",
+      "default": 1,
+      "min": 0.01,
+      "max": 20
+    },
+    {
+      "id": "helical_twist_count",
+      "name": "Helical Twist Count",
+      "type": "float",
+      "default": 2,
+      "min": -16,
+      "max": 16
+    },
+    {
+      "id": "twist_phase",
+      "name": "Twist Phase",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "twist_animation_speed",
+      "name": "Twist Animation Speed",
+      "type": "float",
+      "default": 0.5,
+      "min": -5,
+      "max": 5
+    },
+    {
+      "id": "major_angular_flow_speed",
+      "name": "Major Angular Flow Speed",
+      "type": "float",
+      "default": 0.2,
+      "min": -5,
+      "max": 5
+    },
+    {
+      "id": "cross_section_scale",
+      "name": "Cross Section Scale",
+      "type": "float",
+      "default": 1,
+      "min": 0.01,
+      "max": 5
+    },
+    {
+      "id": "radial_pulse_amplitude",
+      "name": "Radial Pulse Amplitude",
+      "type": "float",
+      "default": 0,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "radial_pulse_frequency",
+      "name": "Radial Pulse Frequency",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 16
+    },
+    {
+      "id": "radial_pulse_speed",
+      "name": "Radial Pulse Speed",
+      "type": "float",
+      "default": 0.5,
+      "min": -5,
+      "max": 5
+    },
+    {
+      "id": "warp_strength",
+      "name": "Warp Strength",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "toroidal_axis",
+      "name": "Toroidal Axis",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Z",
+        "X",
+        "Y"
+      ]
+    }
+  ],
+  "helpers": "struct MakerB362ToroidalHelicalCoordinateWarp3D {vec3 warped_position;vec2 cross_section_coordinates;vec2 twisted_cross_section;float major_angle;float minor_angle;float tube_radial_distance;float helical_phase;vec3 displacement;};\nMakerB362ToroidalHelicalCoordinateWarp3D maker_b362_toroidal_helical_coordinate_warp_3d(vec3 position,vec3 center,float time_offset,float strength_multiplier,float major_radius,float helical_twist_count,float twist_phase,float twist_animation_speed,float major_angular_flow_speed,float cross_section_scale,float radial_pulse_amplitude,float radial_pulse_frequency,float radial_pulse_speed,float warp_strength,float toroidal_axis,float tm){\nvec3 p=position-center;if(toroidal_axis>.5)p=toroidal_axis<1.5?p.yzx:p.zxy;float r=length(p.xy),a=r>1e-8?atan(p.y,p.x):0.,t=tm+time_offset;vec2 q=vec2(r-major_radius,p.z);float b=length(q)>1e-8?atan(q.y,q.x):0.,phase=round(helical_twist_count)*a+radians(twist_phase)+t*twist_animation_speed;vec2 v=mat2(cos(phase),sin(phase),-sin(phase),cos(phase))*q*cross_section_scale*(1.+radial_pulse_amplitude*sin(round(radial_pulse_frequency)*a+t*radial_pulse_speed));float ang=a+t*major_angular_flow_speed;vec3 outp=vec3((major_radius+v.x)*vec2(cos(ang),sin(ang)),v.y);if(toroidal_axis>.5)outp=toroidal_axis<1.5?outp.zxy:outp.yzx;vec3 d=(outp+center-position)*clamp(warp_strength*strength_multiplier,0.,1.);return MakerB362ToroidalHelicalCoordinateWarp3D(position+d,q,v,a,b,length(q),phase,d);\n}",
+  "glsl_outputs": {
+    "warped_position": "maker_b362_toroidal_helical_coordinate_warp_3d({position},{center},{time_offset},{strength_multiplier},{major_radius},{helical_twist_count},{twist_phase},{twist_animation_speed},{major_angular_flow_speed},{cross_section_scale},{radial_pulse_amplitude},{radial_pulse_frequency},{radial_pulse_speed},{warp_strength},{toroidal_axis},u_time).warped_position",
+    "cross_section_coordinates": "maker_b362_toroidal_helical_coordinate_warp_3d({position},{center},{time_offset},{strength_multiplier},{major_radius},{helical_twist_count},{twist_phase},{twist_animation_speed},{major_angular_flow_speed},{cross_section_scale},{radial_pulse_amplitude},{radial_pulse_frequency},{radial_pulse_speed},{warp_strength},{toroidal_axis},u_time).cross_section_coordinates",
+    "twisted_cross_section": "maker_b362_toroidal_helical_coordinate_warp_3d({position},{center},{time_offset},{strength_multiplier},{major_radius},{helical_twist_count},{twist_phase},{twist_animation_speed},{major_angular_flow_speed},{cross_section_scale},{radial_pulse_amplitude},{radial_pulse_frequency},{radial_pulse_speed},{warp_strength},{toroidal_axis},u_time).twisted_cross_section",
+    "major_angle": "maker_b362_toroidal_helical_coordinate_warp_3d({position},{center},{time_offset},{strength_multiplier},{major_radius},{helical_twist_count},{twist_phase},{twist_animation_speed},{major_angular_flow_speed},{cross_section_scale},{radial_pulse_amplitude},{radial_pulse_frequency},{radial_pulse_speed},{warp_strength},{toroidal_axis},u_time).major_angle",
+    "minor_angle": "maker_b362_toroidal_helical_coordinate_warp_3d({position},{center},{time_offset},{strength_multiplier},{major_radius},{helical_twist_count},{twist_phase},{twist_animation_speed},{major_angular_flow_speed},{cross_section_scale},{radial_pulse_amplitude},{radial_pulse_frequency},{radial_pulse_speed},{warp_strength},{toroidal_axis},u_time).minor_angle",
+    "tube_radial_distance": "maker_b362_toroidal_helical_coordinate_warp_3d({position},{center},{time_offset},{strength_multiplier},{major_radius},{helical_twist_count},{twist_phase},{twist_animation_speed},{major_angular_flow_speed},{cross_section_scale},{radial_pulse_amplitude},{radial_pulse_frequency},{radial_pulse_speed},{warp_strength},{toroidal_axis},u_time).tube_radial_distance",
+    "helical_phase": "maker_b362_toroidal_helical_coordinate_warp_3d({position},{center},{time_offset},{strength_multiplier},{major_radius},{helical_twist_count},{twist_phase},{twist_animation_speed},{major_angular_flow_speed},{cross_section_scale},{radial_pulse_amplitude},{radial_pulse_frequency},{radial_pulse_speed},{warp_strength},{toroidal_axis},u_time).helical_phase",
+    "displacement": "maker_b362_toroidal_helical_coordinate_warp_3d({position},{center},{time_offset},{strength_multiplier},{major_radius},{helical_twist_count},{twist_phase},{twist_animation_speed},{major_angular_flow_speed},{cross_section_scale},{radial_pulse_amplitude},{radial_pulse_frequency},{radial_pulse_speed},{warp_strength},{toroidal_axis},u_time).displacement"
+  }
+}

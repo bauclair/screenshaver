@@ -1,0 +1,179 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.geometry.depth_coupled_harmonic_surface_field_3d",
+  "name": "Depth-Coupled Harmonic Surface Field 3D",
+  "category": "Geometry",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Implicit residual, not an exact SDF or guaranteed safe ray step.",
+  "uses": "Depth-Coupled Harmonic Surface Field 3D",
+  "notes": "Implicit residual, not an exact SDF or guaranteed safe ray step.",
+  "header_color": "#348F8B",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "default": "vec3(maker_uv,0.0)",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec3",
+      "default": "vec3(0.0)"
+    },
+    {
+      "id": "time_offset",
+      "name": "Time Offset",
+      "type": "float",
+      "default": "0.0"
+    },
+    {
+      "id": "strength_multiplier",
+      "name": "Strength Multiplier",
+      "type": "float",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "implicit_surface_field",
+      "name": "Implicit Surface Field",
+      "type": "float"
+    },
+    {
+      "id": "surface_height",
+      "name": "Surface Height",
+      "type": "float"
+    },
+    {
+      "id": "warped_coordinates",
+      "name": "Warped Coordinates",
+      "type": "vec2"
+    },
+    {
+      "id": "fold_response",
+      "name": "Fold Response",
+      "type": "float"
+    },
+    {
+      "id": "depth_displacement",
+      "name": "Depth Displacement",
+      "type": "vec2"
+    },
+    {
+      "id": "surface_side_mask",
+      "name": "Surface Side Mask",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "surface_scale",
+      "name": "Surface Scale",
+      "type": "float",
+      "default": 1.5,
+      "min": 0.01,
+      "max": 10
+    },
+    {
+      "id": "primary_frequency",
+      "name": "Primary Frequency",
+      "type": "float",
+      "default": 2,
+      "min": 0.1,
+      "max": 20
+    },
+    {
+      "id": "secondary_frequency",
+      "name": "Secondary Frequency",
+      "type": "float",
+      "default": 3,
+      "min": 0.1,
+      "max": 20
+    },
+    {
+      "id": "fold_amplitude",
+      "name": "Fold Amplitude",
+      "type": "float",
+      "default": 0.5,
+      "min": 0,
+      "max": 5
+    },
+    {
+      "id": "secondary_amplitude",
+      "name": "Secondary Amplitude",
+      "type": "float",
+      "default": 0.3,
+      "min": 0,
+      "max": 2
+    },
+    {
+      "id": "fold_steepness",
+      "name": "Fold Steepness",
+      "type": "float",
+      "default": 0.5,
+      "min": 0,
+      "max": 2
+    },
+    {
+      "id": "coordinate_warp",
+      "name": "Coordinate Warp",
+      "type": "float",
+      "default": 0.5,
+      "min": 0,
+      "max": 5
+    },
+    {
+      "id": "depth_coupling",
+      "name": "Depth Coupling",
+      "type": "float",
+      "default": 0.25,
+      "min": 0,
+      "max": 2
+    },
+    {
+      "id": "depth_saturation",
+      "name": "Depth Saturation",
+      "type": "float",
+      "default": 0.5,
+      "min": 0.01,
+      "max": 5
+    },
+    {
+      "id": "animation_speed",
+      "name": "Animation Speed",
+      "type": "float",
+      "default": 0.5,
+      "min": -5,
+      "max": 5
+    },
+    {
+      "id": "orientation",
+      "name": "Orientation",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "field_scale",
+      "name": "Field Scale",
+      "type": "float",
+      "default": 0.2,
+      "min": 0.01,
+      "max": 1
+    }
+  ],
+  "helpers": "struct MakerB354DepthCoupledHarmonicSurfaceField3D {float implicit_surface_field;float surface_height;vec2 warped_coordinates;float fold_response;vec2 depth_displacement;float surface_side_mask;};\nMakerB354DepthCoupledHarmonicSurfaceField3D maker_b354_depth_coupled_harmonic_surface_field_3d(vec3 position,vec3 center,float time_offset,float strength_multiplier,float surface_scale,float primary_frequency,float secondary_frequency,float fold_amplitude,float secondary_amplitude,float fold_steepness,float coordinate_warp,float depth_coupling,float depth_saturation,float animation_speed,float orientation,float field_scale,float tm){\nvec3 p=position-center;float a=radians(orientation),t=(tm+time_offset)*animation_speed;vec2 q=mat2(cos(a),sin(a),-sin(a),cos(a))*p.xy*surface_scale;vec2 dd=depth_coupling*(p.z/(depth_saturation+abs(p.z)))*vec2(sin(q.y+t),cos(q.x-t));q+=dd+coordinate_warp*vec2(sin(q.y*secondary_frequency+t),cos(q.x*secondary_frequency-t));float f=sin(q.x*primary_frequency+t+fold_steepness*sin(q.y*secondary_frequency));float h=strength_multiplier*(fold_amplitude*f+secondary_amplitude*cos(q.y*secondary_frequency-t));float d=p.z-h;return MakerB354DepthCoupledHarmonicSurfaceField3D(d*field_scale,h,q,f,dd,step(0.,d));\n}",
+  "glsl_outputs": {
+    "implicit_surface_field": "maker_b354_depth_coupled_harmonic_surface_field_3d({position},{center},{time_offset},{strength_multiplier},{surface_scale},{primary_frequency},{secondary_frequency},{fold_amplitude},{secondary_amplitude},{fold_steepness},{coordinate_warp},{depth_coupling},{depth_saturation},{animation_speed},{orientation},{field_scale},u_time).implicit_surface_field",
+    "surface_height": "maker_b354_depth_coupled_harmonic_surface_field_3d({position},{center},{time_offset},{strength_multiplier},{surface_scale},{primary_frequency},{secondary_frequency},{fold_amplitude},{secondary_amplitude},{fold_steepness},{coordinate_warp},{depth_coupling},{depth_saturation},{animation_speed},{orientation},{field_scale},u_time).surface_height",
+    "warped_coordinates": "maker_b354_depth_coupled_harmonic_surface_field_3d({position},{center},{time_offset},{strength_multiplier},{surface_scale},{primary_frequency},{secondary_frequency},{fold_amplitude},{secondary_amplitude},{fold_steepness},{coordinate_warp},{depth_coupling},{depth_saturation},{animation_speed},{orientation},{field_scale},u_time).warped_coordinates",
+    "fold_response": "maker_b354_depth_coupled_harmonic_surface_field_3d({position},{center},{time_offset},{strength_multiplier},{surface_scale},{primary_frequency},{secondary_frequency},{fold_amplitude},{secondary_amplitude},{fold_steepness},{coordinate_warp},{depth_coupling},{depth_saturation},{animation_speed},{orientation},{field_scale},u_time).fold_response",
+    "depth_displacement": "maker_b354_depth_coupled_harmonic_surface_field_3d({position},{center},{time_offset},{strength_multiplier},{surface_scale},{primary_frequency},{secondary_frequency},{fold_amplitude},{secondary_amplitude},{fold_steepness},{coordinate_warp},{depth_coupling},{depth_saturation},{animation_speed},{orientation},{field_scale},u_time).depth_displacement",
+    "surface_side_mask": "maker_b354_depth_coupled_harmonic_surface_field_3d({position},{center},{time_offset},{strength_multiplier},{surface_scale},{primary_frequency},{secondary_frequency},{fold_amplitude},{secondary_amplitude},{fold_steepness},{coordinate_warp},{depth_coupling},{depth_saturation},{animation_speed},{orientation},{field_scale},u_time).surface_side_mask"
+  }
+}

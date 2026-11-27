@@ -1,0 +1,153 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.multiscale_harmonic_recurrence_field_3d",
+  "name": "Multiscale Harmonic Recurrence Field 3D",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Bounded harmonic recurrence with componentwise normalization.",
+  "uses": "Multiscale Harmonic Recurrence Field 3D",
+  "notes": "Bounded harmonic recurrence with componentwise normalization.",
+  "header_color": "#348F8B",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "default": "vec3(maker_uv,0.0)",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "time_offset",
+      "name": "Time Offset",
+      "type": "float",
+      "default": "0.0"
+    },
+    {
+      "id": "frequency_multiplier",
+      "name": "Frequency Multiplier",
+      "type": "float",
+      "default": "1.0"
+    },
+    {
+      "id": "strength_multiplier",
+      "name": "Strength Multiplier",
+      "type": "float",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "accumulated_field",
+      "name": "Accumulated Field",
+      "type": "float"
+    },
+    {
+      "id": "normalized_field",
+      "name": "Normalized Field",
+      "type": "float"
+    },
+    {
+      "id": "peak_response",
+      "name": "Peak Response",
+      "type": "float"
+    },
+    {
+      "id": "final_cosine_vector",
+      "name": "Final Cosine Vector",
+      "type": "vec3"
+    },
+    {
+      "id": "final_sine_vector",
+      "name": "Final Sine Vector",
+      "type": "vec3"
+    },
+    {
+      "id": "mean_response",
+      "name": "Mean Response",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "harmonic_levels",
+      "name": "Harmonic Levels",
+      "type": "float",
+      "default": 6,
+      "min": 1,
+      "max": 12
+    },
+    {
+      "id": "initial_frequency",
+      "name": "Initial Frequency",
+      "type": "float",
+      "default": 1,
+      "min": 0.1,
+      "max": 20
+    },
+    {
+      "id": "animation_speed",
+      "name": "Animation Speed",
+      "type": "float",
+      "default": 0.5,
+      "min": -5,
+      "max": 5
+    },
+    {
+      "id": "harmonic_decay",
+      "name": "Harmonic Decay",
+      "type": "float",
+      "default": 0.5,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "coupling_strength",
+      "name": "Coupling Strength",
+      "type": "float",
+      "default": 0.5,
+      "min": 0,
+      "max": 2
+    },
+    {
+      "id": "response_gain",
+      "name": "Response Gain",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 5
+    },
+    {
+      "id": "response_profile",
+      "name": "Response Profile",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Magnitude",
+        "Product",
+        "Correlation"
+      ]
+    },
+    {
+      "id": "accumulation_mode",
+      "name": "Accumulation Mode",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Mean",
+        "Sum",
+        "Maximum"
+      ]
+    }
+  ],
+  "helpers": "struct MakerB354MultiscaleHarmonicRecurrenceField3D {float accumulated_field;float normalized_field;float peak_response;vec3 final_cosine_vector;vec3 final_sine_vector;float mean_response;};\nMakerB354MultiscaleHarmonicRecurrenceField3D maker_b354_multiscale_harmonic_recurrence_field_3d(vec3 position,float time_offset,float frequency_multiplier,float strength_multiplier,float harmonic_levels,float initial_frequency,float animation_speed,float harmonic_decay,float coupling_strength,float response_gain,float response_profile,float accumulation_mode,float tm){\nvec3 p=position*initial_frequency*frequency_multiplier+vec3((tm+time_offset)*animation_speed),s=sin(p),c=cos(p);float w=1.,sumv=0.,weights=0.,peak=0.;int n=int(clamp(round(harmonic_levels),1.,12.));for(int j=0;j<12;j++){if(j>=n)break;float v=response_profile<.5?length(s)/sqrt(3.):(response_profile<1.5?abs(s.x*s.y*s.z):abs(dot(s,c.yzx))/3.);sumv+=w*v;weights+=w;peak=max(peak,w*v);if(j+1<n){vec3 ns=2.*s*c,nc=c*c-s*s,ph=coupling_strength*s.yzx; s=ns*cos(ph)+nc*sin(ph);c=nc*cos(ph)-ns*sin(ph);vec3 normv=inversesqrt(max(s*s+c*c,vec3(1e-8)));s*=normv;c*=normv;}w*=harmonic_decay;}float m=sumv/max(weights,1e-8),g=response_gain*strength_multiplier;return MakerB354MultiscaleHarmonicRecurrenceField3D(g*(accumulation_mode<.5?m:(accumulation_mode<1.5?sumv:peak)),m,g*peak,c,s,g*m);\n}",
+  "glsl_outputs": {
+    "accumulated_field": "maker_b354_multiscale_harmonic_recurrence_field_3d({position},{time_offset},{frequency_multiplier},{strength_multiplier},{harmonic_levels},{initial_frequency},{animation_speed},{harmonic_decay},{coupling_strength},{response_gain},{response_profile},{accumulation_mode},u_time).accumulated_field",
+    "normalized_field": "maker_b354_multiscale_harmonic_recurrence_field_3d({position},{time_offset},{frequency_multiplier},{strength_multiplier},{harmonic_levels},{initial_frequency},{animation_speed},{harmonic_decay},{coupling_strength},{response_gain},{response_profile},{accumulation_mode},u_time).normalized_field",
+    "peak_response": "maker_b354_multiscale_harmonic_recurrence_field_3d({position},{time_offset},{frequency_multiplier},{strength_multiplier},{harmonic_levels},{initial_frequency},{animation_speed},{harmonic_decay},{coupling_strength},{response_gain},{response_profile},{accumulation_mode},u_time).peak_response",
+    "final_cosine_vector": "maker_b354_multiscale_harmonic_recurrence_field_3d({position},{time_offset},{frequency_multiplier},{strength_multiplier},{harmonic_levels},{initial_frequency},{animation_speed},{harmonic_decay},{coupling_strength},{response_gain},{response_profile},{accumulation_mode},u_time).final_cosine_vector",
+    "final_sine_vector": "maker_b354_multiscale_harmonic_recurrence_field_3d({position},{time_offset},{frequency_multiplier},{strength_multiplier},{harmonic_levels},{initial_frequency},{animation_speed},{harmonic_decay},{coupling_strength},{response_gain},{response_profile},{accumulation_mode},u_time).final_sine_vector",
+    "mean_response": "maker_b354_multiscale_harmonic_recurrence_field_3d({position},{time_offset},{frequency_multiplier},{strength_multiplier},{harmonic_levels},{initial_frequency},{animation_speed},{harmonic_decay},{coupling_strength},{response_gain},{response_profile},{accumulation_mode},u_time).mean_response"
+  }
+}

@@ -1,0 +1,170 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.partial_revolution_coordinates_3d",
+  "name": "Partial Revolution Coordinates 3D",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Coordinate mapping only; cap value is a signed angular residual, not a complete swept SDF.",
+  "uses": "Partial Revolution Coordinates 3D",
+  "notes": "Coordinate mapping only; cap value is a signed angular residual, not a complete swept SDF.",
+  "header_color": "#348F8B",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "default": "vec3(maker_uv,0.0)",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec3",
+      "default": "vec3(0.0)"
+    },
+    {
+      "id": "time_offset",
+      "name": "Time Offset",
+      "type": "float",
+      "default": "0.0"
+    },
+    {
+      "id": "radius_multiplier",
+      "name": "Radius Multiplier",
+      "type": "float",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "cross_section_coordinates",
+      "name": "Cross Section Coordinates",
+      "type": "vec2"
+    },
+    {
+      "id": "angular_coordinate",
+      "name": "Angular Coordinate",
+      "type": "float"
+    },
+    {
+      "id": "clamped_angular_coordinate",
+      "name": "Clamped Angular Coordinate",
+      "type": "float"
+    },
+    {
+      "id": "angular_interior_mask",
+      "name": "Angular Interior Mask",
+      "type": "float"
+    },
+    {
+      "id": "end_cap_plane_distance",
+      "name": "End Cap Plane Distance",
+      "type": "float"
+    },
+    {
+      "id": "closest_sweep_center",
+      "name": "Closest Sweep Center",
+      "type": "vec3"
+    },
+    {
+      "id": "sweep_tangent",
+      "name": "Sweep Tangent",
+      "type": "vec3"
+    },
+    {
+      "id": "normalized_sweep_position",
+      "name": "Normalized Sweep Position",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "major_radius",
+      "name": "Major Radius",
+      "type": "float",
+      "default": 1,
+      "min": 0.01,
+      "max": 20
+    },
+    {
+      "id": "revolution_extent",
+      "name": "Revolution Extent",
+      "type": "float",
+      "default": 240,
+      "min": 1,
+      "max": 360
+    },
+    {
+      "id": "revolution_orientation",
+      "name": "Revolution Orientation",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "orientation_animation_speed",
+      "name": "Orientation Animation Speed",
+      "type": "float",
+      "default": 0,
+      "min": -5,
+      "max": 5
+    },
+    {
+      "id": "extent_oscillation",
+      "name": "Extent Oscillation",
+      "type": "float",
+      "default": 0,
+      "min": 0,
+      "max": 180
+    },
+    {
+      "id": "extent_animation_speed",
+      "name": "Extent Animation Speed",
+      "type": "float",
+      "default": 0.5,
+      "min": -5,
+      "max": 5
+    },
+    {
+      "id": "cross_section_rotation",
+      "name": "Cross Section Rotation",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "cross_section_animation_speed",
+      "name": "Cross Section Animation Speed",
+      "type": "float",
+      "default": 0,
+      "min": -5,
+      "max": 5
+    },
+    {
+      "id": "rotation_axis",
+      "name": "Rotation Axis",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Y",
+        "X",
+        "Z"
+      ]
+    }
+  ],
+  "helpers": "struct MakerB362PartialRevolutionCoordinates3D {vec2 cross_section_coordinates;float angular_coordinate;float clamped_angular_coordinate;float angular_interior_mask;float end_cap_plane_distance;vec3 closest_sweep_center;vec3 sweep_tangent;float normalized_sweep_position;};\nMakerB362PartialRevolutionCoordinates3D maker_b362_partial_revolution_coordinates_3d(vec3 position,vec3 center,float time_offset,float radius_multiplier,float major_radius,float revolution_extent,float revolution_orientation,float orientation_animation_speed,float extent_oscillation,float extent_animation_speed,float cross_section_rotation,float cross_section_animation_speed,float rotation_axis,float tm){\nvec3 p=position-center;if(rotation_axis<.5)p=p.xzy;else if(rotation_axis<1.5)p=p.yzx;float t=tm+time_offset,R=max(.0001,major_radius*abs(radius_multiplier)),o=radians(revolution_orientation)+t*orientation_animation_speed,h=.5*radians(clamp(revolution_extent+extent_oscillation*sin(t*extent_animation_speed),1.,360.)),a=length(p.xy)>1e-8?atan(p.y,p.x):o,rel=mod(a-o+3.14159265,6.2831853)-3.14159265,cl=clamp(rel,-h,h),ang=o+cl;vec2 n=vec2(cos(ang),sin(ang)),v=vec2(-n.y,n.x);vec2 q=vec2(dot(p.xy,n)-R,p.z);float b=radians(cross_section_rotation)+t*cross_section_animation_speed;q=mat2(cos(b),sin(b),-sin(b),cos(b))*q;float cap=h>=3.14159?0.:length(p.xy)*sin(clamp(abs(rel)-h,-1.5707963,1.5707963));vec3 c=vec3(R*n,0.),tanv=vec3(v,0.);if(rotation_axis<.5){c=c.xzy;tanv=tanv.xzy;}else if(rotation_axis<1.5){c=c.zxy;tanv=tanv.zxy;}return MakerB362PartialRevolutionCoordinates3D(q,rel,cl,step(abs(rel),h),cap,c+center,tanv,(cl+h)/(2.*h));\n}",
+  "glsl_outputs": {
+    "cross_section_coordinates": "maker_b362_partial_revolution_coordinates_3d({position},{center},{time_offset},{radius_multiplier},{major_radius},{revolution_extent},{revolution_orientation},{orientation_animation_speed},{extent_oscillation},{extent_animation_speed},{cross_section_rotation},{cross_section_animation_speed},{rotation_axis},u_time).cross_section_coordinates",
+    "angular_coordinate": "maker_b362_partial_revolution_coordinates_3d({position},{center},{time_offset},{radius_multiplier},{major_radius},{revolution_extent},{revolution_orientation},{orientation_animation_speed},{extent_oscillation},{extent_animation_speed},{cross_section_rotation},{cross_section_animation_speed},{rotation_axis},u_time).angular_coordinate",
+    "clamped_angular_coordinate": "maker_b362_partial_revolution_coordinates_3d({position},{center},{time_offset},{radius_multiplier},{major_radius},{revolution_extent},{revolution_orientation},{orientation_animation_speed},{extent_oscillation},{extent_animation_speed},{cross_section_rotation},{cross_section_animation_speed},{rotation_axis},u_time).clamped_angular_coordinate",
+    "angular_interior_mask": "maker_b362_partial_revolution_coordinates_3d({position},{center},{time_offset},{radius_multiplier},{major_radius},{revolution_extent},{revolution_orientation},{orientation_animation_speed},{extent_oscillation},{extent_animation_speed},{cross_section_rotation},{cross_section_animation_speed},{rotation_axis},u_time).angular_interior_mask",
+    "end_cap_plane_distance": "maker_b362_partial_revolution_coordinates_3d({position},{center},{time_offset},{radius_multiplier},{major_radius},{revolution_extent},{revolution_orientation},{orientation_animation_speed},{extent_oscillation},{extent_animation_speed},{cross_section_rotation},{cross_section_animation_speed},{rotation_axis},u_time).end_cap_plane_distance",
+    "closest_sweep_center": "maker_b362_partial_revolution_coordinates_3d({position},{center},{time_offset},{radius_multiplier},{major_radius},{revolution_extent},{revolution_orientation},{orientation_animation_speed},{extent_oscillation},{extent_animation_speed},{cross_section_rotation},{cross_section_animation_speed},{rotation_axis},u_time).closest_sweep_center",
+    "sweep_tangent": "maker_b362_partial_revolution_coordinates_3d({position},{center},{time_offset},{radius_multiplier},{major_radius},{revolution_extent},{revolution_orientation},{orientation_animation_speed},{extent_oscillation},{extent_animation_speed},{cross_section_rotation},{cross_section_animation_speed},{rotation_axis},u_time).sweep_tangent",
+    "normalized_sweep_position": "maker_b362_partial_revolution_coordinates_3d({position},{center},{time_offset},{radius_multiplier},{major_radius},{revolution_extent},{revolution_orientation},{orientation_animation_speed},{extent_oscillation},{extent_animation_speed},{cross_section_rotation},{cross_section_animation_speed},{rotation_axis},u_time).normalized_sweep_position"
+  }
+}

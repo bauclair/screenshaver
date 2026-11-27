@@ -1,0 +1,150 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.logarithmic_spherical_coordinates_3d",
+  "name": "Logarithmic Spherical Coordinates 3D",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Logarithmic spherical domain mapping; angles in radians.",
+  "uses": "Logarithmic Spherical Coordinates 3D",
+  "notes": "Logarithmic spherical domain mapping; angles in radians.",
+  "header_color": "#348F8B",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "default": "vec3(maker_uv,0.0)",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec3",
+      "default": "vec3(0.0)"
+    },
+    {
+      "id": "time_offset",
+      "name": "Time Offset",
+      "type": "float",
+      "default": "0.0"
+    },
+    {
+      "id": "scale_multiplier",
+      "name": "Scale Multiplier",
+      "type": "float",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "transformed_coordinates",
+      "name": "Transformed Coordinates",
+      "type": "vec3"
+    },
+    {
+      "id": "radial_distance",
+      "name": "Radial Distance",
+      "type": "float"
+    },
+    {
+      "id": "logarithmic_radius",
+      "name": "Logarithmic Radius",
+      "type": "float"
+    },
+    {
+      "id": "azimuth",
+      "name": "Azimuth",
+      "type": "float"
+    },
+    {
+      "id": "inclination",
+      "name": "Inclination",
+      "type": "float"
+    },
+    {
+      "id": "twisted_azimuth",
+      "name": "Twisted Azimuth",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "radial_scale",
+      "name": "Radial Scale",
+      "type": "float",
+      "default": 1,
+      "min": 0.01,
+      "max": 20
+    },
+    {
+      "id": "angular_scale",
+      "name": "Angular Scale",
+      "type": "float",
+      "default": 1,
+      "min": 0.1,
+      "max": 20
+    },
+    {
+      "id": "radial_animation_speed",
+      "name": "Radial Animation Speed",
+      "type": "float",
+      "default": 0.5,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "angular_animation_speed",
+      "name": "Angular Animation Speed",
+      "type": "float",
+      "default": 0,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "logarithmic_twist",
+      "name": "Logarithmic Twist",
+      "type": "float",
+      "default": 1,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "radius_floor",
+      "name": "Radius Floor",
+      "type": "float",
+      "default": 0.001,
+      "min": 0.0001,
+      "max": 1
+    },
+    {
+      "id": "azimuth_offset",
+      "name": "Azimuth Offset",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "polar_axis",
+      "name": "Polar Axis",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Z",
+        "X",
+        "Y"
+      ]
+    }
+  ],
+  "helpers": "struct MakerB354LogarithmicSphericalCoordinates3D {vec3 transformed_coordinates;float radial_distance;float logarithmic_radius;float azimuth;float inclination;float twisted_azimuth;};\nMakerB354LogarithmicSphericalCoordinates3D maker_b354_logarithmic_spherical_coordinates_3d(vec3 position,vec3 center,float time_offset,float scale_multiplier,float radial_scale,float angular_scale,float radial_animation_speed,float angular_animation_speed,float logarithmic_twist,float radius_floor,float azimuth_offset,float polar_axis,float tm){\nvec3 p=(position-center)*scale_multiplier;if(polar_axis>.5)p=polar_axis<1.5?p.yzx:p.zxy;float r=length(p),rho=log(max(r,radius_floor)),a=length(p.xy)>1e-8?atan(p.y,p.x):0.,b=r>1e-8?acos(clamp(p.z/r,-1.,1.)):0.,t=tm+time_offset,tw=a+logarithmic_twist*rho+radians(azimuth_offset)+angular_animation_speed*t;return MakerB354LogarithmicSphericalCoordinates3D(vec3(radial_scale*rho-radial_animation_speed*t,angular_scale*b,angular_scale*tw),r,rho,a,b,tw);\n}",
+  "glsl_outputs": {
+    "transformed_coordinates": "maker_b354_logarithmic_spherical_coordinates_3d({position},{center},{time_offset},{scale_multiplier},{radial_scale},{angular_scale},{radial_animation_speed},{angular_animation_speed},{logarithmic_twist},{radius_floor},{azimuth_offset},{polar_axis},u_time).transformed_coordinates",
+    "radial_distance": "maker_b354_logarithmic_spherical_coordinates_3d({position},{center},{time_offset},{scale_multiplier},{radial_scale},{angular_scale},{radial_animation_speed},{angular_animation_speed},{logarithmic_twist},{radius_floor},{azimuth_offset},{polar_axis},u_time).radial_distance",
+    "logarithmic_radius": "maker_b354_logarithmic_spherical_coordinates_3d({position},{center},{time_offset},{scale_multiplier},{radial_scale},{angular_scale},{radial_animation_speed},{angular_animation_speed},{logarithmic_twist},{radius_floor},{azimuth_offset},{polar_axis},u_time).logarithmic_radius",
+    "azimuth": "maker_b354_logarithmic_spherical_coordinates_3d({position},{center},{time_offset},{scale_multiplier},{radial_scale},{angular_scale},{radial_animation_speed},{angular_animation_speed},{logarithmic_twist},{radius_floor},{azimuth_offset},{polar_axis},u_time).azimuth",
+    "inclination": "maker_b354_logarithmic_spherical_coordinates_3d({position},{center},{time_offset},{scale_multiplier},{radial_scale},{angular_scale},{radial_animation_speed},{angular_animation_speed},{logarithmic_twist},{radius_floor},{azimuth_offset},{polar_axis},u_time).inclination",
+    "twisted_azimuth": "maker_b354_logarithmic_spherical_coordinates_3d({position},{center},{time_offset},{scale_multiplier},{radial_scale},{angular_scale},{radial_animation_speed},{angular_animation_speed},{logarithmic_twist},{radius_floor},{azimuth_offset},{polar_axis},u_time).twisted_azimuth"
+  }
+}
