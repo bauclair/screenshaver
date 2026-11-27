@@ -1,0 +1,144 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.geometry.radial_tapered_primitive_array_field_3d",
+  "name": "Radial Tapered Primitive Array Field 3D",
+  "category": "Geometry",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Bounded radial array of capped tapered primitives; conservative implicit residual, not exact SDF.",
+  "uses": "Radial Tapered Primitive Array Field 3D",
+  "notes": "Bounded radial array of capped tapered primitives; conservative implicit residual, not exact SDF.",
+  "header_color": "#557C9B",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "default": "vec3(maker_uv,0.0)",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec3",
+      "default": "vec3(0.0)"
+    },
+    {
+      "id": "time_offset",
+      "name": "Time Offset",
+      "type": "float",
+      "default": "0.0",
+      "semantic_role": "time"
+    },
+    {
+      "id": "length_multiplier",
+      "name": "Length Multiplier",
+      "type": "float",
+      "default": "1.0"
+    },
+    {
+      "id": "radius_multiplier",
+      "name": "Radius Multiplier",
+      "type": "float",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "array_distance",
+      "name": "Array Distance",
+      "type": "float",
+      "semantic_role": "distance"
+    },
+    {
+      "id": "nearest_primitive",
+      "name": "Nearest Primitive",
+      "type": "float"
+    },
+    {
+      "id": "local_coordinates",
+      "name": "Local Coordinates",
+      "type": "vec3",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "axial_fraction",
+      "name": "Axial Fraction",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "count",
+      "name": "Count",
+      "type": "float",
+      "default": 12,
+      "min": 1,
+      "max": 32
+    },
+    {
+      "id": "placement",
+      "name": "Placement",
+      "type": "float",
+      "default": 0.5,
+      "min": 0,
+      "max": 5
+    },
+    {
+      "id": "length",
+      "name": "Length",
+      "type": "float",
+      "default": 0.6,
+      "min": 0.001,
+      "max": 5
+    },
+    {
+      "id": "base_radius",
+      "name": "Base Radius",
+      "type": "float",
+      "default": 0.1,
+      "min": 0.001,
+      "max": 2
+    },
+    {
+      "id": "tip_radius",
+      "name": "Tip Radius",
+      "type": "float",
+      "default": 0.02,
+      "min": 0,
+      "max": 2
+    },
+    {
+      "id": "inclination",
+      "name": "Inclination",
+      "type": "float",
+      "default": 0,
+      "min": -90,
+      "max": 90
+    },
+    {
+      "id": "orientation",
+      "name": "Orientation",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "speed",
+      "name": "Speed",
+      "type": "float",
+      "default": 0.2,
+      "min": -5,
+      "max": 5
+    }
+  ],
+  "helpers": "struct MakerTaperArrayResult{float field;float index;vec3 local;float fraction;};\nMakerTaperArrayResult maker_radial_tapered_primitive_array_field_3d(vec3 p,vec3 c,float t,float count,float placement,float len,float rb,float rt,float inclination,float orientation,float speed,float lm,float rm){p-=c;len=max(len*clamp(lm,0.0,10.0),.001);rb*=clamp(rm,0.0,10.0);rt*=clamp(rm,0.0,10.0);int n=int(clamp(floor(count+.5),1.0,32.0));float best=1e20,idx=0.0,frac=0.0;vec3 local=vec3(0);float inc=radians(inclination);for(int i=0;i<32;i++){if(i>=n)break;float a=6.283185307*float(i)/float(n)+radians(orientation)+(u_time+t)*speed;vec3 r=vec3(cos(a),sin(a),0),axis=r*cos(inc)+vec3(0,0,sin(inc));vec3 q=p-r*placement;float z=dot(q,axis);vec3 v=q-axis*z;float f=clamp(z/len,0.0,1.0);float side=(length(v)-mix(rb,rt,f))/sqrt(1.0+pow((rt-rb)/len,2.0));float d=max(side,max(-z,z-len));if(d<best){best=d;idx=float(i);frac=f;local=vec3(dot(q,vec3(-r.y,r.x,0)),dot(q,cross(axis,vec3(-r.y,r.x,0))),z);}}return MakerTaperArrayResult(best,idx,local,frac);}",
+  "glsl_outputs": {
+    "array_distance": "maker_radial_tapered_primitive_array_field_3d({position},{center},{time_offset},{count},{placement},{length},{base_radius},{tip_radius},{inclination},{orientation},{speed},{length_multiplier},{radius_multiplier}).field",
+    "nearest_primitive": "maker_radial_tapered_primitive_array_field_3d({position},{center},{time_offset},{count},{placement},{length},{base_radius},{tip_radius},{inclination},{orientation},{speed},{length_multiplier},{radius_multiplier}).index",
+    "local_coordinates": "maker_radial_tapered_primitive_array_field_3d({position},{center},{time_offset},{count},{placement},{length},{base_radius},{tip_radius},{inclination},{orientation},{speed},{length_multiplier},{radius_multiplier}).local",
+    "axial_fraction": "maker_radial_tapered_primitive_array_field_3d({position},{center},{time_offset},{count},{placement},{length},{base_radius},{tip_radius},{inclination},{orientation},{speed},{length_multiplier},{radius_multiplier}).fraction"
+  }
+}

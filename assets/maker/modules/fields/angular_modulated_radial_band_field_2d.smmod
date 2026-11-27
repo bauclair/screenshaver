@@ -1,0 +1,151 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.angular_modulated_radial_band_field_2d",
+  "name": "Angular-Modulated Radial Band Field 2D",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Periodic angularly displaced radial bands; residual is not exact Euclidean distance. Angular frequencies rounded for seam continuity.",
+  "uses": "Angular-Modulated Radial Band Field 2D",
+  "notes": "Periodic angularly displaced radial bands; residual is not exact Euclidean distance. Angular frequencies rounded for seam continuity.",
+  "header_color": "#627FC2",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec2",
+      "default": "vec2(0.0)"
+    },
+    {
+      "id": "time_offset",
+      "name": "Time Offset",
+      "type": "float",
+      "default": "0.0",
+      "semantic_role": "time"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "band_distance",
+      "name": "Band Distance",
+      "type": "float"
+    },
+    {
+      "id": "band_mask",
+      "name": "Band Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    },
+    {
+      "id": "radial_phase",
+      "name": "Radial Phase",
+      "type": "float"
+    },
+    {
+      "id": "angular_envelope",
+      "name": "Angular Envelope",
+      "type": "float"
+    },
+    {
+      "id": "band_index",
+      "name": "Band Index",
+      "type": "float"
+    },
+    {
+      "id": "displaced_radius",
+      "name": "Displaced Radius",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "spacing",
+      "name": "Spacing",
+      "type": "float",
+      "default": 0.15,
+      "min": 0.001,
+      "max": 5
+    },
+    {
+      "id": "angular_frequency",
+      "name": "Angular Frequency",
+      "type": "float",
+      "default": 5,
+      "min": 0,
+      "max": 32
+    },
+    {
+      "id": "amplitude",
+      "name": "Amplitude",
+      "type": "float",
+      "default": 0.05,
+      "min": 0,
+      "max": 2
+    },
+    {
+      "id": "envelope_frequency",
+      "name": "Envelope Frequency",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 32
+    },
+    {
+      "id": "envelope_phase",
+      "name": "Envelope Phase",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "speed",
+      "name": "Speed",
+      "type": "float",
+      "default": 0.5,
+      "min": -5,
+      "max": 5
+    },
+    {
+      "id": "width",
+      "name": "Width",
+      "type": "float",
+      "default": 0.025,
+      "min": 0.001,
+      "max": 2
+    },
+    {
+      "id": "inner_radius",
+      "name": "Inner Radius",
+      "type": "float",
+      "default": 0,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "outer_radius",
+      "name": "Outer Radius",
+      "type": "float",
+      "default": 2,
+      "min": 0.001,
+      "max": 20
+    }
+  ],
+  "helpers": "struct MakerRadialBandResult{float field;float mask;float phase;float envelope;float index;float radius;};\nMakerRadialBandResult maker_angular_modulated_radial_band_field_2d(vec2 p,vec2 c,float t,float spacing,float freq,float amp,float ef,float ep,float speed,float width,float inner,float outer){vec2 q=p-c;float r=length(q),a=r>1e-8?atan(q.y,q.x):0.0,tm=(u_time+t)*speed;float env=.5+.5*cos(floor(ef+.5)*a+radians(ep)-tm);float dr=r+amp*env*sin(floor(freq+.5)*a-tm);float s=max(spacing,.001),phase=dr/s,idx=floor(phase+.5);float d=abs(dr-idx*s)-min(width,s*.5);d=max(d,max(inner-r,r-max(inner,outer)));return MakerRadialBandResult(d,step(d,0.0),fract(phase),env,idx,dr);}",
+  "glsl_outputs": {
+    "band_distance": "maker_angular_modulated_radial_band_field_2d({position},{center},{time_offset},{spacing},{angular_frequency},{amplitude},{envelope_frequency},{envelope_phase},{speed},{width},{inner_radius},{outer_radius}).field",
+    "band_mask": "maker_angular_modulated_radial_band_field_2d({position},{center},{time_offset},{spacing},{angular_frequency},{amplitude},{envelope_frequency},{envelope_phase},{speed},{width},{inner_radius},{outer_radius}).mask",
+    "radial_phase": "maker_angular_modulated_radial_band_field_2d({position},{center},{time_offset},{spacing},{angular_frequency},{amplitude},{envelope_frequency},{envelope_phase},{speed},{width},{inner_radius},{outer_radius}).phase",
+    "angular_envelope": "maker_angular_modulated_radial_band_field_2d({position},{center},{time_offset},{spacing},{angular_frequency},{amplitude},{envelope_frequency},{envelope_phase},{speed},{width},{inner_radius},{outer_radius}).envelope",
+    "band_index": "maker_angular_modulated_radial_band_field_2d({position},{center},{time_offset},{spacing},{angular_frequency},{amplitude},{envelope_frequency},{envelope_phase},{speed},{width},{inner_radius},{outer_radius}).index",
+    "displaced_radius": "maker_angular_modulated_radial_band_field_2d({position},{center},{time_offset},{spacing},{angular_frequency},{amplitude},{envelope_frequency},{envelope_phase},{speed},{width},{inner_radius},{outer_radius}).radius"
+  }
+}

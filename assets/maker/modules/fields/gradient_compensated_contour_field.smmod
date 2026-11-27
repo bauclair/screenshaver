@@ -1,0 +1,134 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.gradient_compensated_contour_field",
+  "name": "Gradient-Compensated Contour Field",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "First-order spatial distance approximation, not an exact SDF.",
+  "uses": "Gradient-Compensated Contour Field",
+  "notes": "First-order spatial distance approximation, not an exact SDF.",
+  "header_color": "#527D94",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "field_value",
+      "name": "Field Value",
+      "type": "float",
+      "default": "0.0"
+    },
+    {
+      "id": "gradient_magnitude",
+      "name": "Gradient Magnitude",
+      "type": "float",
+      "default": "1.0"
+    },
+    {
+      "id": "width_multiplier",
+      "name": "Width Multiplier",
+      "type": "float",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "contour_mask",
+      "name": "Contour Mask",
+      "type": "float"
+    },
+    {
+      "id": "spatial_distance",
+      "name": "Spatial Distance",
+      "type": "float"
+    },
+    {
+      "id": "contour_index",
+      "name": "Contour Index",
+      "type": "float"
+    },
+    {
+      "id": "local_phase",
+      "name": "Local Phase",
+      "type": "float"
+    },
+    {
+      "id": "glow",
+      "name": "Glow",
+      "type": "float"
+    },
+    {
+      "id": "compensation",
+      "name": "Compensation",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "interval",
+      "name": "Interval",
+      "type": "float",
+      "default": 0.25,
+      "min": 0.0001,
+      "max": 100
+    },
+    {
+      "id": "phase",
+      "name": "Phase",
+      "type": "float",
+      "default": 0,
+      "min": -100,
+      "max": 100
+    },
+    {
+      "id": "line_width",
+      "name": "Line Width",
+      "type": "float",
+      "default": 0.02,
+      "min": 0.0001,
+      "max": 10
+    },
+    {
+      "id": "edge_softness",
+      "name": "Edge Softness",
+      "type": "float",
+      "default": 0.005,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "gradient_floor",
+      "name": "Gradient Floor",
+      "type": "float",
+      "default": 0.001,
+      "min": 0.0001,
+      "max": 10
+    },
+    {
+      "id": "maximum_compensation",
+      "name": "Maximum Compensation",
+      "type": "float",
+      "default": 100,
+      "min": 1,
+      "max": 10000
+    },
+    {
+      "id": "response_mode",
+      "name": "Response Mode",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Soft",
+        "Hard"
+      ]
+    }
+  ],
+  "helpers": "struct MakerB388GradientCompensatedContourField{float contour_mask;float spatial_distance;float contour_index;float local_phase;float glow;float compensation;};\nMakerB388GradientCompensatedContourField maker_b388_gradient_compensated_contour_field(float field_value,float gradient_magnitude,float width_multiplier,float interval,float phase,float line_width,float edge_softness,float gradient_floor,float maximum_compensation,float response_mode){float z=(field_value+phase)/interval,i=floor(z+.5),k=min(maximum_compensation,1.0/max(abs(gradient_magnitude),gradient_floor)),d=abs(z-i)*interval*k,w=max(line_width*width_multiplier,0.0001);float m=response_mode>.5?step(d,w):1.0-smoothstep(w,w+max(edge_softness,1e-6),d);return MakerB388GradientCompensatedContourField(m,d,i,fract(z),exp(-d/w),k);}",
+  "glsl_outputs": {
+    "contour_mask": "maker_b388_gradient_compensated_contour_field({field_value},{gradient_magnitude},{width_multiplier},{interval},{phase},{line_width},{edge_softness},{gradient_floor},{maximum_compensation},{response_mode}).contour_mask",
+    "spatial_distance": "maker_b388_gradient_compensated_contour_field({field_value},{gradient_magnitude},{width_multiplier},{interval},{phase},{line_width},{edge_softness},{gradient_floor},{maximum_compensation},{response_mode}).spatial_distance",
+    "contour_index": "maker_b388_gradient_compensated_contour_field({field_value},{gradient_magnitude},{width_multiplier},{interval},{phase},{line_width},{edge_softness},{gradient_floor},{maximum_compensation},{response_mode}).contour_index",
+    "local_phase": "maker_b388_gradient_compensated_contour_field({field_value},{gradient_magnitude},{width_multiplier},{interval},{phase},{line_width},{edge_softness},{gradient_floor},{maximum_compensation},{response_mode}).local_phase",
+    "glow": "maker_b388_gradient_compensated_contour_field({field_value},{gradient_magnitude},{width_multiplier},{interval},{phase},{line_width},{edge_softness},{gradient_floor},{maximum_compensation},{response_mode}).glow",
+    "compensation": "maker_b388_gradient_compensated_contour_field({field_value},{gradient_magnitude},{width_multiplier},{interval},{phase},{line_width},{edge_softness},{gradient_floor},{maximum_compensation},{response_mode}).compensation"
+  }
+}

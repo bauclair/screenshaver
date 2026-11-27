@@ -1,0 +1,101 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.hyperbolic_model_conversion_3d",
+  "name": "Hyperbolic Model Conversion 3D",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Coordinates use curvature-radius units; hyperboloid time is reconstructed on the positive sheet. Ball inputs outside margin are clamped or replaced.",
+  "uses": "Hyperbolic Model Conversion 3D",
+  "notes": "Coordinates use curvature-radius units; hyperboloid time is reconstructed on the positive sheet. Ball inputs outside margin are clamped or replaced.",
+  "header_color": "#527D94",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "default": "vec3(maker_uv,0.0)"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "klein",
+      "name": "Klein",
+      "type": "vec3"
+    },
+    {
+      "id": "poincare",
+      "name": "Poincare",
+      "type": "vec3"
+    },
+    {
+      "id": "hyperboloid_spatial",
+      "name": "Hyperboloid Spatial",
+      "type": "vec3"
+    },
+    {
+      "id": "hyperboloid_time",
+      "name": "Hyperboloid Time",
+      "type": "float"
+    },
+    {
+      "id": "origin_distance",
+      "name": "Origin Distance",
+      "type": "float"
+    },
+    {
+      "id": "validity",
+      "name": "Validity",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "input_model",
+      "name": "Input Model",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Klein",
+        "Poincare",
+        "Hyperboloid Spatial"
+      ]
+    },
+    {
+      "id": "curvature_radius",
+      "name": "Curvature Radius",
+      "type": "float",
+      "default": 1,
+      "min": 0.001,
+      "max": 100
+    },
+    {
+      "id": "boundary_margin",
+      "name": "Boundary Margin",
+      "type": "float",
+      "default": 0.001,
+      "min": 0.0001,
+      "max": 0.1
+    },
+    {
+      "id": "invalid_handling",
+      "name": "Invalid Handling",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Clamp",
+        "Return Origin"
+      ]
+    }
+  ],
+  "helpers": "struct MakerB388HyperbolicModelConversion3D{vec3 klein;vec3 poincare;vec3 hyperboloid_spatial;float hyperboloid_time;float origin_distance;float validity;};\nMakerB388HyperbolicModelConversion3D maker_b388_hyperbolic_model_conversion_3d(vec3 position,float input_model,float curvature_radius,float boundary_margin,float invalid_handling){float R=max(curvature_radius,.001),lim=1.0-boundary_margin;vec3 x=clamp(position/R,-1e4,1e4);float r=length(x),valid=1.0;vec3 h;float w;if(input_model<1.5){valid=step(r,lim);x*=min(1.0,lim/max(r,1e-8));float q=dot(x,x);if(input_model<.5){w=inversesqrt(max(1.0-q,1e-8));h=x*w;}else{w=(1.0+q)/(1.0-q);h=2.0*x/(1.0-q);}}else{h=x;w=sqrt(1.0+dot(h,h));}if(valid<.5&&invalid_handling>.5){h=vec3(0.0);w=1.0;}return MakerB388HyperbolicModelConversion3D(R*h/w,R*h/(w+1.0),R*h,R*w,R*asinh(length(h)),valid);}",
+  "glsl_outputs": {
+    "klein": "maker_b388_hyperbolic_model_conversion_3d({position},{input_model},{curvature_radius},{boundary_margin},{invalid_handling}).klein",
+    "poincare": "maker_b388_hyperbolic_model_conversion_3d({position},{input_model},{curvature_radius},{boundary_margin},{invalid_handling}).poincare",
+    "hyperboloid_spatial": "maker_b388_hyperbolic_model_conversion_3d({position},{input_model},{curvature_radius},{boundary_margin},{invalid_handling}).hyperboloid_spatial",
+    "hyperboloid_time": "maker_b388_hyperbolic_model_conversion_3d({position},{input_model},{curvature_radius},{boundary_margin},{invalid_handling}).hyperboloid_time",
+    "origin_distance": "maker_b388_hyperbolic_model_conversion_3d({position},{input_model},{curvature_radius},{boundary_margin},{invalid_handling}).origin_distance",
+    "validity": "maker_b388_hyperbolic_model_conversion_3d({position},{input_model},{curvature_radius},{boundary_margin},{invalid_handling}).validity"
+  }
+}

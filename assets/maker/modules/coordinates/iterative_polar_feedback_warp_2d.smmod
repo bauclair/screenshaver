@@ -1,0 +1,142 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.iterative_polar_feedback_warp_2d",
+  "name": "Iterative Polar Feedback Warp 2D",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Bounded polar feedback; minimum includes initial radius, mean uses updated states.",
+  "uses": "Iterative Polar Feedback Warp 2D",
+  "notes": "Bounded polar feedback; minimum includes initial radius, mean uses updated states.",
+  "header_color": "#527D94",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv"
+    },
+    {
+      "id": "time_offset",
+      "name": "Time Offset",
+      "type": "float",
+      "default": "0.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "warped_coordinates",
+      "name": "Warped Coordinates",
+      "type": "vec2"
+    },
+    {
+      "id": "displacement",
+      "name": "Displacement",
+      "type": "vec2"
+    },
+    {
+      "id": "final_radius",
+      "name": "Final Radius",
+      "type": "float"
+    },
+    {
+      "id": "final_angle",
+      "name": "Final Angle",
+      "type": "float"
+    },
+    {
+      "id": "minimum_radius",
+      "name": "Minimum Radius",
+      "type": "float"
+    },
+    {
+      "id": "mean_radius",
+      "name": "Mean Radius",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "iterations",
+      "name": "Iterations",
+      "type": "float",
+      "default": 8,
+      "min": 1,
+      "max": 32
+    },
+    {
+      "id": "strength",
+      "name": "Strength",
+      "type": "float",
+      "default": 0.1,
+      "min": 0,
+      "max": 2
+    },
+    {
+      "id": "frequency_x",
+      "name": "Frequency X",
+      "type": "float",
+      "default": 3,
+      "min": -32,
+      "max": 32
+    },
+    {
+      "id": "frequency_y",
+      "name": "Frequency Y",
+      "type": "float",
+      "default": 3,
+      "min": -32,
+      "max": 32
+    },
+    {
+      "id": "frequency_progression",
+      "name": "Frequency Progression",
+      "type": "float",
+      "default": 0,
+      "min": -4,
+      "max": 4
+    },
+    {
+      "id": "radial_influence",
+      "name": "Radial Influence",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 2
+    },
+    {
+      "id": "angular_influence",
+      "name": "Angular Influence",
+      "type": "float",
+      "default": 1,
+      "min": -4,
+      "max": 4
+    },
+    {
+      "id": "speed",
+      "name": "Speed",
+      "type": "float",
+      "default": 0.5,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "maximum_displacement",
+      "name": "Maximum Displacement",
+      "type": "float",
+      "default": 2,
+      "min": 0.001,
+      "max": 100
+    }
+  ],
+  "helpers": "struct MakerB388IterativePolarFeedbackWarp2D{vec2 warped_coordinates;vec2 displacement;float final_radius;float final_angle;float minimum_radius;float mean_radius;};\nMakerB388IterativePolarFeedbackWarp2D maker_b388_iterative_polar_feedback_warp_2d(vec2 position,float time_offset,float iterations,float strength,float frequency_x,float frequency_y,float frequency_progression,float radial_influence,float angular_influence,float speed,float maximum_displacement){vec2 p=clamp(position,-1e5,1e5),q=p;float mn=length(q),sum=0.0;int n=int(clamp(round(iterations),1.0,32.0));for(int i=0;i<32;i++){if(i>=n)break;float r=length(q),a=r>1e-8?atan(q.y,q.x):0.0;float k=float(i)*frequency_progression;vec2 delta=strength*mix(1.0,min(r,100.0),min(radial_influence,1.0))*vec2(sin(q.y*(frequency_x+k)+a*angular_influence+(u_time+time_offset)*speed),cos(q.x*(frequency_y+k)-a*angular_influence+(u_time+time_offset)*speed));q+=delta;vec2 v=q-p;q=p+v*min(1.0,maximum_displacement/max(length(v),1e-8));r=length(q);mn=min(mn,r);sum+=r;}float r=length(q);return MakerB388IterativePolarFeedbackWarp2D(q,q-p,r,r>1e-8?atan(q.y,q.x):0.0,mn,sum/float(n));}",
+  "glsl_outputs": {
+    "warped_coordinates": "maker_b388_iterative_polar_feedback_warp_2d({position},{time_offset},{iterations},{strength},{frequency_x},{frequency_y},{frequency_progression},{radial_influence},{angular_influence},{speed},{maximum_displacement}).warped_coordinates",
+    "displacement": "maker_b388_iterative_polar_feedback_warp_2d({position},{time_offset},{iterations},{strength},{frequency_x},{frequency_y},{frequency_progression},{radial_influence},{angular_influence},{speed},{maximum_displacement}).displacement",
+    "final_radius": "maker_b388_iterative_polar_feedback_warp_2d({position},{time_offset},{iterations},{strength},{frequency_x},{frequency_y},{frequency_progression},{radial_influence},{angular_influence},{speed},{maximum_displacement}).final_radius",
+    "final_angle": "maker_b388_iterative_polar_feedback_warp_2d({position},{time_offset},{iterations},{strength},{frequency_x},{frequency_y},{frequency_progression},{radial_influence},{angular_influence},{speed},{maximum_displacement}).final_angle",
+    "minimum_radius": "maker_b388_iterative_polar_feedback_warp_2d({position},{time_offset},{iterations},{strength},{frequency_x},{frequency_y},{frequency_progression},{radial_influence},{angular_influence},{speed},{maximum_displacement}).minimum_radius",
+    "mean_radius": "maker_b388_iterative_polar_feedback_warp_2d({position},{time_offset},{iterations},{strength},{frequency_x},{frequency_y},{frequency_progression},{radial_influence},{angular_influence},{speed},{maximum_displacement}).mean_radius"
+  }
+}

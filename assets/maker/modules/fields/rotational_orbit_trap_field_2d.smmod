@@ -1,0 +1,168 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.rotational_orbit_trap_field_2d",
+  "name": "Rotational Orbit Trap Field 2D",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Minimum and mean unsigned trap distance over bounded rotational folding iterations.",
+  "uses": "Rotational Orbit Trap Field 2D",
+  "notes": "Minimum and mean unsigned trap distance over bounded rotational folding iterations.",
+  "header_color": "#627FC2",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec2",
+      "default": "vec2(0.0)"
+    },
+    {
+      "id": "time_offset",
+      "name": "Time Offset",
+      "type": "float",
+      "default": "0.0",
+      "semantic_role": "time"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "minimum_trap_distance",
+      "name": "Minimum Trap Distance",
+      "type": "float",
+      "semantic_role": "distance"
+    },
+    {
+      "id": "mean_trap_distance",
+      "name": "Mean Trap Distance",
+      "type": "float"
+    },
+    {
+      "id": "closest_iteration",
+      "name": "Closest Iteration",
+      "type": "float"
+    },
+    {
+      "id": "final_coordinates",
+      "name": "Final Coordinates",
+      "type": "vec2",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "normalized_response",
+      "name": "Normalized Response",
+      "type": "float",
+      "semantic_role": "mask"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "iterations",
+      "name": "Iterations",
+      "type": "float",
+      "default": 12,
+      "min": 1,
+      "max": 32
+    },
+    {
+      "id": "rotation",
+      "name": "Rotation",
+      "type": "float",
+      "default": 30,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "rotation_progression",
+      "name": "Rotation Progression",
+      "type": "float",
+      "default": 0,
+      "min": -180,
+      "max": 180
+    },
+    {
+      "id": "speed",
+      "name": "Speed",
+      "type": "float",
+      "default": 0.2,
+      "min": -5,
+      "max": 5
+    },
+    {
+      "id": "scale",
+      "name": "Scale",
+      "type": "float",
+      "default": 1.1,
+      "min": 0.1,
+      "max": 2
+    },
+    {
+      "id": "fold_x",
+      "name": "Fold X",
+      "type": "float",
+      "default": 0.3,
+      "min": -2,
+      "max": 2
+    },
+    {
+      "id": "fold_y",
+      "name": "Fold Y",
+      "type": "float",
+      "default": 0.3,
+      "min": -2,
+      "max": 2
+    },
+    {
+      "id": "trap",
+      "name": "Trap",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Circle",
+        "Line",
+        "Cross",
+        "Rectangle",
+        "Point"
+      ]
+    },
+    {
+      "id": "radius",
+      "name": "Radius",
+      "type": "float",
+      "default": 0.5,
+      "min": 0.001,
+      "max": 5
+    },
+    {
+      "id": "trap_x",
+      "name": "Trap X",
+      "type": "float",
+      "default": 0,
+      "min": -5,
+      "max": 5
+    },
+    {
+      "id": "trap_y",
+      "name": "Trap Y",
+      "type": "float",
+      "default": 0,
+      "min": -5,
+      "max": 5
+    }
+  ],
+  "helpers": "struct MakerOrbitTrapResult{float nearest;float mean;float index;vec2 final_position;float response;};\nMakerOrbitTrapResult maker_rotational_orbit_trap_field_2d(vec2 p,vec2 c,float t,float count,float angle,float prog,float speed,float scale,float fx,float fy,float trap,float radius,float tx,float ty){vec2 q=p-c;float best=1e20,sum=0.0,idx=0.0;int n=int(clamp(floor(count+.5),1.0,32.0));for(int i=0;i<32;i++){if(i>=n)break;float a=radians(angle+prog*float(i))+(u_time+t)*speed;float co=cos(a),si=sin(a);q=abs(vec2(co*q.x-si*q.y,si*q.x+co*q.y))*scale-vec2(fx,fy);vec2 v=q-vec2(tx,ty);float d=length(v);if(trap<.5)d=abs(d-radius);else if(trap<1.5)d=abs(v.y);else if(trap<2.5)d=min(abs(v.x),abs(v.y));else if(trap<3.5){vec2 b=abs(v)-vec2(radius);d=abs(length(max(b,0.0))+min(max(b.x,b.y),0.0));}if(d<best){best=d;idx=float(i);}sum+=d;}return MakerOrbitTrapResult(best,sum/float(n),idx,q+c,exp(-best/max(radius,.001)));}",
+  "glsl_outputs": {
+    "minimum_trap_distance": "maker_rotational_orbit_trap_field_2d({position},{center},{time_offset},{iterations},{rotation},{rotation_progression},{speed},{scale},{fold_x},{fold_y},{trap},{radius},{trap_x},{trap_y}).nearest",
+    "mean_trap_distance": "maker_rotational_orbit_trap_field_2d({position},{center},{time_offset},{iterations},{rotation},{rotation_progression},{speed},{scale},{fold_x},{fold_y},{trap},{radius},{trap_x},{trap_y}).mean",
+    "closest_iteration": "maker_rotational_orbit_trap_field_2d({position},{center},{time_offset},{iterations},{rotation},{rotation_progression},{speed},{scale},{fold_x},{fold_y},{trap},{radius},{trap_x},{trap_y}).index",
+    "final_coordinates": "maker_rotational_orbit_trap_field_2d({position},{center},{time_offset},{iterations},{rotation},{rotation_progression},{speed},{scale},{fold_x},{fold_y},{trap},{radius},{trap_x},{trap_y}).final_position",
+    "normalized_response": "maker_rotational_orbit_trap_field_2d({position},{center},{time_offset},{iterations},{rotation},{rotation_progression},{speed},{scale},{fold_x},{fold_y},{trap},{radius},{trap_x},{trap_y}).response"
+  }
+}

@@ -1,0 +1,210 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.geometry.projected_hypercube_wireframe_field_2d",
+  "name": "Projected Hypercube Wireframe Field 2D",
+  "category": "Geometry",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Regular 16-vertex 32-edge hypercube; six orthogonal plane rotations, perspective 4D to 3D followed by orthographic 2D projection. Distances are screen-plane centerline distances.",
+  "uses": "Projected Hypercube Wireframe Field 2D",
+  "notes": "Regular 16-vertex 32-edge hypercube; six orthogonal plane rotations, perspective 4D to 3D followed by orthographic 2D projection. Distances are screen-plane centerline distances.",
+  "header_color": "#557C9B",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec2",
+      "default": "vec2(0.0)"
+    },
+    {
+      "id": "time_offset",
+      "name": "Time Offset",
+      "type": "float",
+      "default": "0.0",
+      "semantic_role": "time"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "edge_distance",
+      "name": "Edge Distance",
+      "type": "float",
+      "semantic_role": "distance"
+    },
+    {
+      "id": "vertex_distance",
+      "name": "Vertex Distance",
+      "type": "float",
+      "semantic_role": "distance"
+    },
+    {
+      "id": "edge_mask",
+      "name": "Edge Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    },
+    {
+      "id": "vertex_mask",
+      "name": "Vertex Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    },
+    {
+      "id": "nearest_edge_depth",
+      "name": "Nearest Edge Depth",
+      "type": "float"
+    },
+    {
+      "id": "nearest_edge_index",
+      "name": "Nearest Edge Index",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "size",
+      "name": "Size",
+      "type": "float",
+      "default": 0.5,
+      "min": 0.01,
+      "max": 3
+    },
+    {
+      "id": "angle_xy",
+      "name": "Angle Xy",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "angle_xz",
+      "name": "Angle Xz",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "angle_xw",
+      "name": "Angle Xw",
+      "type": "float",
+      "default": 25,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "angle_yz",
+      "name": "Angle Yz",
+      "type": "float",
+      "default": 25,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "angle_yw",
+      "name": "Angle Yw",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "angle_zw",
+      "name": "Angle Zw",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "speed_xy",
+      "name": "Speed Xy",
+      "type": "float",
+      "default": 0,
+      "min": -5,
+      "max": 5
+    },
+    {
+      "id": "speed_xz",
+      "name": "Speed Xz",
+      "type": "float",
+      "default": 0,
+      "min": -5,
+      "max": 5
+    },
+    {
+      "id": "speed_xw",
+      "name": "Speed Xw",
+      "type": "float",
+      "default": 0.2,
+      "min": -5,
+      "max": 5
+    },
+    {
+      "id": "speed_yz",
+      "name": "Speed Yz",
+      "type": "float",
+      "default": 0,
+      "min": -5,
+      "max": 5
+    },
+    {
+      "id": "speed_yw",
+      "name": "Speed Yw",
+      "type": "float",
+      "default": 0,
+      "min": -5,
+      "max": 5
+    },
+    {
+      "id": "speed_zw",
+      "name": "Speed Zw",
+      "type": "float",
+      "default": 0,
+      "min": -5,
+      "max": 5
+    },
+    {
+      "id": "projection_distance",
+      "name": "Projection Distance",
+      "type": "float",
+      "default": 3,
+      "min": 2.1,
+      "max": 12
+    },
+    {
+      "id": "line_width",
+      "name": "Line Width",
+      "type": "float",
+      "default": 0.015,
+      "min": 0.001,
+      "max": 0.5
+    },
+    {
+      "id": "vertex_radius",
+      "name": "Vertex Radius",
+      "type": "float",
+      "default": 0.025,
+      "min": 0.001,
+      "max": 0.5
+    }
+  ],
+  "helpers": "vec2 maker_hyper_plane(vec2 v,float a){float c=cos(a),s=sin(a);return vec2(c*v.x-s*v.y,s*v.x+c*v.y);}\nstruct MakerHyperResult {float edge;float vertex;float depth;float index;float em;float vm;};\nMakerHyperResult maker_projected_hypercube_wireframe_field_2d(vec2 p,vec2 center,float t,float size,float a0,float a1,float a2,float a3,float a4,float a5,float s0,float s1,float s2,float s3,float s4,float s5,float proj,float width,float vr){\nvec3 v[16];float tm=u_time+t;float ed=1e20,vd=1e20,depth=0.0,idx=0.0; p-=center;\nfor(int i=0;i<16;i++){vec4 q=vec4(float(i%2),float((i/2)%2),float((i/4)%2),float((i/8)%2))*2.0-1.0;\nq.xy=maker_hyper_plane(q.xy,radians(a0)+tm*s0);q.xz=maker_hyper_plane(q.xz,radians(a1)+tm*s1);q.xw=maker_hyper_plane(q.xw,radians(a2)+tm*s2);q.yz=maker_hyper_plane(q.yz,radians(a3)+tm*s3);q.yw=maker_hyper_plane(q.yw,radians(a4)+tm*s4);q.zw=maker_hyper_plane(q.zw,radians(a5)+tm*s5);\nfloat d=max(proj,2.1);vec3 r=q.xyz*d/max(d-q.w,.1);v[i]=vec3(r.xy*size,r.z*size);vd=min(vd,length(p-v[i].xy));}\nint k=0;for(int axis=0;axis<4;axis++){int stride=axis==0?1:axis==1?2:axis==2?4:8;for(int i=0;i<16;i++){if((i/stride)%2!=0)continue;vec3 a=v[i],b=v[i+stride];vec2 ab=b.xy-a.xy;float f=clamp(dot(p-a.xy,ab)/max(dot(ab,ab),1e-10),0.0,1.0);float d=length(p-mix(a.xy,b.xy,f));if(d<ed){ed=d;depth=mix(a.z,b.z,f);idx=float(k);}k++;}}\nreturn MakerHyperResult(ed,vd,depth,idx,1.0-smoothstep(width*.8,width,ed),1.0-smoothstep(vr*.8,vr,vd));}",
+  "glsl_outputs": {
+    "edge_distance": "maker_projected_hypercube_wireframe_field_2d({position},{center},{time_offset},{size},{angle_xy},{angle_xz},{angle_xw},{angle_yz},{angle_yw},{angle_zw},{speed_xy},{speed_xz},{speed_xw},{speed_yz},{speed_yw},{speed_zw},{projection_distance},{line_width},{vertex_radius}).edge",
+    "vertex_distance": "maker_projected_hypercube_wireframe_field_2d({position},{center},{time_offset},{size},{angle_xy},{angle_xz},{angle_xw},{angle_yz},{angle_yw},{angle_zw},{speed_xy},{speed_xz},{speed_xw},{speed_yz},{speed_yw},{speed_zw},{projection_distance},{line_width},{vertex_radius}).vertex",
+    "edge_mask": "maker_projected_hypercube_wireframe_field_2d({position},{center},{time_offset},{size},{angle_xy},{angle_xz},{angle_xw},{angle_yz},{angle_yw},{angle_zw},{speed_xy},{speed_xz},{speed_xw},{speed_yz},{speed_yw},{speed_zw},{projection_distance},{line_width},{vertex_radius}).em",
+    "vertex_mask": "maker_projected_hypercube_wireframe_field_2d({position},{center},{time_offset},{size},{angle_xy},{angle_xz},{angle_xw},{angle_yz},{angle_yw},{angle_zw},{speed_xy},{speed_xz},{speed_xw},{speed_yz},{speed_yw},{speed_zw},{projection_distance},{line_width},{vertex_radius}).vm",
+    "nearest_edge_depth": "maker_projected_hypercube_wireframe_field_2d({position},{center},{time_offset},{size},{angle_xy},{angle_xz},{angle_xw},{angle_yz},{angle_yw},{angle_zw},{speed_xy},{speed_xz},{speed_xw},{speed_yz},{speed_yw},{speed_zw},{projection_distance},{line_width},{vertex_radius}).depth",
+    "nearest_edge_index": "maker_projected_hypercube_wireframe_field_2d({position},{center},{time_offset},{size},{angle_xy},{angle_xz},{angle_xw},{angle_yz},{angle_yw},{angle_zw},{speed_xy},{speed_xz},{speed_xw},{speed_yz},{speed_yw},{speed_zw},{projection_distance},{line_width},{vertex_radius}).index"
+  }
+}

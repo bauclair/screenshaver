@@ -1,0 +1,79 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.noise.simplex_gradient_noise_2d",
+  "name": "Simplex Gradient Noise 2D",
+  "category": "Noise",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Triangular lattice gradient noise with analytic derivative; normalized output clips amplitude-scaled noise.",
+  "uses": "Simplex Gradient Noise 2D",
+  "notes": "Triangular lattice gradient noise with analytic derivative; normalized output clips amplitude-scaled noise.",
+  "header_color": "#627FC2",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "position2d"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "signed_noise",
+      "name": "Signed Noise",
+      "type": "float"
+    },
+    {
+      "id": "normalized_noise",
+      "name": "Normalized Noise",
+      "type": "float"
+    },
+    {
+      "id": "gradient",
+      "name": "Gradient",
+      "type": "vec2"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "scale",
+      "name": "Scale",
+      "type": "float",
+      "default": 4,
+      "min": 0.001,
+      "max": 256
+    },
+    {
+      "id": "seed",
+      "name": "Seed",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 65535
+    },
+    {
+      "id": "amplitude",
+      "name": "Amplitude",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "orientation",
+      "name": "Orientation",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    }
+  ],
+  "helpers": "vec2 maker_sg2_grad(vec2 c,float seed,float angle){float h=fract(sin(dot(c,vec2(127.1,311.7))+seed*0.071)*43758.5453);float a=6.283185307*h+radians(angle);return vec2(cos(a),sin(a));}\nvec3 maker_sg2(vec2 p,float scale,float seed,float amp,float angle){vec2 x=clamp(p*scale,vec2(-1e5),vec2(1e5));vec2 i=floor(x+(x.x+x.y)*0.3660254038);vec2 d=x-i+(i.x+i.y)*0.2113248654;vec2 j=d.x>d.y?vec2(1,0):vec2(0,1);vec3 sum=vec3(0);for(int k=0;k<3;k++){vec2 o=k==0?vec2(0):k==1?j:vec2(1);vec2 r=d-o+(o.x+o.y)*0.2113248654;vec2 g=maker_sg2_grad(i+o,seed,angle);float t=max(0.5-dot(r,r),0.0),v=dot(g,r);sum+=vec3(t*t*t*t*v,t*t*t*t*g-8.0*t*t*t*v*r);}return 70.0*amp*vec3(sum.x,sum.yz*scale);}",
+  "glsl_outputs": {
+    "signed_noise": "maker_sg2({position},{scale},{seed},{amplitude},{orientation}).x",
+    "normalized_noise": "clamp(0.5+0.5*maker_sg2({position},{scale},{seed},{amplitude},{orientation}).x,0.0,1.0)",
+    "gradient": "maker_sg2({position},{scale},{seed},{amplitude},{orientation}).yz"
+  }
+}

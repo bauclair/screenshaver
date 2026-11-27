@@ -1,0 +1,124 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.bipolar_distance_coordinates_2d",
+  "name": "Bipolar Distance Coordinates 2D",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Two-focus distances with optional signed offsets and scale.",
+  "uses": "Bipolar Distance Coordinates 2D",
+  "notes": "Two-focus distances with optional signed offsets and scale.",
+  "header_color": "#627FC2",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec2",
+      "default": "vec2(0.0)"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "distance_a",
+      "name": "Distance A",
+      "type": "float"
+    },
+    {
+      "id": "distance_b",
+      "name": "Distance B",
+      "type": "float"
+    },
+    {
+      "id": "distance_product",
+      "name": "Distance Product",
+      "type": "float"
+    },
+    {
+      "id": "distance_sum",
+      "name": "Distance Sum",
+      "type": "float"
+    },
+    {
+      "id": "distance_difference",
+      "name": "Distance Difference",
+      "type": "float"
+    },
+    {
+      "id": "transformed_coordinates",
+      "name": "Transformed Coordinates",
+      "type": "vec2",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "bipolar_angle",
+      "name": "Bipolar Angle",
+      "type": "float"
+    },
+    {
+      "id": "bipolar_logarithm",
+      "name": "Bipolar Logarithm",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "separation",
+      "name": "Separation",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 20
+    },
+    {
+      "id": "orientation",
+      "name": "Orientation",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "offset_a",
+      "name": "Offset A",
+      "type": "float",
+      "default": 0,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "offset_b",
+      "name": "Offset B",
+      "type": "float",
+      "default": 0,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "scale",
+      "name": "Scale",
+      "type": "float",
+      "default": 1,
+      "min": 0.001,
+      "max": 100
+    }
+  ],
+  "helpers": "vec2 maker_bdc(vec2 p,vec2 c,float sep,float angle,float oa,float ob,float s){float a=radians(angle);vec2 f=.5*sep*vec2(cos(a),sin(a));return s*(vec2(length(p-c-f),length(p-c+f))+vec2(oa,ob));}\nvec2 maker_b392_bipolar(vec2 p,vec2 c,float sep,float angle){vec2 f=.5*sep*vec2(cos(radians(angle)),sin(radians(angle))),a=p-c-f,b=p-c+f;float la=length(a),lb=length(b);return vec2(la*lb>1e-12?atan(a.x*b.y-a.y*b.x,dot(a,b)):0.,log(max(lb,1e-6)/max(la,1e-6)));}",
+  "glsl_outputs": {
+    "distance_a": "maker_bdc({position},{center},{separation},{orientation},{offset_a},{offset_b},{scale}).x",
+    "distance_b": "maker_bdc({position},{center},{separation},{orientation},{offset_a},{offset_b},{scale}).y",
+    "distance_product": "(maker_bdc({position},{center},{separation},{orientation},{offset_a},{offset_b},{scale}).x*maker_bdc({position},{center},{separation},{orientation},{offset_a},{offset_b},{scale}).y)",
+    "distance_sum": "(maker_bdc({position},{center},{separation},{orientation},{offset_a},{offset_b},{scale}).x+maker_bdc({position},{center},{separation},{orientation},{offset_a},{offset_b},{scale}).y)",
+    "distance_difference": "(maker_bdc({position},{center},{separation},{orientation},{offset_a},{offset_b},{scale}).x-maker_bdc({position},{center},{separation},{orientation},{offset_a},{offset_b},{scale}).y)",
+    "transformed_coordinates": "maker_bdc({position},{center},{separation},{orientation},{offset_a},{offset_b},{scale})",
+    "bipolar_angle": "maker_b392_bipolar({position},{center},{separation},{orientation}).x",
+    "bipolar_logarithm": "maker_b392_bipolar({position},{center},{separation},{orientation}).y"
+  }
+}

@@ -1,0 +1,146 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.geometry.orthogonal_beam_lattice_field_3d",
+  "name": "Orthogonal Beam Lattice Field 3D",
+  "category": "Geometry",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Union of periodic infinite orthogonal beams; union residual is conservative outside, not exact inside overlaps.",
+  "uses": "Orthogonal Beam Lattice Field 3D",
+  "notes": "Union of periodic infinite orthogonal beams; union residual is conservative outside, not exact inside overlaps.",
+  "header_color": "#557C9B",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "default": "vec3(maker_uv,0.0)",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec3",
+      "default": "vec3(0.0)"
+    },
+    {
+      "id": "time_offset",
+      "name": "Time Offset",
+      "type": "float",
+      "default": "0.0",
+      "semantic_role": "time"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "lattice_distance",
+      "name": "Lattice Distance",
+      "type": "float",
+      "semantic_role": "distance"
+    },
+    {
+      "id": "x_beam",
+      "name": "X Beam",
+      "type": "float"
+    },
+    {
+      "id": "y_beam",
+      "name": "Y Beam",
+      "type": "float"
+    },
+    {
+      "id": "z_beam",
+      "name": "Z Beam",
+      "type": "float"
+    },
+    {
+      "id": "nearest_orientation",
+      "name": "Nearest Orientation",
+      "type": "float"
+    },
+    {
+      "id": "cell_local",
+      "name": "Cell Local",
+      "type": "vec3",
+      "semantic_role": "position3d"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "spacing_x",
+      "name": "Spacing X",
+      "type": "float",
+      "default": 1,
+      "min": 0.01,
+      "max": 10
+    },
+    {
+      "id": "spacing_y",
+      "name": "Spacing Y",
+      "type": "float",
+      "default": 1,
+      "min": 0.01,
+      "max": 10
+    },
+    {
+      "id": "spacing_z",
+      "name": "Spacing Z",
+      "type": "float",
+      "default": 1,
+      "min": 0.01,
+      "max": 10
+    },
+    {
+      "id": "thickness",
+      "name": "Thickness",
+      "type": "float",
+      "default": 0.08,
+      "min": 0.001,
+      "max": 2
+    },
+    {
+      "id": "axes",
+      "name": "Axes",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "XYZ",
+        "X",
+        "Y",
+        "Z",
+        "XY",
+        "XZ",
+        "YZ"
+      ]
+    },
+    {
+      "id": "cross_section",
+      "name": "Cross Section",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Square",
+        "Round",
+        "Rounded Square"
+      ]
+    },
+    {
+      "id": "rounding",
+      "name": "Rounding",
+      "type": "float",
+      "default": 0.02,
+      "min": 0,
+      "max": 1
+    }
+  ],
+  "helpers": "float maker_beam_cross(vec2 p,float w,float shape,float r){if(shape>.5&&shape<1.5)return length(p)-w; r=shape>1.5?min(r,w):0.0;vec2 q=abs(p)-vec2(w-r);return length(max(q,0.0))+min(max(q.x,q.y),0.0)-r;}\nstruct MakerBeamResult{float field;vec3 beams;float axis;vec3 local;};\nMakerBeamResult maker_orthogonal_beam_lattice_field_3d(vec3 p,vec3 c,float t,float sx,float sy,float sz,float w,float axes,float shape,float r){vec3 s=max(vec3(sx,sy,sz),vec3(.01));vec3 q=mod(p-c+s*.5,s)-s*.5;vec3 d=vec3(maker_beam_cross(q.yz,w,shape,r),maker_beam_cross(q.xz,w,shape,r),maker_beam_cross(q.xy,w,shape,r));vec3 a=d;int m=int(axes+.5);if(m==2||m==3||m==6)a.x=1e20;if(m==1||m==3||m==5)a.y=1e20;if(m==1||m==2||m==4)a.z=1e20;float f=min(a.x,min(a.y,a.z));return MakerBeamResult(f,d,a.x==f?0.0:a.y==f?1.0:2.0,q);}",
+  "glsl_outputs": {
+    "lattice_distance": "maker_orthogonal_beam_lattice_field_3d({position},{center},{time_offset},{spacing_x},{spacing_y},{spacing_z},{thickness},{axes},{cross_section},{rounding}).field",
+    "x_beam": "maker_orthogonal_beam_lattice_field_3d({position},{center},{time_offset},{spacing_x},{spacing_y},{spacing_z},{thickness},{axes},{cross_section},{rounding}).beams.x",
+    "y_beam": "maker_orthogonal_beam_lattice_field_3d({position},{center},{time_offset},{spacing_x},{spacing_y},{spacing_z},{thickness},{axes},{cross_section},{rounding}).beams.y",
+    "z_beam": "maker_orthogonal_beam_lattice_field_3d({position},{center},{time_offset},{spacing_x},{spacing_y},{spacing_z},{thickness},{axes},{cross_section},{rounding}).beams.z",
+    "nearest_orientation": "maker_orthogonal_beam_lattice_field_3d({position},{center},{time_offset},{spacing_x},{spacing_y},{spacing_z},{thickness},{axes},{cross_section},{rounding}).axis",
+    "cell_local": "maker_orthogonal_beam_lattice_field_3d({position},{center},{time_offset},{spacing_x},{spacing_y},{spacing_z},{thickness},{axes},{cross_section},{rounding}).local"
+  }
+}

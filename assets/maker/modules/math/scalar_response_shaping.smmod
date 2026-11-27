@@ -7,7 +7,7 @@
   "creator_email": "screenshaver@proton.me",
   "description": "Applies selectable scalar transfer functions with gain, bias and optional animated phase.",
   "uses": "Noise shaping, ridges, density masks and procedural materials.",
-  "notes": "Normalized Value maps signed Direct and Sinusoidal results from [-1,1] to [0,1]; other modes clamp directly to [0,1]. Threshold endpoints are sorted; equal endpoints produce a step. Frequency is cycles per input unit, phase is degrees and speed is cycles per second. Sawtooth, Triangle and Periodic Gate use the same phase in cycles as Sinusoidal and return [0,1] directly. Gate is active from phase zero to Duty Cycle; softness is a transition half-width in cycles. Hyperbolic Tangent is signed and normalized by mapping [-1,1] to [0,1]. Reciprocal and Reciprocal Tanh use a positive denominator floor. Power uses absolute magnitude; powered magnitude is capped at 1e30 to avoid overflow for extreme finite inputs. New modes ignore wave and threshold parameters. Normalized outputs clamp to [0,1].",
+  "notes": "Normalized Value maps signed Direct and Sinusoidal results from [-1,1] to [0,1]; other modes clamp directly to [0,1]. Threshold endpoints are sorted; equal endpoints produce a step. Frequency is cycles per input unit, phase is degrees and speed is cycles per second. Sawtooth, Triangle and Periodic Gate use the same phase in cycles as Sinusoidal and return [0,1] directly. Gate is active from phase zero to Duty Cycle; softness is a transition half-width in cycles. Hyperbolic Tangent is signed and normalized by mapping [-1,1] to [0,1]. Reciprocal and Reciprocal Tanh use a positive denominator floor. Power uses absolute magnitude; powered magnitude is capped at 1e30 to avoid overflow for extreme finite inputs. New modes ignore wave and threshold parameters. Normalized outputs clamp to [0,1]. Parabolic Envelope uses sorted thresholds, input gain/bias and response exponent; zero outside interval or for degenerate interval; ignores response strength.",
   "header_color": "#65758B",
   "inputs": [
     {
@@ -22,6 +22,12 @@
       "type": "float",
       "default": "u_time",
       "semantic_role": "time"
+    },
+    {
+      "id": "exponent_multiplier",
+      "name": "Exponent Multiplier",
+      "type": "float",
+      "default": "1.0"
     }
   ],
   "outputs": [
@@ -44,7 +50,7 @@
       "type": "choice",
       "default": 0,
       "min": 0,
-      "max": 11,
+      "max": 13,
       "options": [
         "Direct",
         "Absolute",
@@ -57,7 +63,9 @@
         "Hyperbolic Tangent",
         "Reciprocal",
         "Reciprocal Tanh",
-        "Power"
+        "Power",
+        "Parabolic Envelope",
+        "Asymmetric Power Envelope"
       ]
     },
     {
@@ -155,12 +163,28 @@
       "default": 1,
       "min": 0,
       "max": 10
+    },
+    {
+      "id": "rise_exponent",
+      "name": "Rise Exponent",
+      "type": "float",
+      "default": 2,
+      "min": 0.1,
+      "max": 10
+    },
+    {
+      "id": "fall_exponent",
+      "name": "Fall Exponent",
+      "type": "float",
+      "default": 5,
+      "min": 0.1,
+      "max": 10
     }
   ],
-  "helpers": "float maker_scalar_response(float v,float t,float mode,float gain,float bias,float lo,float hi,float freq,float phase,float speed){\n float x=v*gain+bias; int m=int(clamp(floor(mode+0.5),0.0,4.0));\n if(m==1)return abs(x); if(m==2)return max(0.0,1.0-abs(x));\n if(m==3){float a=min(lo,hi),b=max(lo,hi);return b-a<1e-6?step(a,x):smoothstep(a,b,x);}\n if(m==4)return sin(6.28318530718*(x*freq+t*speed+phase/360.0));\n return x;\n}\nfloat maker_scalar_response_normalize(float v,float mode){\n int m=int(clamp(floor(mode+0.5),0.0,4.0));return clamp((m==0||m==4)?0.5*v+0.5:v,0.0,1.0);\n}\nfloat maker_extended_scalar_response(float v,float t,float mode,float gain,float bias,float lo,float hi,float freq,float phase,float speed,float duty,float softness){\n if(mode<4.5)return maker_scalar_response(v,t,mode,gain,bias,lo,hi,freq,phase,speed);\n float f=fract((v*gain+bias)*freq+t*speed+phase/360.0);\n if(mode<5.5)return f;\n if(mode<6.5)return 1.0-abs(2.0*f-1.0);\n float d=clamp(duty,0.0,1.0);\n if(d<=0.0)return 0.0;\n if(d>=1.0)return 1.0;\n float w=min(max(softness,0.0),0.5*min(d,1.0-d));\n if(w<=0.0)return f<d?1.0:0.0;\n float dist=abs(fract(f-0.5*d+0.5)-0.5);\n return 1.0-smoothstep(0.5*d-w,0.5*d+w,dist);\n}\nfloat maker_nonlinear_scalar_response(float v,float t,float mode,float gain,float bias,float lo,float hi,float freq,float phase,float speed,float duty,float softness,float exponent,float responseFloor,float strength){\n if(mode<7.5)return maker_extended_scalar_response(v,t,mode,gain,bias,lo,hi,freq,phase,speed,duty,softness);\n float x=v*gain+bias,k=max(strength,0.0);\n if(mode<8.5)return tanh(k*x);\n if(k==0.0)return 0.0;\n float e=clamp(exponent,0.1,8.0),eps=max(responseFloor,0.0001);\n float mag=abs(x);\n // Limit extreme powers to a finite HDR ceiling, avoiding overflow.\n float p=mag==0.0?0.0:exp(min(e*log(mag),log(1e30)));\n if(mode<9.5)return k/max(p,eps);\n if(mode<10.5)return k/max(tanh(p),eps);\n return k*p;\n}\nfloat maker_nonlinear_scalar_normalize(float v,float mode){\n if(mode<4.5)return maker_scalar_response_normalize(v,mode);\n return clamp(mode>=7.5&&mode<8.5?0.5*v+0.5:v,0.0,1.0);\n}",
+  "helpers": "float maker_scalar_response(float v,float t,float mode,float gain,float bias,float lo,float hi,float freq,float phase,float speed){\n float x=v*gain+bias; int m=int(clamp(floor(mode+0.5),0.0,4.0));\n if(m==1)return abs(x); if(m==2)return max(0.0,1.0-abs(x));\n if(m==3){float a=min(lo,hi),b=max(lo,hi);return b-a<1e-6?step(a,x):smoothstep(a,b,x);}\n if(m==4)return sin(6.28318530718*(x*freq+t*speed+phase/360.0));\n return x;\n}\nfloat maker_scalar_response_normalize(float v,float mode){\n int m=int(clamp(floor(mode+0.5),0.0,4.0));return clamp((m==0||m==4)?0.5*v+0.5:v,0.0,1.0);\n}\nfloat maker_extended_scalar_response(float v,float t,float mode,float gain,float bias,float lo,float hi,float freq,float phase,float speed,float duty,float softness){\n if(mode<4.5)return maker_scalar_response(v,t,mode,gain,bias,lo,hi,freq,phase,speed);\n float f=fract((v*gain+bias)*freq+t*speed+phase/360.0);\n if(mode<5.5)return f;\n if(mode<6.5)return 1.0-abs(2.0*f-1.0);\n float d=clamp(duty,0.0,1.0);\n if(d<=0.0)return 0.0;\n if(d>=1.0)return 1.0;\n float w=min(max(softness,0.0),0.5*min(d,1.0-d));\n if(w<=0.0)return f<d?1.0:0.0;\n float dist=abs(fract(f-0.5*d+0.5)-0.5);\n return 1.0-smoothstep(0.5*d-w,0.5*d+w,dist);\n}\nfloat maker_nonlinear_scalar_response(float v,float t,float mode,float gain,float bias,float lo,float hi,float freq,float phase,float speed,float duty,float softness,float exponent,float responseFloor,float strength,float rise,float fall){\n if(mode<7.5)return maker_extended_scalar_response(v,t,mode,gain,bias,lo,hi,freq,phase,speed,duty,softness);\n float x=v*gain+bias,k=max(strength,0.0);\n if(mode>=12.5){float a=min(lo,hi),b=max(lo,hi);if(b-a<1e-6||x<=a||x>=b)return 0.0;float u=(x-a)/(b-a),peak=rise/(rise+fall);return exp(min(0.0,rise*log(u/peak)+fall*log((1.0-u)/(1.0-peak))));}\n if(mode>=11.5){float a=min(lo,hi),b=max(lo,hi);if(b-a<1e-6||x<a||x>b)return 0.0;float u=clamp((x-a)/(b-a),0.0,1.0);return pow(max(4.0*u*(1.0-u),0.0),clamp(exponent,0.1,8.0));}\n if(mode<8.5)return tanh(k*x);\n if(k==0.0)return 0.0;\n float e=clamp(exponent,0.1,8.0),eps=max(responseFloor,0.0001);\n float mag=abs(x);\n // Limit extreme powers to a finite HDR ceiling, avoiding overflow.\n float p=mag==0.0?0.0:exp(min(e*log(mag),log(1e30)));\n if(mode<9.5)return k/max(p,eps);\n if(mode<10.5)return k/max(tanh(p),eps);\n return k*p;\n}\nfloat maker_nonlinear_scalar_normalize(float v,float mode){\n if(mode<4.5)return maker_scalar_response_normalize(v,mode);\n return clamp(mode>=7.5&&mode<8.5?0.5*v+0.5:v,0.0,1.0);\n}",
   "glsl_outputs": {
-    "shaped": "maker_nonlinear_scalar_response({value},{time},{mode},{gain},{bias},{lower},{upper},{frequency},{phase},{speed},{duty_cycle},{gate_softness},{response_exponent},{response_floor},{response_strength})",
-    "normalized": "maker_nonlinear_scalar_normalize(maker_nonlinear_scalar_response({value},{time},{mode},{gain},{bias},{lower},{upper},{frequency},{phase},{speed},{duty_cycle},{gate_softness},{response_exponent},{response_floor},{response_strength}),{mode})"
+    "shaped": "maker_nonlinear_scalar_response({value},{time},{mode},{gain},{bias},{lower},{upper},{frequency},{phase},{speed},{duty_cycle},{gate_softness},clamp({response_exponent}*{exponent_multiplier},0.1,8.0),{response_floor},{response_strength},{rise_exponent},{fall_exponent})",
+    "normalized": "maker_nonlinear_scalar_normalize(maker_nonlinear_scalar_response({value},{time},{mode},{gain},{bias},{lower},{upper},{frequency},{phase},{speed},{duty_cycle},{gate_softness},clamp({response_exponent}*{exponent_multiplier},0.1,8.0),{response_floor},{response_strength},{rise_exponent},{fall_exponent}),{mode})"
   },
   "terminal": false
 }

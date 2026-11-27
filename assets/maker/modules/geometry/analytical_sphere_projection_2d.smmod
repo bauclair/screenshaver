@@ -1,0 +1,130 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.geometry.analytical_sphere_projection_2d",
+  "name": "Analytical Sphere Projection 2D",
+  "category": "Geometry",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Positive Z camera convention. Ellipse residual and softness are normalized ellipse units; not exact spatial distance or pixel coverage.",
+  "uses": "Analytical Sphere Projection 2D",
+  "notes": "Positive Z camera convention. Ellipse residual and softness are normalized ellipse units; not exact spatial distance or pixel coverage.",
+  "header_color": "#527D94",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv"
+    },
+    {
+      "id": "sphere_center",
+      "name": "Sphere Center",
+      "type": "vec3",
+      "default": "vec3(0.0,0.0,3.0)"
+    },
+    {
+      "id": "radius_multiplier",
+      "name": "Radius Multiplier",
+      "type": "float",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "projected_center",
+      "name": "Projected Center",
+      "type": "vec2"
+    },
+    {
+      "id": "semiaxes",
+      "name": "Semiaxes",
+      "type": "vec2"
+    },
+    {
+      "id": "orientation",
+      "name": "Orientation",
+      "type": "float"
+    },
+    {
+      "id": "projected_area",
+      "name": "Projected Area",
+      "type": "float"
+    },
+    {
+      "id": "ellipse_residual",
+      "name": "Ellipse Residual",
+      "type": "float"
+    },
+    {
+      "id": "coverage",
+      "name": "Coverage",
+      "type": "float"
+    },
+    {
+      "id": "angular_radius",
+      "name": "Angular Radius",
+      "type": "float"
+    },
+    {
+      "id": "validity",
+      "name": "Validity",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "radius",
+      "name": "Radius",
+      "type": "float",
+      "default": 0.5,
+      "min": 0.001,
+      "max": 10
+    },
+    {
+      "id": "projection",
+      "name": "Projection",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Perspective",
+        "Orthographic"
+      ]
+    },
+    {
+      "id": "focal_length",
+      "name": "Focal Length",
+      "type": "float",
+      "default": 1,
+      "min": 0.01,
+      "max": 10
+    },
+    {
+      "id": "image_scale",
+      "name": "Image Scale",
+      "type": "float",
+      "default": 1,
+      "min": 0.01,
+      "max": 10
+    },
+    {
+      "id": "softness",
+      "name": "Softness",
+      "type": "float",
+      "default": 0.01,
+      "min": 0.0001,
+      "max": 1
+    }
+  ],
+  "helpers": "struct MakerB392AnalyticalSphereProjection2D{vec2 projected_center;vec2 semiaxes;float orientation;float projected_area;float ellipse_residual;float coverage;float angular_radius;float validity;};\nMakerB392AnalyticalSphereProjection2D maker_b392_analytical_sphere_projection_2d(vec2 position,vec3 sphere_center,float radius_multiplier,float radius,float projection,float focal_length,float image_scale,float softness){vec3 c=clamp(sphere_center,-1e5,1e5);float r=clamp(radius*abs(radius_multiplier),.0001,100.),z=c.z,s=image_scale,ang=length(c.xy)>1e-8?atan(c.y,c.x):0.;vec2 ctr=c.xy*s,ax=vec2(r*s);float ar=asin(clamp(r/max(length(c),r),0.,1.));if(projection<.5){if(z<=r+1e-5)return MakerB392AnalyticalSphereProjection2D(vec2(0.),vec2(0.),0.,0.,1e6,0.,ar,0.);float den=z*z-r*r,F=focal_length*s;ctr=F*z*c.xy/den;ax=F*r*vec2(sqrt(den+dot(c.xy,c.xy))/den,inversesqrt(den));}vec2 q=position-ctr;float co=cos(ang),si=sin(ang);q=vec2(dot(q,vec2(co,si)),dot(q,vec2(-si,co)));float d=length(q/max(ax,vec2(1e-8)))-1.;return MakerB392AnalyticalSphereProjection2D(ctr,ax,ang,3.14159265*ax.x*ax.y,d,1.-smoothstep(0.,softness,d),ar,1.);}",
+  "glsl_outputs": {
+    "projected_center": "maker_b392_analytical_sphere_projection_2d({position},{sphere_center},{radius_multiplier},{radius},{projection},{focal_length},{image_scale},{softness}).projected_center",
+    "semiaxes": "maker_b392_analytical_sphere_projection_2d({position},{sphere_center},{radius_multiplier},{radius},{projection},{focal_length},{image_scale},{softness}).semiaxes",
+    "orientation": "maker_b392_analytical_sphere_projection_2d({position},{sphere_center},{radius_multiplier},{radius},{projection},{focal_length},{image_scale},{softness}).orientation",
+    "projected_area": "maker_b392_analytical_sphere_projection_2d({position},{sphere_center},{radius_multiplier},{radius},{projection},{focal_length},{image_scale},{softness}).projected_area",
+    "ellipse_residual": "maker_b392_analytical_sphere_projection_2d({position},{sphere_center},{radius_multiplier},{radius},{projection},{focal_length},{image_scale},{softness}).ellipse_residual",
+    "coverage": "maker_b392_analytical_sphere_projection_2d({position},{sphere_center},{radius_multiplier},{radius},{projection},{focal_length},{image_scale},{softness}).coverage",
+    "angular_radius": "maker_b392_analytical_sphere_projection_2d({position},{sphere_center},{radius_multiplier},{radius},{projection},{focal_length},{image_scale},{softness}).angular_radius",
+    "validity": "maker_b392_analytical_sphere_projection_2d({position},{sphere_center},{radius_multiplier},{radius},{projection},{focal_length},{image_scale},{softness}).validity"
+  }
+}

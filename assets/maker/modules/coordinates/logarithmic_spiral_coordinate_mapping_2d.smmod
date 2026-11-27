@@ -70,6 +70,16 @@
       "name": "Validity Mask",
       "type": "float",
       "semantic_role": "mask"
+    },
+    {
+      "id": "winding_index",
+      "name": "Winding Index",
+      "type": "float"
+    },
+    {
+      "id": "winding_phase",
+      "name": "Winding Phase",
+      "type": "float"
     }
   ],
   "parameters": [
@@ -152,14 +162,44 @@
       "default": 0,
       "min": -100,
       "max": 100
+    },
+    {
+      "id": "winding_mode",
+      "name": "Winding Mode",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Continuous",
+        "Floor",
+        "Ceiling",
+        "Nearest"
+      ]
+    },
+    {
+      "id": "log_interval",
+      "name": "Log Interval",
+      "type": "float",
+      "default": 1,
+      "min": 0.001,
+      "max": 10
+    },
+    {
+      "id": "angular_progression",
+      "name": "Angular Progression",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
     }
   ],
-  "helpers": "struct MakerLogSpiralResult {vec2 p;float lr;float a;float r;float valid;};\nMakerLogSpiralResult maker_log_spiral(vec2 p,vec2 center,float t,vec2 phase,float ua,float ul,float va,float vl,float refR,float floorR,float us,float vs,float up,float vp){\n MakerLogSpiralResult bad=MakerLogSpiralResult(vec2(0.0),0.0,0.0,0.0,0.0);\n if(any(isnan(p))||any(isinf(p))||any(isnan(center))||any(isinf(center))||isnan(t)||isinf(t)||any(isnan(phase))||any(isinf(phase)))return bad;\n if(any(greaterThan(abs(p),vec2(1e8)))||any(greaterThan(abs(center),vec2(1e8)))||abs(t)>1e6||any(greaterThan(abs(phase),vec2(1e6))))return bad;\n vec2 q=p-center;float r=length(q);float rr=r/refR;float a=r>0.0?atan(q.y,q.x)/6.283185307179586:0.0;float lr=log(max(rr,floorR));\n vec2 mapped=vec2(ua*a+ul*lr,va*a+vl*lr)+vec2(up,vp)+phase+t*vec2(us,vs);\n return MakerLogSpiralResult(mapped,lr,a,r,rr>=floorR?1.0:0.0);\n}",
+  "helpers": "struct MakerLogSpiralResult {vec2 p;float lr;float a;float r;float valid;float wi;float wp;};\nMakerLogSpiralResult maker_log_spiral(vec2 p,vec2 center,float t,vec2 phase,float ua,float ul,float va,float vl,float refR,float floorR,float us,float vs,float up,float vp,float wm,float interval,float progression){\n MakerLogSpiralResult bad=MakerLogSpiralResult(vec2(0.0),0.0,0.0,0.0,0.0,0.0,0.0);\n if(any(isnan(p))||any(isinf(p))||any(isnan(center))||any(isinf(center))||isnan(t)||isinf(t)||any(isnan(phase))||any(isinf(phase)))return bad;\n if(any(greaterThan(abs(p),vec2(1e8)))||any(greaterThan(abs(center),vec2(1e8)))||abs(t)>1e6||any(greaterThan(abs(phase),vec2(1e6))))return bad;\n vec2 q=p-center;float r=length(q);float rr=r/refR;float a=r>0.0?atan(q.y,q.x)/6.283185307179586:0.0;float lr=log(max(rr,floorR));\n float w=lr/max(interval,.001),wi=wm<.5?w:(wm<1.5?floor(w):(wm<2.5?ceil(w):floor(w+.5)));float aa=a+(wm<.5?0.0:wi*progression/360.0);\n vec2 mapped=vec2(ua*aa+ul*lr,va*aa+vl*lr)+vec2(up,vp)+phase+t*vec2(us,vs);\n return MakerLogSpiralResult(mapped,lr,a,r,rr>=floorR?1.0:0.0,wi,fract(w));\n}",
   "glsl_outputs": {
-    "mapped": "maker_log_spiral({position},{center},(u_time+{time_offset}),{phase_offset},{u_angular},{u_log},{v_angular},{v_log},{reference_radius},{radius_floor},{u_speed},{v_speed},{u_phase},{v_phase}).p",
-    "log_radius": "maker_log_spiral({position},{center},(u_time+{time_offset}),{phase_offset},{u_angular},{u_log},{v_angular},{v_log},{reference_radius},{radius_floor},{u_speed},{v_speed},{u_phase},{v_phase}).lr",
-    "angular": "maker_log_spiral({position},{center},(u_time+{time_offset}),{phase_offset},{u_angular},{u_log},{v_angular},{v_log},{reference_radius},{radius_floor},{u_speed},{v_speed},{u_phase},{v_phase}).a",
-    "radius": "maker_log_spiral({position},{center},(u_time+{time_offset}),{phase_offset},{u_angular},{u_log},{v_angular},{v_log},{reference_radius},{radius_floor},{u_speed},{v_speed},{u_phase},{v_phase}).r",
-    "validity": "maker_log_spiral({position},{center},(u_time+{time_offset}),{phase_offset},{u_angular},{u_log},{v_angular},{v_log},{reference_radius},{radius_floor},{u_speed},{v_speed},{u_phase},{v_phase}).valid"
+    "mapped": "maker_log_spiral({position},{center},(u_time+{time_offset}),{phase_offset},{u_angular},{u_log},{v_angular},{v_log},{reference_radius},{radius_floor},{u_speed},{v_speed},{u_phase},{v_phase},{winding_mode},{log_interval},{angular_progression}).p",
+    "log_radius": "maker_log_spiral({position},{center},(u_time+{time_offset}),{phase_offset},{u_angular},{u_log},{v_angular},{v_log},{reference_radius},{radius_floor},{u_speed},{v_speed},{u_phase},{v_phase},{winding_mode},{log_interval},{angular_progression}).lr",
+    "angular": "maker_log_spiral({position},{center},(u_time+{time_offset}),{phase_offset},{u_angular},{u_log},{v_angular},{v_log},{reference_radius},{radius_floor},{u_speed},{v_speed},{u_phase},{v_phase},{winding_mode},{log_interval},{angular_progression}).a",
+    "radius": "maker_log_spiral({position},{center},(u_time+{time_offset}),{phase_offset},{u_angular},{u_log},{v_angular},{v_log},{reference_radius},{radius_floor},{u_speed},{v_speed},{u_phase},{v_phase},{winding_mode},{log_interval},{angular_progression}).r",
+    "validity": "maker_log_spiral({position},{center},(u_time+{time_offset}),{phase_offset},{u_angular},{u_log},{v_angular},{v_log},{reference_radius},{radius_floor},{u_speed},{v_speed},{u_phase},{v_phase},{winding_mode},{log_interval},{angular_progression}).valid",
+    "winding_index": "maker_log_spiral({position},{center},(u_time+{time_offset}),{phase_offset},{u_angular},{u_log},{v_angular},{v_log},{reference_radius},{radius_floor},{u_speed},{v_speed},{u_phase},{v_phase},{winding_mode},{log_interval},{angular_progression}).wi",
+    "winding_phase": "maker_log_spiral({position},{center},(u_time+{time_offset}),{phase_offset},{u_angular},{u_log},{v_angular},{v_log},{reference_radius},{radius_floor},{u_speed},{v_speed},{u_phase},{v_phase},{winding_mode},{log_interval},{angular_progression}).wp"
   }
 }

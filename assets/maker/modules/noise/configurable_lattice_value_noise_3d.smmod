@@ -7,7 +7,7 @@
   "creator_email": "screenshaver@proton.me",
   "description": "Interpolated scalar noise with adjustable weighted lattice projection.",
   "uses": "Interpolated scalar noise with adjustable weighted lattice projection.",
-  "notes": "Coefficients are rounded integers. Equal weighted lattice sums intentionally share hash values. Animation translates all three sampling axes. Frequency Multiplier is bounded to +/-16 and sample coordinates to +/-1000000. Nonfinite inputs return zero outputs.",
+  "notes": "Coefficients are rounded integers. Equal weighted lattice sums intentionally share hash values. Animation translates all three sampling axes. Frequency Multiplier is bounded to +/-16 and sample coordinates to +/-1000000. Nonfinite inputs return zero outputs. Gradient is of unsigned noise in input coordinates; signed noise gradient is twice this value. Linear interpolation derivative is one-sided at lattice boundaries.",
   "header_color": "#806B99",
   "terminal": false,
   "inputs": [
@@ -41,6 +41,16 @@
     {
       "id": "signed_noise",
       "name": "Signed Noise",
+      "type": "float"
+    },
+    {
+      "id": "gradient",
+      "name": "Gradient",
+      "type": "vec3"
+    },
+    {
+      "id": "gradient_magnitude",
+      "name": "Gradient Magnitude",
       "type": "float"
     }
   ],
@@ -107,9 +117,11 @@
       ]
     }
   ],
-  "helpers": "struct MakerCLVN { float noise; float signed_noise; };\nfloat maker_clvn_hash(int n,uint seed){\n uint h=uint(n+800000000) ^ (seed*747796405u);\n h^=h>>16u; h*=2246822519u; h^=h>>13u; h*=3266489917u; h^=h>>16u;\n return float(h & 16777215u)/16777215.0;\n}\nMakerCLVN maker_clvn_eval(vec3 p,float offset,float mult,float freq,float cx,float cy,float cz,float seed,float speed,float interp){\n if(any(isnan(p))||any(isinf(p))||isnan(offset)||isinf(offset)||isnan(mult)||isinf(mult)||isnan(u_time)||isinf(u_time))return MakerCLVN(0.0,0.0);\n vec3 q=clamp(clamp(p,vec3(-1e6),vec3(1e6))*freq*clamp(mult,-16.0,16.0)+vec3(speed*(clamp(u_time,-1e5,1e5)+clamp(offset,-1e5,1e5))),vec3(-1e6),vec3(1e6));\n ivec3 cell=ivec3(floor(q)), c=ivec3(clamp(floor(vec3(cx,cy,cz)+0.5),vec3(1.0),vec3(257.0)));\n int n=cell.x*c.x+cell.y*c.y+cell.z*c.z;\n uint s=uint(clamp(floor(seed+0.5),0.0,65535.0));\n vec3 w=fract(q);\n if(interp>=1.5)w=w*w*w*(w*(6.0*w-15.0)+10.0); else if(interp>=0.5)w=w*w*(3.0-2.0*w);\n float a=mix(maker_clvn_hash(n,s),maker_clvn_hash(n+c.x,s),w.x);\n float b=mix(maker_clvn_hash(n+c.y,s),maker_clvn_hash(n+c.y+c.x,s),w.x);\n float d=mix(maker_clvn_hash(n+c.z,s),maker_clvn_hash(n+c.z+c.x,s),w.x);\n float e=mix(maker_clvn_hash(n+c.z+c.y,s),maker_clvn_hash(n+c.z+c.y+c.x,s),w.x);\n float v=clamp(mix(mix(a,b,w.y),mix(d,e,w.y),w.z),0.0,1.0);\n return MakerCLVN(v,2.0*v-1.0);\n}",
+  "helpers": "struct MakerCLVN { float noise; float signed_noise; vec3 gradient; };\nfloat maker_clvn_hash(int n,uint seed){\n uint h=uint(n+800000000) ^ (seed*747796405u);\n h^=h>>16u; h*=2246822519u; h^=h>>13u; h*=3266489917u; h^=h>>16u;\n return float(h & 16777215u)/16777215.0;\n}\nMakerCLVN maker_clvn_eval(vec3 p,float offset,float mult,float freq,float cx,float cy,float cz,float seed,float speed,float interp){\n if(any(isnan(p))||any(isinf(p))||isnan(offset)||isinf(offset)||isnan(mult)||isinf(mult)||isnan(u_time)||isinf(u_time))return MakerCLVN(0.0,0.0,vec3(0.0));\n vec3 raw=clamp(p,vec3(-1e6),vec3(1e6))*freq*clamp(mult,-16.0,16.0)+vec3(speed*(clamp(u_time,-1e5,1e5)+clamp(offset,-1e5,1e5)));vec3 q=clamp(raw,vec3(-1e6),vec3(1e6));\n ivec3 cell=ivec3(floor(q)), c=ivec3(clamp(floor(vec3(cx,cy,cz)+0.5),vec3(1.0),vec3(257.0)));\n int n=cell.x*c.x+cell.y*c.y+cell.z*c.z;\n uint s=uint(clamp(floor(seed+0.5),0.0,65535.0));\n vec3 w=fract(q),t=w;vec3 dw=vec3(1.0);if(interp>=1.5)dw=30.0*t*t*(t-1.0)*(t-1.0);else if(interp>=0.5)dw=6.0*t*(1.0-t);\n if(interp>=1.5)w=w*w*w*(w*(6.0*w-15.0)+10.0); else if(interp>=0.5)w=w*w*(3.0-2.0*w);\n float a=mix(maker_clvn_hash(n,s),maker_clvn_hash(n+c.x,s),w.x);\n float b=mix(maker_clvn_hash(n+c.y,s),maker_clvn_hash(n+c.y+c.x,s),w.x);\n float d=mix(maker_clvn_hash(n+c.z,s),maker_clvn_hash(n+c.z+c.x,s),w.x);\n float e=mix(maker_clvn_hash(n+c.z+c.y,s),maker_clvn_hash(n+c.z+c.y+c.x,s),w.x);\n float v=clamp(mix(mix(a,b,w.y),mix(d,e,w.y),w.z),0.0,1.0);\n float dx=mix(mix(maker_clvn_hash(n+c.x,s)-maker_clvn_hash(n,s),maker_clvn_hash(n+c.y+c.x,s)-maker_clvn_hash(n+c.y,s),w.y),mix(maker_clvn_hash(n+c.z+c.x,s)-maker_clvn_hash(n+c.z,s),maker_clvn_hash(n+c.z+c.y+c.x,s)-maker_clvn_hash(n+c.z+c.y,s),w.y),w.z);vec3 g=vec3(dx,mix(b-a,e-d,w.z),mix(d,e,w.y)-mix(a,b,w.y))*dw*freq*clamp(mult,-16.0,16.0);g*=vec3(lessThan(abs(raw),vec3(1e6)))*vec3(lessThan(abs(p),vec3(1e6)));return MakerCLVN(v,2.0*v-1.0,g);\n}",
   "glsl_outputs": {
     "noise": "maker_clvn_eval({position},{time_offset},{frequency_multiplier},{frequency},{cx},{cy},{cz},{seed},{speed},{interpolation}).noise",
-    "signed_noise": "maker_clvn_eval({position},{time_offset},{frequency_multiplier},{frequency},{cx},{cy},{cz},{seed},{speed},{interpolation}).signed_noise"
+    "signed_noise": "maker_clvn_eval({position},{time_offset},{frequency_multiplier},{frequency},{cx},{cy},{cz},{seed},{speed},{interpolation}).signed_noise",
+    "gradient": "maker_clvn_eval({position},{time_offset},{frequency_multiplier},{frequency},{cx},{cy},{cz},{seed},{speed},{interpolation}).gradient",
+    "gradient_magnitude": "length(maker_clvn_eval({position},{time_offset},{frequency_multiplier},{frequency},{cx},{cy},{cz},{seed},{speed},{interpolation}).gradient)"
   }
 }

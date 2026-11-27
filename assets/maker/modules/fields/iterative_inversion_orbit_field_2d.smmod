@@ -7,7 +7,7 @@
   "creator_email": "screenshaver@proton.me",
   "description": "Statistics cover completed iterations only; log scale is nominal and excludes clipping. Reflection X/Y negates the named component.",
   "uses": "Statistics cover completed iterations only; log scale is nominal and excludes clipping. Reflection X/Y negates the named component.",
-  "notes": "Statistics cover completed iterations only; log scale is nominal and excludes clipping. Reflection X/Y negates the named component.",
+  "notes": "Statistics cover completed iterations only; log scale is nominal and excludes clipping. Reflection X/Y negates the named component. New statistics use completed iterations, population standard deviation and a 1e-20 log floor; any zero radius gives geometric mean zero.",
   "header_color": "#527D94",
   "terminal": false,
   "inputs": [
@@ -67,6 +67,16 @@
     {
       "id": "log_scale",
       "name": "Accumulated Log Scale",
+      "type": "float"
+    },
+    {
+      "id": "geometric_mean",
+      "name": "Geometric Mean",
+      "type": "float"
+    },
+    {
+      "id": "standard_deviation",
+      "name": "Standard Deviation",
       "type": "float"
     }
   ],
@@ -158,15 +168,77 @@
         "Y Axis",
         "Both"
       ]
+    },
+    {
+      "id": "reflected_offset_fold",
+      "name": "Reflected Offset Fold",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Off",
+        "X",
+        "Y",
+        "Both"
+      ]
+    },
+    {
+      "id": "fold_offset_x",
+      "name": "Fold Offset X",
+      "type": "float",
+      "default": 0,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "fold_offset_y",
+      "name": "Fold Offset Y",
+      "type": "float",
+      "default": 0,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "center_amplitude_x",
+      "name": "Center Amplitude X",
+      "type": "float",
+      "default": 0,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "center_amplitude_y",
+      "name": "Center Amplitude Y",
+      "type": "float",
+      "default": 0,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "center_speed",
+      "name": "Center Speed",
+      "type": "float",
+      "default": 1,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "center_phase_step",
+      "name": "Center Phase Step",
+      "type": "float",
+      "default": 30,
+      "min": -360,
+      "max": 360
     }
   ],
-  "helpers": "struct MakerB296IterativeInversionOrbitField2D {float minimum;float maximum;float mean;float periodic;vec2 final_position;float log_scale;};\nMakerB296IterativeInversionOrbitField2D maker_b296_iterative_inversion_orbit_field_2d(vec2 position,vec2 center,vec2 translation,float time_offset,float iterations,float radius,float floor_radius,float scale,float rotation,float speed,float frequency,float phase,float reflection,float fold){\nif((any(isnan(position))||any(isinf(position)))||(any(isnan(center))||any(isinf(center)))||(any(isnan(translation))||any(isinf(translation)))||(isnan(time_offset)||isinf(time_offset))||(isnan(iterations)||isinf(iterations))||(isnan(radius)||isinf(radius))||(isnan(floor_radius)||isinf(floor_radius))||(isnan(scale)||isinf(scale))||(isnan(rotation)||isinf(rotation))||(isnan(speed)||isinf(speed))||(isnan(frequency)||isinf(frequency))||(isnan(phase)||isinf(phase))||(isnan(reflection)||isinf(reflection))||(isnan(fold)||isinf(fold)))return MakerB296IterativeInversionOrbitField2D(0.0,0.0,0.0,0.0,vec2(0.0),0.0);\nvec2 q=clamp(position,-1e5,1e5)-clamp(center,-1e5,1e5); int n=int(clamp(round(iterations),1.,32.)); float a=radians(rotation)+mod(time_offset,6283.1853)*speed; mat2 rot=mat2(cos(a),sin(a),-sin(a),cos(a)); float mn=1e20,mx=0.,sum=0.,pr=1.,lg=0.; int rf=int(round(reflection)),fd=int(round(fold));\nfor(int j=0;j<32;j++){if(j>=n)break; float k=radius*radius/max(dot(q,q),floor_radius*floor_radius)*scale; lg=clamp(lg+log(max(k,1e-20)),-80.,80.); q=clamp(q*k,-1e5,1e5); if(rf==1||rf==3)q.x=-q.x; if(rf==2||rf==3)q.y=-q.y; q=rot*q+clamp(translation,-1e5,1e5); if(fd==1||fd==3)q.x=abs(q.x); if(fd==2||fd==3)q.y=abs(q.y); q=clamp(q,-1e5,1e5); float r=length(q); mn=min(mn,r);mx=max(mx,r);sum+=r;pr=min(pr,.5+.5*cos(r*frequency+radians(phase)));} return MakerB296IterativeInversionOrbitField2D(mn,mx,sum/float(n),pr,q+clamp(center,-1e5,1e5),lg);\n}",
+  "helpers": "struct MakerB296IterativeInversionOrbitField2D {float minimum;float maximum;float mean;float periodic;vec2 final_position;float log_scale;float geometric_mean;float standard_deviation;};\nMakerB296IterativeInversionOrbitField2D maker_b296_iterative_inversion_orbit_field_2d(vec2 position,vec2 center,vec2 translation,float time_offset,float iterations,float radius,float floor_radius,float scale,float rotation,float speed,float frequency,float phase,float reflection,float fold,float reflected_offset_fold,float fold_offset_x,float fold_offset_y,float ax,float ay,float cs,float cp){\nif((any(isnan(position))||any(isinf(position)))||(any(isnan(center))||any(isinf(center)))||(any(isnan(translation))||any(isinf(translation)))||(isnan(time_offset)||isinf(time_offset))||(isnan(iterations)||isinf(iterations))||(isnan(radius)||isinf(radius))||(isnan(floor_radius)||isinf(floor_radius))||(isnan(scale)||isinf(scale))||(isnan(rotation)||isinf(rotation))||(isnan(speed)||isinf(speed))||(isnan(frequency)||isinf(frequency))||(isnan(phase)||isinf(phase))||(isnan(reflection)||isinf(reflection))||(isnan(fold)||isinf(fold)))return MakerB296IterativeInversionOrbitField2D(0.0,0.0,0.0,0.0,vec2(0.0),0.0,0.0,0.0);\nvec2 q=clamp(position,-1e5,1e5)-clamp(center,-1e5,1e5); int n=int(clamp(round(iterations),1.,32.)); float a=radians(rotation)+mod(time_offset,6283.1853)*speed; mat2 rot=mat2(cos(a),sin(a),-sin(a),cos(a)); float mn=1e20,mx=0.,sum=0.,pr=1.,lg=0.; float logsum=0.0,avg=0.0,m2=0.0;bool zero_radius=false;int rf=int(round(reflection)),fd=int(round(fold));\nfor(int j=0;j<32;j++){if(j>=n)break; float ca=(u_time+time_offset)*cs+radians(cp)*float(j);vec2 mc=vec2(ax*cos(ca),ay*sin(ca));vec2 rel=q-mc;float k=radius*radius/max(dot(rel,rel),floor_radius*floor_radius)*scale; lg=clamp(lg+log(max(k,1e-20)),-80.,80.); q=clamp(mc+rel*k,-1e5,1e5); if(rf==1||rf==3)q.x=-q.x; if(rf==2||rf==3)q.y=-q.y; q=rot*q+clamp(translation,-1e5,1e5); if(fd==1||fd==3)q.x=abs(q.x); if(fd==2||fd==3)q.y=abs(q.y); if(reflected_offset_fold==1.0||reflected_offset_fold==3.0)q.x=abs(q.x-fold_offset_x)+fold_offset_x;if(reflected_offset_fold==2.0||reflected_offset_fold==3.0)q.y=abs(q.y-fold_offset_y)+fold_offset_y;q=clamp(q,-1e5,1e5); float r=length(q);zero_radius=zero_radius||r==0.0;logsum+=log(max(r,1e-20));float delta=r-avg;avg+=delta/float(j+1);m2+=delta*(r-avg); mn=min(mn,r);mx=max(mx,r);sum+=r;pr=min(pr,.5+.5*cos(r*frequency+radians(phase)));} return MakerB296IterativeInversionOrbitField2D(mn,mx,sum/float(n),pr,q+clamp(center,-1e5,1e5),lg,zero_radius?0.0:exp(logsum/float(n)),sqrt(max(m2/float(n),0.0)));\n}",
   "glsl_outputs": {
-    "minimum": "maker_b296_iterative_inversion_orbit_field_2d({position},{center},{translation},{time_offset},{iterations},{radius},{floor_radius},{scale},{rotation},{speed},{frequency},{phase},{reflection},{fold}).minimum",
-    "maximum": "maker_b296_iterative_inversion_orbit_field_2d({position},{center},{translation},{time_offset},{iterations},{radius},{floor_radius},{scale},{rotation},{speed},{frequency},{phase},{reflection},{fold}).maximum",
-    "mean": "maker_b296_iterative_inversion_orbit_field_2d({position},{center},{translation},{time_offset},{iterations},{radius},{floor_radius},{scale},{rotation},{speed},{frequency},{phase},{reflection},{fold}).mean",
-    "periodic": "maker_b296_iterative_inversion_orbit_field_2d({position},{center},{translation},{time_offset},{iterations},{radius},{floor_radius},{scale},{rotation},{speed},{frequency},{phase},{reflection},{fold}).periodic",
-    "final_position": "maker_b296_iterative_inversion_orbit_field_2d({position},{center},{translation},{time_offset},{iterations},{radius},{floor_radius},{scale},{rotation},{speed},{frequency},{phase},{reflection},{fold}).final_position",
-    "log_scale": "maker_b296_iterative_inversion_orbit_field_2d({position},{center},{translation},{time_offset},{iterations},{radius},{floor_radius},{scale},{rotation},{speed},{frequency},{phase},{reflection},{fold}).log_scale"
+    "minimum": "maker_b296_iterative_inversion_orbit_field_2d({position},{center},{translation},{time_offset},{iterations},{radius},{floor_radius},{scale},{rotation},{speed},{frequency},{phase},{reflection},{fold},{reflected_offset_fold},{fold_offset_x},{fold_offset_y},{center_amplitude_x},{center_amplitude_y},{center_speed},{center_phase_step}).minimum",
+    "maximum": "maker_b296_iterative_inversion_orbit_field_2d({position},{center},{translation},{time_offset},{iterations},{radius},{floor_radius},{scale},{rotation},{speed},{frequency},{phase},{reflection},{fold},{reflected_offset_fold},{fold_offset_x},{fold_offset_y},{center_amplitude_x},{center_amplitude_y},{center_speed},{center_phase_step}).maximum",
+    "mean": "maker_b296_iterative_inversion_orbit_field_2d({position},{center},{translation},{time_offset},{iterations},{radius},{floor_radius},{scale},{rotation},{speed},{frequency},{phase},{reflection},{fold},{reflected_offset_fold},{fold_offset_x},{fold_offset_y},{center_amplitude_x},{center_amplitude_y},{center_speed},{center_phase_step}).mean",
+    "periodic": "maker_b296_iterative_inversion_orbit_field_2d({position},{center},{translation},{time_offset},{iterations},{radius},{floor_radius},{scale},{rotation},{speed},{frequency},{phase},{reflection},{fold},{reflected_offset_fold},{fold_offset_x},{fold_offset_y},{center_amplitude_x},{center_amplitude_y},{center_speed},{center_phase_step}).periodic",
+    "final_position": "maker_b296_iterative_inversion_orbit_field_2d({position},{center},{translation},{time_offset},{iterations},{radius},{floor_radius},{scale},{rotation},{speed},{frequency},{phase},{reflection},{fold},{reflected_offset_fold},{fold_offset_x},{fold_offset_y},{center_amplitude_x},{center_amplitude_y},{center_speed},{center_phase_step}).final_position",
+    "log_scale": "maker_b296_iterative_inversion_orbit_field_2d({position},{center},{translation},{time_offset},{iterations},{radius},{floor_radius},{scale},{rotation},{speed},{frequency},{phase},{reflection},{fold},{reflected_offset_fold},{fold_offset_x},{fold_offset_y},{center_amplitude_x},{center_amplitude_y},{center_speed},{center_phase_step}).log_scale",
+    "geometric_mean": "maker_b296_iterative_inversion_orbit_field_2d({position},{center},{translation},{time_offset},{iterations},{radius},{floor_radius},{scale},{rotation},{speed},{frequency},{phase},{reflection},{fold},{reflected_offset_fold},{fold_offset_x},{fold_offset_y},{center_amplitude_x},{center_amplitude_y},{center_speed},{center_phase_step}).geometric_mean",
+    "standard_deviation": "maker_b296_iterative_inversion_orbit_field_2d({position},{center},{translation},{time_offset},{iterations},{radius},{floor_radius},{scale},{rotation},{speed},{frequency},{phase},{reflection},{fold},{reflected_offset_fold},{fold_offset_x},{fold_offset_y},{center_amplitude_x},{center_amplitude_y},{center_speed},{center_phase_step}).standard_deviation"
   }
 }

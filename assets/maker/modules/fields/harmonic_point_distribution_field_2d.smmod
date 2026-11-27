@@ -1,0 +1,244 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.harmonic_point_distribution_field_2d",
+  "name": "Harmonic Point Distribution Field 2D",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Bounded harmonic point distribution; density and glow are additive, normalized intensity is mean glow.",
+  "uses": "Harmonic Point Distribution Field 2D",
+  "notes": "Bounded harmonic point distribution; density and glow are additive, normalized intensity is mean glow. Optional primitive shape and outline modify response, not nearest center distance. Alternating difference uses absolute difference; normalized intensity retains legacy count normalization.",
+  "header_color": "#627FC2",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec2",
+      "default": "vec2(0.0)"
+    },
+    {
+      "id": "time_offset",
+      "name": "Time Offset",
+      "type": "float",
+      "default": "0.0",
+      "semantic_role": "time"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "point_density",
+      "name": "Point Density",
+      "type": "float"
+    },
+    {
+      "id": "glow_intensity",
+      "name": "Glow Intensity",
+      "type": "float"
+    },
+    {
+      "id": "nearest_point_distance",
+      "name": "Nearest Point Distance",
+      "type": "float",
+      "semantic_role": "distance"
+    },
+    {
+      "id": "nearest_point_index",
+      "name": "Nearest Point Index",
+      "type": "float"
+    },
+    {
+      "id": "normalized_intensity",
+      "name": "Normalized Intensity",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "point_count",
+      "name": "Point Count",
+      "type": "float",
+      "default": 32,
+      "min": 1,
+      "max": 128
+    },
+    {
+      "id": "initial_radius",
+      "name": "Initial Radius",
+      "type": "float",
+      "default": 0.2,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "radial_progression",
+      "name": "Radial Progression",
+      "type": "float",
+      "default": 0.8,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "frequency_x",
+      "name": "Frequency X",
+      "type": "float",
+      "default": 3,
+      "min": -32,
+      "max": 32
+    },
+    {
+      "id": "frequency_y",
+      "name": "Frequency Y",
+      "type": "float",
+      "default": 2,
+      "min": -32,
+      "max": 32
+    },
+    {
+      "id": "phase",
+      "name": "Phase",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "speed",
+      "name": "Speed",
+      "type": "float",
+      "default": 0.5,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "width",
+      "name": "Width",
+      "type": "float",
+      "default": 0.05,
+      "min": 0.001,
+      "max": 2
+    },
+    {
+      "id": "falloff",
+      "name": "Falloff",
+      "type": "float",
+      "default": 2,
+      "min": 0.25,
+      "max": 8
+    },
+    {
+      "id": "progressive_rotation",
+      "name": "Progressive Rotation",
+      "type": "float",
+      "default": 0,
+      "min": -720,
+      "max": 720
+    },
+    {
+      "id": "amplitude_x",
+      "name": "Amplitude X",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 4
+    },
+    {
+      "id": "amplitude_y",
+      "name": "Amplitude Y",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 4
+    },
+    {
+      "id": "width_progression",
+      "name": "Width Progression",
+      "type": "float",
+      "default": 0,
+      "min": -0.99,
+      "max": 8
+    },
+    {
+      "id": "indexed_temporal_phase",
+      "name": "Indexed Temporal Phase",
+      "type": "float",
+      "default": 0,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "primitive_shape",
+      "name": "Primitive Shape",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Circle",
+        "Rectangle",
+        "Ellipse"
+      ]
+    },
+    {
+      "id": "primitive_style",
+      "name": "Primitive Style",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Filled",
+        "Outline"
+      ]
+    },
+    {
+      "id": "accumulation",
+      "name": "Accumulation",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Additive",
+        "Maximum",
+        "Alternating Difference",
+        "Alternating Replacement"
+      ]
+    },
+    {
+      "id": "outline_width",
+      "name": "Outline Width",
+      "type": "float",
+      "default": 0.15,
+      "min": 0.001,
+      "max": 1
+    },
+    {
+      "id": "aspect_ratio",
+      "name": "Aspect Ratio",
+      "type": "float",
+      "default": 1,
+      "min": 0.1,
+      "max": 10
+    },
+    {
+      "id": "placement_mode",
+      "name": "Placement Mode",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Independent",
+        "Cumulative"
+      ]
+    }
+  ],
+  "helpers": "vec4 maker_hpd(vec2 p,vec2 c,float t,float count,float radius,float progression,float fx,float fy,float phase,float speed,float width,float falloff,float rotation,float ax,float ay,float wp,float tp,float shape,float style,float accum,float outline,float aspect,float placement){int n=int(clamp(floor(count+.5),1.0,128.0));vec2 previous=c;float density=0.0,glow=0.0,best=1e20,idx=0.0;for(int i=0;i<128;i++){if(i>=n)break;float s=float(i)/float(n),a=6.2831853*s+(u_time+t)*speed+(u_time+t)*tp*s;vec2 q=(radius+progression*s)*vec2(ax*cos(fx*a+radians(phase)),ay*sin(fy*a));float ang=radians(rotation)*s; q=c+vec2(cos(ang)*q.x-sin(ang)*q.y,sin(ang)*q.x+cos(ang)*q.y);if(placement>.5){q=previous+(q-c);previous=q;}float d=length(p-q),v=d/max(width*(1.0+wp*s),.001);if(shape>.5||style>.5||abs(aspect-1.0)>1e-6){vec2 u=(p-q)/max(width*(1.0+wp*s),.001);u.x/=aspect;float k=shape>.5&&shape<1.5?max(abs(u.x),abs(u.y)):length(u);v=style>.5?abs(k-1.0)/outline:max(k-1.0,0.0);}float dv=exp(-v*v),gv=1.0/(1.0+pow(v,falloff));if(accum<.5){density+=dv;glow+=gv;}else if(accum<1.5){density=max(density,dv);glow=max(glow,gv);}else if(accum<2.5){density=abs(density-dv);glow=abs(glow-gv);}else{float target=mod(float(i),2.0);density=mix(density,target,dv);glow=mix(glow,target,gv);}if(d<best){best=d;idx=float(i);}}return vec4(density,glow,best,idx);}",
+  "glsl_outputs": {
+    "point_density": "maker_hpd({position},{center},{time_offset},{point_count},{initial_radius},{radial_progression},{frequency_x},{frequency_y},{phase},{speed},{width},{falloff},{progressive_rotation},{amplitude_x},{amplitude_y},{width_progression},{indexed_temporal_phase},{primitive_shape},{primitive_style},{accumulation},{outline_width},{aspect_ratio},{placement_mode}).x",
+    "glow_intensity": "maker_hpd({position},{center},{time_offset},{point_count},{initial_radius},{radial_progression},{frequency_x},{frequency_y},{phase},{speed},{width},{falloff},{progressive_rotation},{amplitude_x},{amplitude_y},{width_progression},{indexed_temporal_phase},{primitive_shape},{primitive_style},{accumulation},{outline_width},{aspect_ratio},{placement_mode}).y",
+    "nearest_point_distance": "maker_hpd({position},{center},{time_offset},{point_count},{initial_radius},{radial_progression},{frequency_x},{frequency_y},{phase},{speed},{width},{falloff},{progressive_rotation},{amplitude_x},{amplitude_y},{width_progression},{indexed_temporal_phase},{primitive_shape},{primitive_style},{accumulation},{outline_width},{aspect_ratio},{placement_mode}).z",
+    "nearest_point_index": "maker_hpd({position},{center},{time_offset},{point_count},{initial_radius},{radial_progression},{frequency_x},{frequency_y},{phase},{speed},{width},{falloff},{progressive_rotation},{amplitude_x},{amplitude_y},{width_progression},{indexed_temporal_phase},{primitive_shape},{primitive_style},{accumulation},{outline_width},{aspect_ratio},{placement_mode}).w",
+    "normalized_intensity": "maker_hpd({position},{center},{time_offset},{point_count},{initial_radius},{radial_progression},{frequency_x},{frequency_y},{phase},{speed},{width},{falloff},{progressive_rotation},{amplitude_x},{amplitude_y},{width_progression},{indexed_temporal_phase},{primitive_shape},{primitive_style},{accumulation},{outline_width},{aspect_ratio},{placement_mode}).y/clamp(floor({point_count}+0.5),1.0,128.0)"
+  }
+}

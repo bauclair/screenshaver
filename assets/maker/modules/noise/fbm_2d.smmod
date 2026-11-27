@@ -57,8 +57,47 @@
       "default": 2.13,
       "min": 1.1,
       "max": 4
+    },
+    {
+      "id": "octave_response",
+      "name": "Octave Response",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Linear",
+        "Sinusoidal",
+        "Cosine",
+        "Power",
+        "Absolute"
+      ]
+    },
+    {
+      "id": "response_frequency",
+      "name": "Response Frequency",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 32
+    },
+    {
+      "id": "response_exponent",
+      "name": "Response Exponent",
+      "type": "float",
+      "default": 1,
+      "min": 0.1,
+      "max": 8
+    },
+    {
+      "id": "response_order",
+      "name": "Response Order",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Before Weighting",
+        "After Weighting"
+      ]
     }
   ],
-  "helpers": "uint maker_fbm_mixbits(uint v){\n  v^=v>>16;\n  v*=0x7feb352du;\n  v^=v>>15;\n  v*=0x846ca68bu;\n  return v^(v>>16);\n}\nfloat maker_fbm_cell(ivec2 cell){\n  uint h=maker_fbm_mixbits(uint(cell.x)*0x9e3779b9u ^ uint(cell.y)*0x85ebca6bu);\n  return float(h & 0x00ffffffu)/16777215.0;\n}\nfloat maker_fbm_value(vec2 p){\n  ivec2 cell=ivec2(floor(p));\n  vec2 f=fract(p);\n  vec2 w=f*f*(3.0-2.0*f);\n  float bottom=mix(maker_fbm_cell(cell),maker_fbm_cell(cell+ivec2(1,0)),w.x);\n  float top=mix(maker_fbm_cell(cell+ivec2(0,1)),maker_fbm_cell(cell+ivec2(1,1)),w.x);\n  return mix(bottom,top,w.y);\n}\nfloat maker_fbm_independent(vec2 p,float oct,float persistence,float lacunarity){\n  int steps=int(clamp(floor(oct+0.5),1.0,8.0));\n  float amplitude=1.0,weight=0.0,acc=0.0;\n  for(int j=0;j<8;j++){\n    if(j>=steps)break;\n    acc+=amplitude*maker_fbm_value(p);\n    weight+=amplitude;\n    p*=lacunarity;\n    amplitude*=persistence;\n  }\n  return acc/max(weight,0.0001);\n}",
-  "glsl": "maker_fbm_independent({position}*{scale},{octaves},{persistence},{lacunarity})"
+  "helpers": "uint maker_fbm_mixbits(uint v){\n  v^=v>>16;\n  v*=0x7feb352du;\n  v^=v>>15;\n  v*=0x846ca68bu;\n  return v^(v>>16);\n}\nfloat maker_fbm_cell(ivec2 cell){\n  uint h=maker_fbm_mixbits(uint(cell.x)*0x9e3779b9u ^ uint(cell.y)*0x85ebca6bu);\n  return float(h & 0x00ffffffu)/16777215.0;\n}\nfloat maker_fbm_value(vec2 p){\n  ivec2 cell=ivec2(floor(p));\n  vec2 f=fract(p);\n  vec2 w=f*f*(3.0-2.0*f);\n  float bottom=mix(maker_fbm_cell(cell),maker_fbm_cell(cell+ivec2(1,0)),w.x);\n  float top=mix(maker_fbm_cell(cell+ivec2(0,1)),maker_fbm_cell(cell+ivec2(1,1)),w.x);\n  return mix(bottom,top,w.y);\n}\nfloat maker_b389_octave(float x,float m,float freq,float e){if(m<1.5)return sin(6.2831853*x*freq);if(m<2.5)return cos(6.2831853*x*freq);if(m<3.5)return pow(abs(x),e);return abs(x);}\nfloat maker_fbm_independent(vec2 p,float oct,float persistence,float lacunarity,float mode,float freq,float exponent,float order){\n  int steps=int(clamp(floor(oct+0.5),1.0,8.0));\n  float amplitude=1.0,weight=0.0,acc=0.0;\n  for(int j=0;j<8;j++){\n    if(j>=steps)break;\n    float v=maker_fbm_value(p);if(mode<.5)acc+=amplitude*v;else if(order<.5)acc+=amplitude*maker_b389_octave(v,mode,freq,exponent);else acc+=maker_b389_octave(amplitude*v,mode,freq,exponent);\n    weight+=amplitude;\n    p*=lacunarity;\n    amplitude*=persistence;\n  }\n  return acc/max(weight,0.0001);\n}",
+  "glsl": "maker_fbm_independent({position}*{scale},{octaves},{persistence},{lacunarity},{octave_response},{response_frequency},{response_exponent},{response_order})"
 }

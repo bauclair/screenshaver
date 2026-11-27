@@ -9,7 +9,7 @@
   "header_color": "#348F8B",
   "description": "Nearest and second-nearest feature-site distances under the Chebyshev metric, with a soft cell-boundary mask.",
   "uses": "Angular cellular boundaries, square-like networks, animated procedural line patterns, and scalar masks.",
-  "notes": "Independent implementation of standard Chebyshev metric and nearest/second-nearest distance statistics. Sites use a deterministic cell hash; optional bounded periodic motion. No third-party shader code is included. Density changes coordinate units; output distances are in scaled cell units.",
+  "notes": "Independent implementation of standard Chebyshev metric and nearest/second-nearest distance statistics. Sites use a deterministic cell hash; optional bounded periodic motion. No third-party shader code is included. Density changes coordinate units; output distances are in scaled cell units. Feature metadata describes the winning site in the existing 3x3 search; position and displacement are in input units.",
   "inputs": [
     {
       "id": "position",
@@ -43,6 +43,21 @@
       "name": "Edge Mask",
       "type": "float",
       "semantic_role": "mask"
+    },
+    {
+      "id": "feature_point_position",
+      "name": "Feature Point Position",
+      "type": "vec2"
+    },
+    {
+      "id": "feature_displacement",
+      "name": "Feature Displacement",
+      "type": "vec2"
+    },
+    {
+      "id": "cell_identifier",
+      "name": "Cell Identifier",
+      "type": "vec2"
     }
   ],
   "parameters": [
@@ -87,11 +102,14 @@
       "max": 1.0
     }
   ],
-  "helpers": "vec2 maker_cv2_hash(vec2 cell) {\n    vec2 a = vec2(dot(cell, vec2(19.19, 83.17)), dot(cell, vec2(47.23, 11.71)));\n    return fract(sin(a) * vec2(15427.37, 9237.13));\n}\nvec2 maker_cv2_f12(vec2 position, float density, float jitter, float motion, float speed) {\n    vec2 q = position * max(density, 0.001);\n    vec2 base = floor(q);\n    vec2 f = fract(q);\n    float first = 1e6;\n    float second = 1e6;\n    float j = clamp(jitter, 0.0, 1.0);\n    float a = clamp(motion, 0.0, 1.0) * 0.22;\n    for (int y = -1; y <= 1; ++y) {\n        for (int x = -1; x <= 1; ++x) {\n            vec2 cellOffset = vec2(float(x), float(y));\n            vec2 h = maker_cv2_hash(base + cellOffset);\n            vec2 phase = 6.28318530718 * h;\n            vec2 drift = a * sin(vec2(u_time * speed) + phase);\n            vec2 site = cellOffset + vec2(0.5) + j * (h - vec2(0.5)) + drift;\n            vec2 delta = abs(site - f);\n            float d = max(delta.x, delta.y);\n            if (d < first) { second = first; first = d; }\n            else if (d < second) { second = d; }\n        }\n    }\n    return vec2(first, second);\n}\n",
+  "helpers": "vec2 maker_cv2_hash(vec2 cell) {\n    vec2 a = vec2(dot(cell, vec2(19.19, 83.17)), dot(cell, vec2(47.23, 11.71)));\n    return fract(sin(a) * vec2(15427.37, 9237.13));\n}\nstruct MakerCV388 {vec2 distances;vec2 feature;vec2 cell;};\nMakerCV388 maker_cv2_full(vec2 position, float density, float jitter, float motion, float speed) {\n    vec2 q = position * max(density, 0.001);\n    vec2 base = floor(q);\n    vec2 f = fract(q);\n    vec2 feature=vec2(0.0),winner=base;\n    float first = 1e6;\n    float second = 1e6;\n    float j = clamp(jitter, 0.0, 1.0);\n    float a = clamp(motion, 0.0, 1.0) * 0.22;\n    for (int y = -1; y <= 1; ++y) {\n        for (int x = -1; x <= 1; ++x) {\n            vec2 cellOffset = vec2(float(x), float(y));\n            vec2 h = maker_cv2_hash(base + cellOffset);\n            vec2 phase = 6.28318530718 * h;\n            vec2 drift = a * sin(vec2(u_time * speed) + phase);\n            vec2 site = cellOffset + vec2(0.5) + j * (h - vec2(0.5)) + drift;\n            vec2 delta = abs(site - f);\n            float d = max(delta.x, delta.y);\n            if (d < first) { second = first; first = d; feature=base+site;winner=base+cellOffset; }\n            else if (d < second) { second = d; }\n        }\n    }\n    return MakerCV388(vec2(first,second),feature,winner);\n}\n\nvec2 maker_cv2_f12(vec2 p,float d,float j,float m,float s){return maker_cv2_full(p,d,j,m,s).distances;}",
   "glsl_outputs": {
     "nearest": "maker_cv2_f12({position},{density},{jitter},{motion},{speed}).x",
     "second": "maker_cv2_f12({position},{density},{jitter},{motion},{speed}).y",
     "boundary": "(maker_cv2_f12({position},{density},{jitter},{motion},{speed}).y-maker_cv2_f12({position},{density},{jitter},{motion},{speed}).x)",
-    "mask": "(1.0-smoothstep(0.0,max({width},0.0001),maker_cv2_f12({position},{density},{jitter},{motion},{speed}).y-maker_cv2_f12({position},{density},{jitter},{motion},{speed}).x))"
+    "mask": "(1.0-smoothstep(0.0,max({width},0.0001),maker_cv2_f12({position},{density},{jitter},{motion},{speed}).y-maker_cv2_f12({position},{density},{jitter},{motion},{speed}).x))",
+    "feature_point_position": "maker_cv2_full({position},{density},{jitter},{motion},{speed}).feature/max({density},0.001)",
+    "feature_displacement": "(maker_cv2_full({position},{density},{jitter},{motion},{speed}).feature/max({density},0.001)-{position})",
+    "cell_identifier": "maker_cv2_full({position},{density},{jitter},{motion},{speed}).cell"
   }
 }

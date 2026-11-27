@@ -1,0 +1,172 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.geometry.rotational_segment_network_field_2d",
+  "name": "Rotational Segment Network Field 2D",
+  "category": "Geometry",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "At most 256 segments; closest point is evaluated on the length-adjusted segment.",
+  "uses": "Rotational Segment Network Field 2D",
+  "notes": "At most 256 segments; closest point is evaluated on the length-adjusted segment.",
+  "header_color": "#527D94",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec2",
+      "default": "vec2(0.0)"
+    },
+    {
+      "id": "time_offset",
+      "name": "Time Offset",
+      "type": "float",
+      "default": "0.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "nearest_distance",
+      "name": "Nearest Distance",
+      "type": "float"
+    },
+    {
+      "id": "line_mask",
+      "name": "Line Mask",
+      "type": "float"
+    },
+    {
+      "id": "glow",
+      "name": "Glow",
+      "type": "float"
+    },
+    {
+      "id": "anchor_index",
+      "name": "Anchor Index",
+      "type": "float"
+    },
+    {
+      "id": "connection_index",
+      "name": "Connection Index",
+      "type": "float"
+    },
+    {
+      "id": "closest_point",
+      "name": "Closest Point",
+      "type": "vec2"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "anchor_count",
+      "name": "Anchor Count",
+      "type": "float",
+      "default": 7,
+      "min": 1,
+      "max": 16
+    },
+    {
+      "id": "connections",
+      "name": "Connections",
+      "type": "float",
+      "default": 4,
+      "min": 1,
+      "max": 16
+    },
+    {
+      "id": "radius",
+      "name": "Radius",
+      "type": "float",
+      "default": 0.7,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "radius_progression",
+      "name": "Radius Progression",
+      "type": "float",
+      "default": 0,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "anchor_rotation",
+      "name": "Anchor Rotation",
+      "type": "float",
+      "default": 51.4286,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "endpoint_rotation",
+      "name": "Endpoint Rotation",
+      "type": "float",
+      "default": 48,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "translation_x",
+      "name": "Translation X",
+      "type": "float",
+      "default": 0,
+      "min": -2,
+      "max": 2
+    },
+    {
+      "id": "translation_y",
+      "name": "Translation Y",
+      "type": "float",
+      "default": 0,
+      "min": -2,
+      "max": 2
+    },
+    {
+      "id": "speed",
+      "name": "Speed",
+      "type": "float",
+      "default": 0.2,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "length_multiplier",
+      "name": "Length Multiplier",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 4
+    },
+    {
+      "id": "line_width",
+      "name": "Line Width",
+      "type": "float",
+      "default": 0.01,
+      "min": 0.0001,
+      "max": 2
+    },
+    {
+      "id": "edge_softness",
+      "name": "Edge Softness",
+      "type": "float",
+      "default": 0.005,
+      "min": 0,
+      "max": 2
+    }
+  ],
+  "helpers": "struct MakerB388RotationalSegmentNetworkField2D{float nearest_distance;float line_mask;float glow;float anchor_index;float connection_index;vec2 closest_point;};\nMakerB388RotationalSegmentNetworkField2D maker_b388_rotational_segment_network_field_2d(vec2 position,vec2 center,float time_offset,float anchor_count,float connections,float radius,float radius_progression,float anchor_rotation,float endpoint_rotation,float translation_x,float translation_y,float speed,float length_multiplier,float line_width,float edge_softness){float best=1e20,ai=0.0,bi=0.0;vec2 closest=center;int n=int(clamp(round(anchor_count),1.0,16.0)),m=int(clamp(round(connections),1.0,16.0));for(int i=0;i<16;i++){if(i>=n)break;float a=radians(anchor_rotation)*float(i)+(u_time+time_offset)*speed,r=max(0.0,radius+radius_progression*float(i)/float(n));vec2 o=center+float(i)*vec2(translation_x,translation_y),p=o+r*vec2(cos(a),sin(a));for(int j=0;j<16;j++){if(j>=m)break;float b=a+radians(endpoint_rotation)*float(j+1);vec2 v=(o+r*vec2(cos(b),sin(b))-p)*length_multiplier;vec2 q=p+v*clamp(dot(position-p,v)/max(dot(v,v),1e-12),0.0,1.0);float d=length(position-q);if(d<best){best=d;ai=float(i);bi=float(j);closest=q;}}}return MakerB388RotationalSegmentNetworkField2D(best,1.0-smoothstep(line_width,line_width+max(edge_softness,1e-6),best),exp(-best/max(line_width,1e-6)),ai,bi,closest);}",
+  "glsl_outputs": {
+    "nearest_distance": "maker_b388_rotational_segment_network_field_2d({position},{center},{time_offset},{anchor_count},{connections},{radius},{radius_progression},{anchor_rotation},{endpoint_rotation},{translation_x},{translation_y},{speed},{length_multiplier},{line_width},{edge_softness}).nearest_distance",
+    "line_mask": "maker_b388_rotational_segment_network_field_2d({position},{center},{time_offset},{anchor_count},{connections},{radius},{radius_progression},{anchor_rotation},{endpoint_rotation},{translation_x},{translation_y},{speed},{length_multiplier},{line_width},{edge_softness}).line_mask",
+    "glow": "maker_b388_rotational_segment_network_field_2d({position},{center},{time_offset},{anchor_count},{connections},{radius},{radius_progression},{anchor_rotation},{endpoint_rotation},{translation_x},{translation_y},{speed},{length_multiplier},{line_width},{edge_softness}).glow",
+    "anchor_index": "maker_b388_rotational_segment_network_field_2d({position},{center},{time_offset},{anchor_count},{connections},{radius},{radius_progression},{anchor_rotation},{endpoint_rotation},{translation_x},{translation_y},{speed},{length_multiplier},{line_width},{edge_softness}).anchor_index",
+    "connection_index": "maker_b388_rotational_segment_network_field_2d({position},{center},{time_offset},{anchor_count},{connections},{radius},{radius_progression},{anchor_rotation},{endpoint_rotation},{translation_x},{translation_y},{speed},{length_multiplier},{line_width},{edge_softness}).connection_index",
+    "closest_point": "maker_b388_rotational_segment_network_field_2d({position},{center},{time_offset},{anchor_count},{connections},{radius},{radius_progression},{anchor_rotation},{endpoint_rotation},{translation_x},{translation_y},{speed},{length_multiplier},{line_width},{edge_softness}).closest_point"
+  }
+}

@@ -1,0 +1,121 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.animation.cell_indexed_temporal_oscillator_2d",
+  "name": "Cell-Indexed Temporal Oscillator 2D",
+  "category": "Animation",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Deterministic cell oscillation; phase is measured in cycles.",
+  "uses": "Cell-Indexed Temporal Oscillator 2D",
+  "notes": "Deterministic cell oscillation; phase is measured in cycles.",
+  "header_color": "#627FC2",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "time_offset",
+      "name": "Time Offset",
+      "type": "float",
+      "default": "0.0",
+      "semantic_role": "time"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "oscillation",
+      "name": "Oscillation",
+      "type": "float"
+    },
+    {
+      "id": "phase",
+      "name": "Phase",
+      "type": "float"
+    },
+    {
+      "id": "cell_identifier",
+      "name": "Cell Identifier",
+      "type": "vec2"
+    },
+    {
+      "id": "cell_local_coordinates",
+      "name": "Cell Local Coordinates",
+      "type": "vec2",
+      "semantic_role": "position2d"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "cell_width",
+      "name": "Cell Width",
+      "type": "float",
+      "default": 0.2,
+      "min": 0.001,
+      "max": 10
+    },
+    {
+      "id": "cell_height",
+      "name": "Cell Height",
+      "type": "float",
+      "default": 0.2,
+      "min": 0.001,
+      "max": 10
+    },
+    {
+      "id": "frequency",
+      "name": "Frequency",
+      "type": "float",
+      "default": 1,
+      "min": -20,
+      "max": 20
+    },
+    {
+      "id": "frequency_variation",
+      "name": "Frequency Variation",
+      "type": "float",
+      "default": 0.5,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "phase_variation",
+      "name": "Phase Variation",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "seed",
+      "name": "Seed",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 65535
+    },
+    {
+      "id": "waveform",
+      "name": "Waveform",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Sine",
+        "Triangle",
+        "Saw",
+        "Square"
+      ]
+    }
+  ],
+  "helpers": "vec2 maker_cto(vec2 p,float offset,float w,float h,float f,float fv,float pv,float seed,float mode){vec2 c=floor(p/vec2(w,h));float a=fract(sin(dot(c,vec2(83.7,149.3))+seed*.13)*43758.5453);float b=fract(sin(dot(c,vec2(213.1,57.9))+seed*.19)*19341.13);float t=fract((u_time+offset)*f*(1.0+fv*(2.0*a-1.0))+pv*b);float v=.5+.5*sin(6.2831853*t);if(mode>.5)v=1.0-abs(2.0*t-1.0);if(mode>1.5)v=t;if(mode>2.5)v=step(.5,t);return vec2(v,t);}",
+  "glsl_outputs": {
+    "oscillation": "maker_cto({position},{time_offset},{cell_width},{cell_height},{frequency},{frequency_variation},{phase_variation},{seed},{waveform}).x",
+    "phase": "maker_cto({position},{time_offset},{cell_width},{cell_height},{frequency},{frequency_variation},{phase_variation},{seed},{waveform}).y",
+    "cell_identifier": "floor({position}/vec2({cell_width},{cell_height}))",
+    "cell_local_coordinates": "fract({position}/vec2({cell_width},{cell_height}))"
+  }
+}

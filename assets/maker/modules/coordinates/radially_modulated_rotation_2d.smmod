@@ -7,7 +7,7 @@
   "creator_email": "screenshaver@proton.me",
   "description": "Radially Modulated Rotation 2D",
   "uses": "Radially Modulated Rotation 2D",
-  "notes": "Angles are radians on outputs; parameter angles are degrees.",
+  "notes": "Angles are radians on outputs; parameter angles are degrees. Reciprocal response is 1/max(abs(radial phase), denominator floor).",
   "header_color": "#527D94",
   "terminal": false,
   "inputs": [
@@ -117,7 +117,8 @@
         "Sine",
         "Cosine",
         "Linear",
-        "Triangle"
+        "Triangle",
+        "Reciprocal"
       ]
     },
     {
@@ -127,13 +128,21 @@
       "default": 1,
       "min": 0.25,
       "max": 4
+    },
+    {
+      "id": "denominator_floor",
+      "name": "Denominator Floor",
+      "type": "float",
+      "default": 0.1,
+      "min": 0.001,
+      "max": 10
     }
   ],
-  "helpers": "\nstruct MakerB309RadiallyModulatedRotation2D {vec2 rotated_position;float radius;float rotation_angle;float angular_coordinate;};\nMakerB309RadiallyModulatedRotation2D maker_b309_radially_modulated_rotation_2d(vec2 position,vec2 center,float time_offset,float strength_multiplier,float base_rotation,float twist_amplitude,float radial_frequency,float animation_speed,float phase,float radial_scale,float response_mode,float radial_exponent,float tm){\nvec2 q=clamp(position-center,-1e8,1e8);if(any(isnan(q)))q=vec2(0);float r=length(q);float x=radial_frequency*pow(min(r*radial_scale,1e4),radial_exponent)+animation_speed*(tm+time_offset)+radians(phase);float w=response_mode<.5?sin(x):(response_mode<1.5?cos(x):(response_mode<2.5?clamp(x,-1e4,1e4):1.-4.*abs(fract(x/6.2831853)-.5)));float a=radians(base_rotation+twist_amplitude*clamp(strength_multiplier,-100.,100.)*w);float ca=cos(a),sa=sin(a);vec2 v=mat2(ca,sa,-sa,ca)*q;return MakerB309RadiallyModulatedRotation2D(v+center,r,a,r>0.?atan(v.y,v.x):0.);\n}",
+  "helpers": "\nstruct MakerB309RadiallyModulatedRotation2D {vec2 rotated_position;float radius;float rotation_angle;float angular_coordinate;};\nMakerB309RadiallyModulatedRotation2D maker_b309_radially_modulated_rotation_2d(vec2 position,vec2 center,float time_offset,float strength_multiplier,float base_rotation,float twist_amplitude,float radial_frequency,float animation_speed,float phase,float radial_scale,float response_mode,float radial_exponent,float denominator_floor,float tm){\nvec2 q=clamp(position-center,-1e8,1e8);if(any(isnan(q)))q=vec2(0);float r=length(q);float x=radial_frequency*pow(min(r*radial_scale,1e4),radial_exponent)+animation_speed*(tm+time_offset)+radians(phase);float w=response_mode<.5?sin(x):(response_mode<1.5?cos(x):(response_mode<2.5?clamp(x,-1e4,1e4):1.-4.*abs(fract(x/6.2831853)-.5)));if(response_mode>=3.5)w=1.0/max(abs(x),max(denominator_floor,.001));float a=radians(base_rotation+twist_amplitude*clamp(strength_multiplier,-100.,100.)*w);float ca=cos(a),sa=sin(a);vec2 v=mat2(ca,sa,-sa,ca)*q;return MakerB309RadiallyModulatedRotation2D(v+center,r,a,r>0.?atan(v.y,v.x):0.);\n}",
   "glsl_outputs": {
-    "rotated_position": "maker_b309_radially_modulated_rotation_2d({position},{center},{time_offset},{strength_multiplier},{base_rotation},{twist_amplitude},{radial_frequency},{animation_speed},{phase},{radial_scale},{response_mode},{radial_exponent},u_time).rotated_position",
-    "radius": "maker_b309_radially_modulated_rotation_2d({position},{center},{time_offset},{strength_multiplier},{base_rotation},{twist_amplitude},{radial_frequency},{animation_speed},{phase},{radial_scale},{response_mode},{radial_exponent},u_time).radius",
-    "rotation_angle": "maker_b309_radially_modulated_rotation_2d({position},{center},{time_offset},{strength_multiplier},{base_rotation},{twist_amplitude},{radial_frequency},{animation_speed},{phase},{radial_scale},{response_mode},{radial_exponent},u_time).rotation_angle",
-    "angular_coordinate": "maker_b309_radially_modulated_rotation_2d({position},{center},{time_offset},{strength_multiplier},{base_rotation},{twist_amplitude},{radial_frequency},{animation_speed},{phase},{radial_scale},{response_mode},{radial_exponent},u_time).angular_coordinate"
+    "rotated_position": "maker_b309_radially_modulated_rotation_2d({position},{center},{time_offset},{strength_multiplier},{base_rotation},{twist_amplitude},{radial_frequency},{animation_speed},{phase},{radial_scale},{response_mode},{radial_exponent},{denominator_floor},u_time).rotated_position",
+    "radius": "maker_b309_radially_modulated_rotation_2d({position},{center},{time_offset},{strength_multiplier},{base_rotation},{twist_amplitude},{radial_frequency},{animation_speed},{phase},{radial_scale},{response_mode},{radial_exponent},{denominator_floor},u_time).radius",
+    "rotation_angle": "maker_b309_radially_modulated_rotation_2d({position},{center},{time_offset},{strength_multiplier},{base_rotation},{twist_amplitude},{radial_frequency},{animation_speed},{phase},{radial_scale},{response_mode},{radial_exponent},{denominator_floor},u_time).rotation_angle",
+    "angular_coordinate": "maker_b309_radially_modulated_rotation_2d({position},{center},{time_offset},{strength_multiplier},{base_rotation},{twist_amplitude},{radial_frequency},{animation_speed},{phase},{radial_scale},{response_mode},{radial_exponent},{denominator_floor},u_time).angular_coordinate"
   }
 }

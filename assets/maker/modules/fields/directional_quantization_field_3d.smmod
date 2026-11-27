@@ -1,0 +1,137 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.directional_quantization_field_3d",
+  "name": "Directional Quantization Field 3D",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Band indices remain discrete; softness blends quantized coordinate near boundaries. Boundary distance is measured along normalized direction.",
+  "uses": "Directional Quantization Field 3D",
+  "notes": "Band indices remain discrete; softness blends quantized coordinate near boundaries. Boundary distance is measured along normalized direction.",
+  "header_color": "#527D94",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "default": "vec3(maker_uv,0.0)",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "direction",
+      "name": "Direction",
+      "type": "vec3",
+      "default": "vec3(0.0,1.0,0.0)",
+      "semantic_role": "direction3d"
+    },
+    {
+      "id": "origin",
+      "name": "Origin",
+      "type": "vec3",
+      "default": "vec3(0.0)",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "time",
+      "name": "Time",
+      "type": "float",
+      "default": "u_time",
+      "semantic_role": "time"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "projected_coordinate",
+      "name": "Projected Coordinate",
+      "type": "float"
+    },
+    {
+      "id": "quantized_coordinate",
+      "name": "Quantized Coordinate",
+      "type": "float"
+    },
+    {
+      "id": "band_index",
+      "name": "Band Index",
+      "type": "float"
+    },
+    {
+      "id": "class_index",
+      "name": "Class Index",
+      "type": "float"
+    },
+    {
+      "id": "local_position",
+      "name": "Local Position",
+      "type": "float"
+    },
+    {
+      "id": "boundary_distance",
+      "name": "Boundary Distance",
+      "type": "float",
+      "semantic_role": "distance"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "band_spacing",
+      "name": "Band Spacing",
+      "type": "float",
+      "default": 0.25,
+      "min": 0.001,
+      "max": 100
+    },
+    {
+      "id": "phase_offset",
+      "name": "Phase Offset",
+      "type": "float",
+      "default": 0,
+      "min": -100,
+      "max": 100
+    },
+    {
+      "id": "animation_speed",
+      "name": "Animation Speed",
+      "type": "float",
+      "default": 0,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "class_count",
+      "name": "Class Count",
+      "type": "float",
+      "default": 4,
+      "min": 1,
+      "max": 64
+    },
+    {
+      "id": "boundary_softness",
+      "name": "Boundary Softness",
+      "type": "float",
+      "default": 0,
+      "min": 0,
+      "max": 0.5
+    },
+    {
+      "id": "classification_mode",
+      "name": "Classification Mode",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Floor",
+        "Nearest"
+      ]
+    }
+  ],
+  "helpers": "struct MakerB383DirectionalQuantizationField3D{float projected_coordinate;float quantized_coordinate;float band_index;float class_index;float local_position;float boundary_distance;};\nMakerB383DirectionalQuantizationField3D maker_b383_directional_quantization_field_3d(vec3 position,vec3 direction,vec3 origin,float time,float band_spacing,float phase_offset,float animation_speed,float class_count,float boundary_softness,float classification_mode){\nvec3 d=clamp(direction,-1e6,1e6);if(any(isnan(d))||length(d)<1e-8)d=vec3(0.0,1.0,0.0);else d=normalize(d);vec3 p=clamp(position-origin,-1e6,1e6);if(any(isnan(p)))p=vec3(0.0);float t=clamp(time,-1e6,1e6);if(isnan(t))t=0.0;float x=dot(p,d),s=max(band_spacing,.001),offset=phase_offset+animation_speed*t;float z=(x+offset)/s+(classification_mode>0.5?0.5:0.0);float i=floor(z),u=fract(z);float q=i*s-offset;if(boundary_softness>0.0){float w=min(boundary_softness,.5);q+=s*(0.5*smoothstep(1.0-w,1.0,u)-0.5*(1.0-smoothstep(0.0,w,u)));}return MakerB383DirectionalQuantizationField3D(x,q,i,mod(i,max(round(class_count),1.0)),u,min(u,1.0-u)*s);\n}",
+  "glsl_outputs": {
+    "projected_coordinate": "maker_b383_directional_quantization_field_3d({position},{direction},{origin},{time},{band_spacing},{phase_offset},{animation_speed},{class_count},{boundary_softness},{classification_mode}).projected_coordinate",
+    "quantized_coordinate": "maker_b383_directional_quantization_field_3d({position},{direction},{origin},{time},{band_spacing},{phase_offset},{animation_speed},{class_count},{boundary_softness},{classification_mode}).quantized_coordinate",
+    "band_index": "maker_b383_directional_quantization_field_3d({position},{direction},{origin},{time},{band_spacing},{phase_offset},{animation_speed},{class_count},{boundary_softness},{classification_mode}).band_index",
+    "class_index": "maker_b383_directional_quantization_field_3d({position},{direction},{origin},{time},{band_spacing},{phase_offset},{animation_speed},{class_count},{boundary_softness},{classification_mode}).class_index",
+    "local_position": "maker_b383_directional_quantization_field_3d({position},{direction},{origin},{time},{band_spacing},{phase_offset},{animation_speed},{class_count},{boundary_softness},{classification_mode}).local_position",
+    "boundary_distance": "maker_b383_directional_quantization_field_3d({position},{direction},{origin},{time},{band_spacing},{phase_offset},{animation_speed},{class_count},{boundary_softness},{classification_mode}).boundary_distance"
+  }
+}

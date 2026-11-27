@@ -1,0 +1,108 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.color.rgb_vector_rotation",
+  "name": "RGB Vector Rotation",
+  "category": "Color",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "RGB vector rotation around a neutral scalar pivot, X then Y then Z; magnitude of returned RGB.",
+  "uses": "RGB Vector Rotation",
+  "notes": "RGB vector rotation around a neutral scalar pivot, X then Y then Z; magnitude of returned RGB.",
+  "header_color": "#627FC2",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "color",
+      "name": "Color",
+      "type": "vec3",
+      "default": "vec3(0.5)",
+      "semantic_role": "color"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "color",
+      "name": "Color",
+      "type": "vec3",
+      "semantic_role": "color"
+    },
+    {
+      "id": "vector_magnitude",
+      "name": "Vector Magnitude",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "angle_x",
+      "name": "Angle X",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "angle_y",
+      "name": "Angle Y",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "angle_z",
+      "name": "Angle Z",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "speed_x",
+      "name": "Speed X",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "speed_y",
+      "name": "Speed Y",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "speed_z",
+      "name": "Speed Z",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "pivot",
+      "name": "Pivot",
+      "type": "float",
+      "default": 0.5,
+      "min": -2,
+      "max": 2
+    },
+    {
+      "id": "gamut",
+      "name": "Gamut",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Unclipped",
+        "Clamp"
+      ]
+    }
+  ],
+  "helpers": "vec3 maker_rvr(vec3 p,float ax,float ay,float az,float sx,float sy,float sz,float pivot,float gamut){vec3 a=radians(mod(vec3(ax,ay,az)+u_time*vec3(sx,sy,sz),360.0)),c=cos(a),s=sin(a);p-=vec3(pivot);p=vec3(p.x,c.x*p.y-s.x*p.z,s.x*p.y+c.x*p.z);p=vec3(c.y*p.x+s.y*p.z,p.y,-s.y*p.x+c.y*p.z);p=vec3(c.z*p.x-s.z*p.y,s.z*p.x+c.z*p.y,p.z)+vec3(pivot);return gamut>.5?clamp(p,0.0,1.0):p;}",
+  "glsl_outputs": {
+    "color": "maker_rvr({color},{angle_x},{angle_y},{angle_z},{speed_x},{speed_y},{speed_z},{pivot},{gamut})",
+    "vector_magnitude": "length(maker_rvr({color},{angle_x},{angle_y},{angle_z},{speed_x},{speed_y},{speed_z},{pivot},{gamut}))"
+  }
+}

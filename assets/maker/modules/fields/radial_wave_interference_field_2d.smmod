@@ -168,15 +168,132 @@
       "default": 0,
       "min": 0,
       "max": 1000
+    },
+    {
+      "id": "accumulation_mode",
+      "name": "Accumulation Mode",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Additive Mean",
+        "Multiplicative Product",
+        "Maximum Magnitude"
+      ]
+    },
+    {
+      "id": "emitter_arrangement",
+      "name": "Emitter Arrangement",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Common Orbit",
+        "Independent Pair"
+      ]
+    },
+    {
+      "id": "e1_x_amplitude",
+      "name": "E1 X Amplitude",
+      "type": "float",
+      "default": 0.5,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "e1_x_frequency",
+      "name": "E1 X Frequency",
+      "type": "float",
+      "default": 0.2,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "e1_x_phase",
+      "name": "E1 X Phase",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "e1_y_amplitude",
+      "name": "E1 Y Amplitude",
+      "type": "float",
+      "default": 0.5,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "e1_y_frequency",
+      "name": "E1 Y Frequency",
+      "type": "float",
+      "default": 0.2,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "e1_y_phase",
+      "name": "E1 Y Phase",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "e2_x_amplitude",
+      "name": "E2 X Amplitude",
+      "type": "float",
+      "default": 0.5,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "e2_x_frequency",
+      "name": "E2 X Frequency",
+      "type": "float",
+      "default": 0.4,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "e2_x_phase",
+      "name": "E2 X Phase",
+      "type": "float",
+      "default": 90,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "e2_y_amplitude",
+      "name": "E2 Y Amplitude",
+      "type": "float",
+      "default": 0.5,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "e2_y_frequency",
+      "name": "E2 Y Frequency",
+      "type": "float",
+      "default": 0.4,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "e2_y_phase",
+      "name": "E2 Y Phase",
+      "type": "float",
+      "default": 90,
+      "min": -360,
+      "max": 360
     }
   ],
-  "helpers": "struct MakerB344RadialWaveInterferenceField2D {float signed_wave_field;float normalized_wave_field;float interference_mask;float wave_energy;float nearest_emitter_distance;vec2 wave_gradient;};\nMakerB344RadialWaveInterferenceField2D maker_b344_radial_wave_interference_field_2d(vec2 position,vec2 center,float time_offset,float amplitude_multiplier,float emitter_count,float emitter_radius,float wave_frequency,float propagation_speed,float orbital_speed,float distance_attenuation,float radial_oscillation,float oscillation_speed,float phase_distribution,float phase_spread,float interference_width,float seed,float tm){\nfloat t=tm+time_offset,k=6.2831853*wave_frequency;int n=int(clamp(round(emitter_count),2.,32.));float sumv=0.,energy=0.,nearv=1e20;vec2 grad=vec2(0.);for(int j=0;j<32;j++){if(j>=n)break;float f=float(j)/float(n),a=6.2831853*(f+orbital_speed*t);float radius=max(0.,emitter_radius+radial_oscillation*sin(6.2831853*(oscillation_speed*t+f)));vec2 d=position-center-radius*vec2(cos(a),sin(a));float r=length(d),att=1./(1.+distance_attenuation*r);float ph=radians(phase_spread)*(phase_distribution<.5?0.:(phase_distribution<1.5?f:fract(sin(float(j)*91.73+seed)*13759.23)));float arg=k*(r-propagation_speed*t)+ph,v=att*sin(arg);sumv+=v;energy+=v*v;nearv=min(nearv,r);grad+=(k*att*cos(arg)-distance_attenuation*att*att*sin(arg))*d/max(r,1e-6);}float f=sumv/float(n);return MakerB344RadialWaveInterferenceField2D(f*amplitude_multiplier,.5+.5*clamp(f,-1.,1.),1.-smoothstep(0.,max(interference_width,.001),abs(f)),energy/float(n)*amplitude_multiplier*amplitude_multiplier,nearv,grad*amplitude_multiplier/float(n));\n}",
+  "helpers": "struct MakerB344RadialWaveInterferenceField2D {float signed_wave_field;float normalized_wave_field;float interference_mask;float wave_energy;float nearest_emitter_distance;vec2 wave_gradient;};\nMakerB344RadialWaveInterferenceField2D maker_b344_radial_wave_interference_field_2d(vec2 position,vec2 center,float time_offset,float amplitude_multiplier,float emitter_count,float emitter_radius,float wave_frequency,float propagation_speed,float orbital_speed,float distance_attenuation,float radial_oscillation,float oscillation_speed,float phase_distribution,float phase_spread,float interference_width,float seed,float tm,float mode,float arrangement,float e1_x_amplitude,float e1_x_frequency,float e1_x_phase,float e1_y_amplitude,float e1_y_frequency,float e1_y_phase,float e2_x_amplitude,float e2_x_frequency,float e2_x_phase,float e2_y_amplitude,float e2_y_frequency,float e2_y_phase){\nfloat t=tm+time_offset,k=6.2831853*wave_frequency;int n=int(clamp(round(emitter_count),2.,32.));if(arrangement>.5)n=2;float product=1.0,best=0.0;vec2 pg=vec2(0.0),bg=vec2(0.0);float sumv=0.,energy=0.,nearv=1e20;vec2 grad=vec2(0.);for(int j=0;j<32;j++){if(j>=n)break;float f=float(j)/float(n),a=6.2831853*(f+orbital_speed*t);float radius=max(0.,emitter_radius+radial_oscillation*sin(6.2831853*(oscillation_speed*t+f)));vec2 d=position-center-radius*vec2(cos(a),sin(a));if(arrangement>.5){vec2 q1=vec2(e1_x_amplitude*cos(6.2831853*e1_x_frequency*t+radians(e1_x_phase)),e1_y_amplitude*sin(6.2831853*e1_y_frequency*t+radians(e1_y_phase)));vec2 q2=vec2(e2_x_amplitude*cos(6.2831853*e2_x_frequency*t+radians(e2_x_phase)),e2_y_amplitude*sin(6.2831853*e2_y_frequency*t+radians(e2_y_phase)));d=position-center-(j==0?q1:q2);}float r=length(d),att=1./(1.+distance_attenuation*r);float ph=radians(phase_spread)*(phase_distribution<.5?0.:(phase_distribution<1.5?f:fract(sin(float(j)*91.73+seed)*13759.23)));float arg=k*(r-propagation_speed*t)+ph,v=att*sin(arg);sumv+=v;energy+=v*v;nearv=min(nearv,r);vec2 vg=(k*att*cos(arg)-distance_attenuation*att*att*sin(arg))*d/max(r,1e-6);grad+=vg;pg=pg*v+product*vg;product*=v;if(j==0||abs(v)>abs(best)){best=v;bg=vg;}}float f=sumv/float(n);vec2 g=grad/float(n);if(mode>.5){f=mode<1.5?product:best;g=mode<1.5?pg:bg;}return MakerB344RadialWaveInterferenceField2D(f*amplitude_multiplier,.5+.5*clamp(f,-1.,1.),1.-smoothstep(0.,max(interference_width,.001),abs(f)),energy/float(n)*amplitude_multiplier*amplitude_multiplier,nearv,g*amplitude_multiplier);\n}",
   "glsl_outputs": {
-    "signed_wave_field": "maker_b344_radial_wave_interference_field_2d({position},{center},{time_offset},{amplitude_multiplier},{emitter_count},{emitter_radius},{wave_frequency},{propagation_speed},{orbital_speed},{distance_attenuation},{radial_oscillation},{oscillation_speed},{phase_distribution},{phase_spread},{interference_width},{seed},u_time).signed_wave_field",
-    "normalized_wave_field": "maker_b344_radial_wave_interference_field_2d({position},{center},{time_offset},{amplitude_multiplier},{emitter_count},{emitter_radius},{wave_frequency},{propagation_speed},{orbital_speed},{distance_attenuation},{radial_oscillation},{oscillation_speed},{phase_distribution},{phase_spread},{interference_width},{seed},u_time).normalized_wave_field",
-    "interference_mask": "maker_b344_radial_wave_interference_field_2d({position},{center},{time_offset},{amplitude_multiplier},{emitter_count},{emitter_radius},{wave_frequency},{propagation_speed},{orbital_speed},{distance_attenuation},{radial_oscillation},{oscillation_speed},{phase_distribution},{phase_spread},{interference_width},{seed},u_time).interference_mask",
-    "wave_energy": "maker_b344_radial_wave_interference_field_2d({position},{center},{time_offset},{amplitude_multiplier},{emitter_count},{emitter_radius},{wave_frequency},{propagation_speed},{orbital_speed},{distance_attenuation},{radial_oscillation},{oscillation_speed},{phase_distribution},{phase_spread},{interference_width},{seed},u_time).wave_energy",
-    "nearest_emitter_distance": "maker_b344_radial_wave_interference_field_2d({position},{center},{time_offset},{amplitude_multiplier},{emitter_count},{emitter_radius},{wave_frequency},{propagation_speed},{orbital_speed},{distance_attenuation},{radial_oscillation},{oscillation_speed},{phase_distribution},{phase_spread},{interference_width},{seed},u_time).nearest_emitter_distance",
-    "wave_gradient": "maker_b344_radial_wave_interference_field_2d({position},{center},{time_offset},{amplitude_multiplier},{emitter_count},{emitter_radius},{wave_frequency},{propagation_speed},{orbital_speed},{distance_attenuation},{radial_oscillation},{oscillation_speed},{phase_distribution},{phase_spread},{interference_width},{seed},u_time).wave_gradient"
+    "signed_wave_field": "maker_b344_radial_wave_interference_field_2d({position},{center},{time_offset},{amplitude_multiplier},{emitter_count},{emitter_radius},{wave_frequency},{propagation_speed},{orbital_speed},{distance_attenuation},{radial_oscillation},{oscillation_speed},{phase_distribution},{phase_spread},{interference_width},{seed},u_time,{accumulation_mode},{emitter_arrangement},{e1_x_amplitude},{e1_x_frequency},{e1_x_phase},{e1_y_amplitude},{e1_y_frequency},{e1_y_phase},{e2_x_amplitude},{e2_x_frequency},{e2_x_phase},{e2_y_amplitude},{e2_y_frequency},{e2_y_phase}).signed_wave_field",
+    "normalized_wave_field": "maker_b344_radial_wave_interference_field_2d({position},{center},{time_offset},{amplitude_multiplier},{emitter_count},{emitter_radius},{wave_frequency},{propagation_speed},{orbital_speed},{distance_attenuation},{radial_oscillation},{oscillation_speed},{phase_distribution},{phase_spread},{interference_width},{seed},u_time,{accumulation_mode},{emitter_arrangement},{e1_x_amplitude},{e1_x_frequency},{e1_x_phase},{e1_y_amplitude},{e1_y_frequency},{e1_y_phase},{e2_x_amplitude},{e2_x_frequency},{e2_x_phase},{e2_y_amplitude},{e2_y_frequency},{e2_y_phase}).normalized_wave_field",
+    "interference_mask": "maker_b344_radial_wave_interference_field_2d({position},{center},{time_offset},{amplitude_multiplier},{emitter_count},{emitter_radius},{wave_frequency},{propagation_speed},{orbital_speed},{distance_attenuation},{radial_oscillation},{oscillation_speed},{phase_distribution},{phase_spread},{interference_width},{seed},u_time,{accumulation_mode},{emitter_arrangement},{e1_x_amplitude},{e1_x_frequency},{e1_x_phase},{e1_y_amplitude},{e1_y_frequency},{e1_y_phase},{e2_x_amplitude},{e2_x_frequency},{e2_x_phase},{e2_y_amplitude},{e2_y_frequency},{e2_y_phase}).interference_mask",
+    "wave_energy": "maker_b344_radial_wave_interference_field_2d({position},{center},{time_offset},{amplitude_multiplier},{emitter_count},{emitter_radius},{wave_frequency},{propagation_speed},{orbital_speed},{distance_attenuation},{radial_oscillation},{oscillation_speed},{phase_distribution},{phase_spread},{interference_width},{seed},u_time,{accumulation_mode},{emitter_arrangement},{e1_x_amplitude},{e1_x_frequency},{e1_x_phase},{e1_y_amplitude},{e1_y_frequency},{e1_y_phase},{e2_x_amplitude},{e2_x_frequency},{e2_x_phase},{e2_y_amplitude},{e2_y_frequency},{e2_y_phase}).wave_energy",
+    "nearest_emitter_distance": "maker_b344_radial_wave_interference_field_2d({position},{center},{time_offset},{amplitude_multiplier},{emitter_count},{emitter_radius},{wave_frequency},{propagation_speed},{orbital_speed},{distance_attenuation},{radial_oscillation},{oscillation_speed},{phase_distribution},{phase_spread},{interference_width},{seed},u_time,{accumulation_mode},{emitter_arrangement},{e1_x_amplitude},{e1_x_frequency},{e1_x_phase},{e1_y_amplitude},{e1_y_frequency},{e1_y_phase},{e2_x_amplitude},{e2_x_frequency},{e2_x_phase},{e2_y_amplitude},{e2_y_frequency},{e2_y_phase}).nearest_emitter_distance",
+    "wave_gradient": "maker_b344_radial_wave_interference_field_2d({position},{center},{time_offset},{amplitude_multiplier},{emitter_count},{emitter_radius},{wave_frequency},{propagation_speed},{orbital_speed},{distance_attenuation},{radial_oscillation},{oscillation_speed},{phase_distribution},{phase_spread},{interference_width},{seed},u_time,{accumulation_mode},{emitter_arrangement},{e1_x_amplitude},{e1_x_frequency},{e1_x_phase},{e1_y_amplitude},{e1_y_frequency},{e1_y_phase},{e2_x_amplitude},{e2_x_frequency},{e2_x_phase},{e2_y_amplitude},{e2_y_frequency},{e2_y_phase}).wave_gradient"
   }
 }

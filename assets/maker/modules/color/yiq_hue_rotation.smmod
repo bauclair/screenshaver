@@ -1,0 +1,82 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.color.yiq_hue_rotation",
+  "name": "YIQ Hue Rotation",
+  "category": "Color",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "YIQ chrominance rotation; luminance preserved approximately before clipping.",
+  "uses": "YIQ Hue Rotation",
+  "notes": "YIQ chrominance rotation; luminance preserved approximately before clipping.",
+  "header_color": "#627FC2",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "color",
+      "name": "Color",
+      "type": "vec3",
+      "default": "vec3(0.5)",
+      "semantic_role": "color"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "color",
+      "name": "Color",
+      "type": "vec3",
+      "semantic_role": "color"
+    },
+    {
+      "id": "luminance",
+      "name": "Luminance",
+      "type": "float"
+    },
+    {
+      "id": "chrominance_magnitude",
+      "name": "Chrominance Magnitude",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "angle",
+      "name": "Angle",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "speed",
+      "name": "Speed",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "chrominance_gain",
+      "name": "Chrominance Gain",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 4
+    },
+    {
+      "id": "gamut",
+      "name": "Gamut",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Unclipped",
+        "Clamp"
+      ]
+    }
+  ],
+  "helpers": "vec3 maker_yiq_components(vec3 c){return vec3(dot(c,vec3(.299,.587,.114)),dot(c,vec3(.595716,-.274453,-.321263)),dot(c,vec3(.211456,-.522591,.311135)));}\nvec3 maker_yiq(vec3 c,float angle,float speed,float gain,float gamut){vec3 v=maker_yiq_components(c);float a=radians(mod(angle+speed*u_time,360.0));vec2 q=gain*mat2(cos(a),sin(a),-sin(a),cos(a))*v.yz;vec3 r=vec3(v.x+.9563*q.x+.6210*q.y,v.x-.2721*q.x-.6474*q.y,v.x-1.1070*q.x+1.7046*q.y);return gamut>.5?clamp(r,0.0,1.0):r;}",
+  "glsl_outputs": {
+    "color": "maker_yiq({color},{angle},{speed},{chrominance_gain},{gamut})",
+    "luminance": "maker_yiq_components({color}).x",
+    "chrominance_magnitude": "length(maker_yiq_components({color}).yz)*{chrominance_gain}"
+  }
+}

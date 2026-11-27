@@ -1,0 +1,125 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.radial_wave_coordinate_displacement_3d",
+  "name": "Radial Wave Coordinate Displacement 3D",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Radial traveling wave displaces the selected axis; compensation is a conservative inverse Lipschitz bound for downstream distance fields.",
+  "uses": "Radial Wave Coordinate Displacement 3D",
+  "notes": "Radial traveling wave displaces the selected axis; compensation is a conservative inverse Lipschitz bound for downstream distance fields.",
+  "header_color": "#287C9B",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "default": "vec3(maker_uv,0.0)",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec3",
+      "default": "vec3(0.0)"
+    },
+    {
+      "id": "time_offset",
+      "name": "Time Offset",
+      "type": "float",
+      "default": "0.0",
+      "semantic_role": "time"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "warped_coordinates",
+      "name": "Warped Coordinates",
+      "type": "vec3",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "displacement",
+      "name": "Displacement",
+      "type": "float"
+    },
+    {
+      "id": "radial_distance",
+      "name": "Radial Distance",
+      "type": "float"
+    },
+    {
+      "id": "wave_phase",
+      "name": "Wave Phase",
+      "type": "float",
+      "semantic_role": "angle"
+    },
+    {
+      "id": "distance_compensation",
+      "name": "Distance Compensation",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "axis",
+      "name": "Axis",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Z",
+        "X",
+        "Y"
+      ]
+    },
+    {
+      "id": "amplitude",
+      "name": "Amplitude",
+      "type": "float",
+      "default": 0.2,
+      "min": -3,
+      "max": 3
+    },
+    {
+      "id": "frequency",
+      "name": "Frequency",
+      "type": "float",
+      "default": 5,
+      "min": 0,
+      "max": 30
+    },
+    {
+      "id": "speed",
+      "name": "Speed",
+      "type": "float",
+      "default": 1,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "phase",
+      "name": "Phase",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "attenuation",
+      "name": "Attenuation",
+      "type": "float",
+      "default": 0,
+      "min": 0,
+      "max": 10
+    }
+  ],
+  "helpers": "struct MakerRadialWarpResult{vec3 warped;float displacement;float radius;float phase;float compensation;};\nMakerRadialWarpResult maker_radial_wave_coordinate_displacement_3d(vec3 p,vec3 c,float t,float axis,float amp,float freq,float speed,float phase,float att){vec3 q=p-c;vec3 n=axis<.5?vec3(0,0,1):axis<1.5?vec3(1,0,0):vec3(0,1,0);float r=length(q-n*dot(q,n));float a=r*freq-(u_time+t)*speed+radians(phase);float d=amp*sin(a)*exp(-att*r);return MakerRadialWarpResult(p+n*d,d,r,a,1.0/(1.0+abs(amp)*(abs(freq)+att)));}",
+  "glsl_outputs": {
+    "warped_coordinates": "maker_radial_wave_coordinate_displacement_3d({position},{center},{time_offset},{axis},{amplitude},{frequency},{speed},{phase},{attenuation}).warped",
+    "displacement": "maker_radial_wave_coordinate_displacement_3d({position},{center},{time_offset},{axis},{amplitude},{frequency},{speed},{phase},{attenuation}).displacement",
+    "radial_distance": "maker_radial_wave_coordinate_displacement_3d({position},{center},{time_offset},{axis},{amplitude},{frequency},{speed},{phase},{attenuation}).radius",
+    "wave_phase": "maker_radial_wave_coordinate_displacement_3d({position},{center},{time_offset},{axis},{amplitude},{frequency},{speed},{phase},{attenuation}).phase",
+    "distance_compensation": "maker_radial_wave_coordinate_displacement_3d({position},{center},{time_offset},{axis},{amplitude},{frequency},{speed},{phase},{attenuation}).compensation"
+  }
+}

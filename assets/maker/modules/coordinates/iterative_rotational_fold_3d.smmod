@@ -7,7 +7,7 @@
   "creator_email": "screenshaver@proton.me",
   "description": "Repeatedly rotates, selectively folds and translates a three-dimensional coordinate.",
   "uses": "Fractal domains, crystalline geometry and animated coordinate deformation.",
-  "notes": "Right-handed X then Y then Z rotation per iteration. Angles in degrees, speeds in degrees per second. Iterations and fold choice rounded to nearest integer. Translation follows folding on every iteration, including unfolded axes. This is a coordinate transform, not a distance field. Modulation is evaluated once per sample, not per iteration. Rotation modulation in degrees. Uniform scale compensation is nominal, not a conservative distance guarantee. Translation progression multiplies the combined translation vector by ratio^i at zero-based iteration i, independently of coordinate scale. Final multiplier is ratio^(count-1). Extreme input magnitudes may overflow.",
+  "notes": "Right-handed X then Y then Z rotation per iteration. Angles in degrees, speeds in degrees per second. Iterations and fold choice rounded to nearest integer. Translation follows folding on every iteration, including unfolded axes. This is a coordinate transform, not a distance field. Modulation is evaluated once per sample, not per iteration. Rotation modulation in degrees. Uniform scale compensation is nominal, not a conservative distance guarantee. Translation progression multiplies the combined translation vector by ratio^i at zero-based iteration i, independently of coordinate scale. Final multiplier is ratio^(count-1). Extreme input magnitudes may overflow. Optional centered periodic repetition occurs before each iteration; None preserves original behavior. Nonlegacy plane modes fold both active components, overriding Fold Axes; periodic repetition remains before each iteration.",
   "header_color": "#627FC2",
   "terminal": false,
   "inputs": [
@@ -191,14 +191,76 @@
       "default": 1.0,
       "min": 0.1,
       "max": 2.0
+    },
+    {
+      "id": "repetition_axes",
+      "name": "Repetition Axes",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "None",
+        "X",
+        "Y",
+        "Z",
+        "XY",
+        "XZ",
+        "YZ",
+        "XYZ"
+      ]
+    },
+    {
+      "id": "period_x",
+      "name": "Period X",
+      "type": "float",
+      "default": 2,
+      "min": 0.001,
+      "max": 100
+    },
+    {
+      "id": "period_y",
+      "name": "Period Y",
+      "type": "float",
+      "default": 2,
+      "min": 0.001,
+      "max": 100
+    },
+    {
+      "id": "period_z",
+      "name": "Period Z",
+      "type": "float",
+      "default": 2,
+      "min": 0.001,
+      "max": 100
+    },
+    {
+      "id": "plane_sequence",
+      "name": "Plane Sequence",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Existing",
+        "Cyclic XY YZ ZX",
+        "Reverse ZX YZ XY",
+        "Fixed XY",
+        "Fixed YZ",
+        "Fixed ZX"
+      ]
+    },
+    {
+      "id": "inactive_translation",
+      "name": "Inactive Translation",
+      "type": "float",
+      "default": 0,
+      "min": -10,
+      "max": 10
     }
   ],
-  "helpers": "vec3 maker_iterative_rotational_fold(vec3 p,float iterations,vec3 angles,vec3 speeds,float time,float axes,vec3 translation,float scale,float order,vec3 rotation_modulation,vec3 translation_modulation,float progression){\n    vec3 a=radians(mod(angles+speeds*time+rotation_modulation,360.0));\n    vec3 c=cos(a),s=sin(a);\n    int count=int(clamp(floor(iterations+0.5),1.0,32.0));\n    int mode=int(clamp(floor(axes+0.5),0.0,7.0));\n    bool fx=mode==1||mode==4||mode==5||mode==7;\n    bool fy=mode==2||mode==4||mode==6||mode==7;\n    bool fz=mode==3||mode==5||mode==6||mode==7;\n    float ratio=clamp(progression,0.1,2.0);\n    float multiplier=1.0;\n    for(int i=0;i<32;++i){\n        if(i>=count) break;\n        if(order<0.5){\n        p=vec3(p.x,c.x*p.y-s.x*p.z,s.x*p.y+c.x*p.z);\n        p=vec3(c.y*p.x+s.y*p.z,p.y,-s.y*p.x+c.y*p.z);\n        p=vec3(c.z*p.x-s.z*p.y,s.z*p.x+c.z*p.y,p.z);\n        }\n        if(fx) p.x=abs(p.x);\n        if(fy) p.y=abs(p.y);\n        if(fz) p.z=abs(p.z);\n        p*=clamp(scale,0.25,4.0);\n        p+=(translation+translation_modulation)*multiplier;\n        multiplier*=ratio;\n        if(order>=0.5){\n        p=vec3(p.x,c.x*p.y-s.x*p.z,s.x*p.y+c.x*p.z);\n        p=vec3(c.y*p.x+s.y*p.z,p.y,-s.y*p.x+c.y*p.z);\n        p=vec3(c.z*p.x-s.z*p.y,s.z*p.x+c.z*p.y,p.z);\n        }\n    }\n    return p;\n}\nfloat maker_rot_fold_scale(float s,float n){return pow(clamp(s,0.25,4.0),clamp(floor(n+0.5),1.0,32.0));}\nfloat maker_rot_fold_translation_multiplier(float r,float n){return pow(clamp(r,0.1,2.0),clamp(floor(n+0.5),1.0,32.0)-1.0);}",
+  "helpers": "vec3 maker_iterative_rotational_fold(vec3 p,float iterations,vec3 angles,vec3 speeds,float time,float axes,vec3 translation,float scale,float order,vec3 rotation_modulation,vec3 translation_modulation,float progression,float repeat_axes,vec3 period,float sequence,float inactive_translation){\n    vec3 a=radians(mod(angles+speeds*time+rotation_modulation,360.0));\n    vec3 c=cos(a),s=sin(a);\n    int count=int(clamp(floor(iterations+0.5),1.0,32.0));\n    int mode=int(clamp(floor(axes+0.5),0.0,7.0));\n    bool fx=mode==1||mode==4||mode==5||mode==7;\n    bool fy=mode==2||mode==4||mode==6||mode==7;\n    bool fz=mode==3||mode==5||mode==6||mode==7;\n    float ratio=clamp(progression,0.1,2.0);\n    float multiplier=1.0;\n    for(int i=0;i<32;++i){\n        if(i>=count) break;\n        int m=int(clamp(floor(repeat_axes+0.5),0.0,7.0));\n        if(m==1||m==4||m==5||m==7) p.x=mod(p.x+0.5*period.x,period.x)-0.5*period.x;\n        if(m==2||m==4||m==6||m==7) p.y=mod(p.y+0.5*period.y,period.y)-0.5*period.y;\n        if(m==3||m==5||m==6||m==7) p.z=mod(p.z+0.5*period.z,period.z)-0.5*period.z;\n        if(sequence>.5){int seq=int(sequence+.5);int plane=seq==1?i%3:seq==2?2-i%3:seq-3;vec3 q=plane==0?p:plane==1?p.yzx:p.zxy;float co=plane==0?c.z:plane==1?c.x:c.y;float si=plane==0?s.z:plane==1?s.x:s.y;if(order<.5)q.xy=vec2(co*q.x-si*q.y,si*q.x+co*q.y);q.xy=abs(q.xy);q*=clamp(scale,.25,4.0);q.z+=inactive_translation*multiplier;if(order>=.5)q.xy=vec2(co*q.x-si*q.y,si*q.x+co*q.y);p=plane==0?q:plane==1?q.zxy:q.yzx;p+=(translation+translation_modulation)*multiplier;multiplier*=ratio;continue;}\n        if(order<0.5){\n        p=vec3(p.x,c.x*p.y-s.x*p.z,s.x*p.y+c.x*p.z);\n        p=vec3(c.y*p.x+s.y*p.z,p.y,-s.y*p.x+c.y*p.z);\n        p=vec3(c.z*p.x-s.z*p.y,s.z*p.x+c.z*p.y,p.z);\n        }\n        if(fx) p.x=abs(p.x);\n        if(fy) p.y=abs(p.y);\n        if(fz) p.z=abs(p.z);\n        p*=clamp(scale,0.25,4.0);\n        p+=(translation+translation_modulation)*multiplier;\n        multiplier*=ratio;\n        if(order>=0.5){\n        p=vec3(p.x,c.x*p.y-s.x*p.z,s.x*p.y+c.x*p.z);\n        p=vec3(c.y*p.x+s.y*p.z,p.y,-s.y*p.x+c.y*p.z);\n        p=vec3(c.z*p.x-s.z*p.y,s.z*p.x+c.z*p.y,p.z);\n        }\n    }\n    return p;\n}\nfloat maker_rot_fold_scale(float s,float n){return pow(clamp(s,0.25,4.0),clamp(floor(n+0.5),1.0,32.0));}\nfloat maker_rot_fold_translation_multiplier(float r,float n){return pow(clamp(r,0.1,2.0),clamp(floor(n+0.5),1.0,32.0)-1.0);}",
   "glsl_outputs": {
-    "folded": "maker_iterative_rotational_fold({position},{iterations},vec3({angle_x},{angle_y},{angle_z}),vec3({speed_x},{speed_y},{speed_z}),{time},{fold_axes},vec3({translation_x},{translation_y},{translation_z}),{iteration_scale},{transformation_order},{rotation_modulation},{translation_modulation},{translation_progression})",
+    "folded": "maker_iterative_rotational_fold({position},{iterations},vec3({angle_x},{angle_y},{angle_z}),vec3({speed_x},{speed_y},{speed_z}),{time},{fold_axes},vec3({translation_x},{translation_y},{translation_z}),{iteration_scale},{transformation_order},{rotation_modulation},{translation_modulation},{translation_progression},{repetition_axes},vec3({period_x},{period_y},{period_z}),{plane_sequence},{inactive_translation})",
     "accumulated_scale": "maker_rot_fold_scale({iteration_scale},{iterations})",
     "inverse_scale": "(1.0/maker_rot_fold_scale({iteration_scale},{iterations}))",
-    "compensated": "(maker_iterative_rotational_fold({position},{iterations},vec3({angle_x},{angle_y},{angle_z}),vec3({speed_x},{speed_y},{speed_z}),{time},{fold_axes},vec3({translation_x},{translation_y},{translation_z}),{iteration_scale},{transformation_order},{rotation_modulation},{translation_modulation},{translation_progression})/maker_rot_fold_scale({iteration_scale},{iterations}))",
+    "compensated": "(maker_iterative_rotational_fold({position},{iterations},vec3({angle_x},{angle_y},{angle_z}),vec3({speed_x},{speed_y},{speed_z}),{time},{fold_axes},vec3({translation_x},{translation_y},{translation_z}),{iteration_scale},{transformation_order},{rotation_modulation},{translation_modulation},{translation_progression},{repetition_axes},vec3({period_x},{period_y},{period_z}),{plane_sequence},{inactive_translation})/maker_rot_fold_scale({iteration_scale},{iterations}))",
     "final_translation_multiplier": "maker_rot_fold_translation_multiplier({translation_progression},{iterations})"
   }
 }

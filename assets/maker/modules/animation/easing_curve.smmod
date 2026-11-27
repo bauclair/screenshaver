@@ -31,18 +31,29 @@
       "type": "choice",
       "default": 2,
       "min": 0,
-      "max": 5,
+      "max": 8,
       "options": [
         "Linear",
         "Smoothstep",
         "Smootherstep",
         "Ease In Quad",
         "Ease Out Quad",
-        "Ease In Out Quad"
+        "Ease In Out Quad",
+        "Power Ease In",
+        "Power Ease Out",
+        "Power Ease In Out"
       ]
+    },
+    {
+      "id": "power_exponent",
+      "name": "Power Exponent",
+      "type": "float",
+      "default": 3,
+      "min": 1,
+      "max": 10
     }
   ],
-  "helpers": "float maker_anim_ease(float x,float mode){\n x=clamp(x,0.0,1.0);\n if(mode<0.5)return x;\n if(mode<1.5)return x*x*(3.0-2.0*x);\n if(mode<2.5)return x*x*x*(x*(x*6.0-15.0)+10.0);\n if(mode<3.5)return x*x;\n if(mode<4.5)return x*(2.0-x);\n return x<0.5?2.0*x*x:1.0-2.0*(1.0-x)*(1.0-x);\n}",
+  "helpers": "float maker_anim_ease(float x,float mode,float e){\n x=clamp(x,0.0,1.0);\n if(mode<0.5)return x;\n if(mode<1.5)return x*x*(3.0-2.0*x);\n if(mode<2.5)return x*x*x*(x*(x*6.0-15.0)+10.0);\n if(mode<3.5)return x*x;\n if(mode<4.5)return x*(2.0-x);\n if(mode>=5.5){if(mode<6.5)return pow(x,e);if(mode<7.5)return 1.0-pow(1.0-x,e);return x<.5?.5*pow(2.0*x,e):1.0-.5*pow(2.0*(1.0-x),e);}\n return x<0.5?2.0*x*x:1.0-2.0*(1.0-x)*(1.0-x);\n}",
   "terminal": false,
-  "glsl": "maker_anim_ease({progress},{mode})"
+  "glsl": "maker_anim_ease({progress},{mode},{power_exponent})"
 }

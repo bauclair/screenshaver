@@ -1,0 +1,151 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.rgb_to_vector_transformation_2d",
+  "name": "RGB-to-Vector Transformation 2D",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Affine RGB-to-vector mapping; no texture sampling.",
+  "uses": "RGB-to-Vector Transformation 2D",
+  "notes": "Affine RGB-to-vector mapping; no texture sampling.",
+  "header_color": "#527D94",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "color",
+      "name": "Color",
+      "type": "vec3",
+      "default": "vec3(0.5)",
+      "semantic_role": "color"
+    },
+    {
+      "id": "strength_multiplier",
+      "name": "Strength Multiplier",
+      "type": "float",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "displacement",
+      "name": "Displacement",
+      "type": "vec2",
+      "semantic_role": "offset2d"
+    },
+    {
+      "id": "horizontal_displacement",
+      "name": "Horizontal Displacement",
+      "type": "float"
+    },
+    {
+      "id": "vertical_displacement",
+      "name": "Vertical Displacement",
+      "type": "float"
+    },
+    {
+      "id": "magnitude",
+      "name": "Magnitude",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "x_red",
+      "name": "X Red",
+      "type": "float",
+      "default": 1,
+      "min": -8,
+      "max": 8
+    },
+    {
+      "id": "x_green",
+      "name": "X Green",
+      "type": "float",
+      "default": 0,
+      "min": -8,
+      "max": 8
+    },
+    {
+      "id": "x_blue",
+      "name": "X Blue",
+      "type": "float",
+      "default": 0,
+      "min": -8,
+      "max": 8
+    },
+    {
+      "id": "y_red",
+      "name": "Y Red",
+      "type": "float",
+      "default": 0,
+      "min": -8,
+      "max": 8
+    },
+    {
+      "id": "y_green",
+      "name": "Y Green",
+      "type": "float",
+      "default": 1,
+      "min": -8,
+      "max": 8
+    },
+    {
+      "id": "y_blue",
+      "name": "Y Blue",
+      "type": "float",
+      "default": 0,
+      "min": -8,
+      "max": 8
+    },
+    {
+      "id": "x_bias",
+      "name": "X Bias",
+      "type": "float",
+      "default": -0.5,
+      "min": -8,
+      "max": 8
+    },
+    {
+      "id": "y_bias",
+      "name": "Y Bias",
+      "type": "float",
+      "default": -0.5,
+      "min": -8,
+      "max": 8
+    },
+    {
+      "id": "strength",
+      "name": "Strength",
+      "type": "float",
+      "default": 1,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "maximum_displacement",
+      "name": "Maximum Displacement",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 100
+    },
+    {
+      "id": "limiting_mode",
+      "name": "Limiting Mode",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "None",
+        "Magnitude",
+        "Components"
+      ]
+    }
+  ],
+  "helpers": "struct MakerB383RgbToVectorTransformation2D{vec2 displacement;float horizontal_displacement;float vertical_displacement;float magnitude;};\nMakerB383RgbToVectorTransformation2D maker_b383_rgb_to_vector_transformation_2d(vec3 color,float strength_multiplier,float x_red,float x_green,float x_blue,float y_red,float y_green,float y_blue,float x_bias,float y_bias,float strength,float maximum_displacement,float limiting_mode){\nvec3 v=clamp(color,-1e6,1e6);if(any(isnan(v)))v=vec3(0.0);float s=clamp(strength_multiplier,-100.0,100.0);if(isnan(s))s=0.0;vec2 d=(vec2(dot(v,vec3(x_red,x_green,x_blue)),dot(v,vec3(y_red,y_green,y_blue)))+vec2(x_bias,y_bias))*strength*s;float l=length(d);if(limiting_mode>1.5)d=clamp(d,-maximum_displacement,maximum_displacement);else if(limiting_mode>0.5&&l>maximum_displacement)d*=maximum_displacement/max(l,1e-20);return MakerB383RgbToVectorTransformation2D(d,d.x,d.y,length(d));\n}",
+  "glsl_outputs": {
+    "displacement": "maker_b383_rgb_to_vector_transformation_2d({color},{strength_multiplier},{x_red},{x_green},{x_blue},{y_red},{y_green},{y_blue},{x_bias},{y_bias},{strength},{maximum_displacement},{limiting_mode}).displacement",
+    "horizontal_displacement": "maker_b383_rgb_to_vector_transformation_2d({color},{strength_multiplier},{x_red},{x_green},{x_blue},{y_red},{y_green},{y_blue},{x_bias},{y_bias},{strength},{maximum_displacement},{limiting_mode}).horizontal_displacement",
+    "vertical_displacement": "maker_b383_rgb_to_vector_transformation_2d({color},{strength_multiplier},{x_red},{x_green},{x_blue},{y_red},{y_green},{y_blue},{x_bias},{y_bias},{strength},{maximum_displacement},{limiting_mode}).vertical_displacement",
+    "magnitude": "maker_b383_rgb_to_vector_transformation_2d({color},{strength_multiplier},{x_red},{x_green},{x_blue},{y_red},{y_green},{y_blue},{x_bias},{y_bias},{strength},{maximum_displacement},{limiting_mode}).magnitude"
+  }
+}

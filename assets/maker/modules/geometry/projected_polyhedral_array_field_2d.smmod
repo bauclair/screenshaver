@@ -1,0 +1,223 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.geometry.projected_polyhedral_array_field_2d",
+  "name": "Projected Polyhedral Array Field 2D",
+  "category": "Geometry",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Projected wireframes without occlusion. Perspective distance is guarded per object; depth is interpolated along projected edge.",
+  "uses": "Projected Polyhedral Array Field 2D",
+  "notes": "Projected wireframes without occlusion. Perspective distance is guarded per object; depth is interpolated along projected edge.",
+  "header_color": "#527D94",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec2",
+      "default": "vec2(0.0)"
+    },
+    {
+      "id": "time_offset",
+      "name": "Time Offset",
+      "type": "float",
+      "default": "0.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "edge_distance",
+      "name": "Edge Distance",
+      "type": "float"
+    },
+    {
+      "id": "edge_mask",
+      "name": "Edge Mask",
+      "type": "float"
+    },
+    {
+      "id": "vertex_distance",
+      "name": "Vertex Distance",
+      "type": "float"
+    },
+    {
+      "id": "vertex_mask",
+      "name": "Vertex Mask",
+      "type": "float"
+    },
+    {
+      "id": "object_index",
+      "name": "Object Index",
+      "type": "float"
+    },
+    {
+      "id": "edge_index",
+      "name": "Edge Index",
+      "type": "float"
+    },
+    {
+      "id": "projected_depth",
+      "name": "Projected Depth",
+      "type": "float"
+    },
+    {
+      "id": "glow",
+      "name": "Glow",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "solid",
+      "name": "Solid",
+      "type": "choice",
+      "default": 1,
+      "options": [
+        "Tetrahedron",
+        "Cube",
+        "Octahedron",
+        "Dodecahedron",
+        "Icosahedron"
+      ]
+    },
+    {
+      "id": "object_count",
+      "name": "Object Count",
+      "type": "float",
+      "default": 5,
+      "min": 1,
+      "max": 16
+    },
+    {
+      "id": "size",
+      "name": "Size",
+      "type": "float",
+      "default": 0.7,
+      "min": 0.01,
+      "max": 10
+    },
+    {
+      "id": "scale_progression",
+      "name": "Scale Progression",
+      "type": "float",
+      "default": 0.75,
+      "min": 0.1,
+      "max": 1.5
+    },
+    {
+      "id": "rotation_x",
+      "name": "Rotation X",
+      "type": "float",
+      "default": 20,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "rotation_y",
+      "name": "Rotation Y",
+      "type": "float",
+      "default": 20,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "rotation_z",
+      "name": "Rotation Z",
+      "type": "float",
+      "default": 20,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "progression_x",
+      "name": "Progression X",
+      "type": "float",
+      "default": 15,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "progression_y",
+      "name": "Progression Y",
+      "type": "float",
+      "default": 15,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "progression_z",
+      "name": "Progression Z",
+      "type": "float",
+      "default": 15,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "speed",
+      "name": "Speed",
+      "type": "float",
+      "default": 0.2,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "projection",
+      "name": "Projection",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Orthographic",
+        "Perspective"
+      ]
+    },
+    {
+      "id": "projection_distance",
+      "name": "Projection Distance",
+      "type": "float",
+      "default": 3,
+      "min": 0.1,
+      "max": 100
+    },
+    {
+      "id": "line_width",
+      "name": "Line Width",
+      "type": "float",
+      "default": 0.01,
+      "min": 0.0001,
+      "max": 2
+    },
+    {
+      "id": "vertex_width",
+      "name": "Vertex Width",
+      "type": "float",
+      "default": 0.02,
+      "min": 0.0001,
+      "max": 2
+    },
+    {
+      "id": "softness",
+      "name": "Softness",
+      "type": "float",
+      "default": 0.005,
+      "min": 0,
+      "max": 2
+    }
+  ],
+  "helpers": "struct MakerB392ProjectedPolyhedralArrayField2D{float edge_distance;float edge_mask;float vertex_distance;float vertex_mask;float object_index;float edge_index;float projected_depth;float glow;};\nMakerB392ProjectedPolyhedralArrayField2D maker_b392_projected_polyhedral_array_field_2d(vec2 position,vec2 center,float time_offset,float solid,float object_count,float size,float scale_progression,float rotation_x,float rotation_y,float rotation_z,float progression_x,float progression_y,float progression_z,float speed,float projection,float projection_distance,float line_width,float vertex_width,float softness){vec3 v[20];ivec2 e[30];int nv=0,ne=0;if(solid<0.5){v[0]=vec3(0.577350269,0.577350269,0.577350269);v[1]=vec3(0.577350269,-0.577350269,-0.577350269);v[2]=vec3(-0.577350269,0.577350269,-0.577350269);v[3]=vec3(-0.577350269,-0.577350269,0.577350269);e[0]=ivec2(0,1);e[1]=ivec2(0,2);e[2]=ivec2(0,3);e[3]=ivec2(1,2);e[4]=ivec2(1,3);e[5]=ivec2(2,3);nv=4;ne=6;}else if(solid<1.5){v[0]=vec3(-0.577350269,-0.577350269,-0.577350269);v[1]=vec3(-0.577350269,-0.577350269,0.577350269);v[2]=vec3(-0.577350269,0.577350269,-0.577350269);v[3]=vec3(-0.577350269,0.577350269,0.577350269);v[4]=vec3(0.577350269,-0.577350269,-0.577350269);v[5]=vec3(0.577350269,-0.577350269,0.577350269);v[6]=vec3(0.577350269,0.577350269,-0.577350269);v[7]=vec3(0.577350269,0.577350269,0.577350269);e[0]=ivec2(0,1);e[1]=ivec2(0,2);e[2]=ivec2(0,4);e[3]=ivec2(1,3);e[4]=ivec2(1,5);e[5]=ivec2(2,3);e[6]=ivec2(2,6);e[7]=ivec2(3,7);e[8]=ivec2(4,5);e[9]=ivec2(4,6);e[10]=ivec2(5,7);e[11]=ivec2(6,7);nv=8;ne=12;}else if(solid<2.5){v[0]=vec3(-1.000000000,0.000000000,0.000000000);v[1]=vec3(1.000000000,0.000000000,0.000000000);v[2]=vec3(0.000000000,-1.000000000,0.000000000);v[3]=vec3(0.000000000,1.000000000,0.000000000);v[4]=vec3(0.000000000,0.000000000,-1.000000000);v[5]=vec3(0.000000000,0.000000000,1.000000000);e[0]=ivec2(0,2);e[1]=ivec2(0,3);e[2]=ivec2(0,4);e[3]=ivec2(0,5);e[4]=ivec2(1,2);e[5]=ivec2(1,3);e[6]=ivec2(1,4);e[7]=ivec2(1,5);e[8]=ivec2(2,4);e[9]=ivec2(2,5);e[10]=ivec2(3,4);e[11]=ivec2(3,5);nv=6;ne=12;}else if(solid<3.5){v[0]=vec3(-0.577350269,-0.577350269,-0.577350269);v[1]=vec3(-0.577350269,-0.577350269,0.577350269);v[2]=vec3(-0.577350269,0.577350269,-0.577350269);v[3]=vec3(-0.577350269,0.577350269,0.577350269);v[4]=vec3(0.577350269,-0.577350269,-0.577350269);v[5]=vec3(0.577350269,-0.577350269,0.577350269);v[6]=vec3(0.577350269,0.577350269,-0.577350269);v[7]=vec3(0.577350269,0.577350269,0.577350269);v[8]=vec3(0.000000000,-0.356822090,-0.934172359);v[9]=vec3(-0.356822090,-0.934172359,0.000000000);v[10]=vec3(-0.934172359,0.000000000,-0.356822090);v[11]=vec3(0.000000000,-0.356822090,0.934172359);v[12]=vec3(-0.356822090,0.934172359,0.000000000);v[13]=vec3(0.934172359,0.000000000,-0.356822090);v[14]=vec3(0.000000000,0.356822090,-0.934172359);v[15]=vec3(0.356822090,-0.934172359,0.000000000);v[16]=vec3(-0.934172359,0.000000000,0.356822090);v[17]=vec3(0.000000000,0.356822090,0.934172359);v[18]=vec3(0.356822090,0.934172359,0.000000000);v[19]=vec3(0.934172359,0.000000000,0.356822090);e[0]=ivec2(0,8);e[1]=ivec2(0,9);e[2]=ivec2(0,10);e[3]=ivec2(1,9);e[4]=ivec2(1,11);e[5]=ivec2(1,16);e[6]=ivec2(2,10);e[7]=ivec2(2,12);e[8]=ivec2(2,14);e[9]=ivec2(3,12);e[10]=ivec2(3,16);e[11]=ivec2(3,17);e[12]=ivec2(4,8);e[13]=ivec2(4,13);e[14]=ivec2(4,15);e[15]=ivec2(5,11);e[16]=ivec2(5,15);e[17]=ivec2(5,19);e[18]=ivec2(6,13);e[19]=ivec2(6,14);e[20]=ivec2(6,18);e[21]=ivec2(7,17);e[22]=ivec2(7,18);e[23]=ivec2(7,19);e[24]=ivec2(8,14);e[25]=ivec2(9,15);e[26]=ivec2(10,16);e[27]=ivec2(11,17);e[28]=ivec2(12,18);e[29]=ivec2(13,19);nv=20;ne=30;}else if(solid<4.5){v[0]=vec3(0.000000000,-0.525731112,-0.850650808);v[1]=vec3(-0.525731112,-0.850650808,0.000000000);v[2]=vec3(-0.850650808,0.000000000,-0.525731112);v[3]=vec3(0.000000000,-0.525731112,0.850650808);v[4]=vec3(-0.525731112,0.850650808,0.000000000);v[5]=vec3(0.850650808,0.000000000,-0.525731112);v[6]=vec3(0.000000000,0.525731112,-0.850650808);v[7]=vec3(0.525731112,-0.850650808,0.000000000);v[8]=vec3(-0.850650808,0.000000000,0.525731112);v[9]=vec3(0.000000000,0.525731112,0.850650808);v[10]=vec3(0.525731112,0.850650808,0.000000000);v[11]=vec3(0.850650808,0.000000000,0.525731112);e[0]=ivec2(0,1);e[1]=ivec2(0,2);e[2]=ivec2(0,5);e[3]=ivec2(0,6);e[4]=ivec2(0,7);e[5]=ivec2(1,2);e[6]=ivec2(1,3);e[7]=ivec2(1,7);e[8]=ivec2(1,8);e[9]=ivec2(2,4);e[10]=ivec2(2,6);e[11]=ivec2(2,8);e[12]=ivec2(3,7);e[13]=ivec2(3,8);e[14]=ivec2(3,9);e[15]=ivec2(3,11);e[16]=ivec2(4,6);e[17]=ivec2(4,8);e[18]=ivec2(4,9);e[19]=ivec2(4,10);e[20]=ivec2(5,6);e[21]=ivec2(5,7);e[22]=ivec2(5,10);e[23]=ivec2(5,11);e[24]=ivec2(6,10);e[25]=ivec2(7,11);e[26]=ivec2(8,9);e[27]=ivec2(9,10);e[28]=ivec2(9,11);e[29]=ivec2(10,11);nv=12;ne=30;}float ed=1e20,vd=1e20,oi=0.,ei=0.,depth=0.;int n=int(clamp(round(object_count),1.,16.));for(int k=0;k<16;k++){if(k>=n)break;float j=float(k),r=min(1000.,size*pow(scale_progression,j)),cam=max(projection_distance,r*1.01);vec3 a=radians(vec3(rotation_x,rotation_y,rotation_z)+j*vec3(progression_x,progression_y,progression_z))+vec3((u_time+time_offset)*speed);vec3 cs=cos(a),sn=sin(a);vec2 w[20];float z[20];for(int i=0;i<20;i++){if(i>=nv)break;vec3 q=v[i]*r;q.yz=mat2(cs.x,sn.x,-sn.x,cs.x)*q.yz;q.xz=mat2(cs.y,sn.y,-sn.y,cs.y)*q.xz;q.xy=mat2(cs.z,sn.z,-sn.z,cs.z)*q.xy;z[i]=q.z;w[i]=center+q.xy*(projection>.5?cam/(cam-q.z):1.);vd=min(vd,length(position-w[i]));}for(int i=0;i<30;i++){if(i>=ne)break;ivec2 ix=e[i];vec2 a0=w[ix.x],b=w[ix.y]-a0;float t=clamp(dot(position-a0,b)/max(dot(b,b),1e-12),0.,1.),d=length(position-a0-t*b);if(d<ed){ed=d;oi=j;ei=float(i);depth=mix(z[ix.x],z[ix.y],t);}}}return MakerB392ProjectedPolyhedralArrayField2D(ed,1.-smoothstep(line_width,line_width+max(softness,1e-6),ed),vd,1.-smoothstep(vertex_width,vertex_width+max(softness,1e-6),vd),oi,ei,depth,exp(-ed/line_width));}",
+  "glsl_outputs": {
+    "edge_distance": "maker_b392_projected_polyhedral_array_field_2d({position},{center},{time_offset},{solid},{object_count},{size},{scale_progression},{rotation_x},{rotation_y},{rotation_z},{progression_x},{progression_y},{progression_z},{speed},{projection},{projection_distance},{line_width},{vertex_width},{softness}).edge_distance",
+    "edge_mask": "maker_b392_projected_polyhedral_array_field_2d({position},{center},{time_offset},{solid},{object_count},{size},{scale_progression},{rotation_x},{rotation_y},{rotation_z},{progression_x},{progression_y},{progression_z},{speed},{projection},{projection_distance},{line_width},{vertex_width},{softness}).edge_mask",
+    "vertex_distance": "maker_b392_projected_polyhedral_array_field_2d({position},{center},{time_offset},{solid},{object_count},{size},{scale_progression},{rotation_x},{rotation_y},{rotation_z},{progression_x},{progression_y},{progression_z},{speed},{projection},{projection_distance},{line_width},{vertex_width},{softness}).vertex_distance",
+    "vertex_mask": "maker_b392_projected_polyhedral_array_field_2d({position},{center},{time_offset},{solid},{object_count},{size},{scale_progression},{rotation_x},{rotation_y},{rotation_z},{progression_x},{progression_y},{progression_z},{speed},{projection},{projection_distance},{line_width},{vertex_width},{softness}).vertex_mask",
+    "object_index": "maker_b392_projected_polyhedral_array_field_2d({position},{center},{time_offset},{solid},{object_count},{size},{scale_progression},{rotation_x},{rotation_y},{rotation_z},{progression_x},{progression_y},{progression_z},{speed},{projection},{projection_distance},{line_width},{vertex_width},{softness}).object_index",
+    "edge_index": "maker_b392_projected_polyhedral_array_field_2d({position},{center},{time_offset},{solid},{object_count},{size},{scale_progression},{rotation_x},{rotation_y},{rotation_z},{progression_x},{progression_y},{progression_z},{speed},{projection},{projection_distance},{line_width},{vertex_width},{softness}).edge_index",
+    "projected_depth": "maker_b392_projected_polyhedral_array_field_2d({position},{center},{time_offset},{solid},{object_count},{size},{scale_progression},{rotation_x},{rotation_y},{rotation_z},{progression_x},{progression_y},{progression_z},{speed},{projection},{projection_distance},{line_width},{vertex_width},{softness}).projected_depth",
+    "glow": "maker_b392_projected_polyhedral_array_field_2d({position},{center},{time_offset},{solid},{object_count},{size},{scale_progression},{rotation_x},{rotation_y},{rotation_z},{progression_x},{progression_y},{progression_z},{speed},{projection},{projection_distance},{line_width},{vertex_width},{softness}).glow"
+  }
+}

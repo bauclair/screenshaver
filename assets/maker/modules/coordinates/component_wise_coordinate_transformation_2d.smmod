@@ -1,0 +1,172 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.component_wise_coordinate_transformation_2d",
+  "name": "Component-Wise Coordinate Transformation 2D",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Independent component operators; tangent denominator guarded and signed power input bounded.",
+  "uses": "Component-Wise Coordinate Transformation 2D",
+  "notes": "Independent component operators; tangent denominator guarded and signed power input bounded.",
+  "header_color": "#287C9B",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec2",
+      "default": "vec2(0.0)"
+    },
+    {
+      "id": "time_offset",
+      "name": "Time Offset",
+      "type": "float",
+      "default": "0.0",
+      "semantic_role": "time"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "transformed_coordinates",
+      "name": "Transformed Coordinates",
+      "type": "vec2",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "transformed_x",
+      "name": "Transformed X",
+      "type": "float"
+    },
+    {
+      "id": "transformed_y",
+      "name": "Transformed Y",
+      "type": "float"
+    },
+    {
+      "id": "displacement",
+      "name": "Displacement",
+      "type": "vec2",
+      "semantic_role": "offset2d"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "x_operator",
+      "name": "X Operator",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Identity",
+        "Floor",
+        "Fractional Part",
+        "Absolute",
+        "Sine",
+        "Cosine",
+        "Guarded Tangent",
+        "Inverse Tangent",
+        "Modulus",
+        "Clamp",
+        "Signed Power",
+        "Natural Logarithm",
+        "Base-2 Logarithm",
+        "Signed Logarithm",
+        "Exponential",
+        "Base-2 Exponential"
+      ]
+    },
+    {
+      "id": "y_operator",
+      "name": "Y Operator",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Identity",
+        "Floor",
+        "Fractional Part",
+        "Absolute",
+        "Sine",
+        "Cosine",
+        "Guarded Tangent",
+        "Inverse Tangent",
+        "Modulus",
+        "Clamp",
+        "Signed Power",
+        "Natural Logarithm",
+        "Base-2 Logarithm",
+        "Signed Logarithm",
+        "Exponential",
+        "Base-2 Exponential"
+      ]
+    },
+    {
+      "id": "input_scale",
+      "name": "Input Scale",
+      "type": "float",
+      "default": 1,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "input_offset",
+      "name": "Input Offset",
+      "type": "float",
+      "default": 0,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "period",
+      "name": "Period",
+      "type": "float",
+      "default": 1,
+      "min": 0.001,
+      "max": 10
+    },
+    {
+      "id": "clamp_min",
+      "name": "Clamp Min",
+      "type": "float",
+      "default": -1,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "clamp_max",
+      "name": "Clamp Max",
+      "type": "float",
+      "default": 1,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "exponent",
+      "name": "Exponent",
+      "type": "float",
+      "default": 1,
+      "min": 0.1,
+      "max": 4
+    },
+    {
+      "id": "output_scale",
+      "name": "Output Scale",
+      "type": "float",
+      "default": 1,
+      "min": -10,
+      "max": 10
+    }
+  ],
+  "helpers": "float maker_component_op(float x,float op,float period,float lo,float hi,float exponent){if(op<.5)return x;if(op<1.5)return floor(x);if(op<2.5)return fract(x);if(op<3.5)return abs(x);if(op<4.5)return sin(x);if(op<5.5)return cos(x);if(op<6.5){float c=cos(x);return sin(x)/(c<0.0?-max(abs(c),.01):max(abs(c),.01));}if(op<7.5)return atan(x);if(op<8.5)return mod(x,max(period,.001));if(op<9.5)return clamp(x,min(lo,hi),max(lo,hi));if(op>=10.5){if(op<11.5)return log(max(x,1e-6));if(op<12.5)return log2(max(x,1e-6));if(op<13.5)return sign(x)*log(1.0+abs(x));if(op<14.5)return exp(clamp(x,-40.0,40.0));return exp2(clamp(x,-40.0,40.0));}return sign(x)*pow(min(abs(x),10000.0),exponent);}\nvec2 maker_component_wise_coordinate_transformation_2d(vec2 p,vec2 c,float t,float ox,float oy,float scale,float offset,float period,float lo,float hi,float exponent,float outscale){vec2 q=(p-c)*scale+offset;return c+outscale*vec2(maker_component_op(q.x,ox,period,lo,hi,exponent),maker_component_op(q.y,oy,period,lo,hi,exponent));}",
+  "glsl_outputs": {
+    "transformed_coordinates": "maker_component_wise_coordinate_transformation_2d({position},{center},{time_offset},{x_operator},{y_operator},{input_scale},{input_offset},{period},{clamp_min},{clamp_max},{exponent},{output_scale})",
+    "transformed_x": "maker_component_wise_coordinate_transformation_2d({position},{center},{time_offset},{x_operator},{y_operator},{input_scale},{input_offset},{period},{clamp_min},{clamp_max},{exponent},{output_scale}).x",
+    "transformed_y": "maker_component_wise_coordinate_transformation_2d({position},{center},{time_offset},{x_operator},{y_operator},{input_scale},{input_offset},{period},{clamp_min},{clamp_max},{exponent},{output_scale}).y",
+    "displacement": "(maker_component_wise_coordinate_transformation_2d({position},{center},{time_offset},{x_operator},{y_operator},{input_scale},{input_offset},{period},{clamp_min},{clamp_max},{exponent},{output_scale})-{position})"
+  }
+}

@@ -1,0 +1,115 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.reflection_axis_distance_coordinates_2d",
+  "name": "Reflection-Axis Distance Coordinates 2D",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Reflection and folding about an oriented line; optional normal displacement of reflected point.",
+  "uses": "Reflection-Axis Distance Coordinates 2D",
+  "notes": "Reflection and folding about an oriented line; optional normal displacement of reflected point.",
+  "header_color": "#287C9B",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec2",
+      "default": "vec2(0.0)"
+    },
+    {
+      "id": "time_offset",
+      "name": "Time Offset",
+      "type": "float",
+      "default": "0.0",
+      "semantic_role": "time"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "reflected_coordinates",
+      "name": "Reflected Coordinates",
+      "type": "vec2",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "folded_coordinates",
+      "name": "Folded Coordinates",
+      "type": "vec2",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "signed_axis_distance",
+      "name": "Signed Axis Distance",
+      "type": "float",
+      "semantic_role": "distance"
+    },
+    {
+      "id": "reflection_separation",
+      "name": "Reflection Separation",
+      "type": "float"
+    },
+    {
+      "id": "modulated_distance",
+      "name": "Modulated Distance",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "orientation",
+      "name": "Orientation",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "axis_offset",
+      "name": "Axis Offset",
+      "type": "float",
+      "default": 0,
+      "min": -5,
+      "max": 5
+    },
+    {
+      "id": "reflection_displacement",
+      "name": "Reflection Displacement",
+      "type": "float",
+      "default": 0,
+      "min": -5,
+      "max": 5
+    },
+    {
+      "id": "distance_scale",
+      "name": "Distance Scale",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "distance_exponent",
+      "name": "Distance Exponent",
+      "type": "float",
+      "default": 1,
+      "min": 0.1,
+      "max": 4
+    }
+  ],
+  "helpers": "struct MakerReflectResult{vec2 reflected;vec2 folded;float signed_axis;float separation;float modulated;};\nMakerReflectResult maker_reflection_axis_distance_coordinates_2d(vec2 p,vec2 c,float t,float angle,float offset,float shift,float scale,float exponent){float a=radians(angle);vec2 n=vec2(-sin(a),cos(a));float d=dot(p-c,n)-offset;vec2 r=p+n*(shift-2.0*d);float s=length(r-p);return MakerReflectResult(r,p+n*(abs(d)-d),d,s,pow(max(s*scale,0.0),exponent));}",
+  "glsl_outputs": {
+    "reflected_coordinates": "maker_reflection_axis_distance_coordinates_2d({position},{center},{time_offset},{orientation},{axis_offset},{reflection_displacement},{distance_scale},{distance_exponent}).reflected",
+    "folded_coordinates": "maker_reflection_axis_distance_coordinates_2d({position},{center},{time_offset},{orientation},{axis_offset},{reflection_displacement},{distance_scale},{distance_exponent}).folded",
+    "signed_axis_distance": "maker_reflection_axis_distance_coordinates_2d({position},{center},{time_offset},{orientation},{axis_offset},{reflection_displacement},{distance_scale},{distance_exponent}).signed_axis",
+    "reflection_separation": "maker_reflection_axis_distance_coordinates_2d({position},{center},{time_offset},{orientation},{axis_offset},{reflection_displacement},{distance_scale},{distance_exponent}).separation",
+    "modulated_distance": "maker_reflection_axis_distance_coordinates_2d({position},{center},{time_offset},{orientation},{axis_offset},{reflection_displacement},{distance_scale},{distance_exponent}).modulated"
+  }
+}

@@ -1,0 +1,150 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.geometry.axial_harmonic_tube_field_3d",
+  "name": "Axial Harmonic Tube Field 3D",
+  "category": "Geometry",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Axially clipped harmonic tube; conservative Lipschitz-scaled residual, not exact Euclidean SDF.",
+  "uses": "Axial Harmonic Tube Field 3D",
+  "notes": "Axially clipped harmonic tube; conservative Lipschitz-scaled residual, not exact Euclidean SDF.",
+  "header_color": "#557C9B",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "default": "vec3(maker_uv,0.0)",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec3",
+      "default": "vec3(0.0)"
+    },
+    {
+      "id": "time_offset",
+      "name": "Time Offset",
+      "type": "float",
+      "default": "0.0",
+      "semantic_role": "time"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "implicit_tube_field",
+      "name": "Implicit Tube Field",
+      "type": "float",
+      "semantic_role": "distance"
+    },
+    {
+      "id": "conservative_distance",
+      "name": "Conservative Distance",
+      "type": "float",
+      "semantic_role": "distance"
+    },
+    {
+      "id": "centerline_position",
+      "name": "Centerline Position",
+      "type": "vec3",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "transverse_distance",
+      "name": "Transverse Distance",
+      "type": "float"
+    },
+    {
+      "id": "axial_coordinate",
+      "name": "Axial Coordinate",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "axis",
+      "name": "Axis",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Z",
+        "X",
+        "Y"
+      ]
+    },
+    {
+      "id": "amplitude_x",
+      "name": "Amplitude X",
+      "type": "float",
+      "default": 0.3,
+      "min": 0,
+      "max": 5
+    },
+    {
+      "id": "amplitude_y",
+      "name": "Amplitude Y",
+      "type": "float",
+      "default": 0.3,
+      "min": 0,
+      "max": 5
+    },
+    {
+      "id": "frequency_x",
+      "name": "Frequency X",
+      "type": "float",
+      "default": 3,
+      "min": -20,
+      "max": 20
+    },
+    {
+      "id": "frequency_y",
+      "name": "Frequency Y",
+      "type": "float",
+      "default": 3,
+      "min": -20,
+      "max": 20
+    },
+    {
+      "id": "phase_difference",
+      "name": "Phase Difference",
+      "type": "float",
+      "default": 90,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "speed",
+      "name": "Speed",
+      "type": "float",
+      "default": 0.5,
+      "min": -5,
+      "max": 5
+    },
+    {
+      "id": "radius",
+      "name": "Radius",
+      "type": "float",
+      "default": 0.1,
+      "min": 0.001,
+      "max": 3
+    },
+    {
+      "id": "half_extent",
+      "name": "Half Extent",
+      "type": "float",
+      "default": 1,
+      "min": 0.01,
+      "max": 10
+    }
+  ],
+  "helpers": "struct MakerTubeResult{float field;float safe_distance;vec3 centerline;float transverse;float axial;};\nMakerTubeResult maker_axial_harmonic_tube_field_3d(vec3 p,vec3 c,float t,float axis,float ax,float ay,float fx,float fy,float phase,float speed,float radius,float extent){vec3 q=p-c;if(axis>.5&&axis<1.5)q=q.yzx;else if(axis>=1.5)q=q.zxy;float z=q.z,tm=(u_time+t)*speed;vec2 h=vec2(ax*sin(fx*z+tm),ay*sin(fy*z+tm+radians(phase)));float d=length(q.xy-h),cap=abs(z)-extent;float f=max(d-radius,cap);float lip=sqrt(1.0+ax*ax*fx*fx+ay*ay*fy*fy);vec3 cl=vec3(h,z);if(axis>.5&&axis<1.5)cl=cl.zxy;else if(axis>=1.5)cl=cl.yzx;return MakerTubeResult(f,max((d-radius)/lip,cap),cl+c,d,z);}",
+  "glsl_outputs": {
+    "implicit_tube_field": "maker_axial_harmonic_tube_field_3d({position},{center},{time_offset},{axis},{amplitude_x},{amplitude_y},{frequency_x},{frequency_y},{phase_difference},{speed},{radius},{half_extent}).field",
+    "conservative_distance": "maker_axial_harmonic_tube_field_3d({position},{center},{time_offset},{axis},{amplitude_x},{amplitude_y},{frequency_x},{frequency_y},{phase_difference},{speed},{radius},{half_extent}).safe_distance",
+    "centerline_position": "maker_axial_harmonic_tube_field_3d({position},{center},{time_offset},{axis},{amplitude_x},{amplitude_y},{frequency_x},{frequency_y},{phase_difference},{speed},{radius},{half_extent}).centerline",
+    "transverse_distance": "maker_axial_harmonic_tube_field_3d({position},{center},{time_offset},{axis},{amplitude_x},{amplitude_y},{frequency_x},{frequency_y},{phase_difference},{speed},{radius},{half_extent}).transverse",
+    "axial_coordinate": "maker_axial_harmonic_tube_field_3d({position},{center},{time_offset},{axis},{amplitude_x},{amplitude_y},{frequency_x},{frequency_y},{phase_difference},{speed},{radius},{half_extent}).axial"
+  }
+}

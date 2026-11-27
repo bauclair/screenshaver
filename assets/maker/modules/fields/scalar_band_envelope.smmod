@@ -1,0 +1,151 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.scalar_band_envelope",
+  "name": "Scalar Band Envelope",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Analytical selected-band envelope and scalar classification.",
+  "uses": "Layered scalar fields and masks.",
+  "notes": "Zero-based band selector. Reject suppresses envelope and membership outside range; metadata remains clamped. Repeat wraps input, not selected envelope across seam.",
+  "header_color": "#348F8B",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "value",
+      "name": "Value",
+      "type": "float",
+      "default": "0.0"
+    },
+    {
+      "id": "band_selector",
+      "name": "Band Selector",
+      "type": "float",
+      "default": "0.0"
+    },
+    {
+      "id": "phase_offset",
+      "name": "Phase Offset",
+      "type": "float",
+      "default": "0.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "dominant_band_index",
+      "name": "Dominant Band Index",
+      "type": "float"
+    },
+    {
+      "id": "normalized_band_index",
+      "name": "Normalized Band Index",
+      "type": "float"
+    },
+    {
+      "id": "selected_band_envelope",
+      "name": "Selected Band Envelope",
+      "type": "float"
+    },
+    {
+      "id": "band_membership_mask",
+      "name": "Band Membership Mask",
+      "type": "float"
+    },
+    {
+      "id": "local_band_position",
+      "name": "Local Band Position",
+      "type": "float"
+    },
+    {
+      "id": "selected_band_center",
+      "name": "Selected Band Center",
+      "type": "float"
+    },
+    {
+      "id": "lower_band_boundary",
+      "name": "Lower Band Boundary",
+      "type": "float"
+    },
+    {
+      "id": "upper_band_boundary",
+      "name": "Upper Band Boundary",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "lower",
+      "name": "Lower",
+      "type": "float",
+      "default": 0,
+      "min": -100,
+      "max": 100
+    },
+    {
+      "id": "upper",
+      "name": "Upper",
+      "type": "float",
+      "default": 1,
+      "min": -100,
+      "max": 100
+    },
+    {
+      "id": "band_count",
+      "name": "Band Count",
+      "type": "float",
+      "default": 4,
+      "min": 2,
+      "max": 32
+    },
+    {
+      "id": "overlap",
+      "name": "Overlap",
+      "type": "float",
+      "default": 0.25,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "envelope_profile",
+      "name": "Envelope Profile",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Rectangular",
+        "Triangular",
+        "Cosine",
+        "Smooth Polynomial"
+      ]
+    },
+    {
+      "id": "envelope_exponent",
+      "name": "Envelope Exponent",
+      "type": "float",
+      "default": 1,
+      "min": 0.1,
+      "max": 8
+    },
+    {
+      "id": "boundary_handling",
+      "name": "Boundary Handling",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Clamp",
+        "Repeat",
+        "Reject"
+      ]
+    }
+  ],
+  "helpers": "struct MakerBand389 {float dominant_band_index;float normalized_band_index;float selected_band_envelope;float band_membership_mask;float local_band_position;float selected_band_center;float lower_band_boundary;float upper_band_boundary;};\nMakerBand389 maker_band389(float v,float sel,float phase,float lo,float hi,float count,float overlap,float profile,float exponent,float boundary){float a=min(lo,hi),b=max(lo,hi),span=max(b-a,1e-6),n=clamp(round(count),2.0,32.0),x=(v-a)/span+phase;bool valid=b>a&&(boundary<1.5||(x>=0.0&&x<=1.0));x=boundary>.5&&boundary<1.5?fract(x):clamp(x,0.0,1.0);float idx=min(floor(x*n),n-1.0),s=clamp(round(sel),0.0,n-1.0),center=(s+.5)/n,w=(.5+overlap)/n,t=clamp(abs(x-center)/w,0.0,1.0),e=0.0;if(valid&&abs(x-center)<=w){if(profile<.5)e=1.0;else if(profile<1.5)e=1.0-t;else if(profile<2.5)e=.5+.5*cos(3.14159265*t);else e=1.0-t*t*(3.0-2.0*t);e=pow(max(e,0.0),exponent);}return MakerBand389(idx,idx/(n-1.0),e,valid&&idx==s?1.0:0.0,x*n-idx,a+center*span,a+s*span/n,a+(s+1.0)*span/n);}\n",
+  "glsl_outputs": {
+    "dominant_band_index": "maker_band389({value},{band_selector},{phase_offset},{lower},{upper},{band_count},{overlap},{envelope_profile},{envelope_exponent},{boundary_handling}).dominant_band_index",
+    "normalized_band_index": "maker_band389({value},{band_selector},{phase_offset},{lower},{upper},{band_count},{overlap},{envelope_profile},{envelope_exponent},{boundary_handling}).normalized_band_index",
+    "selected_band_envelope": "maker_band389({value},{band_selector},{phase_offset},{lower},{upper},{band_count},{overlap},{envelope_profile},{envelope_exponent},{boundary_handling}).selected_band_envelope",
+    "band_membership_mask": "maker_band389({value},{band_selector},{phase_offset},{lower},{upper},{band_count},{overlap},{envelope_profile},{envelope_exponent},{boundary_handling}).band_membership_mask",
+    "local_band_position": "maker_band389({value},{band_selector},{phase_offset},{lower},{upper},{band_count},{overlap},{envelope_profile},{envelope_exponent},{boundary_handling}).local_band_position",
+    "selected_band_center": "maker_band389({value},{band_selector},{phase_offset},{lower},{upper},{band_count},{overlap},{envelope_profile},{envelope_exponent},{boundary_handling}).selected_band_center",
+    "lower_band_boundary": "maker_band389({value},{band_selector},{phase_offset},{lower},{upper},{band_count},{overlap},{envelope_profile},{envelope_exponent},{boundary_handling}).lower_band_boundary",
+    "upper_band_boundary": "maker_band389({value},{band_selector},{phase_offset},{lower},{upper},{band_count},{overlap},{envelope_profile},{envelope_exponent},{boundary_handling}).upper_band_boundary"
+  }
+}

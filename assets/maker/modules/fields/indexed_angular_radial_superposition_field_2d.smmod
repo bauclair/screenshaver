@@ -1,0 +1,197 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.indexed_angular_radial_superposition_field_2d",
+  "name": "Indexed Angular-Radial Superposition Field 2D",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Normalized response is signed mean divided by total absolute response weights. Contributions are sums.",
+  "uses": "Indexed Angular-Radial Superposition Field 2D",
+  "notes": "Normalized response is signed mean divided by total absolute response weights. Contributions are sums.",
+  "header_color": "#527D94",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec2",
+      "default": "vec2(0.0)"
+    },
+    {
+      "id": "time_offset",
+      "name": "Time Offset",
+      "type": "float",
+      "default": "0.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "field",
+      "name": "Field",
+      "type": "float"
+    },
+    {
+      "id": "normalized_response",
+      "name": "Normalized Response",
+      "type": "float"
+    },
+    {
+      "id": "angular_contribution",
+      "name": "Angular Contribution",
+      "type": "float"
+    },
+    {
+      "id": "radial_contribution",
+      "name": "Radial Contribution",
+      "type": "float"
+    },
+    {
+      "id": "peak_response",
+      "name": "Peak Response",
+      "type": "float"
+    },
+    {
+      "id": "nearest_distance",
+      "name": "Nearest Distance",
+      "type": "float"
+    },
+    {
+      "id": "nearest_index",
+      "name": "Nearest Index",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "emitter_count",
+      "name": "Emitter Count",
+      "type": "float",
+      "default": 8,
+      "min": 1,
+      "max": 32
+    },
+    {
+      "id": "distribution_radius",
+      "name": "Distribution Radius",
+      "type": "float",
+      "default": 0.5,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "motion_x",
+      "name": "Motion X",
+      "type": "float",
+      "default": 0.2,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "motion_y",
+      "name": "Motion Y",
+      "type": "float",
+      "default": 0.2,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "motion_frequency",
+      "name": "Motion Frequency",
+      "type": "float",
+      "default": 1,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "frequency_progression",
+      "name": "Frequency Progression",
+      "type": "float",
+      "default": 0.1,
+      "min": -2,
+      "max": 2
+    },
+    {
+      "id": "angular_frequency",
+      "name": "Angular Frequency",
+      "type": "float",
+      "default": 3,
+      "min": 0,
+      "max": 32
+    },
+    {
+      "id": "orientation_progression",
+      "name": "Orientation Progression",
+      "type": "float",
+      "default": 0.5,
+      "min": -6.28,
+      "max": 6.28
+    },
+    {
+      "id": "radial_frequency",
+      "name": "Radial Frequency",
+      "type": "float",
+      "default": 8,
+      "min": 0,
+      "max": 64
+    },
+    {
+      "id": "angular_weight",
+      "name": "Angular Weight",
+      "type": "float",
+      "default": 1,
+      "min": -4,
+      "max": 4
+    },
+    {
+      "id": "radial_weight",
+      "name": "Radial Weight",
+      "type": "float",
+      "default": 1,
+      "min": -4,
+      "max": 4
+    },
+    {
+      "id": "phase_progression",
+      "name": "Phase Progression",
+      "type": "float",
+      "default": 0.7,
+      "min": -6.28,
+      "max": 6.28
+    },
+    {
+      "id": "attenuation",
+      "name": "Attenuation",
+      "type": "float",
+      "default": 0,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "accumulation",
+      "name": "Accumulation",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Sum",
+        "Mean",
+        "Maximum Magnitude"
+      ]
+    }
+  ],
+  "helpers": "struct MakerB392IndexedAngularRadialSuperpositionField2D{float field;float normalized_response;float angular_contribution;float radial_contribution;float peak_response;float nearest_distance;float nearest_index;};\nMakerB392IndexedAngularRadialSuperpositionField2D maker_b392_indexed_angular_radial_superposition_field_2d(vec2 position,vec2 center,float time_offset,float emitter_count,float distribution_radius,float motion_x,float motion_y,float motion_frequency,float frequency_progression,float angular_frequency,float orientation_progression,float radial_frequency,float angular_weight,float radial_weight,float phase_progression,float attenuation,float accumulation){int n=int(clamp(round(emitter_count),1.,32.));float sum=0.,sa=0.,sr=0.,peak=0.,nearv=1e20,idx=0.,t=u_time+time_offset;for(int i=0;i<32;i++){if(i>=n)break;float j=float(i),a=6.2831853*j/float(n),ph=t*(motion_frequency+j*frequency_progression)+j*phase_progression;vec2 q=position-center-distribution_radius*vec2(cos(a),sin(a))-vec2(motion_x*cos(ph),motion_y*sin(ph));float r=length(q),theta=r>1e-8?atan(q.y,q.x):0.,w=exp(-attenuation*r),av=w*angular_weight*cos(round(angular_frequency)*theta+j*orientation_progression+ph),rv=w*radial_weight*sin(radial_frequency*r+ph),v=av+rv;sum+=v;sa+=av;sr+=rv;if(abs(v)>abs(peak))peak=v;if(r<nearv){nearv=r;idx=j;}}float meanv=sum/float(n);return MakerB392IndexedAngularRadialSuperpositionField2D(accumulation<.5?sum:accumulation<1.5?meanv:peak,meanv/max(abs(angular_weight)+abs(radial_weight),1e-6),sa,sr,peak,nearv,idx);}",
+  "glsl_outputs": {
+    "field": "maker_b392_indexed_angular_radial_superposition_field_2d({position},{center},{time_offset},{emitter_count},{distribution_radius},{motion_x},{motion_y},{motion_frequency},{frequency_progression},{angular_frequency},{orientation_progression},{radial_frequency},{angular_weight},{radial_weight},{phase_progression},{attenuation},{accumulation}).field",
+    "normalized_response": "maker_b392_indexed_angular_radial_superposition_field_2d({position},{center},{time_offset},{emitter_count},{distribution_radius},{motion_x},{motion_y},{motion_frequency},{frequency_progression},{angular_frequency},{orientation_progression},{radial_frequency},{angular_weight},{radial_weight},{phase_progression},{attenuation},{accumulation}).normalized_response",
+    "angular_contribution": "maker_b392_indexed_angular_radial_superposition_field_2d({position},{center},{time_offset},{emitter_count},{distribution_radius},{motion_x},{motion_y},{motion_frequency},{frequency_progression},{angular_frequency},{orientation_progression},{radial_frequency},{angular_weight},{radial_weight},{phase_progression},{attenuation},{accumulation}).angular_contribution",
+    "radial_contribution": "maker_b392_indexed_angular_radial_superposition_field_2d({position},{center},{time_offset},{emitter_count},{distribution_radius},{motion_x},{motion_y},{motion_frequency},{frequency_progression},{angular_frequency},{orientation_progression},{radial_frequency},{angular_weight},{radial_weight},{phase_progression},{attenuation},{accumulation}).radial_contribution",
+    "peak_response": "maker_b392_indexed_angular_radial_superposition_field_2d({position},{center},{time_offset},{emitter_count},{distribution_radius},{motion_x},{motion_y},{motion_frequency},{frequency_progression},{angular_frequency},{orientation_progression},{radial_frequency},{angular_weight},{radial_weight},{phase_progression},{attenuation},{accumulation}).peak_response",
+    "nearest_distance": "maker_b392_indexed_angular_radial_superposition_field_2d({position},{center},{time_offset},{emitter_count},{distribution_radius},{motion_x},{motion_y},{motion_frequency},{frequency_progression},{angular_frequency},{orientation_progression},{radial_frequency},{angular_weight},{radial_weight},{phase_progression},{attenuation},{accumulation}).nearest_distance",
+    "nearest_index": "maker_b392_indexed_angular_radial_superposition_field_2d({position},{center},{time_offset},{emitter_count},{distribution_radius},{motion_x},{motion_y},{motion_frequency},{frequency_progression},{angular_frequency},{orientation_progression},{radial_frequency},{angular_weight},{radial_weight},{phase_progression},{attenuation},{accumulation}).nearest_index"
+  }
+}

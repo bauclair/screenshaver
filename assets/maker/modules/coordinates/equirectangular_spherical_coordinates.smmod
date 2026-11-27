@@ -1,0 +1,115 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.equirectangular_spherical_coordinates",
+  "name": "Equirectangular Spherical Coordinates",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Forward direction uses UV input; inverse UV and angles use direction input independently. Angles in radians; poles use zero longitude. Zero direction uses canonical north and validity zero.",
+  "uses": "Equirectangular Spherical Coordinates",
+  "notes": "Forward direction uses UV input; inverse UV and angles use direction input independently. Angles in radians; poles use zero longitude. Zero direction uses canonical north and validity zero.",
+  "header_color": "#527D94",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "uv",
+      "name": "Uv",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "uv"
+    },
+    {
+      "id": "direction",
+      "name": "Direction",
+      "type": "vec3",
+      "default": "vec3(1.0,0.0,0.0)",
+      "semantic_role": "direction3d"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "spherical_direction",
+      "name": "Spherical Direction",
+      "type": "vec3",
+      "semantic_role": "direction3d"
+    },
+    {
+      "id": "equirectangular_uv",
+      "name": "Equirectangular Uv",
+      "type": "vec2",
+      "semantic_role": "uv"
+    },
+    {
+      "id": "longitude",
+      "name": "Longitude",
+      "type": "float"
+    },
+    {
+      "id": "latitude",
+      "name": "Latitude",
+      "type": "float"
+    },
+    {
+      "id": "direction_validity",
+      "name": "Direction Validity",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "polar_axis",
+      "name": "Polar Axis",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Y",
+        "X",
+        "Z"
+      ]
+    },
+    {
+      "id": "longitude_offset",
+      "name": "Longitude Offset",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "latitude_orientation",
+      "name": "Latitude Orientation",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "North at zero",
+        "South at zero"
+      ]
+    },
+    {
+      "id": "horizontal_orientation",
+      "name": "Horizontal Orientation",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Forward",
+        "Reverse"
+      ]
+    },
+    {
+      "id": "seam_offset",
+      "name": "Seam Offset",
+      "type": "float",
+      "default": 0,
+      "min": -1,
+      "max": 1
+    }
+  ],
+  "helpers": "struct MakerB383EquirectangularSphericalCoordinates{vec3 spherical_direction;vec2 equirectangular_uv;float longitude;float latitude;float direction_validity;};\nMakerB383EquirectangularSphericalCoordinates maker_b383_equirectangular_spherical_coordinates(vec2 uv,vec3 direction,float polar_axis,float longitude_offset,float latitude_orientation,float horizontal_orientation,float seam_offset){\nfloat pi=3.14159265359,tau=2.0*pi;float signx=horizontal_orientation<0.5?1.0:-1.0;vec2 u=uv;if(any(isnan(u))||any(isinf(u)))u=vec2(0.0);float a=tau*(signx*(fract(u.x)-seam_offset))+radians(longitude_offset);float b=pi*clamp(u.y,0.0,1.0);if(latitude_orientation>0.5)b=pi-b;vec3 q=vec3(cos(a)*sin(b),cos(b),sin(a)*sin(b));vec3 d=direction;if(any(isnan(d))||any(isinf(d)))d=vec3(0.0);float mx=max(abs(d.x),max(abs(d.y),abs(d.z)));float valid=mx>0.0?1.0:0.0;d=valid>0.0?normalize(d/mx):vec3(0.0,1.0,0.0);if(polar_axis>1.5){q=q.zxy;d=d.yzx;}else if(polar_axis>0.5){q=q.yzx;d=d.zxy;}float lon=length(d.xz)>1e-6?atan(d.z,d.x):0.0;float lat=asin(clamp(d.y,-1.0,1.0));float v=0.5-lat/pi;if(latitude_orientation>0.5)v=1.0-v;return MakerB383EquirectangularSphericalCoordinates(q,vec2(fract(signx*(lon-radians(longitude_offset))/tau+seam_offset),v),lon,lat,valid);\n}",
+  "glsl_outputs": {
+    "spherical_direction": "maker_b383_equirectangular_spherical_coordinates({uv},{direction},{polar_axis},{longitude_offset},{latitude_orientation},{horizontal_orientation},{seam_offset}).spherical_direction",
+    "equirectangular_uv": "maker_b383_equirectangular_spherical_coordinates({uv},{direction},{polar_axis},{longitude_offset},{latitude_orientation},{horizontal_orientation},{seam_offset}).equirectangular_uv",
+    "longitude": "maker_b383_equirectangular_spherical_coordinates({uv},{direction},{polar_axis},{longitude_offset},{latitude_orientation},{horizontal_orientation},{seam_offset}).longitude",
+    "latitude": "maker_b383_equirectangular_spherical_coordinates({uv},{direction},{polar_axis},{longitude_offset},{latitude_orientation},{horizontal_orientation},{seam_offset}).latitude",
+    "direction_validity": "maker_b383_equirectangular_spherical_coordinates({uv},{direction},{polar_axis},{longitude_offset},{latitude_orientation},{horizontal_orientation},{seam_offset}).direction_validity"
+  }
+}

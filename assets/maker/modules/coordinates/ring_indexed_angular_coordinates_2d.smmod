@@ -1,0 +1,131 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.ring_indexed_angular_coordinates_2d",
+  "name": "Ring-Indexed Angular Coordinates 2D",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Ring-local angle in radians; transformed coordinate uses cycles and radial offset. Inner region masked.",
+  "uses": "Ring-Indexed Angular Coordinates 2D",
+  "notes": "Ring-local angle in radians; transformed coordinate uses cycles and radial offset. Inner region masked.",
+  "header_color": "#627FC2",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec2",
+      "default": "vec2(0.0)"
+    },
+    {
+      "id": "time_offset",
+      "name": "Time Offset",
+      "type": "float",
+      "default": "0.0",
+      "semantic_role": "time"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "transformed_coordinates",
+      "name": "Transformed Coordinates",
+      "type": "vec2",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "ring_index",
+      "name": "Ring Index",
+      "type": "float"
+    },
+    {
+      "id": "local_angle",
+      "name": "Local Angle",
+      "type": "float",
+      "semantic_role": "angle"
+    },
+    {
+      "id": "angular_mask",
+      "name": "Angular Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    },
+    {
+      "id": "radial_offset",
+      "name": "Radial Offset",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "spacing",
+      "name": "Spacing",
+      "type": "float",
+      "default": 0.2,
+      "min": 0.001,
+      "max": 10
+    },
+    {
+      "id": "inner_radius",
+      "name": "Inner Radius",
+      "type": "float",
+      "default": 0,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "speed",
+      "name": "Speed",
+      "type": "float",
+      "default": 0.2,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "speed_variation",
+      "name": "Speed Variation",
+      "type": "float",
+      "default": 0.5,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "phase_variation",
+      "name": "Phase Variation",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "extent",
+      "name": "Extent",
+      "type": "float",
+      "default": 0.75,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "seed",
+      "name": "Seed",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 65535
+    }
+  ],
+  "helpers": "vec4 maker_ria(vec2 p,vec2 c,float t,float spacing,float inner,float speed,float sv,float pv,float extent,float seed){vec2 q=p-c;float r=length(q),z=(r-inner)/spacing,i=floor(z);float h=fract(sin(i*127.1+seed*.13)*43758.5453),j=fract(sin(i*91.7+seed*.23)*19341.13);float a=fract((r>1e-8?atan(q.y,q.x)/6.2831853:0.0)+(u_time+t)*speed*(1.0+sv*(2.0*h-1.0))+pv*j);return vec4(a,i,fract(z)*spacing,step(0.0,z)*(1.0-step(extent,a)));}",
+  "glsl_outputs": {
+    "transformed_coordinates": "vec2(maker_ria({position},{center},{time_offset},{spacing},{inner_radius},{speed},{speed_variation},{phase_variation},{extent},{seed}).x,maker_ria({position},{center},{time_offset},{spacing},{inner_radius},{speed},{speed_variation},{phase_variation},{extent},{seed}).z)",
+    "ring_index": "maker_ria({position},{center},{time_offset},{spacing},{inner_radius},{speed},{speed_variation},{phase_variation},{extent},{seed}).y",
+    "local_angle": "maker_ria({position},{center},{time_offset},{spacing},{inner_radius},{speed},{speed_variation},{phase_variation},{extent},{seed}).x*6.2831853",
+    "angular_mask": "maker_ria({position},{center},{time_offset},{spacing},{inner_radius},{speed},{speed_variation},{phase_variation},{extent},{seed}).w",
+    "radial_offset": "maker_ria({position},{center},{time_offset},{spacing},{inner_radius},{speed},{speed_variation},{phase_variation},{extent},{seed}).z"
+  }
+}
