@@ -1,0 +1,177 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.vortex_street_advection_2d",
+  "name": "Vortex Street Advection 2D",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Bounded Euler advection of a periodic row of regularized point vortices; velocity is measured at the original position. Maximum 16 steps and 32 vortices.",
+  "uses": "Vortex Street Advection 2D",
+  "notes": "Bounded Euler advection of a periodic row of regularized point vortices; velocity is measured at the original position. Maximum 16 steps and 32 vortices.",
+  "header_color": "#348F8B",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec2",
+      "default": "vec2(0.0)"
+    },
+    {
+      "id": "time_offset",
+      "name": "Time Offset",
+      "type": "float",
+      "default": "0.0"
+    },
+    {
+      "id": "strength_multiplier",
+      "name": "Strength Multiplier",
+      "type": "float",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "advected_coordinates",
+      "name": "Advected Coordinates",
+      "type": "vec2"
+    },
+    {
+      "id": "velocity",
+      "name": "Velocity",
+      "type": "vec2"
+    },
+    {
+      "id": "velocity_magnitude",
+      "name": "Velocity Magnitude",
+      "type": "float"
+    },
+    {
+      "id": "displacement",
+      "name": "Displacement",
+      "type": "vec2"
+    },
+    {
+      "id": "displacement_magnitude",
+      "name": "Displacement Magnitude",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "vortex_count",
+      "name": "Vortex Count",
+      "type": "float",
+      "default": 16,
+      "min": 2,
+      "max": 32
+    },
+    {
+      "id": "vortex_spacing",
+      "name": "Vortex Spacing",
+      "type": "float",
+      "default": 0.5,
+      "min": 0.05,
+      "max": 10
+    },
+    {
+      "id": "row_separation",
+      "name": "Row Separation",
+      "type": "float",
+      "default": 0.3,
+      "min": 0,
+      "max": 5
+    },
+    {
+      "id": "circulation_strength",
+      "name": "Circulation Strength",
+      "type": "float",
+      "default": 0.5,
+      "min": -5,
+      "max": 5
+    },
+    {
+      "id": "core_radius",
+      "name": "Core Radius",
+      "type": "float",
+      "default": 0.15,
+      "min": 0.01,
+      "max": 2
+    },
+    {
+      "id": "flow_speed",
+      "name": "Flow Speed",
+      "type": "float",
+      "default": 0.25,
+      "min": -5,
+      "max": 5
+    },
+    {
+      "id": "orientation",
+      "name": "Orientation",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "integration_steps",
+      "name": "Integration Steps",
+      "type": "float",
+      "default": 6,
+      "min": 1,
+      "max": 16
+    },
+    {
+      "id": "integration_step_size",
+      "name": "Integration Step Size",
+      "type": "float",
+      "default": 0.025,
+      "min": 0.001,
+      "max": 0.1
+    },
+    {
+      "id": "background_flow",
+      "name": "Background Flow",
+      "type": "float",
+      "default": 0,
+      "min": -5,
+      "max": 5
+    },
+    {
+      "id": "arrangement",
+      "name": "Arrangement",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Alternating",
+        "Same Rotation"
+      ]
+    },
+    {
+      "id": "advection_direction",
+      "name": "Advection Direction",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Backward",
+        "Forward"
+      ]
+    }
+  ],
+  "helpers": "struct MakerB340VortexStreetAdvection2D {vec2 advected_coordinates;vec2 velocity;float velocity_magnitude;vec2 displacement;float displacement_magnitude;};\nMakerB340VortexStreetAdvection2D maker_b340_vortex_street_advection_2d(vec2 position,vec2 center,float time_offset,float strength_multiplier,float vortex_count,float vortex_spacing,float row_separation,float circulation_strength,float core_radius,float flow_speed,float orientation,float integration_steps,float integration_step_size,float background_flow,float arrangement,float advection_direction,float tm){\nfloat a=radians(orientation);mat2 r=mat2(cos(a),sin(a),-sin(a),cos(a));vec2 p=transpose(r)*(position-center),q=p,v=vec2(0),initial=vec2(0);int n=int(clamp(round(vortex_count),2.,32.)),steps=int(clamp(round(integration_steps),1.,16.));float spacing=max(vortex_spacing,.05),core=max(core_radius,.01),period=float(n)*spacing;float shift=mod((tm+time_offset)*flow_speed,period);for(int k=0;k<16;k++){if(k>=steps)break;v=vec2(background_flow,0);for(int j=0;j<32;j++){if(j>=n)break;float parity=mod(float(j),2.);vec2 c=vec2((float(j)-.5*float(n-1))*spacing+shift,(parity-.5)*row_separation);vec2 d=q-c;d.x-=period*floor(d.x/period+.5);float signv=arrangement<.5?1.-2.*parity:1.;v+=signv*circulation_strength*vec2(-d.y,d.x)/(6.2831853*(dot(d,d)+core*core));}v*=strength_multiplier;if(k==0)initial=v;q+=(advection_direction<.5?-1.:1.)*integration_step_size*v;}vec2 delta=r*(q-p);return MakerB340VortexStreetAdvection2D(position+delta,r*initial,length(initial),delta,length(delta));\n}",
+  "glsl_outputs": {
+    "advected_coordinates": "maker_b340_vortex_street_advection_2d({position},{center},{time_offset},{strength_multiplier},{vortex_count},{vortex_spacing},{row_separation},{circulation_strength},{core_radius},{flow_speed},{orientation},{integration_steps},{integration_step_size},{background_flow},{arrangement},{advection_direction},u_time).advected_coordinates",
+    "velocity": "maker_b340_vortex_street_advection_2d({position},{center},{time_offset},{strength_multiplier},{vortex_count},{vortex_spacing},{row_separation},{circulation_strength},{core_radius},{flow_speed},{orientation},{integration_steps},{integration_step_size},{background_flow},{arrangement},{advection_direction},u_time).velocity",
+    "velocity_magnitude": "maker_b340_vortex_street_advection_2d({position},{center},{time_offset},{strength_multiplier},{vortex_count},{vortex_spacing},{row_separation},{circulation_strength},{core_radius},{flow_speed},{orientation},{integration_steps},{integration_step_size},{background_flow},{arrangement},{advection_direction},u_time).velocity_magnitude",
+    "displacement": "maker_b340_vortex_street_advection_2d({position},{center},{time_offset},{strength_multiplier},{vortex_count},{vortex_spacing},{row_separation},{circulation_strength},{core_radius},{flow_speed},{orientation},{integration_steps},{integration_step_size},{background_flow},{arrangement},{advection_direction},u_time).displacement",
+    "displacement_magnitude": "maker_b340_vortex_street_advection_2d({position},{center},{time_offset},{strength_multiplier},{vortex_count},{vortex_spacing},{row_separation},{circulation_strength},{core_radius},{flow_speed},{orientation},{integration_steps},{integration_step_size},{background_flow},{arrangement},{advection_direction},u_time).displacement_magnitude"
+  }
+}

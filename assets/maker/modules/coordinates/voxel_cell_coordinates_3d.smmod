@@ -1,0 +1,112 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.voxel_cell_coordinates_3d",
+  "name": "Voxel Cell Coordinates 3D",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Cell center always denotes geometric center; sampling position controls quantization displacement. No ray traversal.",
+  "uses": "Voxel Cell Coordinates 3D",
+  "notes": "Cell center always denotes geometric center; sampling position controls quantization displacement. No ray traversal.",
+  "header_color": "#348F8B",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "default": "vec3(maker_uv,0.0)",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "grid_origin",
+      "name": "Grid Origin",
+      "type": "vec3",
+      "default": "vec3(0.0)"
+    },
+    {
+      "id": "scale_multiplier",
+      "name": "Scale Multiplier",
+      "type": "float",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "cell_center",
+      "name": "Cell Center",
+      "type": "vec3"
+    },
+    {
+      "id": "cell_identifier",
+      "name": "Cell Identifier",
+      "type": "vec3"
+    },
+    {
+      "id": "local_coordinates",
+      "name": "Local Coordinates",
+      "type": "vec3"
+    },
+    {
+      "id": "normalized_coordinates",
+      "name": "Normalized Coordinates",
+      "type": "vec3"
+    },
+    {
+      "id": "quantization_displacement",
+      "name": "Quantization Displacement",
+      "type": "vec3"
+    },
+    {
+      "id": "boundary_distance",
+      "name": "Boundary Distance",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "cell_width",
+      "name": "Cell Width",
+      "type": "float",
+      "default": 1,
+      "min": 0.01,
+      "max": 20
+    },
+    {
+      "id": "cell_height",
+      "name": "Cell Height",
+      "type": "float",
+      "default": 1,
+      "min": 0.01,
+      "max": 20
+    },
+    {
+      "id": "cell_depth",
+      "name": "Cell Depth",
+      "type": "float",
+      "default": 1,
+      "min": 0.01,
+      "max": 20
+    },
+    {
+      "id": "sampling_position",
+      "name": "Sampling Position",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Center",
+        "Lower Corner",
+        "Upper Corner"
+      ]
+    }
+  ],
+  "helpers": "struct MakerB340VoxelCellCoordinates3D {vec3 cell_center;vec3 cell_identifier;vec3 local_coordinates;vec3 normalized_coordinates;vec3 quantization_displacement;float boundary_distance;};\nMakerB340VoxelCellCoordinates3D maker_b340_voxel_cell_coordinates_3d(vec3 position,vec3 grid_origin,float scale_multiplier,float cell_width,float cell_height,float cell_depth,float sampling_position,float tm){\nvec3 s=max(vec3(cell_width,cell_height,cell_depth)*abs(scale_multiplier),vec3(.0001));vec3 q=(position-grid_origin)/s,i=floor(q),f=fract(q),c=grid_origin+s*(i+.5);vec3 samplep=grid_origin+s*(i+(sampling_position<.5?.5:(sampling_position<1.5?0.:1.)));vec3 b=min(f,1.-f)*s;return MakerB340VoxelCellCoordinates3D(c,i,(f-.5)*s,f,samplep-position,min(b.x,min(b.y,b.z)));\n}",
+  "glsl_outputs": {
+    "cell_center": "maker_b340_voxel_cell_coordinates_3d({position},{grid_origin},{scale_multiplier},{cell_width},{cell_height},{cell_depth},{sampling_position},u_time).cell_center",
+    "cell_identifier": "maker_b340_voxel_cell_coordinates_3d({position},{grid_origin},{scale_multiplier},{cell_width},{cell_height},{cell_depth},{sampling_position},u_time).cell_identifier",
+    "local_coordinates": "maker_b340_voxel_cell_coordinates_3d({position},{grid_origin},{scale_multiplier},{cell_width},{cell_height},{cell_depth},{sampling_position},u_time).local_coordinates",
+    "normalized_coordinates": "maker_b340_voxel_cell_coordinates_3d({position},{grid_origin},{scale_multiplier},{cell_width},{cell_height},{cell_depth},{sampling_position},u_time).normalized_coordinates",
+    "quantization_displacement": "maker_b340_voxel_cell_coordinates_3d({position},{grid_origin},{scale_multiplier},{cell_width},{cell_height},{cell_depth},{sampling_position},u_time).quantization_displacement",
+    "boundary_distance": "maker_b340_voxel_cell_coordinates_3d({position},{grid_origin},{scale_multiplier},{cell_width},{cell_height},{cell_depth},{sampling_position},u_time).boundary_distance"
+  }
+}

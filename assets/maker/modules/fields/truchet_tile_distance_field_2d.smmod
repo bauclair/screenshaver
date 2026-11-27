@@ -60,6 +60,16 @@
       "id": "tile_orientation",
       "name": "Tile Orientation",
       "type": "float"
+    },
+    {
+      "id": "uninterrupted_pattern_distance",
+      "name": "Uninterrupted Pattern Distance",
+      "type": "float"
+    },
+    {
+      "id": "interruption_mask",
+      "name": "Interruption Mask",
+      "type": "float"
     }
   ],
   "parameters": [
@@ -72,7 +82,9 @@
         "Circular Arcs",
         "Diagonals",
         "Combined",
-        "Random Mix"
+        "Random Mix",
+        "Rounded Orthogonal Paths",
+        "Interrupted Rounded Paths"
       ]
     },
     {
@@ -143,15 +155,41 @@
         "Disabled",
         "Enabled"
       ]
+    },
+    {
+      "id": "corner_radius",
+      "name": "Corner Radius",
+      "type": "float",
+      "default": 0.2,
+      "min": 0.01,
+      "max": 0.5
+    },
+    {
+      "id": "interruption_width",
+      "name": "Interruption Width",
+      "type": "float",
+      "default": 0.08,
+      "min": 0,
+      "max": 0.25
+    },
+    {
+      "id": "interruption_probability",
+      "name": "Interruption Probability",
+      "type": "float",
+      "default": 0.25,
+      "min": 0,
+      "max": 1
     }
   ],
-  "helpers": "\nstruct MakerB330TruchetTileDistanceField2D {float pattern_distance;float pattern_mask;float arc_distance;float diagonal_distance;float tile_boundary_distance;float tile_orientation;};\nMakerB330TruchetTileDistanceField2D maker_b330_truchet_tile_distance_field_2d(vec2 local_position,vec2 cell_identifier,float width_multiplier,float pattern_type,float tile_size,float arc_radius,float line_width,float edge_softness,float diagonal_probability,float orientation_mode,float seed,float interior_inversion,float tm){\nfloat r=fract(sin(dot(cell_identifier,vec2(127.1,311.7))+seed*19.19)*43758.5453);float flip=orientation_mode<.5?step(.5,r):(orientation_mode<1.5?0.:mod(cell_identifier.x+cell_identifier.y,2.));vec2 q=clamp(local_position,-.5,.5);if(flip>.5)q.x=-q.x;float a=min(abs(length(q-vec2(.5)) -arc_radius),abs(length(q+vec2(.5))-arc_radius));float d=abs(q.x-q.y)*.70710678;float v=pattern_type<.5?a:(pattern_type<1.5?d:(pattern_type<2.5?min(a,d):(r<diagonal_probability?d:a)));float w=max(0.,line_width*width_multiplier);float mask=1.-smoothstep(w,w+max(edge_softness,1e-6),v);if(interior_inversion>.5)mask=1.-mask;return MakerB330TruchetTileDistanceField2D((v-w)*tile_size,mask,a*tile_size,d*tile_size,(.5-max(abs(q.x),abs(q.y)))*tile_size,flip);\n}",
+  "helpers": "\nstruct MakerB330TruchetTileDistanceField2D {float pattern_distance;float pattern_mask;float arc_distance;float diagonal_distance;float tile_boundary_distance;float tile_orientation;};\nMakerB330TruchetTileDistanceField2D maker_b330_truchet_tile_distance_field_2d(vec2 local_position,vec2 cell_identifier,float width_multiplier,float pattern_type,float tile_size,float arc_radius,float line_width,float edge_softness,float diagonal_probability,float orientation_mode,float seed,float interior_inversion,float tm){\nfloat r=fract(sin(dot(cell_identifier,vec2(127.1,311.7))+seed*19.19)*43758.5453);float flip=orientation_mode<.5?step(.5,r):(orientation_mode<1.5?0.:mod(cell_identifier.x+cell_identifier.y,2.));vec2 q=clamp(local_position,-.5,.5);if(flip>.5)q.x=-q.x;float a=min(abs(length(q-vec2(.5)) -arc_radius),abs(length(q+vec2(.5))-arc_radius));float d=abs(q.x-q.y)*.70710678;float v=pattern_type<.5?a:(pattern_type<1.5?d:(pattern_type<2.5?min(a,d):(r<diagonal_probability?d:a)));float w=max(0.,line_width*width_multiplier);float mask=1.-smoothstep(w,w+max(edge_softness,1e-6),v);if(interior_inversion>.5)mask=1.-mask;return MakerB330TruchetTileDistanceField2D((v-w)*tile_size,mask,a*tile_size,d*tile_size,(.5-max(abs(q.x),abs(q.y)))*tile_size,flip);\n}\nfloat maker_b344_truchet_leg(vec2 p,vec2 a,vec2 b){vec2 v=b-a;return length(p-a-v*clamp(dot(p-a,v)/max(dot(v,v),1e-8),0.,1.));}\nfloat maker_b344_truchet_corner(vec2 q,float r,float gap){vec2 c=vec2(-r,r);vec2 v=q-c;float arc=(v.x>=0.&&v.y<=0.)?abs(length(v)-r):min(length(q-vec2(-r,0.)),length(q-vec2(0.,r)));float a=maker_b344_truchet_leg(q,vec2(-.5,0.),vec2(-r,0.));if(gap>0.&&r<.499){float mid=(-.5-r)*.5,halfGap=min(gap*.5,(.5-r)*.49);a=min(maker_b344_truchet_leg(q,vec2(-.5,0.),vec2(mid-halfGap,0.)),maker_b344_truchet_leg(q,vec2(mid+halfGap,0.),vec2(-r,0.)));}return min(arc,min(a,maker_b344_truchet_leg(q,vec2(0.,r),vec2(0.,.5))));}\nvec3 maker_b344_truchet(vec2 local_position,vec2 cell_identifier,float width_multiplier,float pattern_type,float tile_size,float line_width,float edge_softness,float orientation_mode,float seed,float corner_radius,float interruption_width,float interruption_probability){float h=fract(sin(dot(cell_identifier,vec2(127.1,311.7))+seed*19.19)*43758.5453);float flip=orientation_mode<.5?step(.5,h):(orientation_mode<1.5?0.:mod(cell_identifier.x+cell_identifier.y,2.));vec2 q=clamp(local_position,-.5,.5);if(flip>.5)q.x=-q.x;float r=clamp(corner_radius,.01,.5),gap=pattern_type>=4.5&&fract(sin(dot(cell_identifier,vec2(51.7,93.1))+seed)*15371.3)<interruption_probability?interruption_width:0.;float base=min(maker_b344_truchet_corner(q,r,0.),maker_b344_truchet_corner(-q,r,0.)),v=min(maker_b344_truchet_corner(q,r,gap),maker_b344_truchet_corner(-q,r,gap));float w=max(0.,line_width*width_multiplier),s=max(edge_softness,1e-6);return vec3((v-w)*tile_size,(base-w)*tile_size,clamp(smoothstep(w,w+s,v)-smoothstep(w,w+s,base),0.,1.));}\n",
   "glsl_outputs": {
-    "pattern_distance": "maker_b330_truchet_tile_distance_field_2d({local_position},{cell_identifier},{width_multiplier},{pattern_type},{tile_size},{arc_radius},{line_width},{edge_softness},{diagonal_probability},{orientation_mode},{seed},{interior_inversion},u_time).pattern_distance",
-    "pattern_mask": "maker_b330_truchet_tile_distance_field_2d({local_position},{cell_identifier},{width_multiplier},{pattern_type},{tile_size},{arc_radius},{line_width},{edge_softness},{diagonal_probability},{orientation_mode},{seed},{interior_inversion},u_time).pattern_mask",
+    "pattern_distance": "({pattern_type}<3.5?maker_b330_truchet_tile_distance_field_2d({local_position},{cell_identifier},{width_multiplier},{pattern_type},{tile_size},{arc_radius},{line_width},{edge_softness},{diagonal_probability},{orientation_mode},{seed},{interior_inversion},u_time).pattern_distance:maker_b344_truchet({local_position},{cell_identifier},{width_multiplier},{pattern_type},{tile_size},{line_width},{edge_softness},{orientation_mode},{seed},{corner_radius},{interruption_width},{interruption_probability}).x)",
+    "pattern_mask": "({pattern_type}<3.5?maker_b330_truchet_tile_distance_field_2d({local_position},{cell_identifier},{width_multiplier},{pattern_type},{tile_size},{arc_radius},{line_width},{edge_softness},{diagonal_probability},{orientation_mode},{seed},{interior_inversion},u_time).pattern_mask:abs(step(0.5,{interior_inversion})-(1.0-smoothstep(0.0,max({edge_softness},0.000001),maker_b344_truchet({local_position},{cell_identifier},{width_multiplier},{pattern_type},{tile_size},{line_width},{edge_softness},{orientation_mode},{seed},{corner_radius},{interruption_width},{interruption_probability}).x/max({tile_size},0.000001)))))",
     "arc_distance": "maker_b330_truchet_tile_distance_field_2d({local_position},{cell_identifier},{width_multiplier},{pattern_type},{tile_size},{arc_radius},{line_width},{edge_softness},{diagonal_probability},{orientation_mode},{seed},{interior_inversion},u_time).arc_distance",
     "diagonal_distance": "maker_b330_truchet_tile_distance_field_2d({local_position},{cell_identifier},{width_multiplier},{pattern_type},{tile_size},{arc_radius},{line_width},{edge_softness},{diagonal_probability},{orientation_mode},{seed},{interior_inversion},u_time).diagonal_distance",
     "tile_boundary_distance": "maker_b330_truchet_tile_distance_field_2d({local_position},{cell_identifier},{width_multiplier},{pattern_type},{tile_size},{arc_radius},{line_width},{edge_softness},{diagonal_probability},{orientation_mode},{seed},{interior_inversion},u_time).tile_boundary_distance",
-    "tile_orientation": "maker_b330_truchet_tile_distance_field_2d({local_position},{cell_identifier},{width_multiplier},{pattern_type},{tile_size},{arc_radius},{line_width},{edge_softness},{diagonal_probability},{orientation_mode},{seed},{interior_inversion},u_time).tile_orientation"
+    "tile_orientation": "maker_b330_truchet_tile_distance_field_2d({local_position},{cell_identifier},{width_multiplier},{pattern_type},{tile_size},{arc_radius},{line_width},{edge_softness},{diagonal_probability},{orientation_mode},{seed},{interior_inversion},u_time).tile_orientation",
+    "uninterrupted_pattern_distance": "({pattern_type}<3.5?maker_b330_truchet_tile_distance_field_2d({local_position},{cell_identifier},{width_multiplier},{pattern_type},{tile_size},{arc_radius},{line_width},{edge_softness},{diagonal_probability},{orientation_mode},{seed},{interior_inversion},u_time).pattern_distance:maker_b344_truchet({local_position},{cell_identifier},{width_multiplier},{pattern_type},{tile_size},{line_width},{edge_softness},{orientation_mode},{seed},{corner_radius},{interruption_width},{interruption_probability}).y)",
+    "interruption_mask": "({pattern_type}<3.5?0.0:maker_b344_truchet({local_position},{cell_identifier},{width_multiplier},{pattern_type},{tile_size},{line_width},{edge_softness},{orientation_mode},{seed},{corner_radius},{interruption_width},{interruption_probability}).z)"
   }
 }

@@ -1,0 +1,160 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.surface_gradient_optical_response_2d",
+  "name": "Surface Gradient Optical Response 2D",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Artistic gradient response, not physical optics. No texture sampling.",
+  "uses": "Surface Gradient Optical Response 2D",
+  "notes": "Artistic gradient response, not physical optics. No texture sampling.",
+  "header_color": "#348F8B",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "surface_gradient",
+      "name": "Surface Gradient",
+      "type": "vec2",
+      "default": "vec2(0.0)"
+    },
+    {
+      "id": "strength_multiplier",
+      "name": "Strength Multiplier",
+      "type": "float",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "displaced_coordinates",
+      "name": "Displaced Coordinates",
+      "type": "vec2"
+    },
+    {
+      "id": "displacement",
+      "name": "Displacement",
+      "type": "vec2"
+    },
+    {
+      "id": "surface_normal",
+      "name": "Surface Normal",
+      "type": "vec3"
+    },
+    {
+      "id": "slope_magnitude",
+      "name": "Slope Magnitude",
+      "type": "float"
+    },
+    {
+      "id": "intensity",
+      "name": "Intensity",
+      "type": "float"
+    },
+    {
+      "id": "highlight_mask",
+      "name": "Highlight Mask",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "displacement_strength",
+      "name": "Displacement Strength",
+      "type": "float",
+      "default": 0.05,
+      "min": -2,
+      "max": 2
+    },
+    {
+      "id": "surface_strength",
+      "name": "Surface Strength",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "base_intensity",
+      "name": "Base Intensity",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 5
+    },
+    {
+      "id": "slope_gain",
+      "name": "Slope Gain",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "highlight_threshold",
+      "name": "Highlight Threshold",
+      "type": "float",
+      "default": 0.2,
+      "min": 0,
+      "max": 5
+    },
+    {
+      "id": "highlight_strength",
+      "name": "Highlight Strength",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "highlight_exponent",
+      "name": "Highlight Exponent",
+      "type": "float",
+      "default": 2,
+      "min": 0.1,
+      "max": 16
+    },
+    {
+      "id": "maximum_intensity",
+      "name": "Maximum Intensity",
+      "type": "float",
+      "default": 8,
+      "min": 1,
+      "max": 32
+    },
+    {
+      "id": "response_mode",
+      "name": "Response Mode",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Directional",
+        "Magnitude",
+        "Component Product"
+      ]
+    },
+    {
+      "id": "response_orientation",
+      "name": "Response Orientation",
+      "type": "float",
+      "default": 45,
+      "min": -360,
+      "max": 360
+    }
+  ],
+  "helpers": "struct MakerB340SurfaceGradientOpticalResponse2D {vec2 displaced_coordinates;vec2 displacement;vec3 surface_normal;float slope_magnitude;float intensity;float highlight_mask;};\nMakerB340SurfaceGradientOpticalResponse2D maker_b340_surface_gradient_optical_response_2d(vec2 position,vec2 surface_gradient,float strength_multiplier,float displacement_strength,float surface_strength,float base_intensity,float slope_gain,float highlight_threshold,float highlight_strength,float highlight_exponent,float maximum_intensity,float response_mode,float response_orientation,float tm){\nvec2 g=surface_gradient*surface_strength*strength_multiplier;float s=length(g),a=radians(response_orientation);float v=response_mode<.5?max(0.,dot(g,vec2(cos(a),sin(a)))):(response_mode<1.5?s:abs(g.x*g.y));float h=pow(clamp((v-highlight_threshold)/max(1.,highlight_threshold),0.,1.),highlight_exponent);vec2 d=g*displacement_strength;return MakerB340SurfaceGradientOpticalResponse2D(position+d,d,normalize(vec3(-g,1.)),s,clamp(base_intensity+slope_gain*v+highlight_strength*h,0.,maximum_intensity),h);\n}",
+  "glsl_outputs": {
+    "displaced_coordinates": "maker_b340_surface_gradient_optical_response_2d({position},{surface_gradient},{strength_multiplier},{displacement_strength},{surface_strength},{base_intensity},{slope_gain},{highlight_threshold},{highlight_strength},{highlight_exponent},{maximum_intensity},{response_mode},{response_orientation},u_time).displaced_coordinates",
+    "displacement": "maker_b340_surface_gradient_optical_response_2d({position},{surface_gradient},{strength_multiplier},{displacement_strength},{surface_strength},{base_intensity},{slope_gain},{highlight_threshold},{highlight_strength},{highlight_exponent},{maximum_intensity},{response_mode},{response_orientation},u_time).displacement",
+    "surface_normal": "maker_b340_surface_gradient_optical_response_2d({position},{surface_gradient},{strength_multiplier},{displacement_strength},{surface_strength},{base_intensity},{slope_gain},{highlight_threshold},{highlight_strength},{highlight_exponent},{maximum_intensity},{response_mode},{response_orientation},u_time).surface_normal",
+    "slope_magnitude": "maker_b340_surface_gradient_optical_response_2d({position},{surface_gradient},{strength_multiplier},{displacement_strength},{surface_strength},{base_intensity},{slope_gain},{highlight_threshold},{highlight_strength},{highlight_exponent},{maximum_intensity},{response_mode},{response_orientation},u_time).slope_magnitude",
+    "intensity": "maker_b340_surface_gradient_optical_response_2d({position},{surface_gradient},{strength_multiplier},{displacement_strength},{surface_strength},{base_intensity},{slope_gain},{highlight_threshold},{highlight_strength},{highlight_exponent},{maximum_intensity},{response_mode},{response_orientation},u_time).intensity",
+    "highlight_mask": "maker_b340_surface_gradient_optical_response_2d({position},{surface_gradient},{strength_multiplier},{displacement_strength},{surface_strength},{base_intensity},{slope_gain},{highlight_threshold},{highlight_strength},{highlight_exponent},{maximum_intensity},{response_mode},{response_orientation},u_time).highlight_mask"
+  }
+}

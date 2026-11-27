@@ -1,0 +1,198 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.multiscale_randomized_filament_field_2d",
+  "name": "Multiscale Randomized Filament Field 2D",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Animated cell-local curved filaments; distance is an approximate transverse response, not exact curve distance.",
+  "uses": "Multiscale Randomized Filament Field 2D",
+  "notes": "Animated cell-local curved filaments; distance is an approximate transverse response, not exact curve distance.",
+  "header_color": "#348F8B",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "time_offset",
+      "name": "Time Offset",
+      "type": "float",
+      "default": "0.0"
+    },
+    {
+      "id": "width_multiplier",
+      "name": "Width Multiplier",
+      "type": "float",
+      "default": "1.0"
+    },
+    {
+      "id": "curvature_multiplier",
+      "name": "Curvature Multiplier",
+      "type": "float",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "filament_mask",
+      "name": "Filament Mask",
+      "type": "float"
+    },
+    {
+      "id": "glow_mask",
+      "name": "Glow Mask",
+      "type": "float"
+    },
+    {
+      "id": "combined_intensity",
+      "name": "Combined Intensity",
+      "type": "float"
+    },
+    {
+      "id": "nearest_filament_distance",
+      "name": "Nearest Filament Distance",
+      "type": "float"
+    },
+    {
+      "id": "dominant_layer",
+      "name": "Dominant Layer",
+      "type": "float"
+    },
+    {
+      "id": "local_orientation",
+      "name": "Local Orientation",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "layer_count",
+      "name": "Layer Count",
+      "type": "float",
+      "default": 6,
+      "min": 1,
+      "max": 16
+    },
+    {
+      "id": "cell_density",
+      "name": "Cell Density",
+      "type": "float",
+      "default": 8,
+      "min": 0.1,
+      "max": 50
+    },
+    {
+      "id": "filament_width",
+      "name": "Filament Width",
+      "type": "float",
+      "default": 0.05,
+      "min": 0.001,
+      "max": 0.5
+    },
+    {
+      "id": "curvature_amplitude",
+      "name": "Curvature Amplitude",
+      "type": "float",
+      "default": 0.25,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "curvature_frequency",
+      "name": "Curvature Frequency",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "animation_speed",
+      "name": "Animation Speed",
+      "type": "float",
+      "default": 0.5,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "scale_progression",
+      "name": "Scale Progression",
+      "type": "float",
+      "default": 1.5,
+      "min": 0.5,
+      "max": 3
+    },
+    {
+      "id": "width_decay",
+      "name": "Width Decay",
+      "type": "float",
+      "default": 0.85,
+      "min": 0.1,
+      "max": 1
+    },
+    {
+      "id": "intensity_decay",
+      "name": "Intensity Decay",
+      "type": "float",
+      "default": 0.8,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "rotation_per_layer",
+      "name": "Rotation Per Layer",
+      "type": "float",
+      "default": 35,
+      "min": -180,
+      "max": 180
+    },
+    {
+      "id": "boundary_fade",
+      "name": "Boundary Fade",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "orientation_variation",
+      "name": "Orientation Variation",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "seed",
+      "name": "Seed",
+      "type": "float",
+      "default": 0,
+      "min": 0,
+      "max": 1000
+    },
+    {
+      "id": "accumulation_mode",
+      "name": "Accumulation Mode",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Maximum",
+        "Sum",
+        "Mean"
+      ]
+    }
+  ],
+  "helpers": "struct MakerB344MultiscaleRandomizedFilamentField2D {float filament_mask;float glow_mask;float combined_intensity;float nearest_filament_distance;float dominant_layer;float local_orientation;};\nMakerB344MultiscaleRandomizedFilamentField2D maker_b344_multiscale_randomized_filament_field_2d(vec2 position,float time_offset,float width_multiplier,float curvature_multiplier,float layer_count,float cell_density,float filament_width,float curvature_amplitude,float curvature_frequency,float animation_speed,float scale_progression,float width_decay,float intensity_decay,float rotation_per_layer,float boundary_fade,float orientation_variation,float seed,float accumulation_mode,float tm){\nint n=int(clamp(round(layer_count),1.,16.));float scale=cell_density,w=max(.0001,filament_width*abs(width_multiplier)),gain=1.,sumv=0.,sumg=0.,peak=0.,peakg=0.,nearv=1e20,idx=0.,ori=0.;for(int j=0;j<16;j++){if(j>=n)break;float a=radians(rotation_per_layer)*float(j);vec2 p=mat2(cos(a),sin(a),-sin(a),cos(a))*position*scale;vec2 cell=floor(p),q=fract(p)-.5;float h=fract(sin(dot(cell,vec2(73.19,129.7))+seed+float(j)*17.3)*19753.17);float b=6.2831853*h*orientation_variation;vec2 r=mat2(cos(b),sin(b),-sin(b),cos(b))*q;float y=curvature_amplitude*curvature_multiplier*sin(6.2831853*(r.x*curvature_frequency+animation_speed*(tm+time_offset)+h));float d=length(vec2(max(abs(r.x)-.35,0.),r.y-y));float fade=mix(1.,smoothstep(0.,.15,.5-max(abs(q.x),abs(q.y))),boundary_fade);float m=gain*fade*(1.-smoothstep(w,w*1.5,d)),g=gain*fade*exp(-d/max(3.*w,.0001));sumv+=m;sumg+=g;peakg=max(peakg,g);if(j==0||m>peak){peak=m;idx=float(j);ori=-(a+b);}nearv=min(nearv,d/max(scale,.0001));scale=clamp(scale*scale_progression,.0001,1e6);w=max(w*width_decay,.0001);gain*=intensity_decay;}float m=accumulation_mode<.5?peak:(accumulation_mode<1.5?sumv:sumv/float(n)),g=accumulation_mode<.5?peakg:(accumulation_mode<1.5?sumg:sumg/float(n));return MakerB344MultiscaleRandomizedFilamentField2D(m,g,m+g,nearv,idx,ori);\n}",
+  "glsl_outputs": {
+    "filament_mask": "maker_b344_multiscale_randomized_filament_field_2d({position},{time_offset},{width_multiplier},{curvature_multiplier},{layer_count},{cell_density},{filament_width},{curvature_amplitude},{curvature_frequency},{animation_speed},{scale_progression},{width_decay},{intensity_decay},{rotation_per_layer},{boundary_fade},{orientation_variation},{seed},{accumulation_mode},u_time).filament_mask",
+    "glow_mask": "maker_b344_multiscale_randomized_filament_field_2d({position},{time_offset},{width_multiplier},{curvature_multiplier},{layer_count},{cell_density},{filament_width},{curvature_amplitude},{curvature_frequency},{animation_speed},{scale_progression},{width_decay},{intensity_decay},{rotation_per_layer},{boundary_fade},{orientation_variation},{seed},{accumulation_mode},u_time).glow_mask",
+    "combined_intensity": "maker_b344_multiscale_randomized_filament_field_2d({position},{time_offset},{width_multiplier},{curvature_multiplier},{layer_count},{cell_density},{filament_width},{curvature_amplitude},{curvature_frequency},{animation_speed},{scale_progression},{width_decay},{intensity_decay},{rotation_per_layer},{boundary_fade},{orientation_variation},{seed},{accumulation_mode},u_time).combined_intensity",
+    "nearest_filament_distance": "maker_b344_multiscale_randomized_filament_field_2d({position},{time_offset},{width_multiplier},{curvature_multiplier},{layer_count},{cell_density},{filament_width},{curvature_amplitude},{curvature_frequency},{animation_speed},{scale_progression},{width_decay},{intensity_decay},{rotation_per_layer},{boundary_fade},{orientation_variation},{seed},{accumulation_mode},u_time).nearest_filament_distance",
+    "dominant_layer": "maker_b344_multiscale_randomized_filament_field_2d({position},{time_offset},{width_multiplier},{curvature_multiplier},{layer_count},{cell_density},{filament_width},{curvature_amplitude},{curvature_frequency},{animation_speed},{scale_progression},{width_decay},{intensity_decay},{rotation_per_layer},{boundary_fade},{orientation_variation},{seed},{accumulation_mode},u_time).dominant_layer",
+    "local_orientation": "maker_b344_multiscale_randomized_filament_field_2d({position},{time_offset},{width_multiplier},{curvature_multiplier},{layer_count},{cell_density},{filament_width},{curvature_amplitude},{curvature_frequency},{animation_speed},{scale_progression},{width_decay},{intensity_decay},{rotation_per_layer},{boundary_fade},{orientation_variation},{seed},{accumulation_mode},u_time).local_orientation"
+  }
+}

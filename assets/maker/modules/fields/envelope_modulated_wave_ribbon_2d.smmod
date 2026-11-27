@@ -1,0 +1,194 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.envelope_modulated_wave_ribbon_2d",
+  "name": "Envelope-Modulated Wave Ribbon 2D",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Single finite ribbon; frequency in cycles along length, phase in radians. Centerline distance is transverse, not exact Euclidean distance.",
+  "uses": "Envelope-Modulated Wave Ribbon 2D",
+  "notes": "Single finite ribbon; frequency in cycles along length, phase in radians. Centerline distance is transverse, not exact Euclidean distance.",
+  "header_color": "#348F8B",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec2",
+      "default": "vec2(0.0)"
+    },
+    {
+      "id": "time_offset",
+      "name": "Time Offset",
+      "type": "float",
+      "default": "0.0"
+    },
+    {
+      "id": "phase_offset",
+      "name": "Phase Offset",
+      "type": "float",
+      "default": "0.0"
+    },
+    {
+      "id": "amplitude_multiplier",
+      "name": "Amplitude Multiplier",
+      "type": "float",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "ribbon_mask",
+      "name": "Ribbon Mask",
+      "type": "float"
+    },
+    {
+      "id": "glow_mask",
+      "name": "Glow Mask",
+      "type": "float"
+    },
+    {
+      "id": "combined_intensity",
+      "name": "Combined Intensity",
+      "type": "float"
+    },
+    {
+      "id": "centerline_height",
+      "name": "Centerline Height",
+      "type": "float"
+    },
+    {
+      "id": "envelope",
+      "name": "Envelope",
+      "type": "float"
+    },
+    {
+      "id": "local_width",
+      "name": "Local Width",
+      "type": "float"
+    },
+    {
+      "id": "centerline_distance",
+      "name": "Centerline Distance",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "ribbon_length",
+      "name": "Ribbon Length",
+      "type": "float",
+      "default": 2,
+      "min": 0.05,
+      "max": 20
+    },
+    {
+      "id": "amplitude",
+      "name": "Amplitude",
+      "type": "float",
+      "default": 0.2,
+      "min": 0,
+      "max": 5
+    },
+    {
+      "id": "frequency",
+      "name": "Frequency",
+      "type": "float",
+      "default": 3,
+      "min": 0,
+      "max": 30
+    },
+    {
+      "id": "animation_speed",
+      "name": "Animation Speed",
+      "type": "float",
+      "default": 0.5,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "orientation",
+      "name": "Orientation",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "center_width",
+      "name": "Center Width",
+      "type": "float",
+      "default": 0.01,
+      "min": 0.001,
+      "max": 1
+    },
+    {
+      "id": "end_width",
+      "name": "End Width",
+      "type": "float",
+      "default": 0.04,
+      "min": 0.001,
+      "max": 1
+    },
+    {
+      "id": "edge_softness",
+      "name": "Edge Softness",
+      "type": "float",
+      "default": 0.02,
+      "min": 0.001,
+      "max": 1
+    },
+    {
+      "id": "amplitude_taper",
+      "name": "Amplitude Taper",
+      "type": "float",
+      "default": 1.5,
+      "min": 0.1,
+      "max": 8
+    },
+    {
+      "id": "opacity_taper",
+      "name": "Opacity Taper",
+      "type": "float",
+      "default": 1,
+      "min": 0.1,
+      "max": 8
+    },
+    {
+      "id": "glow_strength",
+      "name": "Glow Strength",
+      "type": "float",
+      "default": 0.2,
+      "min": 0,
+      "max": 5
+    },
+    {
+      "id": "envelope_profile",
+      "name": "Envelope Profile",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Cosine",
+        "Polynomial",
+        "Gaussian"
+      ]
+    }
+  ],
+  "helpers": "struct MakerB340EnvelopeModulatedWaveRibbon2D {float ribbon_mask;float glow_mask;float combined_intensity;float centerline_height;float envelope;float local_width;float centerline_distance;};\nMakerB340EnvelopeModulatedWaveRibbon2D maker_b340_envelope_modulated_wave_ribbon_2d(vec2 position,vec2 center,float time_offset,float phase_offset,float amplitude_multiplier,float ribbon_length,float amplitude,float frequency,float animation_speed,float orientation,float center_width,float end_width,float edge_softness,float amplitude_taper,float opacity_taper,float glow_strength,float envelope_profile,float tm){\nfloat a=radians(orientation);vec2 p=transpose(mat2(cos(a),sin(a),-sin(a),cos(a)))*(position-center);float x=clamp(p.x/max(ribbon_length,.05)+.5,0.,1.);float z=2.*x-1.;float e=envelope_profile<.5?max(0.,cos(1.5707963*z)):(envelope_profile<1.5?max(0.,1.-z*z):max(0.,(exp(-4.*z*z)-exp(-4.))/(1.-exp(-4.))));float y=amplitude*amplitude_multiplier*pow(e,amplitude_taper)*sin(6.2831853*(frequency*x-animation_speed*(tm+time_offset))+phase_offset);float w=mix(end_width,center_width,e),d=abs(p.y-y),opacity=pow(e,opacity_taper)*step(abs(p.x),ribbon_length*.5);float m=opacity*(1.-smoothstep(w,w+max(edge_softness,.0001),d));float g=opacity*exp(-max(0.,d-w)/max(edge_softness,.0001))*glow_strength;return MakerB340EnvelopeModulatedWaveRibbon2D(m,g,m+g,y,e,w,d);\n}",
+  "glsl_outputs": {
+    "ribbon_mask": "maker_b340_envelope_modulated_wave_ribbon_2d({position},{center},{time_offset},{phase_offset},{amplitude_multiplier},{ribbon_length},{amplitude},{frequency},{animation_speed},{orientation},{center_width},{end_width},{edge_softness},{amplitude_taper},{opacity_taper},{glow_strength},{envelope_profile},u_time).ribbon_mask",
+    "glow_mask": "maker_b340_envelope_modulated_wave_ribbon_2d({position},{center},{time_offset},{phase_offset},{amplitude_multiplier},{ribbon_length},{amplitude},{frequency},{animation_speed},{orientation},{center_width},{end_width},{edge_softness},{amplitude_taper},{opacity_taper},{glow_strength},{envelope_profile},u_time).glow_mask",
+    "combined_intensity": "maker_b340_envelope_modulated_wave_ribbon_2d({position},{center},{time_offset},{phase_offset},{amplitude_multiplier},{ribbon_length},{amplitude},{frequency},{animation_speed},{orientation},{center_width},{end_width},{edge_softness},{amplitude_taper},{opacity_taper},{glow_strength},{envelope_profile},u_time).combined_intensity",
+    "centerline_height": "maker_b340_envelope_modulated_wave_ribbon_2d({position},{center},{time_offset},{phase_offset},{amplitude_multiplier},{ribbon_length},{amplitude},{frequency},{animation_speed},{orientation},{center_width},{end_width},{edge_softness},{amplitude_taper},{opacity_taper},{glow_strength},{envelope_profile},u_time).centerline_height",
+    "envelope": "maker_b340_envelope_modulated_wave_ribbon_2d({position},{center},{time_offset},{phase_offset},{amplitude_multiplier},{ribbon_length},{amplitude},{frequency},{animation_speed},{orientation},{center_width},{end_width},{edge_softness},{amplitude_taper},{opacity_taper},{glow_strength},{envelope_profile},u_time).envelope",
+    "local_width": "maker_b340_envelope_modulated_wave_ribbon_2d({position},{center},{time_offset},{phase_offset},{amplitude_multiplier},{ribbon_length},{amplitude},{frequency},{animation_speed},{orientation},{center_width},{end_width},{edge_softness},{amplitude_taper},{opacity_taper},{glow_strength},{envelope_profile},u_time).local_width",
+    "centerline_distance": "maker_b340_envelope_modulated_wave_ribbon_2d({position},{center},{time_offset},{phase_offset},{amplitude_multiplier},{ribbon_length},{amplitude},{frequency},{animation_speed},{orientation},{center_width},{end_width},{edge_softness},{amplitude_taper},{opacity_taper},{glow_strength},{envelope_profile},u_time).centerline_distance"
+  }
+}

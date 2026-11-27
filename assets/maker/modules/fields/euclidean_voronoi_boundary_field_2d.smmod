@@ -9,7 +9,7 @@
   "header_color": "#348F8B",
   "description": "Euclidean nearest-site distance and true Voronoi cell-boundary distance, with an adjustable boundary mask.",
   "uses": "Cracks, stone cells, cellular patterns, tiling boundaries, irregular organic outlines and procedural masks.",
-  "notes": "Independently implemented standard Euclidean nearest-site and bisector geometry. Deterministic cell hashing; no code from the submitted shader. Distances are measured in scaled cell units. For domain distortion, connect an existing warp to Position. The boundary distance is measured to neighboring bisectors of the nearest site.",
+  "notes": "Independently implemented standard Euclidean nearest-site and bisector geometry. Deterministic cell hashing; no code from the submitted shader. Distances are measured in scaled cell units. For domain distortion, connect an existing warp to Position. The boundary distance is measured to neighboring bisectors of the nearest site. Animated sites remain within cells; animated search uses 5x5 nearest and 7x7 boundary neighborhoods. Feature positions and displacement use scaled cell units. Zero amplitude preserves original outputs.",
   "inputs": [
     {
       "id": "position",
@@ -37,6 +37,21 @@
       "name": "Boundary Mask",
       "type": "float",
       "semantic_role": "mask"
+    },
+    {
+      "id": "feature_point_displacement",
+      "name": "Feature Point Displacement",
+      "type": "vec2"
+    },
+    {
+      "id": "feature_point_position",
+      "name": "Feature Point Position",
+      "type": "vec2"
+    },
+    {
+      "id": "cell_identifier",
+      "name": "Cell Identifier",
+      "type": "vec2"
     }
   ],
   "parameters": [
@@ -71,12 +86,39 @@
       "default": 0.035,
       "min": 0.001,
       "max": 0.5
+    },
+    {
+      "id": "animation_amplitude",
+      "name": "Animation Amplitude",
+      "type": "float",
+      "default": 0,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "animation_speed",
+      "name": "Animation Speed",
+      "type": "float",
+      "default": 0.5,
+      "min": -5,
+      "max": 5
+    },
+    {
+      "id": "animation_phase",
+      "name": "Animation Phase",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
     }
   ],
-  "helpers": "vec2 maker_evb_hash(vec2 cell){\n    uvec2 v = floatBitsToUint(cell + vec2(103.7, 271.9));\n    uint a = v.x * 1664525u + v.y * 1013904223u;\n    uint b = v.y * 22695477u + v.x * 1103515245u;\n    a ^= a >> 16; a *= 2246822519u; a ^= a >> 13;\n    b ^= b >> 15; b *= 3266489917u; b ^= b >> 16;\n    return vec2(float(a & 0x00ffffffu), float(b & 0x00ffffffu)) / 16777216.0;\n}\nvec2 maker_evb_site(vec2 cell,float jitter){\n    return cell + vec2(0.5) + (maker_evb_hash(cell)-vec2(0.5))*clamp(jitter,0.0,1.0);\n}\nvec2 maker_evb_sample(vec2 position,float density,float jitter){\n    vec2 p=position*max(density,0.0001);\n    vec2 cell=floor(p);\n    vec2 closest=vec2(0.0);\n    float nearest=1e12;\n    for(int y=-1;y<=1;y++)for(int x=-1;x<=1;x++){\n        vec2 site=maker_evb_site(cell+vec2(float(x),float(y)),jitter);\n        float d=dot(p-site,p-site);\n        if(d<nearest){nearest=d;closest=site;}\n    }\n    float boundary=1e12;\n    for(int y=-2;y<=2;y++)for(int x=-2;x<=2;x++){\n        vec2 site=maker_evb_site(cell+vec2(float(x),float(y)),jitter);\n        vec2 delta=site-closest;\n        float len=length(delta);\n        if(len<0.000001)continue;\n        // Distance from p to the bisector separating the nearest site and this site.\n        float bisector=dot(0.5*(site+closest)-p,delta)/len;\n        boundary=min(boundary,bisector);\n    }\n    return vec2(sqrt(nearest),boundary);\n}",
+  "helpers": "vec2 maker_evb_hash(vec2 cell){\n    uvec2 v = floatBitsToUint(cell + vec2(103.7, 271.9));\n    uint a = v.x * 1664525u + v.y * 1013904223u;\n    uint b = v.y * 22695477u + v.x * 1103515245u;\n    a ^= a >> 16; a *= 2246822519u; a ^= a >> 13;\n    b ^= b >> 15; b *= 3266489917u; b ^= b >> 16;\n    return vec2(float(a & 0x00ffffffu), float(b & 0x00ffffffu)) / 16777216.0;\n}\nvec2 maker_evb_site(vec2 cell,float jitter){\n    return cell + vec2(0.5) + (maker_evb_hash(cell)-vec2(0.5))*clamp(jitter,0.0,1.0);\n}\nvec2 maker_evb_sample(vec2 position,float density,float jitter){\n    vec2 p=position*max(density,0.0001);\n    vec2 cell=floor(p);\n    vec2 closest=vec2(0.0);\n    float nearest=1e12;\n    for(int y=-1;y<=1;y++)for(int x=-1;x<=1;x++){\n        vec2 site=maker_evb_site(cell+vec2(float(x),float(y)),jitter);\n        float d=dot(p-site,p-site);\n        if(d<nearest){nearest=d;closest=site;}\n    }\n    float boundary=1e12;\n    for(int y=-2;y<=2;y++)for(int x=-2;x<=2;x++){\n        vec2 site=maker_evb_site(cell+vec2(float(x),float(y)),jitter);\n        vec2 delta=site-closest;\n        float len=length(delta);\n        if(len<0.000001)continue;\n        // Distance from p to the bisector separating the nearest site and this site.\n        float bisector=dot(0.5*(site+closest)-p,delta)/len;\n        boundary=min(boundary,bisector);\n    }\n    return vec2(sqrt(nearest),boundary);\n}\nstruct MakerEVBAnimated {float nearest;float boundary;vec2 feature_point_displacement;vec2 feature_point_position;vec2 cell_identifier;};\nvec2 maker_evb_animated_site(vec2 cell,float jitter,float amp,float phase){vec2 base=maker_evb_site(cell,jitter);if(amp<=0.)return base;vec2 h=maker_evb_hash(cell+vec2(17.,43.));vec2 moving=cell+.5+.499*vec2(sin(phase+6.2831853*h.x),cos(phase+6.2831853*h.y));return mix(base,moving,clamp(amp,0.,1.));}\nMakerEVBAnimated maker_evb_animated(vec2 position,float density,float jitter,float amp,float speed,float phase,float tm){vec2 p=position*max(density,.0001),cell=floor(p),closest=vec2(0),id=vec2(0);float nearest=1e12;float t=6.2831853*speed*tm+radians(phase);for(int y=-2;y<=2;y++)for(int x=-2;x<=2;x++){if(amp<=0.&&(abs(x)>1||abs(y)>1))continue;vec2 c=cell+vec2(float(x),float(y)),s=maker_evb_animated_site(c,jitter,amp,t);float dist=dot(p-s,p-s);if(dist<nearest){nearest=dist;closest=s;id=c;}}float boundary=1e12;for(int y=-3;y<=3;y++)for(int x=-3;x<=3;x++){if(amp<=0.&&(abs(x)>2||abs(y)>2))continue;vec2 s=maker_evb_animated_site(cell+vec2(float(x),float(y)),jitter,amp,t),delta=s-closest;float len=length(delta);if(len<.000001)continue;boundary=min(boundary,dot(.5*(s+closest)-p,delta)/len);}return MakerEVBAnimated(sqrt(nearest),boundary,closest-p,closest,id);}\n",
   "glsl_outputs": {
-    "nearest": "maker_evb_sample({position},{density},{jitter}).x",
-    "boundary": "maker_evb_sample({position},{density},{jitter}).y",
-    "mask": "(1.0-smoothstep(max({width},0.0001),max({width},0.0001)+max({softness},0.0001),maker_evb_sample({position},{density},{jitter}).y))"
+    "nearest": "({animation_amplitude}<=0.0?maker_evb_sample({position},{density},{jitter}).x:maker_evb_animated({position},{density},{jitter},{animation_amplitude},{animation_speed},{animation_phase},u_time).nearest)",
+    "boundary": "({animation_amplitude}<=0.0?maker_evb_sample({position},{density},{jitter}).y:maker_evb_animated({position},{density},{jitter},{animation_amplitude},{animation_speed},{animation_phase},u_time).boundary)",
+    "mask": "({animation_amplitude}<=0.0?(1.0-smoothstep(max({width},0.0001),max({width},0.0001)+max({softness},0.0001),maker_evb_sample({position},{density},{jitter}).y)):(1.0-smoothstep(max({width},0.0001),max({width},0.0001)+max({softness},0.0001),maker_evb_animated({position},{density},{jitter},{animation_amplitude},{animation_speed},{animation_phase},u_time).boundary)))",
+    "feature_point_displacement": "maker_evb_animated({position},{density},{jitter},{animation_amplitude},{animation_speed},{animation_phase},u_time).feature_point_displacement",
+    "feature_point_position": "maker_evb_animated({position},{density},{jitter},{animation_amplitude},{animation_speed},{animation_phase},u_time).feature_point_position",
+    "cell_identifier": "maker_evb_animated({position},{density},{jitter},{animation_amplitude},{animation_speed},{animation_phase},u_time).cell_identifier"
   }
 }
