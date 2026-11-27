@@ -9,7 +9,7 @@
   "header_color": "#557C9C",
   "description": "A harmonic radial curve expressed as signed radial error.",
   "uses": "Rosettes, radial contours and animated geometric masks.",
-  "notes": "Radial error is not exact Euclidean curve distance. Integer harmonics close at the angular seam.",
+  "notes": "Radial error is not exact Euclidean curve distance. Integer harmonics close at the angular seam. Noninteger angular powers can create seam discontinuities.",
   "inputs": [
     {
       "id": "position",
@@ -133,13 +133,71 @@
       "default": 0,
       "min": -6.283185,
       "max": 6.283185
+    },
+    {
+      "id": "harmonic_coordinate_mode",
+      "name": "Harmonic Coordinate Mode",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Angular",
+        "Directional Projection"
+      ]
+    },
+    {
+      "id": "angular_exponent",
+      "name": "Angular Exponent",
+      "type": "float",
+      "default": 1,
+      "min": 0.1,
+      "max": 4
+    },
+    {
+      "id": "radial_phase_coupling",
+      "name": "Radial Phase Coupling",
+      "type": "float",
+      "default": 0,
+      "min": -20,
+      "max": 20
+    },
+    {
+      "id": "radial_exponent_influence",
+      "name": "Radial Exponent Influence",
+      "type": "float",
+      "default": 0,
+      "min": -4,
+      "max": 4
+    },
+    {
+      "id": "harmonic_response_floor",
+      "name": "Harmonic Response Floor",
+      "type": "float",
+      "default": 0.0001,
+      "min": 1e-06,
+      "max": 0.1
+    },
+    {
+      "id": "secondary_orientation",
+      "name": "Secondary Orientation",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "secondary_rotation_speed",
+      "name": "Secondary Rotation Speed",
+      "type": "float",
+      "default": 0,
+      "min": -10,
+      "max": 10
     }
   ],
-  "helpers": "float maker_harmonic_polar_error(vec2 q,float radius,float amplitude,float frequency,float phase,vec2 origin,float mode,float f2,float p2){\n float r=length(q);\n vec2 v=q-origin;float angle=length(v)>1e-7?atan(v.y,v.x):0.0;float a=cos(floor(frequency+0.5)*angle+phase),b=cos(round(f2)*angle+p2);float h=mode<.5?a:mode<1.5?.5*(a+b):mode<2.5?a*b:abs(a*b);\n float target=max(0.0,radius+amplitude*h);\n return r-target;\n}\nfloat maker_harmonic_polar_mask(float error,float width,float softness){\n return 1.0-smoothstep(max(width,0.0),max(width,0.0)+max(softness,1e-5),abs(error));\n}",
+  "helpers": "float maker_harmonic_polar_error(vec2 q,float radius,float amplitude,float frequency,float phase,vec2 origin,float mode,float f2,float p2,float cm,float ae,float rpc,float rei,float hf,float so,float ss){\n float r=length(q);\n vec2 v=q-origin;float angle=length(v)>1e-7?atan(v.y,v.x):0.0;float aa=sign(angle)*pow(abs(angle),ae),bb=aa; if(cm>.5){aa=cos(angle);bb=cos(angle-radians(so)-u_time*ss);} float a=cos(floor(frequency+0.5)*aa+phase+rpc*r),b=cos(round(f2)*bb+p2+rpc*r);float h=mode<.5?a:mode<1.5?.5*(a+b):mode<2.5?a*b:abs(a*b);\n if(rei!=0.0)h=sign(h)*pow(max(abs(h),hf),clamp(1.0+rei*r,.1,8.)); float target=max(0.0,radius+amplitude*h);\n return r-target;\n}\nfloat maker_harmonic_polar_mask(float error,float width,float softness){\n return 1.0-smoothstep(max(width,0.0),max(width,0.0)+max(softness,1e-5),abs(error));\n}",
   "glsl_outputs": {
-    "error": "maker_harmonic_polar_error({position},{radius},{amplitude},{frequency},{phase}+u_time*{speed},{angular_origin},{harmonic_mode},{secondary_frequency},{secondary_phase})",
-    "mask": "maker_harmonic_polar_mask(maker_harmonic_polar_error({position},{radius},{amplitude},{frequency},{phase}+u_time*{speed},{angular_origin},{harmonic_mode},{secondary_frequency},{secondary_phase}),{width},{softness})",
-    "filled_mask": "(1.0-smoothstep(0.0,max({softness},1e-5),maker_harmonic_polar_error({position},{radius},{amplitude},{frequency},{phase}+u_time*{speed},{angular_origin},{harmonic_mode},{secondary_frequency},{secondary_phase})))",
-    "target_radius": "(length({position})-maker_harmonic_polar_error({position},{radius},{amplitude},{frequency},{phase}+u_time*{speed},{angular_origin},{harmonic_mode},{secondary_frequency},{secondary_phase}))"
+    "error": "maker_harmonic_polar_error({position},{radius},{amplitude},{frequency},{phase}+u_time*{speed},{angular_origin},{harmonic_mode},{secondary_frequency},{secondary_phase},{harmonic_coordinate_mode},{angular_exponent},{radial_phase_coupling},{radial_exponent_influence},{harmonic_response_floor},{secondary_orientation},{secondary_rotation_speed})",
+    "mask": "maker_harmonic_polar_mask(maker_harmonic_polar_error({position},{radius},{amplitude},{frequency},{phase}+u_time*{speed},{angular_origin},{harmonic_mode},{secondary_frequency},{secondary_phase},{harmonic_coordinate_mode},{angular_exponent},{radial_phase_coupling},{radial_exponent_influence},{harmonic_response_floor},{secondary_orientation},{secondary_rotation_speed}),{width},{softness})",
+    "filled_mask": "(1.0-smoothstep(0.0,max({softness},1e-5),maker_harmonic_polar_error({position},{radius},{amplitude},{frequency},{phase}+u_time*{speed},{angular_origin},{harmonic_mode},{secondary_frequency},{secondary_phase},{harmonic_coordinate_mode},{angular_exponent},{radial_phase_coupling},{radial_exponent_influence},{harmonic_response_floor},{secondary_orientation},{secondary_rotation_speed})))",
+    "target_radius": "(length({position})-maker_harmonic_polar_error({position},{radius},{amplitude},{frequency},{phase}+u_time*{speed},{angular_origin},{harmonic_mode},{secondary_frequency},{secondary_phase},{harmonic_coordinate_mode},{angular_exponent},{radial_phase_coupling},{radial_exponent_influence},{harmonic_response_floor},{secondary_orientation},{secondary_rotation_speed}))"
   }
 }

@@ -68,6 +68,7 @@ impl Library {
         ("coordinates/probabilistic_hierarchical_grid_coordinates_2d.smmod", include_str!("../assets/maker/modules/coordinates/probabilistic_hierarchical_grid_coordinates_2d.smmod")),
         ("fields/truchet_tile_distance_field_2d.smmod", include_str!("../assets/maker/modules/fields/truchet_tile_distance_field_2d.smmod")),
         ("lighting/ggx_microfacet_lighting.smmod", include_str!("../assets/maker/modules/lighting/ggx_microfacet_lighting.smmod")),
+        ("noise/fractal_triangle_wave_noise_2d.smmod", include_str!("../assets/maker/modules/noise/fractal_triangle_wave_noise_2d.smmod")),
         ("noise/fractal_simplex_noise_3d.smmod", include_str!("../assets/maker/modules/noise/fractal_simplex_noise_3d.smmod")),
         ("coordinates/product_harmonic_coordinate_warp_2d.smmod", include_str!("../assets/maker/modules/coordinates/product_harmonic_coordinate_warp_2d.smmod")),
         ("coordinates/vortex_street_advection_2d.smmod", include_str!("../assets/maker/modules/coordinates/vortex_street_advection_2d.smmod")),

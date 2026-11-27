@@ -107,11 +107,13 @@
         "Sine",
         "Triangle",
         "Saw",
-        "Square"
+        "Square",
+        "Random Sample and Hold",
+        "Smooth Random Interpolation"
       ]
     }
   ],
-  "helpers": "vec2 maker_cto(vec2 p,float offset,float w,float h,float f,float fv,float pv,float seed,float mode){vec2 c=floor(p/vec2(w,h));float a=fract(sin(dot(c,vec2(83.7,149.3))+seed*.13)*43758.5453);float b=fract(sin(dot(c,vec2(213.1,57.9))+seed*.19)*19341.13);float t=fract((u_time+offset)*f*(1.0+fv*(2.0*a-1.0))+pv*b);float v=.5+.5*sin(6.2831853*t);if(mode>.5)v=1.0-abs(2.0*t-1.0);if(mode>1.5)v=t;if(mode>2.5)v=step(.5,t);return vec2(v,t);}",
+  "helpers": "vec2 maker_cto(vec2 p,float offset,float w,float h,float f,float fv,float pv,float seed,float mode){vec2 c=floor(p/vec2(w,h));float a=fract(sin(dot(c,vec2(83.7,149.3))+seed*.13)*43758.5453);float b=fract(sin(dot(c,vec2(213.1,57.9))+seed*.19)*19341.13);float clock=(u_time+offset)*f*(1.0+fv*(2.0*a-1.0))+pv*b;float t=fract(clock);float v=.5+.5*sin(6.2831853*t);if(mode>.5)v=1.0-abs(2.0*t-1.0);if(mode>1.5)v=t;if(mode>2.5)v=step(.5,t);if(mode>3.5){float n=floor(clock);float h0=fract(sin(dot(c,vec2(97.3,173.1))+seed*.17+n*41.73)*43758.5453);float h1=fract(sin(dot(c,vec2(97.3,173.1))+seed*.17+(n+1.)*41.73)*43758.5453);v=mode>4.5?mix(h0,h1,t*t*(3.-2.*t)):h0;}return vec2(v,t);}",
   "glsl_outputs": {
     "oscillation": "maker_cto({position},{time_offset},{cell_width},{cell_height},{frequency},{frequency_variation},{phase_variation},{seed},{waveform}).x",
     "phase": "maker_cto({position},{time_offset},{cell_width},{cell_height},{frequency},{frequency_variation},{phase_variation},{seed},{waveform}).y",

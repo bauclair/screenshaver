@@ -118,14 +118,74 @@
       "default": 1,
       "min": 0,
       "max": 65535
+    },
+    {
+      "id": "index_selection",
+      "name": "Index Selection",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Floor",
+        "Nearest"
+      ]
+    },
+    {
+      "id": "angular_reflection",
+      "name": "Angular Reflection",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Disabled",
+        "Enabled"
+      ]
+    },
+    {
+      "id": "angular_progression",
+      "name": "Angular Progression",
+      "type": "float",
+      "default": 0,
+      "min": -6.283185,
+      "max": 6.283185
+    },
+    {
+      "id": "extent_modulation",
+      "name": "Extent Modulation",
+      "type": "float",
+      "default": 0,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "extent_frequency",
+      "name": "Extent Frequency",
+      "type": "float",
+      "default": 1,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "extent_phase_progression",
+      "name": "Extent Phase Progression",
+      "type": "float",
+      "default": 0,
+      "min": -6.283185,
+      "max": 6.283185
+    },
+    {
+      "id": "angular_softness",
+      "name": "Angular Softness",
+      "type": "float",
+      "default": 0,
+      "min": 0,
+      "max": 0.5
     }
   ],
-  "helpers": "vec4 maker_ria(vec2 p,vec2 c,float t,float spacing,float inner,float speed,float sv,float pv,float extent,float seed){vec2 q=p-c;float r=length(q),z=(r-inner)/spacing,i=floor(z);float h=fract(sin(i*127.1+seed*.13)*43758.5453),j=fract(sin(i*91.7+seed*.23)*19341.13);float a=fract((r>1e-8?atan(q.y,q.x)/6.2831853:0.0)+(u_time+t)*speed*(1.0+sv*(2.0*h-1.0))+pv*j);return vec4(a,i,fract(z)*spacing,step(0.0,z)*(1.0-step(extent,a)));}",
+  "helpers": "vec4 maker_ria(vec2 p,vec2 c,float t,float spacing,float inner,float speed,float sv,float pv,float extent,float seed,float idx,float mir,float prog,float em,float ef,float ep,float soft){vec2 q=p-c;float r=length(q),z=(r-inner)/spacing,i=idx>.5?floor(z+.5):floor(z);float h=fract(sin(i*127.1+seed*.13)*43758.5453),j=fract(sin(i*91.7+seed*.23)*19341.13);float a=fract((r>1e-8?atan(q.y,q.x)/6.2831853:0.0)+(u_time+t)*speed*(1.0+sv*(2.0*h-1.0))+pv*j+i*prog/6.2831853);if(mir>.5)a=2.*min(a,1.-a);float ex=clamp(extent+em*sin((u_time+t)*ef*6.2831853+i*ep),0.,1.);float mask=soft>0.?1.-smoothstep(ex,ex+soft,a):1.-step(ex,a);return vec4(a,i,(z-i)*spacing,step(0.0,z)*mask);}",
   "glsl_outputs": {
-    "transformed_coordinates": "vec2(maker_ria({position},{center},{time_offset},{spacing},{inner_radius},{speed},{speed_variation},{phase_variation},{extent},{seed}).x,maker_ria({position},{center},{time_offset},{spacing},{inner_radius},{speed},{speed_variation},{phase_variation},{extent},{seed}).z)",
-    "ring_index": "maker_ria({position},{center},{time_offset},{spacing},{inner_radius},{speed},{speed_variation},{phase_variation},{extent},{seed}).y",
-    "local_angle": "maker_ria({position},{center},{time_offset},{spacing},{inner_radius},{speed},{speed_variation},{phase_variation},{extent},{seed}).x*6.2831853",
-    "angular_mask": "maker_ria({position},{center},{time_offset},{spacing},{inner_radius},{speed},{speed_variation},{phase_variation},{extent},{seed}).w",
-    "radial_offset": "maker_ria({position},{center},{time_offset},{spacing},{inner_radius},{speed},{speed_variation},{phase_variation},{extent},{seed}).z"
+    "transformed_coordinates": "vec2(maker_ria({position},{center},{time_offset},{spacing},{inner_radius},{speed},{speed_variation},{phase_variation},{extent},{seed},{index_selection},{angular_reflection},{angular_progression},{extent_modulation},{extent_frequency},{extent_phase_progression},{angular_softness}).x,maker_ria({position},{center},{time_offset},{spacing},{inner_radius},{speed},{speed_variation},{phase_variation},{extent},{seed},{index_selection},{angular_reflection},{angular_progression},{extent_modulation},{extent_frequency},{extent_phase_progression},{angular_softness}).z)",
+    "ring_index": "maker_ria({position},{center},{time_offset},{spacing},{inner_radius},{speed},{speed_variation},{phase_variation},{extent},{seed},{index_selection},{angular_reflection},{angular_progression},{extent_modulation},{extent_frequency},{extent_phase_progression},{angular_softness}).y",
+    "local_angle": "maker_ria({position},{center},{time_offset},{spacing},{inner_radius},{speed},{speed_variation},{phase_variation},{extent},{seed},{index_selection},{angular_reflection},{angular_progression},{extent_modulation},{extent_frequency},{extent_phase_progression},{angular_softness}).x*6.2831853",
+    "angular_mask": "maker_ria({position},{center},{time_offset},{spacing},{inner_radius},{speed},{speed_variation},{phase_variation},{extent},{seed},{index_selection},{angular_reflection},{angular_progression},{extent_modulation},{extent_frequency},{extent_phase_progression},{angular_softness}).w",
+    "radial_offset": "maker_ria({position},{center},{time_offset},{spacing},{inner_radius},{speed},{speed_variation},{phase_variation},{extent},{seed},{index_selection},{angular_reflection},{angular_progression},{extent_modulation},{extent_frequency},{extent_phase_progression},{angular_softness}).z"
   }
 }

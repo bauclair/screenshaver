@@ -7,7 +7,7 @@
   "creator_email": "screenshaver@proton.me",
   "description": "Weighted bilinear responses with positive denominator floor and capped intensity.",
   "uses": "Bilinear Reciprocal Response Field 2D",
-  "notes": "Weighted bilinear responses with positive denominator floor and capped intensity.",
+  "notes": "Weighted bilinear responses with positive denominator floor and capped intensity. Sum-product mode uses weighted component products as its two scalar operands.",
   "header_color": "#527D94",
   "terminal": false,
   "inputs": [
@@ -122,17 +122,34 @@
         "Dot Product",
         "Sum",
         "Product",
-        "Maximum"
+        "Maximum",
+        "Sum-Product Reciprocal"
       ]
+    },
+    {
+      "id": "sum_weight",
+      "name": "Sum Weight",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "product_weight",
+      "name": "Product Weight",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 10
     }
   ],
-  "helpers": "struct MakerB396BilinearReciprocalResponseField2D{float component_magnitude;float signed_dot;float component_response;float dot_response;float combined_response;float normalized_response;};\nMakerB396BilinearReciprocalResponseField2D maker_b396_bilinear_reciprocal_response_field_2d(vec2 position,vec2 secondary,float strength_multiplier,float weight_x,float weight_y,float exponent,float denominator_floor,float intensity,float maximum_response,float combination){vec2 v=clamp(position,-1e5,1e5)*clamp(secondary,-1e5,1e5)*vec2(weight_x,weight_y);float a=abs(v.x)+abs(v.y),b=v.x+v.y,k=intensity*clamp(strength_multiplier,0.,100.);float x=min(maximum_response,k*pow(max(a,denominator_floor),-exponent)),y=min(maximum_response,k*pow(max(abs(b),denominator_floor),-exponent));float m=combination<.5?x:combination<1.5?y:combination<2.5?x+y:combination<3.5?x*y:max(x,y);m=min(m,maximum_response);return MakerB396BilinearReciprocalResponseField2D(a,b,x,y,m,m/maximum_response);}",
+  "helpers": "struct MakerB396BilinearReciprocalResponseField2D{float component_magnitude;float signed_dot;float component_response;float dot_response;float combined_response;float normalized_response;};\nMakerB396BilinearReciprocalResponseField2D maker_b396_bilinear_reciprocal_response_field_2d(vec2 position,vec2 secondary,float strength_multiplier,float weight_x,float weight_y,float exponent,float denominator_floor,float intensity,float maximum_response,float combination,float sw,float pw){vec2 v=clamp(position,-1e5,1e5)*clamp(secondary,-1e5,1e5)*vec2(weight_x,weight_y);float a=abs(v.x)+abs(v.y),b=v.x+v.y,k=intensity*clamp(strength_multiplier,0.,100.);float x=min(maximum_response,k*pow(max(a,denominator_floor),-exponent)),y=min(maximum_response,k*pow(max(abs(b),denominator_floor),-exponent));float m=combination<.5?x:combination<1.5?y:combination<2.5?x+y:combination<3.5?x*y:max(x,y);if(combination>4.5){float den=denominator_floor+sw*abs(b)+pw*abs(v.x*v.y);m=k*pow(den,-exponent);}m=min(m,maximum_response);return MakerB396BilinearReciprocalResponseField2D(a,b,x,y,m,m/maximum_response);}",
   "glsl_outputs": {
-    "component_magnitude": "maker_b396_bilinear_reciprocal_response_field_2d({position},{secondary},{strength_multiplier},{weight_x},{weight_y},{exponent},{denominator_floor},{intensity},{maximum_response},{combination}).component_magnitude",
-    "signed_dot": "maker_b396_bilinear_reciprocal_response_field_2d({position},{secondary},{strength_multiplier},{weight_x},{weight_y},{exponent},{denominator_floor},{intensity},{maximum_response},{combination}).signed_dot",
-    "component_response": "maker_b396_bilinear_reciprocal_response_field_2d({position},{secondary},{strength_multiplier},{weight_x},{weight_y},{exponent},{denominator_floor},{intensity},{maximum_response},{combination}).component_response",
-    "dot_response": "maker_b396_bilinear_reciprocal_response_field_2d({position},{secondary},{strength_multiplier},{weight_x},{weight_y},{exponent},{denominator_floor},{intensity},{maximum_response},{combination}).dot_response",
-    "combined_response": "maker_b396_bilinear_reciprocal_response_field_2d({position},{secondary},{strength_multiplier},{weight_x},{weight_y},{exponent},{denominator_floor},{intensity},{maximum_response},{combination}).combined_response",
-    "normalized_response": "maker_b396_bilinear_reciprocal_response_field_2d({position},{secondary},{strength_multiplier},{weight_x},{weight_y},{exponent},{denominator_floor},{intensity},{maximum_response},{combination}).normalized_response"
+    "component_magnitude": "maker_b396_bilinear_reciprocal_response_field_2d({position},{secondary},{strength_multiplier},{weight_x},{weight_y},{exponent},{denominator_floor},{intensity},{maximum_response},{combination},{sum_weight},{product_weight}).component_magnitude",
+    "signed_dot": "maker_b396_bilinear_reciprocal_response_field_2d({position},{secondary},{strength_multiplier},{weight_x},{weight_y},{exponent},{denominator_floor},{intensity},{maximum_response},{combination},{sum_weight},{product_weight}).signed_dot",
+    "component_response": "maker_b396_bilinear_reciprocal_response_field_2d({position},{secondary},{strength_multiplier},{weight_x},{weight_y},{exponent},{denominator_floor},{intensity},{maximum_response},{combination},{sum_weight},{product_weight}).component_response",
+    "dot_response": "maker_b396_bilinear_reciprocal_response_field_2d({position},{secondary},{strength_multiplier},{weight_x},{weight_y},{exponent},{denominator_floor},{intensity},{maximum_response},{combination},{sum_weight},{product_weight}).dot_response",
+    "combined_response": "maker_b396_bilinear_reciprocal_response_field_2d({position},{secondary},{strength_multiplier},{weight_x},{weight_y},{exponent},{denominator_floor},{intensity},{maximum_response},{combination},{sum_weight},{product_weight}).combined_response",
+    "normalized_response": "maker_b396_bilinear_reciprocal_response_field_2d({position},{secondary},{strength_multiplier},{weight_x},{weight_y},{exponent},{denominator_floor},{intensity},{maximum_response},{combination},{sum_weight},{product_weight}).normalized_response"
   }
 }

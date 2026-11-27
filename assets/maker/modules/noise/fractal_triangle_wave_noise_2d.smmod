@@ -1,0 +1,178 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.noise.fractal_triangle_wave_noise_2d",
+  "name": "Fractal Triangle-Wave Noise 2D",
+  "category": "Noise",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Bounded multiscale periodic triangle-wave field with cross-axis feedback.",
+  "uses": "Structured turbulence and coordinate modulation.",
+  "notes": "Periodic rather than statistically isotropic noise. No analytical gradient. Accumulated field follows normalization selector; normalized and signed outputs always amplitude normalized.",
+  "header_color": "#527D94",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "frequency_multiplier",
+      "name": "Frequency Multiplier",
+      "type": "float",
+      "default": "1.0"
+    },
+    {
+      "id": "time_offset",
+      "name": "Time Offset",
+      "type": "float",
+      "default": "0.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "accumulated_field",
+      "name": "Accumulated Field",
+      "type": "float"
+    },
+    {
+      "id": "normalized_field",
+      "name": "Normalized Field",
+      "type": "float"
+    },
+    {
+      "id": "signed_field",
+      "name": "Signed Field",
+      "type": "float"
+    },
+    {
+      "id": "peak_octave_response",
+      "name": "Peak Octave Response",
+      "type": "float"
+    },
+    {
+      "id": "final_coordinates",
+      "name": "Final Coordinates",
+      "type": "vec2"
+    },
+    {
+      "id": "coordinate_displacement",
+      "name": "Coordinate Displacement",
+      "type": "vec2"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "frequency",
+      "name": "Frequency",
+      "type": "float",
+      "default": 4,
+      "min": 0.001,
+      "max": 128
+    },
+    {
+      "id": "octaves",
+      "name": "Octaves",
+      "type": "float",
+      "default": 4,
+      "min": 1,
+      "max": 8
+    },
+    {
+      "id": "lacunarity",
+      "name": "Lacunarity",
+      "type": "float",
+      "default": 2,
+      "min": 1,
+      "max": 4
+    },
+    {
+      "id": "persistence",
+      "name": "Persistence",
+      "type": "float",
+      "default": 0.5,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "cross_axis_coupling",
+      "name": "Cross Axis Coupling",
+      "type": "float",
+      "default": 0.5,
+      "min": -4,
+      "max": 4
+    },
+    {
+      "id": "feedback_strength",
+      "name": "Feedback Strength",
+      "type": "float",
+      "default": 0.5,
+      "min": -4,
+      "max": 4
+    },
+    {
+      "id": "rotation_per_octave",
+      "name": "Rotation Per Octave",
+      "type": "float",
+      "default": 25,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "animation_speed",
+      "name": "Animation Speed",
+      "type": "float",
+      "default": 0.2,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "phase_x",
+      "name": "Phase X",
+      "type": "float",
+      "default": 0,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "phase_y",
+      "name": "Phase Y",
+      "type": "float",
+      "default": 0,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "response_profile",
+      "name": "Response Profile",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Standard",
+        "Centered",
+        "Ridged"
+      ]
+    },
+    {
+      "id": "normalization",
+      "name": "Normalization",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Raw Sum",
+        "Amplitude Normalized"
+      ]
+    }
+  ],
+  "helpers": "float maker_b397_tri(float x){return 1.-abs(2.*fract(x)-1.);}\nstruct MakerB397Triangle{float accumulated_field;float normalized_field;float signed_field;float peak_octave_response;vec2 final_coordinates;vec2 coordinate_displacement;};\nMakerB397Triangle maker_b397_triangle(vec2 p,float fm,float to,float f,float oct,float lac,float pers,float coupling,float feedback,float rot,float speed,float px,float py,float profile,float norm){vec2 initial=clamp(p*f*clamp(fm,0.,100.),-1e6,1e6);vec2 q=initial;float sum=0.,weight=0.,a=1.,peak=0.;float ang=radians(rot);mat2 R=mat2(cos(ang),sin(ang),-sin(ang),cos(ang));vec2 phase=vec2(px,py)+vec2(1.,-.73)*(u_time+to)*speed;for(int i=0;i<8;i++){if(i>=int(clamp(round(oct),1.,8.)))break;vec2 v=q+phase;vec2 t=vec2(maker_b397_tri(v.x),maker_b397_tri(v.y));float n=.5*(maker_b397_tri(v.x+coupling*t.y)+maker_b397_tri(v.y+coupling*t.x));if(profile>1.5)n=1.-abs(2.*n-1.);else if(profile>.5)n=2.*n-1.;sum+=a*n;weight+=a;peak=max(peak,abs(n));q=clamp(R*(q+feedback*(t.yx-.5))*lac,-1e6,1e6);a*=pers;}float mean=sum/max(weight,1e-6);float normalized=profile>.5&&profile<1.5?.5+.5*mean:mean;return MakerB397Triangle(norm>.5?mean:sum,normalized,2.*normalized-1.,peak,q,q-initial);}\n",
+  "glsl_outputs": {
+    "accumulated_field": "maker_b397_triangle({position},{frequency_multiplier},{time_offset},{frequency},{octaves},{lacunarity},{persistence},{cross_axis_coupling},{feedback_strength},{rotation_per_octave},{animation_speed},{phase_x},{phase_y},{response_profile},{normalization}).accumulated_field",
+    "normalized_field": "maker_b397_triangle({position},{frequency_multiplier},{time_offset},{frequency},{octaves},{lacunarity},{persistence},{cross_axis_coupling},{feedback_strength},{rotation_per_octave},{animation_speed},{phase_x},{phase_y},{response_profile},{normalization}).normalized_field",
+    "signed_field": "maker_b397_triangle({position},{frequency_multiplier},{time_offset},{frequency},{octaves},{lacunarity},{persistence},{cross_axis_coupling},{feedback_strength},{rotation_per_octave},{animation_speed},{phase_x},{phase_y},{response_profile},{normalization}).signed_field",
+    "peak_octave_response": "maker_b397_triangle({position},{frequency_multiplier},{time_offset},{frequency},{octaves},{lacunarity},{persistence},{cross_axis_coupling},{feedback_strength},{rotation_per_octave},{animation_speed},{phase_x},{phase_y},{response_profile},{normalization}).peak_octave_response",
+    "final_coordinates": "maker_b397_triangle({position},{frequency_multiplier},{time_offset},{frequency},{octaves},{lacunarity},{persistence},{cross_axis_coupling},{feedback_strength},{rotation_per_octave},{animation_speed},{phase_x},{phase_y},{response_profile},{normalization}).final_coordinates",
+    "coordinate_displacement": "maker_b397_triangle({position},{frequency_multiplier},{time_offset},{frequency},{octaves},{lacunarity},{persistence},{cross_axis_coupling},{feedback_strength},{rotation_per_octave},{animation_speed},{phase_x},{phase_y},{response_profile},{normalization}).coordinate_displacement"
+  }
+}
