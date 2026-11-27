@@ -3140,13 +3140,10 @@ impl MakerUi {
                     .show(ctx,|ui|{
                         ui.label("Export the current Node Graph as a GLSL shader:");
                         let previous_format=*export_format;
-                        egui::ComboBox::from_label("Export format:")
-                            .selected_text(export_format.label())
-                            .show_ui(ui,|ui|{
-                                for target in ExportFormat::ALL {
-                                    ui.selectable_value(export_format,target,target.label());
-                                }
-                            });
+                        ui.label("Export format:");
+                        for target in ExportFormat::ALL {
+                            ui.radio_value(export_format, target, target.label());
+                        }
                         if previous_format!=*export_format {
                             *confirm_overwrite=false;
                             if !*clipboard {
