@@ -1,0 +1,118 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.geometry.symmetric_diagonal_line_field_3d",
+  "name": "Symmetric Diagonal Line Field 3D",
+  "category": "Geometry",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Minimum distance to symmetric lines or finite segments, minus radius; union field is not exact inside overlaps.",
+  "uses": "Symmetric Diagonal Line Field 3D",
+  "notes": "Minimum distance to symmetric lines or finite segments, minus radius; union field is not exact inside overlaps.",
+  "header_color": "#527D94",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "default": "vec3(maker_uv,0.0)",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec3",
+      "default": "vec3(0.0)"
+    },
+    {
+      "id": "radius_multiplier",
+      "name": "Radius Multiplier",
+      "type": "float",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "distance_field",
+      "name": "Distance Field",
+      "type": "float",
+      "semantic_role": "distance"
+    },
+    {
+      "id": "centerline_distance",
+      "name": "Centerline Distance",
+      "type": "float"
+    },
+    {
+      "id": "closest_line_identifier",
+      "name": "Closest Line Identifier",
+      "type": "float"
+    },
+    {
+      "id": "closest_point",
+      "name": "Closest Point",
+      "type": "vec3"
+    },
+    {
+      "id": "line_direction",
+      "name": "Line Direction",
+      "type": "vec3"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "line_radius",
+      "name": "Line Radius",
+      "default": 0.1,
+      "type": "float",
+      "min": 0,
+      "max": 100
+    },
+    {
+      "id": "line_configuration",
+      "name": "Line Configuration",
+      "default": 0,
+      "type": "choice",
+      "options": [
+        "Body Diagonals",
+        "Face Diagonals",
+        "Cartesian Axes",
+        "Combined"
+      ]
+    },
+    {
+      "id": "half_length",
+      "name": "Half Length",
+      "default": 1,
+      "type": "float",
+      "min": 0,
+      "max": 100
+    },
+    {
+      "id": "endpoint_mode",
+      "name": "Endpoint Mode",
+      "default": 0,
+      "type": "choice",
+      "options": [
+        "Infinite",
+        "Finite"
+      ]
+    },
+    {
+      "id": "boundary_offset",
+      "name": "Boundary Offset",
+      "default": 0,
+      "type": "float",
+      "min": -10,
+      "max": 10
+    }
+  ],
+  "helpers": "struct MakerB336SymmetricDiagonalLineField3D {float distance_field;float centerline_distance;float closest_line_identifier;vec3 closest_point;vec3 line_direction;};\nMakerB336SymmetricDiagonalLineField3D maker_b336_symmetric_diagonal_line_field_3d(vec3 position,vec3 center,float radius_multiplier,float line_radius,float line_configuration,float half_length,float endpoint_mode,float boundary_offset,float tm){\nvec3 p=position-center;float best=1e30,idx=0.;vec3 cp=vec3(0.),dir=vec3(1.,0.,0.);for(int i=0;i<13;i++){if(line_configuration<.5&&i>=4)continue;if(line_configuration>.5&&line_configuration<1.5&&(i<4||i>=10))continue;if(line_configuration>1.5&&line_configuration<2.5&&i<10)continue;vec3 d;if(i<4)d=normalize(vec3(1.,i%2==0?1.:-1.,i<2?1.:-1.));else if(i<10){int j=i-4;float k=j%2==0?1.:-1.;d=normalize(j<2?vec3(1.,k,0.):(j<4?vec3(1.,0.,k):vec3(0.,1.,k)));}else d=i==10?vec3(1.,0.,0.):(i==11?vec3(0.,1.,0.):vec3(0.,0.,1.));float t=dot(p,d);if(endpoint_mode>.5)t=clamp(t,-half_length,half_length);vec3 q=t*d;float v=length(p-q);if(v<best){best=v;idx=float(i);cp=q;dir=d;}}return MakerB336SymmetricDiagonalLineField3D(best-line_radius*abs(radius_multiplier)-boundary_offset,best,idx,cp+center,dir);\n}",
+  "glsl_outputs": {
+    "distance_field": "maker_b336_symmetric_diagonal_line_field_3d({position},{center},{radius_multiplier},{line_radius},{line_configuration},{half_length},{endpoint_mode},{boundary_offset},u_time).distance_field",
+    "centerline_distance": "maker_b336_symmetric_diagonal_line_field_3d({position},{center},{radius_multiplier},{line_radius},{line_configuration},{half_length},{endpoint_mode},{boundary_offset},u_time).centerline_distance",
+    "closest_line_identifier": "maker_b336_symmetric_diagonal_line_field_3d({position},{center},{radius_multiplier},{line_radius},{line_configuration},{half_length},{endpoint_mode},{boundary_offset},u_time).closest_line_identifier",
+    "closest_point": "maker_b336_symmetric_diagonal_line_field_3d({position},{center},{radius_multiplier},{line_radius},{line_configuration},{half_length},{endpoint_mode},{boundary_offset},u_time).closest_point",
+    "line_direction": "maker_b336_symmetric_diagonal_line_field_3d({position},{center},{radius_multiplier},{line_radius},{line_configuration},{half_length},{endpoint_mode},{boundary_offset},u_time).line_direction"
+  }
+}

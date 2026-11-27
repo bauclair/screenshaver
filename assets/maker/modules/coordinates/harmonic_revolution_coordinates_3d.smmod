@@ -1,0 +1,174 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.harmonic_revolution_coordinates_3d",
+  "name": "Harmonic Revolution Coordinates 3D",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Cross-section coordinates, not an exact distance. Transformed position packs cross-section and angle in radians; lobe and twist counts rounded for closure.",
+  "uses": "Harmonic Revolution Coordinates 3D",
+  "notes": "Cross-section coordinates, not an exact distance. Transformed position packs cross-section and angle in radians; lobe and twist counts rounded for closure.",
+  "header_color": "#527D94",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "default": "vec3(maker_uv,0.0)",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec3",
+      "default": "vec3(0.0)"
+    },
+    {
+      "id": "time_offset",
+      "name": "Time Offset",
+      "type": "float",
+      "default": "0.0"
+    },
+    {
+      "id": "scale_multiplier",
+      "name": "Scale Multiplier",
+      "type": "float",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "cross_section_coordinates",
+      "name": "Cross Section Coordinates",
+      "type": "vec2"
+    },
+    {
+      "id": "transformed_position",
+      "name": "Transformed Position",
+      "type": "vec3"
+    },
+    {
+      "id": "angular_coordinate",
+      "name": "Angular Coordinate",
+      "type": "float"
+    },
+    {
+      "id": "centerline_radius",
+      "name": "Centerline Radius",
+      "type": "float"
+    },
+    {
+      "id": "centerline_height",
+      "name": "Centerline Height",
+      "type": "float"
+    },
+    {
+      "id": "twist_angle",
+      "name": "Twist Angle",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "major_radius",
+      "name": "Major Radius",
+      "default": 1.5,
+      "type": "float",
+      "min": 0.001,
+      "max": 100
+    },
+    {
+      "id": "radial_amplitude",
+      "name": "Radial Amplitude",
+      "default": 0.25,
+      "type": "float",
+      "min": 0,
+      "max": 100
+    },
+    {
+      "id": "radial_lobes",
+      "name": "Radial Lobes",
+      "default": 3,
+      "type": "float",
+      "min": 0,
+      "max": 32
+    },
+    {
+      "id": "axial_amplitude",
+      "name": "Axial Amplitude",
+      "default": 0.4,
+      "type": "float",
+      "min": 0,
+      "max": 100
+    },
+    {
+      "id": "axial_lobes",
+      "name": "Axial Lobes",
+      "default": 3,
+      "type": "float",
+      "min": 0,
+      "max": 32
+    },
+    {
+      "id": "radial_phase",
+      "name": "Radial Phase",
+      "default": 0,
+      "type": "float",
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "axial_phase",
+      "name": "Axial Phase",
+      "default": 0,
+      "type": "float",
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "cross_section_twists",
+      "name": "Cross Section Twists",
+      "default": 2,
+      "type": "float",
+      "min": -32,
+      "max": 32
+    },
+    {
+      "id": "revolution_speed",
+      "name": "Revolution Speed",
+      "default": 0.25,
+      "type": "float",
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "twist_animation_speed",
+      "name": "Twist Animation Speed",
+      "default": 0,
+      "type": "float",
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "rotation_axis",
+      "name": "Rotation Axis",
+      "default": 1,
+      "type": "choice",
+      "options": [
+        "X",
+        "Y",
+        "Z"
+      ]
+    }
+  ],
+  "helpers": "struct MakerB336HarmonicRevolutionCoordinates3D {vec2 cross_section_coordinates;vec3 transformed_position;float angular_coordinate;float centerline_radius;float centerline_height;float twist_angle;};\nMakerB336HarmonicRevolutionCoordinates3D maker_b336_harmonic_revolution_coordinates_3d(vec3 position,vec3 center,float time_offset,float scale_multiplier,float major_radius,float radial_amplitude,float radial_lobes,float axial_amplitude,float axial_lobes,float radial_phase,float axial_phase,float cross_section_twists,float revolution_speed,float twist_animation_speed,float rotation_axis,float tm){\nvec3 p=position-center;if(rotation_axis<.5)p=p.yzx;else if(rotation_axis<1.5)p=p.zxy;float t=tm+time_offset;float a=length(p.xy)>1e-8?atan(p.y,p.x):0.;float b=a-t*revolution_speed;float s=max(abs(scale_multiplier),.0001);float r=max(.0001,(major_radius+radial_amplitude*cos(round(radial_lobes)*b+radians(radial_phase)))*s);float h=axial_amplitude*s*sin(round(axial_lobes)*b+radians(axial_phase));float tw=round(cross_section_twists)*b+t*twist_animation_speed;vec2 q=vec2(length(p.xy)-r,p.z-h);q=mat2(cos(tw),sin(tw),-sin(tw),cos(tw))*q;return MakerB336HarmonicRevolutionCoordinates3D(q,vec3(q,a),a,r,h,tw);\n}",
+  "glsl_outputs": {
+    "cross_section_coordinates": "maker_b336_harmonic_revolution_coordinates_3d({position},{center},{time_offset},{scale_multiplier},{major_radius},{radial_amplitude},{radial_lobes},{axial_amplitude},{axial_lobes},{radial_phase},{axial_phase},{cross_section_twists},{revolution_speed},{twist_animation_speed},{rotation_axis},u_time).cross_section_coordinates",
+    "transformed_position": "maker_b336_harmonic_revolution_coordinates_3d({position},{center},{time_offset},{scale_multiplier},{major_radius},{radial_amplitude},{radial_lobes},{axial_amplitude},{axial_lobes},{radial_phase},{axial_phase},{cross_section_twists},{revolution_speed},{twist_animation_speed},{rotation_axis},u_time).transformed_position",
+    "angular_coordinate": "maker_b336_harmonic_revolution_coordinates_3d({position},{center},{time_offset},{scale_multiplier},{major_radius},{radial_amplitude},{radial_lobes},{axial_amplitude},{axial_lobes},{radial_phase},{axial_phase},{cross_section_twists},{revolution_speed},{twist_animation_speed},{rotation_axis},u_time).angular_coordinate",
+    "centerline_radius": "maker_b336_harmonic_revolution_coordinates_3d({position},{center},{time_offset},{scale_multiplier},{major_radius},{radial_amplitude},{radial_lobes},{axial_amplitude},{axial_lobes},{radial_phase},{axial_phase},{cross_section_twists},{revolution_speed},{twist_animation_speed},{rotation_axis},u_time).centerline_radius",
+    "centerline_height": "maker_b336_harmonic_revolution_coordinates_3d({position},{center},{time_offset},{scale_multiplier},{major_radius},{radial_amplitude},{radial_lobes},{axial_amplitude},{axial_lobes},{radial_phase},{axial_phase},{cross_section_twists},{revolution_speed},{twist_animation_speed},{rotation_axis},u_time).centerline_height",
+    "twist_angle": "maker_b336_harmonic_revolution_coordinates_3d({position},{center},{time_offset},{scale_multiplier},{major_radius},{radial_amplitude},{radial_lobes},{axial_amplitude},{axial_lobes},{radial_phase},{axial_phase},{cross_section_twists},{revolution_speed},{twist_animation_speed},{rotation_axis},u_time).twist_angle"
+  }
+}

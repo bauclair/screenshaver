@@ -1,0 +1,131 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.rotating_polygon_face_coordinates_2d",
+  "name": "Rotating Polygon Face Coordinates 2D",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Orthographic polygon projection; selects greatest depth. Rotation offset and output orientation are radians.",
+  "uses": "Rotating Polygon Face Coordinates 2D",
+  "notes": "Orthographic polygon projection; selects greatest depth. Rotation offset and output orientation are radians.",
+  "header_color": "#527D94",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "rotation_offset",
+      "name": "Rotation Offset",
+      "type": "float",
+      "default": "0.0"
+    },
+    {
+      "id": "time_offset",
+      "name": "Time Offset",
+      "type": "float",
+      "default": "0.0"
+    },
+    {
+      "id": "radius_multiplier",
+      "name": "Radius Multiplier",
+      "type": "float",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "face_coordinates",
+      "name": "Face Coordinates",
+      "type": "vec2"
+    },
+    {
+      "id": "face_identifier",
+      "name": "Face Identifier",
+      "type": "float"
+    },
+    {
+      "id": "projected_face_width",
+      "name": "Projected Face Width",
+      "type": "float"
+    },
+    {
+      "id": "face_visibility",
+      "name": "Face Visibility",
+      "type": "float"
+    },
+    {
+      "id": "boundary_distance",
+      "name": "Boundary Distance",
+      "type": "float"
+    },
+    {
+      "id": "face_orientation",
+      "name": "Face Orientation",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "polygon_sides",
+      "name": "Polygon Sides",
+      "default": 5,
+      "type": "float",
+      "min": 3,
+      "max": 32
+    },
+    {
+      "id": "radius",
+      "name": "Radius",
+      "default": 1,
+      "type": "float",
+      "min": 0.001,
+      "max": 100
+    },
+    {
+      "id": "orientation",
+      "name": "Orientation",
+      "default": 0,
+      "type": "float",
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "rotation_speed",
+      "name": "Rotation Speed",
+      "default": 0.5,
+      "type": "float",
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "axial_coordinate_scale",
+      "name": "Axial Coordinate Scale",
+      "default": 1,
+      "type": "float",
+      "min": 0.001,
+      "max": 100
+    },
+    {
+      "id": "edge_softness",
+      "name": "Edge Softness",
+      "default": 0.01,
+      "type": "float",
+      "min": 0,
+      "max": 1
+    }
+  ],
+  "helpers": "struct MakerB336RotatingPolygonFaceCoordinates2D {vec2 face_coordinates;float face_identifier;float projected_face_width;float face_visibility;float boundary_distance;float face_orientation;};\nMakerB336RotatingPolygonFaceCoordinates2D maker_b336_rotating_polygon_face_coordinates_2d(vec2 position,float rotation_offset,float time_offset,float radius_multiplier,float polygon_sides,float radius,float orientation,float rotation_speed,float axial_coordinate_scale,float edge_softness,float tm){\nint n=int(clamp(round(polygon_sides),3.,32.));float r=max(.0001,radius*abs(radius_multiplier));float a=radians(orientation)+rotation_offset+(tm+time_offset)*rotation_speed;float best=-1e30,idx=-1.,u=0.,w=0.,ang=0.;for(int i=0;i<32;i++){if(i>=n)break;float b=a+6.28318530718*float(i)/float(n),c=b+6.28318530718/float(n);vec2 p=r*vec2(cos(b),sin(b)),q=r*vec2(cos(c),sin(c));float dx=q.x-p.x;if(abs(dx)<1e-7)continue;float s=(position.x-p.x)/dx;if(s<0.||s>1.)continue;float z=mix(p.y,q.y,s);if(z>best){best=z;idx=float(i);u=s;w=abs(dx);ang=(b+c)*.5;}}float bd=min(u,1.-u)*w;float vis=idx<0.?0.:(edge_softness>0.?smoothstep(0.,edge_softness,bd):1.);return MakerB336RotatingPolygonFaceCoordinates2D(vec2(u,position.y*axial_coordinate_scale),idx,w,vis,bd,ang);\n}",
+  "glsl_outputs": {
+    "face_coordinates": "maker_b336_rotating_polygon_face_coordinates_2d({position},{rotation_offset},{time_offset},{radius_multiplier},{polygon_sides},{radius},{orientation},{rotation_speed},{axial_coordinate_scale},{edge_softness},u_time).face_coordinates",
+    "face_identifier": "maker_b336_rotating_polygon_face_coordinates_2d({position},{rotation_offset},{time_offset},{radius_multiplier},{polygon_sides},{radius},{orientation},{rotation_speed},{axial_coordinate_scale},{edge_softness},u_time).face_identifier",
+    "projected_face_width": "maker_b336_rotating_polygon_face_coordinates_2d({position},{rotation_offset},{time_offset},{radius_multiplier},{polygon_sides},{radius},{orientation},{rotation_speed},{axial_coordinate_scale},{edge_softness},u_time).projected_face_width",
+    "face_visibility": "maker_b336_rotating_polygon_face_coordinates_2d({position},{rotation_offset},{time_offset},{radius_multiplier},{polygon_sides},{radius},{orientation},{rotation_speed},{axial_coordinate_scale},{edge_softness},u_time).face_visibility",
+    "boundary_distance": "maker_b336_rotating_polygon_face_coordinates_2d({position},{rotation_offset},{time_offset},{radius_multiplier},{polygon_sides},{radius},{orientation},{rotation_speed},{axial_coordinate_scale},{edge_softness},u_time).boundary_distance",
+    "face_orientation": "maker_b336_rotating_polygon_face_coordinates_2d({position},{rotation_offset},{time_offset},{radius_multiplier},{polygon_sides},{radius},{orientation},{rotation_speed},{axial_coordinate_scale},{edge_softness},u_time).face_orientation"
+  }
+}

@@ -1,0 +1,106 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.compositing.rgb_intensity_to_alpha_decomposition",
+  "name": "RGB Intensity-to-Alpha Decomposition",
+  "category": "Compositing",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Nonnegative RGB only. Preserve mode reconstructs input over black except below threshold or zero alpha; clamp mode may lose intensity.",
+  "uses": "RGB Intensity-to-Alpha Decomposition",
+  "notes": "Nonnegative RGB only. Preserve mode reconstructs input over black except below threshold or zero alpha; clamp mode may lose intensity.",
+  "header_color": "#527D94",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "input_color",
+      "name": "Input Color",
+      "type": "vec3",
+      "default": "vec3(0.0)",
+      "semantic_role": "color"
+    },
+    {
+      "id": "alpha_multiplier",
+      "name": "Alpha Multiplier",
+      "type": "float",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "foreground_color",
+      "name": "Foreground Color",
+      "type": "vec3",
+      "semantic_role": "color"
+    },
+    {
+      "id": "alpha",
+      "name": "Alpha",
+      "type": "float"
+    },
+    {
+      "id": "premultiplied_color",
+      "name": "Premultiplied Color",
+      "type": "vec3",
+      "semantic_role": "color"
+    },
+    {
+      "id": "source_intensity",
+      "name": "Source Intensity",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "intensity_metric",
+      "name": "Intensity Metric",
+      "default": 0,
+      "type": "choice",
+      "options": [
+        "Maximum RGB Channel",
+        "Luminance",
+        "Mean RGB"
+      ]
+    },
+    {
+      "id": "alpha_scale",
+      "name": "Alpha Scale",
+      "default": 1,
+      "type": "float",
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "minimum_intensity",
+      "name": "Minimum Intensity",
+      "default": 1e-05,
+      "type": "float",
+      "min": 0,
+      "max": 0.1
+    },
+    {
+      "id": "hdr_handling",
+      "name": "Hdr Handling",
+      "default": 0,
+      "type": "choice",
+      "options": [
+        "Preserve",
+        "Clamp"
+      ]
+    },
+    {
+      "id": "alpha_limit",
+      "name": "Alpha Limit",
+      "default": 1,
+      "type": "float",
+      "min": 0,
+      "max": 1
+    }
+  ],
+  "helpers": "struct MakerB336RgbIntensityToAlphaDecomposition {vec3 foreground_color;float alpha;vec3 premultiplied_color;float source_intensity;};\nMakerB336RgbIntensityToAlphaDecomposition maker_b336_rgb_intensity_to_alpha_decomposition(vec3 input_color,float alpha_multiplier,float intensity_metric,float alpha_scale,float minimum_intensity,float hdr_handling,float alpha_limit,float tm){\nvec3 c=max(input_color,vec3(0.));if(hdr_handling>.5)c=min(c,vec3(1.));float m=intensity_metric<.5?max(c.r,max(c.g,c.b)):(intensity_metric<1.5?dot(c,vec3(.2126,.7152,.0722)):dot(c,vec3(1./3.)));float a=clamp(m*alpha_scale*max(alpha_multiplier,0.),0.,alpha_limit);if(m<=minimum_intensity||a<=1e-8)return MakerB336RgbIntensityToAlphaDecomposition(vec3(0.),0.,vec3(0.),m);vec3 fg=c/a;if(hdr_handling>.5)fg=clamp(fg,0.,1.);return MakerB336RgbIntensityToAlphaDecomposition(fg,a,fg*a,m);\n}",
+  "glsl_outputs": {
+    "foreground_color": "maker_b336_rgb_intensity_to_alpha_decomposition({input_color},{alpha_multiplier},{intensity_metric},{alpha_scale},{minimum_intensity},{hdr_handling},{alpha_limit},u_time).foreground_color",
+    "alpha": "maker_b336_rgb_intensity_to_alpha_decomposition({input_color},{alpha_multiplier},{intensity_metric},{alpha_scale},{minimum_intensity},{hdr_handling},{alpha_limit},u_time).alpha",
+    "premultiplied_color": "maker_b336_rgb_intensity_to_alpha_decomposition({input_color},{alpha_multiplier},{intensity_metric},{alpha_scale},{minimum_intensity},{hdr_handling},{alpha_limit},u_time).premultiplied_color",
+    "source_intensity": "maker_b336_rgb_intensity_to_alpha_decomposition({input_color},{alpha_multiplier},{intensity_metric},{alpha_scale},{minimum_intensity},{hdr_handling},{alpha_limit},u_time).source_intensity"
+  }
+}
