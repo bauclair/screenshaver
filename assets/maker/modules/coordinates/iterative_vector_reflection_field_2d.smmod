@@ -1,0 +1,168 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.iterative_vector_reflection_field_2d",
+  "name": "Iterative Vector Reflection Field 2D",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Bounded reflection recurrence; orbit extrema include initial position; mean uses updated positions.",
+  "uses": "Iterative Vector Reflection Field 2D",
+  "notes": "Bounded reflection recurrence; orbit extrema include initial position; mean uses updated positions.",
+  "header_color": "#65758B",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv"
+    },
+    {
+      "id": "reflection_normal",
+      "name": "Reflection Normal",
+      "type": "vec2",
+      "default": "vec2(0.,1.)"
+    },
+    {
+      "id": "time_offset",
+      "name": "Time Offset",
+      "type": "float",
+      "default": "0.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "final_coordinates",
+      "name": "Final Coordinates",
+      "type": "vec2"
+    },
+    {
+      "id": "displacement",
+      "name": "Displacement",
+      "type": "vec2"
+    },
+    {
+      "id": "final_magnitude",
+      "name": "Final Magnitude",
+      "type": "float"
+    },
+    {
+      "id": "minimum_magnitude",
+      "name": "Minimum Magnitude",
+      "type": "float"
+    },
+    {
+      "id": "maximum_orbit_magnitude",
+      "name": "Maximum Orbit Magnitude",
+      "type": "float"
+    },
+    {
+      "id": "mean_magnitude",
+      "name": "Mean Magnitude",
+      "type": "float"
+    },
+    {
+      "id": "accumulated_reflection_response",
+      "name": "Accumulated Reflection Response",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "iterations",
+      "name": "Iterations",
+      "type": "float",
+      "default": 8,
+      "min": 1,
+      "max": 32
+    },
+    {
+      "id": "normal_orientation",
+      "name": "Normal Orientation",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "reflection_strength",
+      "name": "Reflection Strength",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 2
+    },
+    {
+      "id": "feedback_strength",
+      "name": "Feedback Strength",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "harmonic_amplitude",
+      "name": "Harmonic Amplitude",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 4
+    },
+    {
+      "id": "harmonic_frequency",
+      "name": "Harmonic Frequency",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 16
+    },
+    {
+      "id": "animation_speed",
+      "name": "Animation Speed",
+      "type": "float",
+      "default": 0.5,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "maximum_magnitude",
+      "name": "Maximum Magnitude",
+      "type": "float",
+      "default": 16,
+      "min": 0.01,
+      "max": 1000
+    },
+    {
+      "id": "reflection_mode",
+      "name": "Reflection Mode",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Normalized",
+        "Generalized"
+      ]
+    },
+    {
+      "id": "normal_source",
+      "name": "Normal Source",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Fixed",
+        "Current Coordinates",
+        "Exchanged Components",
+        "Harmonic"
+      ]
+    }
+  ],
+  "helpers": "struct MakerB402IterativeVectorReflectionField2D {vec2 final_coordinates;vec2 displacement;float final_magnitude;float minimum_magnitude;float maximum_orbit_magnitude;float mean_magnitude;float accumulated_reflection_response;};\nMakerB402IterativeVectorReflectionField2D maker_b402_iterative_vector_reflection_field_2d(vec2 position,vec2 reflection_normal,float time_offset,float iterations,float normal_orientation,float reflection_strength,float feedback_strength,float harmonic_amplitude,float harmonic_frequency,float animation_speed,float maximum_magnitude,float reflection_mode,float normal_source){\nvec2 p=clamp(position,-1e6,1e6),q=p;float mn=length(q),mx=mn,sum=0.,response=0.;int n=int(clamp(round(iterations),1.,32.));float a=radians(normal_orientation);mat2 R=mat2(cos(a),sin(a),-sin(a),cos(a));for(int i=0;i<32;i++){if(i>=n)break;vec2 v=reflection_normal;if(normal_source>.5)v=q;if(normal_source>1.5)v=q.yx;if(normal_source>2.5)v=harmonic_amplitude*sin(q*harmonic_frequency+vec2(0.,1.57)+(u_time+time_offset)*animation_speed);v=R*clamp(v,-4.,4.);if(reflection_mode<.5)v=length(v)>1e-8?normalize(v):vec2(0.);vec2 r=q-2.*reflection_strength*dot(q,v)*v;vec2 next=mix(p,r,feedback_strength);next*=min(1.,maximum_magnitude/max(length(next),1e-8));response+=length(next-q);q=next;float m=length(q);mn=min(mn,m);mx=max(mx,m);sum+=m;}return MakerB402IterativeVectorReflectionField2D(q,q-p,length(q),mn,mx,sum/float(n),response);\n}",
+  "glsl_outputs": {
+    "final_coordinates": "maker_b402_iterative_vector_reflection_field_2d({position},{reflection_normal},{time_offset},{iterations},{normal_orientation},{reflection_strength},{feedback_strength},{harmonic_amplitude},{harmonic_frequency},{animation_speed},{maximum_magnitude},{reflection_mode},{normal_source}).final_coordinates",
+    "displacement": "maker_b402_iterative_vector_reflection_field_2d({position},{reflection_normal},{time_offset},{iterations},{normal_orientation},{reflection_strength},{feedback_strength},{harmonic_amplitude},{harmonic_frequency},{animation_speed},{maximum_magnitude},{reflection_mode},{normal_source}).displacement",
+    "final_magnitude": "maker_b402_iterative_vector_reflection_field_2d({position},{reflection_normal},{time_offset},{iterations},{normal_orientation},{reflection_strength},{feedback_strength},{harmonic_amplitude},{harmonic_frequency},{animation_speed},{maximum_magnitude},{reflection_mode},{normal_source}).final_magnitude",
+    "minimum_magnitude": "maker_b402_iterative_vector_reflection_field_2d({position},{reflection_normal},{time_offset},{iterations},{normal_orientation},{reflection_strength},{feedback_strength},{harmonic_amplitude},{harmonic_frequency},{animation_speed},{maximum_magnitude},{reflection_mode},{normal_source}).minimum_magnitude",
+    "maximum_orbit_magnitude": "maker_b402_iterative_vector_reflection_field_2d({position},{reflection_normal},{time_offset},{iterations},{normal_orientation},{reflection_strength},{feedback_strength},{harmonic_amplitude},{harmonic_frequency},{animation_speed},{maximum_magnitude},{reflection_mode},{normal_source}).maximum_orbit_magnitude",
+    "mean_magnitude": "maker_b402_iterative_vector_reflection_field_2d({position},{reflection_normal},{time_offset},{iterations},{normal_orientation},{reflection_strength},{feedback_strength},{harmonic_amplitude},{harmonic_frequency},{animation_speed},{maximum_magnitude},{reflection_mode},{normal_source}).mean_magnitude",
+    "accumulated_reflection_response": "maker_b402_iterative_vector_reflection_field_2d({position},{reflection_normal},{time_offset},{iterations},{normal_orientation},{reflection_strength},{feedback_strength},{harmonic_amplitude},{harmonic_frequency},{animation_speed},{maximum_magnitude},{reflection_mode},{normal_source}).accumulated_reflection_response"
+  }
+}

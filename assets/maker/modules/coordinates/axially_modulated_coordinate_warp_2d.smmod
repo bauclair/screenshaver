@@ -1,0 +1,182 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.axially_modulated_coordinate_warp_2d",
+  "name": "Axially Modulated Coordinate Warp 2D",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "header_color": "#348F8B",
+  "description": "Axially Modulated Coordinate Warp 2D",
+  "uses": "Procedural coordinate and field composition.",
+  "notes": "Sampling-coordinate transform. Orientation zero is vertical. Reciprocal uses absolute denominator.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec2",
+      "default": "vec2(0.5)"
+    },
+    {
+      "id": "time_offset",
+      "name": "Time Offset",
+      "type": "float",
+      "default": "0.0"
+    },
+    {
+      "id": "scale_multiplier",
+      "name": "Scale Multiplier",
+      "type": "float",
+      "default": "1.0"
+    },
+    {
+      "id": "displacement_multiplier",
+      "name": "Displacement Multiplier",
+      "type": "float",
+      "default": "1.0"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "orientation",
+      "name": "Orientation",
+      "type": "float",
+      "default": 0,
+      "min": -6.2832,
+      "max": 6.2832
+    },
+    {
+      "id": "reference_length",
+      "name": "Reference Length",
+      "type": "float",
+      "default": 1,
+      "min": 0.001,
+      "max": 100
+    },
+    {
+      "id": "scale_profile",
+      "name": "Scale Profile",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Linear",
+        "Power",
+        "Exponential",
+        "Regularized Reciprocal"
+      ]
+    },
+    {
+      "id": "scale_strength",
+      "name": "Scale Strength",
+      "type": "float",
+      "default": 0.5,
+      "min": -4,
+      "max": 4
+    },
+    {
+      "id": "scale_exponent",
+      "name": "Scale Exponent",
+      "type": "float",
+      "default": 2,
+      "min": 0.1,
+      "max": 8
+    },
+    {
+      "id": "minimum_scale",
+      "name": "Minimum Scale",
+      "type": "float",
+      "default": 0.05,
+      "min": 0.001,
+      "max": 1
+    },
+    {
+      "id": "maximum_scale",
+      "name": "Maximum Scale",
+      "type": "float",
+      "default": 8,
+      "min": 1,
+      "max": 100
+    },
+    {
+      "id": "harmonic_amplitude",
+      "name": "Harmonic Amplitude",
+      "type": "float",
+      "default": 0.1,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "harmonic_frequency",
+      "name": "Harmonic Frequency",
+      "type": "float",
+      "default": 4,
+      "min": 0,
+      "max": 64
+    },
+    {
+      "id": "animation_speed",
+      "name": "Animation Speed",
+      "type": "float",
+      "default": 1,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "axial_envelope",
+      "name": "Axial Envelope",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Constant",
+        "Linear",
+        "Smooth"
+      ]
+    }
+  ],
+  "outputs": [
+    {
+      "id": "warped",
+      "name": "Warped",
+      "type": "vec2"
+    },
+    {
+      "id": "displacement",
+      "name": "Displacement",
+      "type": "vec2"
+    },
+    {
+      "id": "longitudinal",
+      "name": "Longitudinal",
+      "type": "float"
+    },
+    {
+      "id": "transverse",
+      "name": "Transverse",
+      "type": "float"
+    },
+    {
+      "id": "applied_scale",
+      "name": "Applied Scale",
+      "type": "float"
+    },
+    {
+      "id": "harmonic_displacement",
+      "name": "Harmonic Displacement",
+      "type": "float"
+    }
+  ],
+  "helpers": "struct Maker4061 {vec2 warped; vec2 displacement; float longitudinal; float transverse; float applied_scale; float harmonic_displacement;};\nMaker4061 maker_axially_modulated_coordinate_warp_2d(vec2 position,vec2 center,float time_offset,float scale_multiplier,float displacement_multiplier,float orientation,float reference_length,float scale_profile,float scale_strength,float scale_exponent,float minimum_scale,float maximum_scale,float harmonic_amplitude,float harmonic_frequency,float animation_speed,float axial_envelope){\nvec2 a=vec2(sin(orientation),cos(orientation)),b=vec2(a.y,-a.x),q=position-center;float y=dot(q,a),x=dot(q,b),h=clamp(y/reference_length,-100.,100.);float k=scale_strength*clamp(scale_multiplier,-100.,100.);float s=1.+k*h;if(scale_profile>.5&&scale_profile<1.5)s=1.+k*sign(h)*pow(abs(h),scale_exponent);else if(scale_profile>1.5&&scale_profile<2.5)s=exp(clamp(k*h,-20.,20.));else if(scale_profile>2.5)s=1./max(abs(1.+k*h),minimum_scale);s=clamp(s,minimum_scale,maximum_scale);float e=axial_envelope<.5?1.:(axial_envelope<1.5?clamp(h,0.,1.):smoothstep(0.,1.,h));float d=harmonic_amplitude*clamp(displacement_multiplier,-100.,100.)*e*sin(h*harmonic_frequency+(u_time+time_offset)*animation_speed);vec2 w=center+a*y+b*(x*s+d);return Maker4061(w,w-position,y,x,s,d);\n}",
+  "glsl_outputs": {
+    "warped": "maker_axially_modulated_coordinate_warp_2d({position},{center},{time_offset},{scale_multiplier},{displacement_multiplier},{orientation},{reference_length},{scale_profile},{scale_strength},{scale_exponent},{minimum_scale},{maximum_scale},{harmonic_amplitude},{harmonic_frequency},{animation_speed},{axial_envelope}).warped",
+    "displacement": "maker_axially_modulated_coordinate_warp_2d({position},{center},{time_offset},{scale_multiplier},{displacement_multiplier},{orientation},{reference_length},{scale_profile},{scale_strength},{scale_exponent},{minimum_scale},{maximum_scale},{harmonic_amplitude},{harmonic_frequency},{animation_speed},{axial_envelope}).displacement",
+    "longitudinal": "maker_axially_modulated_coordinate_warp_2d({position},{center},{time_offset},{scale_multiplier},{displacement_multiplier},{orientation},{reference_length},{scale_profile},{scale_strength},{scale_exponent},{minimum_scale},{maximum_scale},{harmonic_amplitude},{harmonic_frequency},{animation_speed},{axial_envelope}).longitudinal",
+    "transverse": "maker_axially_modulated_coordinate_warp_2d({position},{center},{time_offset},{scale_multiplier},{displacement_multiplier},{orientation},{reference_length},{scale_profile},{scale_strength},{scale_exponent},{minimum_scale},{maximum_scale},{harmonic_amplitude},{harmonic_frequency},{animation_speed},{axial_envelope}).transverse",
+    "applied_scale": "maker_axially_modulated_coordinate_warp_2d({position},{center},{time_offset},{scale_multiplier},{displacement_multiplier},{orientation},{reference_length},{scale_profile},{scale_strength},{scale_exponent},{minimum_scale},{maximum_scale},{harmonic_amplitude},{harmonic_frequency},{animation_speed},{axial_envelope}).applied_scale",
+    "harmonic_displacement": "maker_axially_modulated_coordinate_warp_2d({position},{center},{time_offset},{scale_multiplier},{displacement_multiplier},{orientation},{reference_length},{scale_profile},{scale_strength},{scale_exponent},{minimum_scale},{maximum_scale},{harmonic_amplitude},{harmonic_frequency},{animation_speed},{axial_envelope}).harmonic_displacement"
+  }
+}

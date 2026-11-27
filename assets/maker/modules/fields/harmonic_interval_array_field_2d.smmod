@@ -1,0 +1,186 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.harmonic_interval_array_field_2d",
+  "name": "Harmonic Interval Array Field 2D",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "header_color": "#348F8B",
+  "description": "Harmonic Interval Array Field 2D",
+  "uses": "Procedural coordinate and field composition.",
+  "notes": "Residual is transverse, not Euclidean. No active interval returns index -1 and zero residual. Mean divides by configured count.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec2",
+      "default": "vec2(0.5)"
+    },
+    {
+      "id": "time_offset",
+      "name": "Time Offset",
+      "type": "float",
+      "default": "0.0"
+    },
+    {
+      "id": "phase_offset",
+      "name": "Phase Offset",
+      "type": "float",
+      "default": "0.0"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "interval_count",
+      "name": "Interval Count",
+      "type": "float",
+      "default": 4,
+      "min": 1,
+      "max": 16
+    },
+    {
+      "id": "spacing",
+      "name": "Spacing",
+      "type": "float",
+      "default": 0.25,
+      "min": 0.001,
+      "max": 10
+    },
+    {
+      "id": "boundary_amplitude",
+      "name": "Boundary Amplitude",
+      "type": "float",
+      "default": 0.1,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "longitudinal_frequency",
+      "name": "Longitudinal Frequency",
+      "type": "float",
+      "default": 4,
+      "min": 0,
+      "max": 64
+    },
+    {
+      "id": "boundary_phase_separation",
+      "name": "Boundary Phase Separation",
+      "type": "float",
+      "default": 1.57,
+      "min": 0,
+      "max": 6.2832
+    },
+    {
+      "id": "index_phase_progression",
+      "name": "Index Phase Progression",
+      "type": "float",
+      "default": 0.7,
+      "min": -6.2832,
+      "max": 6.2832
+    },
+    {
+      "id": "animation_speed",
+      "name": "Animation Speed",
+      "type": "float",
+      "default": 1,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "orientation",
+      "name": "Orientation",
+      "type": "float",
+      "default": 0,
+      "min": -6.2832,
+      "max": 6.2832
+    },
+    {
+      "id": "ordering",
+      "name": "Ordering",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Ordered",
+        "Unordered"
+      ]
+    },
+    {
+      "id": "edge_softness",
+      "name": "Edge Softness",
+      "type": "float",
+      "default": 0.01,
+      "min": 1e-05,
+      "max": 1
+    },
+    {
+      "id": "accumulation",
+      "name": "Accumulation",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Sum",
+        "Mean",
+        "Maximum"
+      ]
+    }
+  ],
+  "outputs": [
+    {
+      "id": "combined_mask",
+      "name": "Combined Mask",
+      "type": "float"
+    },
+    {
+      "id": "normalized_response",
+      "name": "Normalized Response",
+      "type": "float"
+    },
+    {
+      "id": "nearest_index",
+      "name": "Nearest Index",
+      "type": "float"
+    },
+    {
+      "id": "boundary_residual",
+      "name": "Boundary Residual",
+      "type": "float"
+    },
+    {
+      "id": "interval_width",
+      "name": "Interval Width",
+      "type": "float"
+    },
+    {
+      "id": "overlap_count",
+      "name": "Overlap Count",
+      "type": "float"
+    },
+    {
+      "id": "longitudinal",
+      "name": "Longitudinal",
+      "type": "float"
+    },
+    {
+      "id": "maximum_response",
+      "name": "Maximum Response",
+      "type": "float"
+    }
+  ],
+  "helpers": "struct Maker4060 {float combined_mask; float normalized_response; float nearest_index; float boundary_residual; float interval_width; float overlap_count; float longitudinal; float maximum_response;};\nMaker4060 maker_harmonic_interval_array_field_2d(vec2 position,vec2 center,float time_offset,float phase_offset,float interval_count,float spacing,float boundary_amplitude,float longitudinal_frequency,float boundary_phase_separation,float index_phase_progression,float animation_speed,float orientation,float ordering,float edge_softness,float accumulation){\nvec2 q=position-center; float u=dot(q,vec2(cos(orientation),sin(orientation))),v=dot(q,vec2(-sin(orientation),cos(orientation))); int n=int(clamp(floor(interval_count+.5),1.,16.));float sum=0.,peak=0.,best=1e20,idx=-1.,res=0.,width=0.,overlap=0.;for(int i=0;i<16;i++){if(i>=n)break;float base=(float(i)-.5*float(n-1))*spacing;float ph=v*longitudinal_frequency+float(i)*index_phase_progression+(u_time+time_offset)*animation_speed+phase_offset;float a=base+boundary_amplitude*cos(ph),b=base+boundary_amplitude*cos(ph+boundary_phase_separation);if(ordering<.5&&b<=a)continue;float lo=min(a,b),hi=max(a,b);float d=max(lo-u,u-hi);float m=1.-smoothstep(-edge_softness,edge_softness,d);sum+=m;peak=max(peak,m);overlap+=d<=0.?1.:0.;if(abs(d)<best){best=abs(d);idx=float(i);res=d;width=hi-lo;}}return Maker4060(accumulation<.5?sum:(accumulation<1.5?sum/float(n):peak),sum/float(n),idx,res,width,overlap,v,peak);\n}",
+  "glsl_outputs": {
+    "combined_mask": "maker_harmonic_interval_array_field_2d({position},{center},{time_offset},{phase_offset},{interval_count},{spacing},{boundary_amplitude},{longitudinal_frequency},{boundary_phase_separation},{index_phase_progression},{animation_speed},{orientation},{ordering},{edge_softness},{accumulation}).combined_mask",
+    "normalized_response": "maker_harmonic_interval_array_field_2d({position},{center},{time_offset},{phase_offset},{interval_count},{spacing},{boundary_amplitude},{longitudinal_frequency},{boundary_phase_separation},{index_phase_progression},{animation_speed},{orientation},{ordering},{edge_softness},{accumulation}).normalized_response",
+    "nearest_index": "maker_harmonic_interval_array_field_2d({position},{center},{time_offset},{phase_offset},{interval_count},{spacing},{boundary_amplitude},{longitudinal_frequency},{boundary_phase_separation},{index_phase_progression},{animation_speed},{orientation},{ordering},{edge_softness},{accumulation}).nearest_index",
+    "boundary_residual": "maker_harmonic_interval_array_field_2d({position},{center},{time_offset},{phase_offset},{interval_count},{spacing},{boundary_amplitude},{longitudinal_frequency},{boundary_phase_separation},{index_phase_progression},{animation_speed},{orientation},{ordering},{edge_softness},{accumulation}).boundary_residual",
+    "interval_width": "maker_harmonic_interval_array_field_2d({position},{center},{time_offset},{phase_offset},{interval_count},{spacing},{boundary_amplitude},{longitudinal_frequency},{boundary_phase_separation},{index_phase_progression},{animation_speed},{orientation},{ordering},{edge_softness},{accumulation}).interval_width",
+    "overlap_count": "maker_harmonic_interval_array_field_2d({position},{center},{time_offset},{phase_offset},{interval_count},{spacing},{boundary_amplitude},{longitudinal_frequency},{boundary_phase_separation},{index_phase_progression},{animation_speed},{orientation},{ordering},{edge_softness},{accumulation}).overlap_count",
+    "longitudinal": "maker_harmonic_interval_array_field_2d({position},{center},{time_offset},{phase_offset},{interval_count},{spacing},{boundary_amplitude},{longitudinal_frequency},{boundary_phase_separation},{index_phase_progression},{animation_speed},{orientation},{ordering},{edge_softness},{accumulation}).longitudinal",
+    "maximum_response": "maker_harmonic_interval_array_field_2d({position},{center},{time_offset},{phase_offset},{interval_count},{spacing},{boundary_amplitude},{longitudinal_frequency},{boundary_phase_separation},{index_phase_progression},{animation_speed},{orientation},{ordering},{edge_softness},{accumulation}).maximum_response"
+  }
+}

@@ -1,0 +1,146 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.quadratic_complex_escape_time_field_2d",
+  "name": "Complex Polynomial Escape-Time Field 2D",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "header_color": "#348F8B",
+  "description": "Complex Polynomial Escape-Time Field 2D",
+  "uses": "Procedural coordinate and field composition.",
+  "notes": "Position is complex coordinate before scale and rotation. Minimum includes initial orbit (zero for Mandelbrot). Explicit mode uses connected initial orbit and constant. Interior continuous count equals limit. Integer powers 2\u20138; default quadratic path retained.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv"
+    },
+    {
+      "id": "complex_constant",
+      "name": "Complex Constant",
+      "type": "vec2",
+      "default": "vec2(-0.745,0.113)"
+    },
+    {
+      "id": "initial_orbit",
+      "name": "Initial Orbit",
+      "type": "vec2",
+      "default": "vec2(0.0)"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "evaluation_mode",
+      "name": "Evaluation Mode",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Mandelbrot",
+        "Julia",
+        "Explicit Initial Coordinate"
+      ]
+    },
+    {
+      "id": "iterations",
+      "name": "Iterations",
+      "type": "float",
+      "default": 32,
+      "min": 1,
+      "max": 128
+    },
+    {
+      "id": "escape_radius",
+      "name": "Escape Radius",
+      "type": "float",
+      "default": 2,
+      "min": 2,
+      "max": 100
+    },
+    {
+      "id": "coordinate_scale",
+      "name": "Coordinate Scale",
+      "type": "float",
+      "default": 3,
+      "min": 1e-05,
+      "max": 100
+    },
+    {
+      "id": "orbit_rotation",
+      "name": "Orbit Rotation",
+      "type": "float",
+      "default": 0,
+      "min": -6.2832,
+      "max": 6.2832
+    },
+    {
+      "id": "proximity_strength",
+      "name": "Proximity Strength",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 100
+    },
+    {
+      "id": "polynomial_power",
+      "name": "Polynomial Power",
+      "type": "float",
+      "default": 2,
+      "min": 2,
+      "max": 8
+    }
+  ],
+  "outputs": [
+    {
+      "id": "iteration_count",
+      "name": "Iteration Count",
+      "type": "float"
+    },
+    {
+      "id": "normalized_iteration_count",
+      "name": "Normalized Iteration Count",
+      "type": "float"
+    },
+    {
+      "id": "continuous_escape_count",
+      "name": "Continuous Escape Count",
+      "type": "float"
+    },
+    {
+      "id": "escaped_mask",
+      "name": "Escaped Mask",
+      "type": "float"
+    },
+    {
+      "id": "final_coordinate",
+      "name": "Final Coordinate",
+      "type": "vec2"
+    },
+    {
+      "id": "final_magnitude",
+      "name": "Final Magnitude",
+      "type": "float"
+    },
+    {
+      "id": "minimum_magnitude",
+      "name": "Minimum Magnitude",
+      "type": "float"
+    },
+    {
+      "id": "accumulated_proximity",
+      "name": "Accumulated Proximity",
+      "type": "float"
+    }
+  ],
+  "helpers": "struct Maker4062 {float iteration_count; float normalized_iteration_count; float continuous_escape_count; float escaped_mask; vec2 final_coordinate; float final_magnitude; float minimum_magnitude; float accumulated_proximity;};\nMaker4062 maker_quadratic_complex_escape_time_field_2d(vec2 position,vec2 complex_constant,vec2 initial_orbit,float evaluation_mode,float iterations,float escape_radius,float coordinate_scale,float orbit_rotation,float proximity_strength,float polynomial_power){\nvec2 p=clamp(position,vec2(-1e6),vec2(1e6))*coordinate_scale;float co=cos(orbit_rotation),si=sin(orbit_rotation);p=mat2(co,si,-si,co)*p;vec2 c=evaluation_mode<.5?p:clamp(complex_constant,vec2(-1e8),vec2(1e8));vec2 z=evaluation_mode<.5?vec2(0.):(evaluation_mode<1.5?p:clamp(initial_orbit,vec2(-1e8),vec2(1e8)));int power=int(clamp(floor(polynomial_power+.5),2.,8.));int lim=int(clamp(floor(iterations+.5),1.,128.)),n=0;float r=length(z),mn=r,sum=0.;for(int i=0;i<128;i++){if(i>=lim||r>escape_radius)break;vec2 zz=vec2(z.x*z.x-z.y*z.y,2.*z.x*z.y);if(power>2){for(int j=2;j<8;j++){if(j>=power)break;zz=vec2(zz.x*z.x-zz.y*z.y,zz.x*z.y+zz.y*z.x);}}z=zz+c;r=length(z);mn=min(mn,r);sum+=exp(-proximity_strength*r);n++;}float escaped=r>escape_radius?1.:0.;float mu=escaped>.5?float(n)+1.-log(max(log(max(r,2.)),1e-6))/log(float(power)):float(lim);return Maker4062(float(n),float(n)/float(lim),mu,escaped,z,r,mn,sum);\n}",
+  "glsl_outputs": {
+    "iteration_count": "maker_quadratic_complex_escape_time_field_2d({position},{complex_constant},{initial_orbit},{evaluation_mode},{iterations},{escape_radius},{coordinate_scale},{orbit_rotation},{proximity_strength},{polynomial_power}).iteration_count",
+    "normalized_iteration_count": "maker_quadratic_complex_escape_time_field_2d({position},{complex_constant},{initial_orbit},{evaluation_mode},{iterations},{escape_radius},{coordinate_scale},{orbit_rotation},{proximity_strength},{polynomial_power}).normalized_iteration_count",
+    "continuous_escape_count": "maker_quadratic_complex_escape_time_field_2d({position},{complex_constant},{initial_orbit},{evaluation_mode},{iterations},{escape_radius},{coordinate_scale},{orbit_rotation},{proximity_strength},{polynomial_power}).continuous_escape_count",
+    "escaped_mask": "maker_quadratic_complex_escape_time_field_2d({position},{complex_constant},{initial_orbit},{evaluation_mode},{iterations},{escape_radius},{coordinate_scale},{orbit_rotation},{proximity_strength},{polynomial_power}).escaped_mask",
+    "final_coordinate": "maker_quadratic_complex_escape_time_field_2d({position},{complex_constant},{initial_orbit},{evaluation_mode},{iterations},{escape_radius},{coordinate_scale},{orbit_rotation},{proximity_strength},{polynomial_power}).final_coordinate",
+    "final_magnitude": "maker_quadratic_complex_escape_time_field_2d({position},{complex_constant},{initial_orbit},{evaluation_mode},{iterations},{escape_radius},{coordinate_scale},{orbit_rotation},{proximity_strength},{polynomial_power}).final_magnitude",
+    "minimum_magnitude": "maker_quadratic_complex_escape_time_field_2d({position},{complex_constant},{initial_orbit},{evaluation_mode},{iterations},{escape_radius},{coordinate_scale},{orbit_rotation},{proximity_strength},{polynomial_power}).minimum_magnitude",
+    "accumulated_proximity": "maker_quadratic_complex_escape_time_field_2d({position},{complex_constant},{initial_orbit},{evaluation_mode},{iterations},{escape_radius},{coordinate_scale},{orbit_rotation},{proximity_strength},{polynomial_power}).accumulated_proximity"
+  }
+}

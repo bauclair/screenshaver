@@ -1,0 +1,119 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.complex_arithmetic_transformation_2d",
+  "name": "Complex Arithmetic Transformation 2D",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Principal branch for logarithm and powers. Singular operations return regularized values with validity zero; magnitude capped.",
+  "uses": "Complex Arithmetic Transformation 2D",
+  "notes": "Principal branch for logarithm and powers. Singular operations return regularized values with validity zero; magnitude capped.",
+  "header_color": "#65758B",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "primary",
+      "name": "Primary",
+      "type": "vec2",
+      "default": "maker_uv"
+    },
+    {
+      "id": "secondary",
+      "name": "Secondary",
+      "type": "vec2",
+      "default": "vec2(1.,0.)"
+    },
+    {
+      "id": "exponent_multiplier",
+      "name": "Exponent Multiplier",
+      "type": "float",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "transformed",
+      "name": "Transformed",
+      "type": "vec2"
+    },
+    {
+      "id": "real_component",
+      "name": "Real Component",
+      "type": "float"
+    },
+    {
+      "id": "imaginary_component",
+      "name": "Imaginary Component",
+      "type": "float"
+    },
+    {
+      "id": "magnitude",
+      "name": "Magnitude",
+      "type": "float"
+    },
+    {
+      "id": "argument",
+      "name": "Argument",
+      "type": "float"
+    },
+    {
+      "id": "validity",
+      "name": "Validity",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "exponent",
+      "name": "Exponent",
+      "type": "float",
+      "default": 2,
+      "min": -8,
+      "max": 8
+    },
+    {
+      "id": "denominator_floor",
+      "name": "Denominator Floor",
+      "type": "float",
+      "default": 0.0001,
+      "min": 1e-06,
+      "max": 0.1
+    },
+    {
+      "id": "maximum_magnitude",
+      "name": "Maximum Magnitude",
+      "type": "float",
+      "default": 100,
+      "min": 0.01,
+      "max": 100000
+    },
+    {
+      "id": "operation",
+      "name": "Operation",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Addition",
+        "Subtraction",
+        "Multiplication",
+        "Division",
+        "Reciprocal",
+        "Conjugation",
+        "Real Power",
+        "Exponential",
+        "Natural Logarithm",
+        "Sine",
+        "Cosine"
+      ]
+    }
+  ],
+  "helpers": "struct MakerB402ComplexArithmeticTransformation2D {vec2 transformed;float real_component;float imaginary_component;float magnitude;float argument;float validity;};\nMakerB402ComplexArithmeticTransformation2D maker_b402_complex_arithmetic_transformation_2d(vec2 primary,vec2 secondary,float exponent_multiplier,float exponent,float denominator_floor,float maximum_magnitude,float operation){\nvec2 z=clamp(primary,-1e6,1e6),w=clamp(secondary,-1e6,1e6),q=z;float r=length(z),a=r>1e-12?atan(z.y,z.x):0.,valid=1.;int op=int(round(operation));if(op==0)q=z+w;else if(op==1)q=z-w;else if(op==2)q=vec2(z.x*w.x-z.y*w.y,z.x*w.y+z.y*w.x);else if(op==3){valid=step(denominator_floor,length(w));q=vec2(dot(z,w),z.y*w.x-z.x*w.y)/max(dot(w,w),denominator_floor*denominator_floor);}else if(op==4){valid=step(denominator_floor,r);q=vec2(z.x,-z.y)/max(dot(z,z),denominator_floor*denominator_floor);}else if(op==5)q=vec2(z.x,-z.y);else if(op==6){float p=clamp(exponent*exponent_multiplier,-16.,16.);valid=float(r>=denominator_floor||p>0.);q=(r==0.&&p>0.)?vec2(0.):exp(clamp(p*log(max(r,denominator_floor)),-40.,40.))*vec2(cos(p*a),sin(p*a));}else if(op==7)q=exp(clamp(z.x,-40.,40.))*vec2(cos(z.y),sin(z.y));else if(op==8){valid=step(denominator_floor,r);q=vec2(log(max(r,denominator_floor)),a);}else {float y=clamp(z.y,-40.,40.);q=op==9?vec2(sin(z.x)*cosh(y),cos(z.x)*sinh(y)):vec2(cos(z.x)*cosh(y),-sin(z.x)*sinh(y));}q*=min(1.,maximum_magnitude/max(length(q),1e-12));return MakerB402ComplexArithmeticTransformation2D(q,q.x,q.y,length(q),length(q)>1e-12?atan(q.y,q.x):0.,valid);\n}",
+  "glsl_outputs": {
+    "transformed": "maker_b402_complex_arithmetic_transformation_2d({primary},{secondary},{exponent_multiplier},{exponent},{denominator_floor},{maximum_magnitude},{operation}).transformed",
+    "real_component": "maker_b402_complex_arithmetic_transformation_2d({primary},{secondary},{exponent_multiplier},{exponent},{denominator_floor},{maximum_magnitude},{operation}).real_component",
+    "imaginary_component": "maker_b402_complex_arithmetic_transformation_2d({primary},{secondary},{exponent_multiplier},{exponent},{denominator_floor},{maximum_magnitude},{operation}).imaginary_component",
+    "magnitude": "maker_b402_complex_arithmetic_transformation_2d({primary},{secondary},{exponent_multiplier},{exponent},{denominator_floor},{maximum_magnitude},{operation}).magnitude",
+    "argument": "maker_b402_complex_arithmetic_transformation_2d({primary},{secondary},{exponent_multiplier},{exponent},{denominator_floor},{maximum_magnitude},{operation}).argument",
+    "validity": "maker_b402_complex_arithmetic_transformation_2d({primary},{secondary},{exponent_multiplier},{exponent},{denominator_floor},{maximum_magnitude},{operation}).validity"
+  }
+}

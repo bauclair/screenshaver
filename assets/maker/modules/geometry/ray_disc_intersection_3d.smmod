@@ -1,0 +1,135 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.geometry.ray_disc_intersection_3d",
+  "name": "Ray\u2013Disc Intersection 3D",
+  "category": "Geometry",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Ray direction normalized internally; distance in world units. Plane validity requires forward intersection; disc mask additionally tests radius and face.",
+  "uses": "Ray\u2013Disc Intersection 3D",
+  "notes": "Ray direction normalized internally; distance in world units. Plane validity requires forward intersection; disc mask additionally tests radius and face.",
+  "header_color": "#65758B",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "ray_origin",
+      "name": "Ray Origin",
+      "type": "vec3",
+      "default": "vec3(0.,0.,-3.)"
+    },
+    {
+      "id": "ray_direction",
+      "name": "Ray Direction",
+      "type": "vec3",
+      "default": "vec3(0.,0.,1.)"
+    },
+    {
+      "id": "disc_center",
+      "name": "Disc Center",
+      "type": "vec3",
+      "default": "vec3(0.)"
+    },
+    {
+      "id": "disc_normal",
+      "name": "Disc Normal",
+      "type": "vec3",
+      "default": "vec3(0.,0.,1.)"
+    },
+    {
+      "id": "reference_direction",
+      "name": "Reference Direction",
+      "type": "vec3",
+      "default": "vec3(1.,0.,0.)"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "intersection_distance",
+      "name": "Intersection Distance",
+      "type": "float"
+    },
+    {
+      "id": "intersection_position",
+      "name": "Intersection Position",
+      "type": "vec3"
+    },
+    {
+      "id": "local_planar_coordinates",
+      "name": "Local Planar Coordinates",
+      "type": "vec2"
+    },
+    {
+      "id": "radial_distance",
+      "name": "Radial Distance",
+      "type": "float"
+    },
+    {
+      "id": "polar_angle",
+      "name": "Polar Angle",
+      "type": "float"
+    },
+    {
+      "id": "intersection_mask",
+      "name": "Intersection Mask",
+      "type": "float"
+    },
+    {
+      "id": "facing_response",
+      "name": "Facing Response",
+      "type": "float"
+    },
+    {
+      "id": "plane_intersection_validity",
+      "name": "Plane Intersection Validity",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "outer_radius",
+      "name": "Outer Radius",
+      "type": "float",
+      "default": 1,
+      "min": 0.001,
+      "max": 100
+    },
+    {
+      "id": "inner_radius",
+      "name": "Inner Radius",
+      "type": "float",
+      "default": 0,
+      "min": 0,
+      "max": 100
+    },
+    {
+      "id": "parallel_tolerance",
+      "name": "Parallel Tolerance",
+      "type": "float",
+      "default": 1e-05,
+      "min": 1e-06,
+      "max": 0.1
+    },
+    {
+      "id": "face_selection",
+      "name": "Face Selection",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Both",
+        "Front",
+        "Back"
+      ]
+    }
+  ],
+  "helpers": "struct MakerB402RayDiscIntersection3D {float intersection_distance;vec3 intersection_position;vec2 local_planar_coordinates;float radial_distance;float polar_angle;float intersection_mask;float facing_response;float plane_intersection_validity;};\nMakerB402RayDiscIntersection3D maker_b402_ray_disc_intersection_3d(vec3 ray_origin,vec3 ray_direction,vec3 disc_center,vec3 disc_normal,vec3 reference_direction,float outer_radius,float inner_radius,float parallel_tolerance,float face_selection){\nfloat nl=length(disc_normal),dl=length(ray_direction);if(nl<1e-8||dl<1e-8)return MakerB402RayDiscIntersection3D(-1.,ray_origin,vec2(0.),0.,0.,0.,0.,0.);vec3 n=disc_normal/nl,d=ray_direction/dl;float den=dot(d,n);if(abs(den)<parallel_tolerance)return MakerB402RayDiscIntersection3D(-1.,ray_origin,vec2(0.),0.,0.,0.,den,0.);float t=dot(disc_center-ray_origin,n)/den;vec3 p=ray_origin+t*d,u=reference_direction-n*dot(reference_direction,n);if(length(u)<1e-8){vec3 a=abs(n.x)<.8?vec3(1.,0.,0.):vec3(0.,1.,0.);u=a-n*dot(a,n);}u=normalize(u);vec3 v=cross(n,u),q=p-disc_center;vec2 xy=vec2(dot(q,u),dot(q,v));float r=length(xy),valid=step(0.,t),face=face_selection<.5?1.:face_selection<1.5?float(den<0.):float(den>0.);return MakerB402RayDiscIntersection3D(t,p,xy,r,r>1e-8?atan(xy.y,xy.x):0.,valid*face*step(min(inner_radius,outer_radius),r)*step(r,outer_radius),den,valid);\n}",
+  "glsl_outputs": {
+    "intersection_distance": "maker_b402_ray_disc_intersection_3d({ray_origin},{ray_direction},{disc_center},{disc_normal},{reference_direction},{outer_radius},{inner_radius},{parallel_tolerance},{face_selection}).intersection_distance",
+    "intersection_position": "maker_b402_ray_disc_intersection_3d({ray_origin},{ray_direction},{disc_center},{disc_normal},{reference_direction},{outer_radius},{inner_radius},{parallel_tolerance},{face_selection}).intersection_position",
+    "local_planar_coordinates": "maker_b402_ray_disc_intersection_3d({ray_origin},{ray_direction},{disc_center},{disc_normal},{reference_direction},{outer_radius},{inner_radius},{parallel_tolerance},{face_selection}).local_planar_coordinates",
+    "radial_distance": "maker_b402_ray_disc_intersection_3d({ray_origin},{ray_direction},{disc_center},{disc_normal},{reference_direction},{outer_radius},{inner_radius},{parallel_tolerance},{face_selection}).radial_distance",
+    "polar_angle": "maker_b402_ray_disc_intersection_3d({ray_origin},{ray_direction},{disc_center},{disc_normal},{reference_direction},{outer_radius},{inner_radius},{parallel_tolerance},{face_selection}).polar_angle",
+    "intersection_mask": "maker_b402_ray_disc_intersection_3d({ray_origin},{ray_direction},{disc_center},{disc_normal},{reference_direction},{outer_radius},{inner_radius},{parallel_tolerance},{face_selection}).intersection_mask",
+    "facing_response": "maker_b402_ray_disc_intersection_3d({ray_origin},{ray_direction},{disc_center},{disc_normal},{reference_direction},{outer_radius},{inner_radius},{parallel_tolerance},{face_selection}).facing_response",
+    "plane_intersection_validity": "maker_b402_ray_disc_intersection_3d({ray_origin},{ray_direction},{disc_center},{disc_normal},{reference_direction},{outer_radius},{inner_radius},{parallel_tolerance},{face_selection}).plane_intersection_validity"
+  }
+}

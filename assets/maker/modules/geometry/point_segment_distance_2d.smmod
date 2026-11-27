@@ -3,7 +3,7 @@
   "created_by": "Screenshaver",
   "creator_email": "screenshaver@proton.me",
   "terminal": false,
-  "helpers": "",
+  "helpers": "vec2 maker_b402_segment_local(vec2 p,vec2 a,vec2 b){vec2 v=b-a;float l=length(v);vec2 u=l>1e-8?v/l:vec2(1.,0.);return vec2(dot(p-a,u),dot(p-a,vec2(-u.y,u.x)));}",
   "id": "screenshaver.geometry.point_segment_distance_2d",
   "name": "Point-to-Segment Distance 2D",
   "category": "Geometry",
@@ -38,8 +38,22 @@
       "name": "Distance",
       "type": "float",
       "semantic_role": "distance"
+    },
+    {
+      "id": "longitudinal",
+      "name": "Longitudinal",
+      "type": "float"
+    },
+    {
+      "id": "transverse",
+      "name": "Transverse",
+      "type": "float"
     }
   ],
   "parameters": [],
-  "glsl": "length(({position})-mix(({start}),({end}),clamp(dot(({position})-({start}),({end})-({start}))/max(dot(({end})-({start}),({end})-({start})),1e-10),0.0,1.0)))"
+  "glsl_outputs": {
+    "distance": "length(({position})-mix(({start}),({end}),clamp(dot(({position})-({start}),({end})-({start}))/max(dot(({end})-({start}),({end})-({start})),1e-10),0.0,1.0)))",
+    "longitudinal": "maker_b402_segment_local({position},{start},{end}).x",
+    "transverse": "maker_b402_segment_local({position},{start},{end}).y"
+  }
 }

@@ -1,0 +1,205 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.geometry.multiscale_polygonal_contour_field_2d",
+  "name": "Multiscale Polygonal Contour Field 2D",
+  "category": "Geometry",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Support-function contour residual in scaled coordinates, not exact Euclidean distance. Interior mask is union of layers.",
+  "uses": "Multiscale Polygonal Contour Field 2D",
+  "notes": "Support-function contour residual in scaled coordinates, not exact Euclidean distance. Interior mask is union of layers.",
+  "header_color": "#65758B",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec2",
+      "default": "vec2(0.)"
+    },
+    {
+      "id": "time_offset",
+      "name": "Time Offset",
+      "type": "float",
+      "default": "0.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "minimum_contour_residual",
+      "name": "Minimum Contour Residual",
+      "type": "float"
+    },
+    {
+      "id": "accumulated_response",
+      "name": "Accumulated Response",
+      "type": "float"
+    },
+    {
+      "id": "normalized_response",
+      "name": "Normalized Response",
+      "type": "float"
+    },
+    {
+      "id": "nearest_layer_index",
+      "name": "Nearest Layer Index",
+      "type": "float"
+    },
+    {
+      "id": "local_angular_coordinate",
+      "name": "Local Angular Coordinate",
+      "type": "float"
+    },
+    {
+      "id": "maximum_response",
+      "name": "Maximum Response",
+      "type": "float"
+    },
+    {
+      "id": "interior_mask",
+      "name": "Interior Mask",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "polygon_sides",
+      "name": "Polygon Sides",
+      "type": "float",
+      "default": 3,
+      "min": 3,
+      "max": 16
+    },
+    {
+      "id": "layer_count",
+      "name": "Layer Count",
+      "type": "float",
+      "default": 8,
+      "min": 1,
+      "max": 32
+    },
+    {
+      "id": "base_radius",
+      "name": "Base Radius",
+      "type": "float",
+      "default": 1,
+      "min": 0.001,
+      "max": 100
+    },
+    {
+      "id": "scale_progression",
+      "name": "Scale Progression",
+      "type": "float",
+      "default": 0.83,
+      "min": 0.1,
+      "max": 2
+    },
+    {
+      "id": "rotation",
+      "name": "Rotation",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "rotation_per_layer",
+      "name": "Rotation Per Layer",
+      "type": "float",
+      "default": 12,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "animation_speed",
+      "name": "Animation Speed",
+      "type": "float",
+      "default": 0.2,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "axis_x",
+      "name": "Axis X",
+      "type": "float",
+      "default": 1,
+      "min": 0.01,
+      "max": 10
+    },
+    {
+      "id": "axis_y",
+      "name": "Axis Y",
+      "type": "float",
+      "default": 1,
+      "min": 0.01,
+      "max": 10
+    },
+    {
+      "id": "harmonic_amplitude",
+      "name": "Harmonic Amplitude",
+      "type": "float",
+      "default": 0,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "harmonic_frequency",
+      "name": "Harmonic Frequency",
+      "type": "float",
+      "default": 3,
+      "min": 0,
+      "max": 32
+    },
+    {
+      "id": "line_width",
+      "name": "Line Width",
+      "type": "float",
+      "default": 0.01,
+      "min": 0.0001,
+      "max": 1
+    },
+    {
+      "id": "softness",
+      "name": "Softness",
+      "type": "float",
+      "default": 0.01,
+      "min": 0.0001,
+      "max": 1
+    },
+    {
+      "id": "layer_attenuation",
+      "name": "Layer Attenuation",
+      "type": "float",
+      "default": 0.9,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "accumulation_mode",
+      "name": "Accumulation Mode",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Sum",
+        "Mean",
+        "Maximum"
+      ]
+    }
+  ],
+  "helpers": "struct MakerB402MultiscalePolygonalContourField2D {float minimum_contour_residual;float accumulated_response;float normalized_response;float nearest_layer_index;float local_angular_coordinate;float maximum_response;float interior_mask;};\nMakerB402MultiscalePolygonalContourField2D maker_b402_multiscale_polygonal_contour_field_2d(vec2 position,vec2 center,float time_offset,float polygon_sides,float layer_count,float base_radius,float scale_progression,float rotation,float rotation_per_layer,float animation_speed,float axis_x,float axis_y,float harmonic_amplitude,float harmonic_frequency,float line_width,float softness,float layer_attenuation,float accumulation_mode){\nvec2 q=(position-center)/vec2(axis_x,axis_y);float r=length(q),a=r>1e-8?atan(q.y,q.x):0.,sector=6.2831853/round(polygon_sides),radius=base_radius,w=1.,sum=0.,weights=0.,peak=0.,nearv=1e20,idx=0.,local=0.,inside=0.;int n=int(clamp(round(layer_count),1.,32.));for(int i=0;i<32;i++){if(i>=n)break;float ang=a-radians(rotation+float(i)*rotation_per_layer)-(u_time+time_offset)*animation_speed;float folded=mod(ang+sector*.5,sector)-sector*.5;float target=radius*cos(sector*.5)*(1.+harmonic_amplitude*sin(round(harmonic_frequency)*ang));float residual=r*cos(folded)-target,d=abs(residual);float response=1.-smoothstep(line_width,line_width+softness,d);sum+=w*response;weights+=w;peak=max(peak,response);inside=max(inside,step(residual,0.));if(d<nearv){nearv=d;idx=float(i);local=ang;}radius=clamp(radius*scale_progression,1e-8,1e8);w*=layer_attenuation;}float mean=sum/max(weights,1e-8);return MakerB402MultiscalePolygonalContourField2D(nearv,accumulation_mode<.5?sum:accumulation_mode<1.5?mean:peak,mean,idx,local,peak,inside);\n}",
+  "glsl_outputs": {
+    "minimum_contour_residual": "maker_b402_multiscale_polygonal_contour_field_2d({position},{center},{time_offset},{polygon_sides},{layer_count},{base_radius},{scale_progression},{rotation},{rotation_per_layer},{animation_speed},{axis_x},{axis_y},{harmonic_amplitude},{harmonic_frequency},{line_width},{softness},{layer_attenuation},{accumulation_mode}).minimum_contour_residual",
+    "accumulated_response": "maker_b402_multiscale_polygonal_contour_field_2d({position},{center},{time_offset},{polygon_sides},{layer_count},{base_radius},{scale_progression},{rotation},{rotation_per_layer},{animation_speed},{axis_x},{axis_y},{harmonic_amplitude},{harmonic_frequency},{line_width},{softness},{layer_attenuation},{accumulation_mode}).accumulated_response",
+    "normalized_response": "maker_b402_multiscale_polygonal_contour_field_2d({position},{center},{time_offset},{polygon_sides},{layer_count},{base_radius},{scale_progression},{rotation},{rotation_per_layer},{animation_speed},{axis_x},{axis_y},{harmonic_amplitude},{harmonic_frequency},{line_width},{softness},{layer_attenuation},{accumulation_mode}).normalized_response",
+    "nearest_layer_index": "maker_b402_multiscale_polygonal_contour_field_2d({position},{center},{time_offset},{polygon_sides},{layer_count},{base_radius},{scale_progression},{rotation},{rotation_per_layer},{animation_speed},{axis_x},{axis_y},{harmonic_amplitude},{harmonic_frequency},{line_width},{softness},{layer_attenuation},{accumulation_mode}).nearest_layer_index",
+    "local_angular_coordinate": "maker_b402_multiscale_polygonal_contour_field_2d({position},{center},{time_offset},{polygon_sides},{layer_count},{base_radius},{scale_progression},{rotation},{rotation_per_layer},{animation_speed},{axis_x},{axis_y},{harmonic_amplitude},{harmonic_frequency},{line_width},{softness},{layer_attenuation},{accumulation_mode}).local_angular_coordinate",
+    "maximum_response": "maker_b402_multiscale_polygonal_contour_field_2d({position},{center},{time_offset},{polygon_sides},{layer_count},{base_radius},{scale_progression},{rotation},{rotation_per_layer},{animation_speed},{axis_x},{axis_y},{harmonic_amplitude},{harmonic_frequency},{line_width},{softness},{layer_attenuation},{accumulation_mode}).maximum_response",
+    "interior_mask": "maker_b402_multiscale_polygonal_contour_field_2d({position},{center},{time_offset},{polygon_sides},{layer_count},{base_radius},{scale_progression},{rotation},{rotation_per_layer},{animation_speed},{axis_x},{axis_y},{harmonic_amplitude},{harmonic_frequency},{line_width},{softness},{layer_attenuation},{accumulation_mode}).interior_mask"
+  }
+}

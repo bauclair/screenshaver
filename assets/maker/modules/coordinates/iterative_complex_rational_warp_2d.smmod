@@ -1,0 +1,142 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.iterative_complex_rational_warp_2d",
+  "name": "Iterative Complex Rational Warp 2D",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Stops at first escape, caps final coordinate; escape fraction zero if no escape. Extrema include initial position.",
+  "uses": "Iterative Complex Rational Warp 2D",
+  "notes": "Stops at first escape, caps final coordinate; escape fraction zero if no escape. Extrema include initial position.",
+  "header_color": "#65758B",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "initial_coordinate",
+      "name": "Initial Coordinate",
+      "type": "vec2",
+      "default": "maker_uv"
+    },
+    {
+      "id": "linear_coefficient",
+      "name": "Linear Coefficient",
+      "type": "vec2",
+      "default": "vec2(.7,0.)"
+    },
+    {
+      "id": "reciprocal_coefficient",
+      "name": "Reciprocal Coefficient",
+      "type": "vec2",
+      "default": "vec2(.2,0.)"
+    },
+    {
+      "id": "translation",
+      "name": "Translation",
+      "type": "vec2",
+      "default": "vec2(.1,0.)"
+    },
+    {
+      "id": "time_offset",
+      "name": "Time Offset",
+      "type": "float",
+      "default": "0.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "final_coordinates",
+      "name": "Final Coordinates",
+      "type": "vec2"
+    },
+    {
+      "id": "final_magnitude",
+      "name": "Final Magnitude",
+      "type": "float"
+    },
+    {
+      "id": "minimum_magnitude",
+      "name": "Minimum Magnitude",
+      "type": "float"
+    },
+    {
+      "id": "maximum_magnitude",
+      "name": "Maximum Magnitude",
+      "type": "float"
+    },
+    {
+      "id": "mean_magnitude",
+      "name": "Mean Magnitude",
+      "type": "float"
+    },
+    {
+      "id": "accumulated_proximity",
+      "name": "Accumulated Proximity",
+      "type": "float"
+    },
+    {
+      "id": "escape_fraction",
+      "name": "Escape Fraction",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "iterations",
+      "name": "Iterations",
+      "type": "float",
+      "default": 8,
+      "min": 1,
+      "max": 32
+    },
+    {
+      "id": "reciprocal_power",
+      "name": "Reciprocal Power",
+      "type": "float",
+      "default": 2,
+      "min": 1,
+      "max": 8
+    },
+    {
+      "id": "coefficient_rotation",
+      "name": "Coefficient Rotation",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "animation_speed",
+      "name": "Animation Speed",
+      "type": "float",
+      "default": 0.2,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "denominator_floor",
+      "name": "Denominator Floor",
+      "type": "float",
+      "default": 0.01,
+      "min": 0.0001,
+      "max": 1
+    },
+    {
+      "id": "maximum_orbit_magnitude",
+      "name": "Maximum Orbit Magnitude",
+      "type": "float",
+      "default": 16,
+      "min": 0.1,
+      "max": 1000
+    }
+  ],
+  "helpers": "struct MakerB402IterativeComplexRationalWarp2D {vec2 final_coordinates;float final_magnitude;float minimum_magnitude;float maximum_magnitude;float mean_magnitude;float accumulated_proximity;float escape_fraction;};\nMakerB402IterativeComplexRationalWarp2D maker_b402_iterative_complex_rational_warp_2d(vec2 initial_coordinate,vec2 linear_coefficient,vec2 reciprocal_coefficient,vec2 translation,float time_offset,float iterations,float reciprocal_power,float coefficient_rotation,float animation_speed,float denominator_floor,float maximum_orbit_magnitude){\nvec2 q=clamp(initial_coordinate,-1e6,1e6),A=clamp(linear_coefficient,-100.,100.),B=clamp(reciprocal_coefficient,-100.,100.),C=clamp(translation,-100.,100.);float angle=radians(coefficient_rotation)+(u_time+time_offset)*animation_speed;B=mat2(cos(angle),sin(angle),-sin(angle),cos(angle))*B;float mn=length(q),mx=mn,sum=0.,prox=0.,escape=0.;int n=int(clamp(round(iterations),1.,32.)),count=0;for(int i=0;i<32;i++){if(i>=n)break;float r=length(q),a=r>1e-12?atan(q.y,q.x):0.,p=round(reciprocal_power);vec2 w=exp(clamp(-p*log(max(r,denominator_floor)),-40.,40.))*vec2(cos(-p*a),sin(-p*a));q=vec2(A.x*q.x-A.y*q.y,A.x*q.y+A.y*q.x)+vec2(B.x*w.x-B.y*w.y,B.x*w.y+B.y*w.x)+C;float m=length(q);bool escaped=m>maximum_orbit_magnitude;q*=min(1.,maximum_orbit_magnitude/max(m,1e-12));m=length(q);mn=min(mn,m);mx=max(mx,m);sum+=m;prox+=1./(1.+m*m);count++;if(escaped){escape=float(count)/float(n);break;}}return MakerB402IterativeComplexRationalWarp2D(q,length(q),mn,mx,sum/max(float(count),1.),prox,escape);\n}",
+  "glsl_outputs": {
+    "final_coordinates": "maker_b402_iterative_complex_rational_warp_2d({initial_coordinate},{linear_coefficient},{reciprocal_coefficient},{translation},{time_offset},{iterations},{reciprocal_power},{coefficient_rotation},{animation_speed},{denominator_floor},{maximum_orbit_magnitude}).final_coordinates",
+    "final_magnitude": "maker_b402_iterative_complex_rational_warp_2d({initial_coordinate},{linear_coefficient},{reciprocal_coefficient},{translation},{time_offset},{iterations},{reciprocal_power},{coefficient_rotation},{animation_speed},{denominator_floor},{maximum_orbit_magnitude}).final_magnitude",
+    "minimum_magnitude": "maker_b402_iterative_complex_rational_warp_2d({initial_coordinate},{linear_coefficient},{reciprocal_coefficient},{translation},{time_offset},{iterations},{reciprocal_power},{coefficient_rotation},{animation_speed},{denominator_floor},{maximum_orbit_magnitude}).minimum_magnitude",
+    "maximum_magnitude": "maker_b402_iterative_complex_rational_warp_2d({initial_coordinate},{linear_coefficient},{reciprocal_coefficient},{translation},{time_offset},{iterations},{reciprocal_power},{coefficient_rotation},{animation_speed},{denominator_floor},{maximum_orbit_magnitude}).maximum_magnitude",
+    "mean_magnitude": "maker_b402_iterative_complex_rational_warp_2d({initial_coordinate},{linear_coefficient},{reciprocal_coefficient},{translation},{time_offset},{iterations},{reciprocal_power},{coefficient_rotation},{animation_speed},{denominator_floor},{maximum_orbit_magnitude}).mean_magnitude",
+    "accumulated_proximity": "maker_b402_iterative_complex_rational_warp_2d({initial_coordinate},{linear_coefficient},{reciprocal_coefficient},{translation},{time_offset},{iterations},{reciprocal_power},{coefficient_rotation},{animation_speed},{denominator_floor},{maximum_orbit_magnitude}).accumulated_proximity",
+    "escape_fraction": "maker_b402_iterative_complex_rational_warp_2d({initial_coordinate},{linear_coefficient},{reciprocal_coefficient},{translation},{time_offset},{iterations},{reciprocal_power},{coefficient_rotation},{animation_speed},{denominator_floor},{maximum_orbit_magnitude}).escape_fraction"
+  }
+}

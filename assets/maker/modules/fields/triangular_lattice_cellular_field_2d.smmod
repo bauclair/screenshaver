@@ -1,0 +1,155 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.triangular_lattice_cellular_field_2d",
+  "name": "Triangular Lattice Cellular Field 2D",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "header_color": "#348F8B",
+  "description": "Triangular Lattice Cellular Field 2D",
+  "uses": "Procedural coordinate and field composition.",
+  "notes": "Three-vertex mode is approximate. Extended 9x9 search; displacement <=0.5 lattice units. Two containing triangle vertices are within 1.5 units; excluded vertices have at least 4 coordinate units along one lattice axis, implying Euclidean separation >=3.46 before displacement. Raw distances in world units; normalized in lattice units. Barycentric weights refer to undisplaced containing triangle.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec2",
+      "default": "vec2(0.5)"
+    },
+    {
+      "id": "time_offset",
+      "name": "Time Offset",
+      "type": "float",
+      "default": "0.0"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "cell_density",
+      "name": "Cell Density",
+      "type": "float",
+      "default": 4,
+      "min": 0.1,
+      "max": 100
+    },
+    {
+      "id": "orientation",
+      "name": "Orientation",
+      "type": "float",
+      "default": 0,
+      "min": -6.2832,
+      "max": 6.2832
+    },
+    {
+      "id": "site_jitter",
+      "name": "Site Jitter",
+      "type": "float",
+      "default": 0.2,
+      "min": 0,
+      "max": 0.25
+    },
+    {
+      "id": "animation_amplitude",
+      "name": "Animation Amplitude",
+      "type": "float",
+      "default": 0.1,
+      "min": 0,
+      "max": 0.25
+    },
+    {
+      "id": "animation_speed",
+      "name": "Animation Speed",
+      "type": "float",
+      "default": 1,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "seed",
+      "name": "Seed",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 65535
+    },
+    {
+      "id": "evaluation_mode",
+      "name": "Evaluation Mode",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Three-Vertex Approximation",
+        "Extended Neighborhood"
+      ]
+    },
+    {
+      "id": "distance_response",
+      "name": "Distance Response",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Raw",
+        "Normalized"
+      ]
+    }
+  ],
+  "outputs": [
+    {
+      "id": "nearest",
+      "name": "Nearest",
+      "type": "float"
+    },
+    {
+      "id": "second",
+      "name": "Second",
+      "type": "float"
+    },
+    {
+      "id": "distance_gap",
+      "name": "Distance Gap",
+      "type": "float"
+    },
+    {
+      "id": "feature_position",
+      "name": "Feature Position",
+      "type": "vec2"
+    },
+    {
+      "id": "feature_displacement",
+      "name": "Feature Displacement",
+      "type": "vec2"
+    },
+    {
+      "id": "cell_identifier",
+      "name": "Cell Identifier",
+      "type": "vec2"
+    },
+    {
+      "id": "random_value",
+      "name": "Random Value",
+      "type": "float"
+    },
+    {
+      "id": "triangle_coordinates",
+      "name": "Triangle Coordinates",
+      "type": "vec2"
+    }
+  ],
+  "helpers": "struct Maker4060 {float nearest; float second; float distance_gap; vec2 feature_position; vec2 feature_displacement; vec2 cell_identifier; float random_value; vec2 triangle_coordinates;};\nMaker4060 maker_triangular_lattice_cellular_field_2d(vec2 position,vec2 center,float time_offset,float cell_density,float orientation,float site_jitter,float animation_amplitude,float animation_speed,float seed,float evaluation_mode,float distance_response){\nfloat co=cos(orientation),si=sin(orientation);mat2 rot=mat2(co,si,-si,co);vec2 q=transpose(rot)*(position-center)*cell_density;vec2 uv=vec2(q.x-q.y/1.732050808,q.y/0.866025404),base=floor(uv),f=fract(uv);bool upper=f.x+f.y>1.;vec2 bary=upper?vec2(1.-f.x,1.-f.y):f;float a=1e20,b=1e20,rv=0.;vec2 win=vec2(0.),site=vec2(0.);for(int y=-4;y<=4;y++)for(int x=-4;x<=4;x++){if(evaluation_mode<.5){if(upper){if(!((x==1&&y==1)||(x==0&&y==1)||(x==1&&y==0)))continue;}else if(!((x==0&&y==0)||(x==1&&y==0)||(x==0&&y==1)))continue;}vec2 k=base+vec2(x,y);vec2 h=fract(sin(vec2(dot(k,vec2(127.1,311.7)),dot(k,vec2(269.5,183.3)))+seed)*43758.5453);vec2 s=vec2(k.x+.5*k.y,.866025404*k.y)+site_jitter*vec2(cos(6.2831853*h.x),sin(6.2831853*h.x))+animation_amplitude*vec2(cos(6.2831853*h.y+(u_time+time_offset)*animation_speed),sin(6.2831853*h.y+(u_time+time_offset)*animation_speed));float d=length(s-q);if(d<a){b=a;a=d;win=k;site=s;rv=h.x;}else if(d<b)b=d;}float factor=distance_response<.5?1./cell_density:1.;return Maker4060(a*factor,b*factor,(b-a)*factor,center+rot*site/cell_density,rot*(site-q)/cell_density,win,rv,bary);\n}",
+  "glsl_outputs": {
+    "nearest": "maker_triangular_lattice_cellular_field_2d({position},{center},{time_offset},{cell_density},{orientation},{site_jitter},{animation_amplitude},{animation_speed},{seed},{evaluation_mode},{distance_response}).nearest",
+    "second": "maker_triangular_lattice_cellular_field_2d({position},{center},{time_offset},{cell_density},{orientation},{site_jitter},{animation_amplitude},{animation_speed},{seed},{evaluation_mode},{distance_response}).second",
+    "distance_gap": "maker_triangular_lattice_cellular_field_2d({position},{center},{time_offset},{cell_density},{orientation},{site_jitter},{animation_amplitude},{animation_speed},{seed},{evaluation_mode},{distance_response}).distance_gap",
+    "feature_position": "maker_triangular_lattice_cellular_field_2d({position},{center},{time_offset},{cell_density},{orientation},{site_jitter},{animation_amplitude},{animation_speed},{seed},{evaluation_mode},{distance_response}).feature_position",
+    "feature_displacement": "maker_triangular_lattice_cellular_field_2d({position},{center},{time_offset},{cell_density},{orientation},{site_jitter},{animation_amplitude},{animation_speed},{seed},{evaluation_mode},{distance_response}).feature_displacement",
+    "cell_identifier": "maker_triangular_lattice_cellular_field_2d({position},{center},{time_offset},{cell_density},{orientation},{site_jitter},{animation_amplitude},{animation_speed},{seed},{evaluation_mode},{distance_response}).cell_identifier",
+    "random_value": "maker_triangular_lattice_cellular_field_2d({position},{center},{time_offset},{cell_density},{orientation},{site_jitter},{animation_amplitude},{animation_speed},{seed},{evaluation_mode},{distance_response}).random_value",
+    "triangle_coordinates": "maker_triangular_lattice_cellular_field_2d({position},{center},{time_offset},{cell_density},{orientation},{site_jitter},{animation_amplitude},{animation_speed},{seed},{evaluation_mode},{distance_response}).triangle_coordinates"
+  }
+}

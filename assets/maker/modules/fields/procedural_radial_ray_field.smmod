@@ -8,7 +8,7 @@
   "header_color": "#267A49",
   "description": "Animated radial ray intensity generated from bounded angular harmonics and distance attenuation.",
   "uses": "Solar flares, stylized energy bursts, radial light patterns, abstract backgrounds.",
-  "notes": "Original Screenshaver implementation of general radial and harmonic mathematics. Not a translation of Cosmic Flare or Flaring. Fixed-cost evaluation; no ray marching, texture fetches, or dynamic loops.",
+  "notes": "Existing mode preserved. Regular mode evaluates nearest ray only, independent of accumulation setting. Randomized mode bounded to 64 rays. Width is angular half-width in radians.",
   "inputs": [
     {
       "id": "position",
@@ -27,6 +27,21 @@
     {
       "id": "field",
       "name": "Field",
+      "type": "float"
+    },
+    {
+      "id": "dominant_index",
+      "name": "Dominant Index",
+      "type": "float"
+    },
+    {
+      "id": "maximum_response",
+      "name": "Maximum Response",
+      "type": "float"
+    },
+    {
+      "id": "normalized_response",
+      "name": "Normalized Response",
       "type": "float"
     }
   ],
@@ -70,9 +85,100 @@
       "default": 10,
       "min": 1,
       "max": 40
+    },
+    {
+      "id": "distribution",
+      "name": "Distribution",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Existing",
+        "Regular",
+        "Randomized"
+      ]
+    },
+    {
+      "id": "ray_count",
+      "name": "Ray Count",
+      "type": "float",
+      "default": 18,
+      "min": 1,
+      "max": 64
+    },
+    {
+      "id": "angular_width",
+      "name": "Angular Width",
+      "type": "float",
+      "default": 0.08,
+      "min": 0.0001,
+      "max": 3.14159
+    },
+    {
+      "id": "angular_softness",
+      "name": "Angular Softness",
+      "type": "float",
+      "default": 0.03,
+      "min": 1e-05,
+      "max": 1
+    },
+    {
+      "id": "angular_offset",
+      "name": "Angular Offset",
+      "type": "float",
+      "default": 0,
+      "min": -6.2832,
+      "max": 6.2832
+    },
+    {
+      "id": "velocity_variation",
+      "name": "Velocity Variation",
+      "type": "float",
+      "default": 0.5,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "width_taper",
+      "name": "Width Taper",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "intensity_variation",
+      "name": "Intensity Variation",
+      "type": "float",
+      "default": 0.5,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "seed",
+      "name": "Seed",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 65535
+    },
+    {
+      "id": "accumulation",
+      "name": "Accumulation",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Sum",
+        "Mean",
+        "Maximum"
+      ]
     }
   ],
-  "helpers": "float maker_procedural_radial_rays(vec2 position,float time,float density,float irregularity,float speed,float reach,float sharpness){\n  vec2 p=position-vec2(0.5);\n  float radius=length(p);\n  float angle=atan(p.y,p.x);\n  float phase=time*speed;\n  float n=max(density,1.0);\n  float w=angle*n;\n  // Independent angular harmonic design; no sampled noise or source-shader formulas.\n  float perturb=(0.18*sin(w*0.73+phase*0.41)+0.11*sin(w*1.37-phase*0.29)+0.07*cos(w*2.11+phase*0.17));\n  float carrier=0.5+0.5*cos(w+irregularity*perturb*5.0+phase*0.23);\n  float beam=pow(max(carrier,0.0),max(sharpness,1.0));\n  float envelope=exp(-radius/max(reach,0.001));\n  float core=1.0-smoothstep(0.0,0.025,radius);\n  return clamp(beam*envelope*(1.0-0.35*core),0.0,1.0);\n}",
-  "glsl": "maker_procedural_radial_rays({position},{time},{density},{irregularity},{speed},{reach},{sharpness})",
-  "terminal": false
+  "helpers": "float maker_procedural_radial_rays(vec2 position,float time,float density,float irregularity,float speed,float reach,float sharpness){\n  vec2 p=position-vec2(0.5);\n  float radius=length(p);\n  float angle=atan(p.y,p.x);\n  float phase=time*speed;\n  float n=max(density,1.0);\n  float w=angle*n;\n  // Independent angular harmonic design; no sampled noise or source-shader formulas.\n  float perturb=(0.18*sin(w*0.73+phase*0.41)+0.11*sin(w*1.37-phase*0.29)+0.07*cos(w*2.11+phase*0.17));\n  float carrier=0.5+0.5*cos(w+irregularity*perturb*5.0+phase*0.23);\n  float beam=pow(max(carrier,0.0),max(sharpness,1.0));\n  float envelope=exp(-radius/max(reach,0.001));\n  float core=1.0-smoothstep(0.0,0.025,radius);\n  return clamp(beam*envelope*(1.0-0.35*core),0.0,1.0);\n}\nstruct MakerRays406 {float field;float dominant_index;float maximum_response;float normalized_response;};\nMakerRays406 maker_rays406(vec2 position,float time,float density,float irregularity,float speed,float reach,float sharpness,float distribution,float ray_count,float angular_width,float angular_softness,float angular_offset,float velocity_variation,float width_taper,float intensity_variation,float seed,float accumulation){if(distribution<.5){float v=maker_procedural_radial_rays(position,time,density,irregularity,speed,reach,sharpness);return MakerRays406(v,-1.,v,v);}vec2 p=position-vec2(.5);float r=length(p),a=r>1e-8?atan(p.y,p.x):0.,w=angular_width/(1.+width_taper*r),env=exp(-r/max(reach,.001));int n=int(clamp(floor(ray_count+.5),1.,64.));float sum=0.,peak=0.,idx=0.;if(distribution<1.5){float q=(a-angular_offset-time*speed)*float(n)/6.2831853;idx=mod(floor(q+.5),float(n));peak=(1.-smoothstep(w,w+angular_softness,abs(fract(q+.5)-.5)*6.2831853/float(n)))*env;return MakerRays406(peak,idx,peak,peak);}for(int i=0;i<64;i++){if(i>=n)break;float k=float(i)+seed*17.3;float h=fract(sin(k*127.1)*43758.5453),v=fract(sin(k*311.7)*43758.5453),j=fract(sin(k*91.7)*43758.5453);float ph=6.2831853*h+angular_offset+time*(speed+velocity_variation*(2.*v-1.));float delta=abs(mod(a-ph+3.14159265,6.2831853)-3.14159265);float m=(1.-smoothstep(w,w+angular_softness,delta))*env*mix(1.,j,intensity_variation);sum+=m;if(m>peak){peak=m;idx=float(i);}}return MakerRays406(accumulation<.5?sum:(accumulation<1.5?sum/float(n):peak),idx,peak,sum/float(n));}",
+  "terminal": false,
+  "glsl_outputs": {
+    "field": "maker_rays406({position},{time},{density},{irregularity},{speed},{reach},{sharpness},{distribution},{ray_count},{angular_width},{angular_softness},{angular_offset},{velocity_variation},{width_taper},{intensity_variation},{seed},{accumulation}).field",
+    "dominant_index": "maker_rays406({position},{time},{density},{irregularity},{speed},{reach},{sharpness},{distribution},{ray_count},{angular_width},{angular_softness},{angular_offset},{velocity_variation},{width_taper},{intensity_variation},{seed},{accumulation}).dominant_index",
+    "maximum_response": "maker_rays406({position},{time},{density},{irregularity},{speed},{reach},{sharpness},{distribution},{ray_count},{angular_width},{angular_softness},{angular_offset},{velocity_variation},{width_taper},{intensity_variation},{seed},{accumulation}).maximum_response",
+    "normalized_response": "maker_rays406({position},{time},{density},{irregularity},{speed},{reach},{sharpness},{distribution},{ray_count},{angular_width},{angular_softness},{angular_offset},{velocity_variation},{width_taper},{intensity_variation},{seed},{accumulation}).normalized_response"
+  }
 }

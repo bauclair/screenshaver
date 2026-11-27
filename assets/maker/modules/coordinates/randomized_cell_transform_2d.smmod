@@ -7,7 +7,7 @@
   "creator_email": "screenshaver@proton.me",
   "description": "Applies deterministic cell-specific translation and animated rotation.",
   "uses": "Randomized geometric arrays, mosaics and confetti.",
-  "notes": "Jitter is a symmetric maximum displacement in local coordinate units, not a fraction of cell width. For 0.1-wide cells try 0.015 jitter. Rotation range is symmetric about the offset; angle output is radians. Speed variation scales the signed base speed by a factor between 1-variation and 1+variation. Cell-local sampling can clip shapes. Oscillating translation uses jitter in coordinate units; Combined adds the static offset and may exceed the original jitter bound. Frequency is in Hz. Shared phase does not imply shared frequency.",
+  "notes": "Jitter is a symmetric maximum displacement in local coordinate units, not a fraction of cell width. For 0.1-wide cells try 0.015 jitter. Rotation range is symmetric about the offset; angle output is radians. Speed variation scales the signed base speed by a factor between 1-variation and 1+variation. Cell-local sampling can clip shapes. Oscillating translation uses jitter in coordinate units; Combined adds the static offset and may exceed the original jitter bound. Frequency is in Hz. Shared phase does not imply shared frequency. External rotation is radians; scale is inverse sampling scale.",
   "header_color": "#627FC2",
   "inputs": [
     {
@@ -29,6 +29,18 @@
       "type": "float",
       "default": "u_time",
       "semantic_role": "time"
+    },
+    {
+      "id": "rotation_modulation",
+      "name": "Rotation Modulation",
+      "type": "float",
+      "default": "0.0"
+    },
+    {
+      "id": "scale_multiplier",
+      "name": "Scale Multiplier",
+      "type": "float",
+      "default": "1.0"
     }
   ],
   "outputs": [
@@ -53,6 +65,11 @@
     {
       "id": "random",
       "name": "Random Value",
+      "type": "float"
+    },
+    {
+      "id": "applied_scale",
+      "name": "Applied Scale",
       "type": "float"
     }
   ],
@@ -161,10 +178,11 @@
   ],
   "helpers": "uint maker_rct_hash(uint x){x^=x>>16u;x*=0x7feb352du;x^=x>>15u;x*=0x846ca68bu;return x^(x>>16u);}\nfloat maker_rct_unit(uint x){return float(maker_rct_hash(x)>>8u)/16777216.0;}\nvec4 maker_rct_samples(vec2 cell,float seed){\n ivec2 i=ivec2(floor(clamp(cell,vec2(-1000000000.0),vec2(1000000000.0))));\n uint h=maker_rct_hash(uint(i.x)^maker_rct_hash(uint(i.y)^0x9e3779b9u)^maker_rct_hash(uint(floor(clamp(seed,0.0,1000.0)+0.5))));\n return vec4(maker_rct_unit(h^0x243f6a88u),maker_rct_unit(h^0x85a308d3u),maker_rct_unit(h^0x13198a2eu),maker_rct_unit(h^0x03707344u));\n}\nfloat maker_rct_angle(vec4 r,float t,float range_deg,float offset_deg,float speed_deg,float variation){\n return radians(offset_deg+(2.0*r.z-1.0)*range_deg+t*speed_deg*(1.0+(2.0*r.w-1.0)*clamp(variation,0.0,1.0)));\n}\nvec2 maker_rct_inverse(vec2 p,vec2 d,float a){vec2 q=p-d;float c=cos(a),s=sin(a);return vec2(c*q.x+s*q.y,-s*q.x+c*q.y);}\nvec2 maker_rct_translation(vec2 cell,float seed,float t,vec2 jitter,float mode,float freq,float variation,float phaseMode,float amp){\n vec4 r=maker_rct_samples(cell,seed);vec2 base=(r.xy*2.0-1.0)*jitter;\n if(mode<0.5)return base;\n vec4 q=maker_rct_samples(cell+vec2(17.0,31.0),seed);\n vec2 phase=q.xy;if(phaseMode>=0.5)phase.y=phase.x;\n vec2 f=freq*(1.0+(2.0*q.zw-1.0)*clamp(variation,0.0,1.0));\n vec2 motion=jitter*amp*sin(6.28318530718*(f*t+phase));\n return mode<1.5?motion:base+motion;\n}",
   "glsl_outputs": {
-    "transformed": "maker_rct_inverse({local},maker_rct_translation({cell},{seed},{time},vec2({jitter_x},{jitter_y}),{translation_mode},{motion_frequency},{frequency_variation},{axis_phase_mode},{motion_amplitude_multiplier}),maker_rct_angle(maker_rct_samples({cell},{seed}),{time},{rotation_range},{rotation_offset},{rotation_speed},{speed_variation}))",
+    "transformed": "(maker_rct_inverse({local},maker_rct_translation({cell},{seed},{time},vec2({jitter_x},{jitter_y}),{translation_mode},{motion_frequency},{frequency_variation},{axis_phase_mode},{motion_amplitude_multiplier}),(maker_rct_angle(maker_rct_samples({cell},{seed}),{time},{rotation_range},{rotation_offset},{rotation_speed},{speed_variation})+{rotation_modulation}))/clamp({scale_multiplier},0.001,100.0))",
     "displacement": "maker_rct_translation({cell},{seed},{time},vec2({jitter_x},{jitter_y}),{translation_mode},{motion_frequency},{frequency_variation},{axis_phase_mode},{motion_amplitude_multiplier})",
-    "angle": "maker_rct_angle(maker_rct_samples({cell},{seed}),{time},{rotation_range},{rotation_offset},{rotation_speed},{speed_variation})",
-    "random": "maker_rct_samples({cell},{seed}).z"
+    "angle": "(maker_rct_angle(maker_rct_samples({cell},{seed}),{time},{rotation_range},{rotation_offset},{rotation_speed},{speed_variation})+{rotation_modulation})",
+    "random": "maker_rct_samples({cell},{seed}).z",
+    "applied_scale": "clamp({scale_multiplier},0.001,100.0)"
   },
   "terminal": false
 }

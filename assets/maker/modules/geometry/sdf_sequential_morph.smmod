@@ -34,6 +34,12 @@
       "name": "D",
       "type": "float",
       "default": "1.0"
+    },
+    {
+      "id": "sequence_phase",
+      "name": "Sequence Phase",
+      "type": "float",
+      "default": "0.0"
     }
   ],
   "outputs": [
@@ -59,8 +65,18 @@
       "default": 0.0,
       "min": 0,
       "max": 0.8
+    },
+    {
+      "id": "phase_source",
+      "name": "Phase Source",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Time",
+        "External"
+      ]
     }
   ],
   "helpers": "",
-  "glsl": "maker_sequential_morph({a},{b},{c},{d},u_time*{speed},{hold})"
+  "glsl": "maker_sequential_morph({a},{b},{c},{d},(({phase_source}>0.5)?{sequence_phase}:u_time*{speed}),{hold})"
 }

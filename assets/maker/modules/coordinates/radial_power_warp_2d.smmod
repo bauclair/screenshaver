@@ -7,7 +7,7 @@
   "creator_email": "screenshaver@proton.me",
   "description": "Power mapping around center; strength blends original and transformed radius. Center returns zero scale by convention. Exponent clamped to 0.1\u20138; transformed radius capped at 1e8.",
   "uses": "Radial Power Warp 2D",
-  "notes": "Power mapping around center; strength blends original and transformed radius. Center returns zero scale by convention. Exponent clamped to 0.1\u20138; transformed radius capped at 1e8.",
+  "notes": "Power mapping around center; strength blends original and transformed radius. Center returns zero scale by convention. Exponent clamped to 0.1\u20138; transformed radius capped at 1e8. Angular mode uses integer angular frequency; radial scale output remains unsigned magnitude ratio.",
   "header_color": "#65758B",
   "terminal": false,
   "inputs": [
@@ -101,7 +101,9 @@
         "Power",
         "Regularized Reciprocal",
         "Single Harmonic",
-        "Nested Harmonic"
+        "Nested Harmonic",
+        "Additive Harmonic",
+        "Angular Harmonic"
       ]
     },
     {
@@ -175,13 +177,63 @@
       "default": 1,
       "min": 0,
       "max": 1
+    },
+    {
+      "id": "temporal_amplitude_frequency",
+      "name": "Temporal Amplitude Frequency",
+      "type": "float",
+      "default": 0,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "temporal_amplitude_depth",
+      "name": "Temporal Amplitude Depth",
+      "type": "float",
+      "default": 0,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "angular_frequency",
+      "name": "Angular Frequency",
+      "type": "float",
+      "default": 5,
+      "min": 1,
+      "max": 64
+    },
+    {
+      "id": "angular_phase",
+      "name": "Angular Phase",
+      "type": "float",
+      "default": 0,
+      "min": -6.2832,
+      "max": 6.2832
+    },
+    {
+      "id": "scale_bias",
+      "name": "Scale Bias",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 4
+    },
+    {
+      "id": "signed_scale",
+      "name": "Signed Scale",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Nonnegative",
+        "Signed"
+      ]
     }
   ],
-  "helpers": "struct MakerRPW {vec2 p;float r;float wr;float scale;};\nMakerRPW maker_rpw(vec2 p,vec2 c,float mult,float e,float refR,float scale,float strength,float mode,float k,float eps,float f,float f2,float ph,float sp,float dep,float sx,float sy){\n if(any(isnan(c))||any(isinf(c)))c=vec2(0.0);if(any(isnan(p))||any(isinf(p)))p=c;\n c=clamp(c,vec2(-1e6),vec2(1e6));p=clamp(p,vec2(-1e6),vec2(1e6));\n if(isnan(mult)||isinf(mult))mult=1.0;e=clamp(e*clamp(mult,0.0,80.0),0.1,8.0);\n vec2 q=p-c;float r=length(q);if(r<=1e-20)return MakerRPW(c,r,0.0,0.0);\n if(mode>1.5){float a=6.2831853*f*r/refR+ph+u_time*sp;float h=sin(mode>2.5?a*cos(6.2831853*f2*r*r/(refR*refR)+ph+u_time*sp):a);vec2 v=q*(vec2(1.)+strength*dep*h*vec2(sx,sy));float wr=length(v);return MakerRPW(c+v,r,wr,wr/r);}if(mode>.5){vec2 v=q*(1.0+strength*k/(r*r+eps*eps));float wr=length(v);return MakerRPW(c+v,r,wr,wr/r);}\n float target=scale==0.0?0.0:min(1e8,scale*refR*exp(clamp(e*log(r/refR),-80.0,40.0)));\n float wr=mix(r,target,strength);return MakerRPW(c+(q/r)*wr,r,wr,wr/r);\n}",
+  "helpers": "struct MakerRPW {vec2 p;float r;float wr;float scale;};\nMakerRPW maker_rpw(vec2 p,vec2 c,float mult,float e,float refR,float scale,float strength,float mode,float k,float eps,float f,float f2,float ph,float sp,float dep,float sx,float sy,float af,float ad,float angular_frequency,float angular_phase,float scale_bias,float signed_scale){\n if(any(isnan(c))||any(isinf(c)))c=vec2(0.0);if(any(isnan(p))||any(isinf(p)))p=c;\n c=clamp(c,vec2(-1e6),vec2(1e6));p=clamp(p,vec2(-1e6),vec2(1e6));\n if(isnan(mult)||isinf(mult))mult=1.0;e=clamp(e*clamp(mult,0.0,80.0),0.1,8.0);\n vec2 q=p-c;float r=length(q);if(r<=1e-20)return MakerRPW(c,r,0.0,0.0);\n if(mode>4.5){float s=scale_bias+strength*dep*sin(floor(angular_frequency+.5)*atan(q.y,q.x)+angular_phase+u_time*sp);if(signed_scale<.5)s=max(s,0.);vec2 v=q*s;float wr=length(v);return MakerRPW(c+v,r,wr,wr/r);}if(mode>3.5){float h=sin(6.2831853*f*r/refR+ph+u_time*sp);float a=mix(1.,cos(u_time*af),ad);vec2 v=q+q/r*(refR*strength*dep*h*a)*vec2(sx,sy);float wr=length(v);return MakerRPW(c+v,r,wr,wr/r);}if(mode>1.5){float a=6.2831853*f*r/refR+ph+u_time*sp;float h=sin(mode>2.5?a*cos(6.2831853*f2*r*r/(refR*refR)+ph+u_time*sp):a);vec2 v=q*(vec2(1.)+strength*dep*h*vec2(sx,sy));float wr=length(v);return MakerRPW(c+v,r,wr,wr/r);}if(mode>.5){vec2 v=q*(1.0+strength*k/(r*r+eps*eps));float wr=length(v);return MakerRPW(c+v,r,wr,wr/r);}\n float target=scale==0.0?0.0:min(1e8,scale*refR*exp(clamp(e*log(r/refR),-80.0,40.0)));\n float wr=mix(r,target,strength);return MakerRPW(c+(q/r)*wr,r,wr,wr/r);\n}",
   "glsl_outputs": {
-    "warped": "maker_rpw({position},{center},{multiplier},{exponent},{reference_radius},{output_scale},{strength},{warp_mode},{reciprocal_strength},{regularization},{radial_frequency},{secondary_frequency},{harmonic_phase},{animation_speed},{modulation_depth},{x_strength},{y_strength}).p",
-    "original_radius": "maker_rpw({position},{center},{multiplier},{exponent},{reference_radius},{output_scale},{strength},{warp_mode},{reciprocal_strength},{regularization},{radial_frequency},{secondary_frequency},{harmonic_phase},{animation_speed},{modulation_depth},{x_strength},{y_strength}).r",
-    "warped_radius": "maker_rpw({position},{center},{multiplier},{exponent},{reference_radius},{output_scale},{strength},{warp_mode},{reciprocal_strength},{regularization},{radial_frequency},{secondary_frequency},{harmonic_phase},{animation_speed},{modulation_depth},{x_strength},{y_strength}).wr",
-    "radial_scale": "maker_rpw({position},{center},{multiplier},{exponent},{reference_radius},{output_scale},{strength},{warp_mode},{reciprocal_strength},{regularization},{radial_frequency},{secondary_frequency},{harmonic_phase},{animation_speed},{modulation_depth},{x_strength},{y_strength}).scale"
+    "warped": "maker_rpw({position},{center},{multiplier},{exponent},{reference_radius},{output_scale},{strength},{warp_mode},{reciprocal_strength},{regularization},{radial_frequency},{secondary_frequency},{harmonic_phase},{animation_speed},{modulation_depth},{x_strength},{y_strength},{temporal_amplitude_frequency},{temporal_amplitude_depth},{angular_frequency},{angular_phase},{scale_bias},{signed_scale}).p",
+    "original_radius": "maker_rpw({position},{center},{multiplier},{exponent},{reference_radius},{output_scale},{strength},{warp_mode},{reciprocal_strength},{regularization},{radial_frequency},{secondary_frequency},{harmonic_phase},{animation_speed},{modulation_depth},{x_strength},{y_strength},{temporal_amplitude_frequency},{temporal_amplitude_depth},{angular_frequency},{angular_phase},{scale_bias},{signed_scale}).r",
+    "warped_radius": "maker_rpw({position},{center},{multiplier},{exponent},{reference_radius},{output_scale},{strength},{warp_mode},{reciprocal_strength},{regularization},{radial_frequency},{secondary_frequency},{harmonic_phase},{animation_speed},{modulation_depth},{x_strength},{y_strength},{temporal_amplitude_frequency},{temporal_amplitude_depth},{angular_frequency},{angular_phase},{scale_bias},{signed_scale}).wr",
+    "radial_scale": "maker_rpw({position},{center},{multiplier},{exponent},{reference_radius},{output_scale},{strength},{warp_mode},{reciprocal_strength},{regularization},{radial_frequency},{secondary_frequency},{harmonic_phase},{animation_speed},{modulation_depth},{x_strength},{y_strength},{temporal_amplitude_frequency},{temporal_amplitude_depth},{angular_frequency},{angular_phase},{scale_bias},{signed_scale}).scale"
   }
 }

@@ -1,0 +1,175 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.strip_indexed_coordinate_displacement_2d",
+  "name": "Strip-Indexed Coordinate Displacement 2D",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "header_color": "#348F8B",
+  "description": "Strip-Indexed Coordinate Displacement 2D",
+  "uses": "Procedural coordinate and field composition.",
+  "notes": "Orientation zero produces vertical strips. Edge transition blends adjacent strip responses continuously; index remains discrete.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec2",
+      "default": "vec2(0.5)"
+    },
+    {
+      "id": "progress",
+      "name": "Progress",
+      "type": "float",
+      "default": "1.0"
+    },
+    {
+      "id": "amplitude_multiplier",
+      "name": "Amplitude Multiplier",
+      "type": "float",
+      "default": "1.0"
+    },
+    {
+      "id": "time_offset",
+      "name": "Time Offset",
+      "type": "float",
+      "default": "0.0"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "strip_width",
+      "name": "Strip Width",
+      "type": "float",
+      "default": 0.05,
+      "min": 0.0001,
+      "max": 100
+    },
+    {
+      "id": "orientation",
+      "name": "Orientation",
+      "type": "float",
+      "default": 0,
+      "min": -6.2832,
+      "max": 6.2832
+    },
+    {
+      "id": "displacement_direction",
+      "name": "Displacement Direction",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Along",
+        "Across"
+      ]
+    },
+    {
+      "id": "amplitude",
+      "name": "Amplitude",
+      "type": "float",
+      "default": 0.1,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "random_influence",
+      "name": "Random Influence",
+      "type": "float",
+      "default": 0.65,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "harmonic_frequency",
+      "name": "Harmonic Frequency",
+      "type": "float",
+      "default": 0.7,
+      "min": 0,
+      "max": 64
+    },
+    {
+      "id": "secondary_frequency",
+      "name": "Secondary Frequency",
+      "type": "float",
+      "default": 1.3,
+      "min": 0,
+      "max": 64
+    },
+    {
+      "id": "seed",
+      "name": "Seed",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 65535
+    },
+    {
+      "id": "animation_speed",
+      "name": "Animation Speed",
+      "type": "float",
+      "default": 1,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "edge_transition",
+      "name": "Edge Transition",
+      "type": "float",
+      "default": 0,
+      "min": 0,
+      "max": 0.5
+    }
+  ],
+  "outputs": [
+    {
+      "id": "warped",
+      "name": "Warped",
+      "type": "vec2"
+    },
+    {
+      "id": "displacement",
+      "name": "Displacement",
+      "type": "vec2"
+    },
+    {
+      "id": "strip_index",
+      "name": "Strip Index",
+      "type": "float"
+    },
+    {
+      "id": "local_coordinate",
+      "name": "Local Coordinate",
+      "type": "float"
+    },
+    {
+      "id": "random_value",
+      "name": "Random Value",
+      "type": "float"
+    },
+    {
+      "id": "harmonic_response",
+      "name": "Harmonic Response",
+      "type": "float"
+    },
+    {
+      "id": "applied_displacement",
+      "name": "Applied Displacement",
+      "type": "float"
+    }
+  ],
+  "helpers": "struct Maker4063 {vec2 warped; vec2 displacement; float strip_index; float local_coordinate; float random_value; float harmonic_response; float applied_displacement;};\nMaker4063 maker_strip_indexed_coordinate_displacement_2d(vec2 position,vec2 center,float progress,float amplitude_multiplier,float time_offset,float strip_width,float orientation,float displacement_direction,float amplitude,float random_influence,float harmonic_frequency,float secondary_frequency,float seed,float animation_speed,float edge_transition){\nvec2 a=vec2(sin(orientation),cos(orientation)),b=vec2(a.y,-a.x);float q=clamp(dot(position-center,b)/strip_width,-1e7,1e7),idx=floor(q),f=fract(q),t=(u_time+time_offset)*animation_speed;float rv=0.,hv=0.,val=0.;for(int j=-1;j<=1;j++){float k=idx+float(j);float r=fract(sin(mod(k,65521.)*127.1+seed*31.7)*43758.5453)*2.-1.;float h=.5*(sin(k*harmonic_frequency+t)+sin(k*secondary_frequency-t));float w=j==0?1.:0.;if(edge_transition>0.){float l=.5*(1.-smoothstep(0.,edge_transition,f)),rr=.5*smoothstep(1.-edge_transition,1.,f);w=j<0?l:(j>0?rr:1.-l-rr);}rv+=w*r;hv+=w*h;}val=amplitude*clamp(progress,0.,1.)*clamp(amplitude_multiplier,-100.,100.)*mix(hv,rv,random_influence);vec2 d=(displacement_direction<.5?a:b)*val;return Maker4063(position+d,d,idx,f,rv,hv,val);\n}",
+  "glsl_outputs": {
+    "warped": "maker_strip_indexed_coordinate_displacement_2d({position},{center},{progress},{amplitude_multiplier},{time_offset},{strip_width},{orientation},{displacement_direction},{amplitude},{random_influence},{harmonic_frequency},{secondary_frequency},{seed},{animation_speed},{edge_transition}).warped",
+    "displacement": "maker_strip_indexed_coordinate_displacement_2d({position},{center},{progress},{amplitude_multiplier},{time_offset},{strip_width},{orientation},{displacement_direction},{amplitude},{random_influence},{harmonic_frequency},{secondary_frequency},{seed},{animation_speed},{edge_transition}).displacement",
+    "strip_index": "maker_strip_indexed_coordinate_displacement_2d({position},{center},{progress},{amplitude_multiplier},{time_offset},{strip_width},{orientation},{displacement_direction},{amplitude},{random_influence},{harmonic_frequency},{secondary_frequency},{seed},{animation_speed},{edge_transition}).strip_index",
+    "local_coordinate": "maker_strip_indexed_coordinate_displacement_2d({position},{center},{progress},{amplitude_multiplier},{time_offset},{strip_width},{orientation},{displacement_direction},{amplitude},{random_influence},{harmonic_frequency},{secondary_frequency},{seed},{animation_speed},{edge_transition}).local_coordinate",
+    "random_value": "maker_strip_indexed_coordinate_displacement_2d({position},{center},{progress},{amplitude_multiplier},{time_offset},{strip_width},{orientation},{displacement_direction},{amplitude},{random_influence},{harmonic_frequency},{secondary_frequency},{seed},{animation_speed},{edge_transition}).random_value",
+    "harmonic_response": "maker_strip_indexed_coordinate_displacement_2d({position},{center},{progress},{amplitude_multiplier},{time_offset},{strip_width},{orientation},{displacement_direction},{amplitude},{random_influence},{harmonic_frequency},{secondary_frequency},{seed},{animation_speed},{edge_transition}).harmonic_response",
+    "applied_displacement": "maker_strip_indexed_coordinate_displacement_2d({position},{center},{progress},{amplitude_multiplier},{time_offset},{strip_width},{orientation},{displacement_direction},{amplitude},{random_influence},{harmonic_frequency},{secondary_frequency},{seed},{animation_speed},{edge_transition}).applied_displacement"
+  }
+}

@@ -67,6 +67,16 @@
       "id": "mean_response",
       "name": "Mean Response",
       "type": "float"
+    },
+    {
+      "id": "mean_angular_response",
+      "name": "Mean Angular Response",
+      "type": "float"
+    },
+    {
+      "id": "mean_exponential_proximity",
+      "name": "Mean Exponential Proximity",
+      "type": "float"
     }
   ],
   "parameters": [
@@ -215,15 +225,43 @@
       "default": 0.5,
       "min": 0,
       "max": 10
+    },
+    {
+      "id": "feedback_mode",
+      "name": "Feedback Mode",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Existing",
+        "Coupled"
+      ]
+    },
+    {
+      "id": "cross_axis_phase",
+      "name": "Cross Axis Phase",
+      "type": "float",
+      "default": 1,
+      "min": -4,
+      "max": 4
+    },
+    {
+      "id": "angular_frequency",
+      "name": "Angular Frequency",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 16
     }
   ],
-  "helpers": "struct MakerB344IterativeTrigonometricProximityField2D {float accumulated_field;float normalized_field;vec2 final_coordinates;float peak_response;float minimum_proximity;float mean_response;};\nMakerB344IterativeTrigonometricProximityField2D maker_b344_iterative_trigonometric_proximity_field_2d(vec2 position,vec2 center,float time_offset,float strength_multiplier,float iterations,float spatial_period,float feedback_strength,float spatial_frequency,float animation_speed,float temporal_progression,float response_radius,float response_exponent,float response_gain,float layer_decay,float accumulation_mode,float response_profile,float tm,float refgeo,float rot,float nested,float start,float br){\nfloat period=max(spatial_period,.1),t=(tm+time_offset)*animation_speed;vec2 p=mod(position-center+period*.5,period)-period*.5,q=p;float sumv=0.,weights=0.,peak=0.,nearv=1e20,w=1.;int n=int(clamp(round(iterations),1.,32.));for(int j=0;j<32;j++){if(j>=n)break;float phase=t+float(j)*temporal_progression;float a0=radians(rot);q=mat2(cos(a0),sin(a0),-sin(a0),cos(a0))*q;q.y+=nested*sin(q.x*spatial_frequency+sin(q.y*spatial_frequency+phase));q+=feedback_strength*strength_multiplier*vec2(sin(q.y*spatial_frequency+phase),cos(q.x*spatial_frequency-phase));q=mod(q+period*.5,period)-period*.5;vec2 delta=mod(q-p+period*.5,period)-period*.5;if(j<int(floor(start*float(n))))continue;float d=refgeo<.5?length(delta):refgeo<1.5?abs(q.y):refgeo<2.5?abs(q.x):abs(length(q)-br),a=pow(min(d/max(response_radius,.001),1e4),response_exponent);float r=response_profile<.5?1./(1.+a):(response_profile<1.5?exp(-a*a):exp(-a));sumv+=w*r;weights+=w;peak=max(peak,r);nearv=min(nearv,d);w*=layer_decay;}float meanv=sumv/max(weights,1e-6);return MakerB344IterativeTrigonometricProximityField2D(response_gain*(accumulation_mode<.5?sumv:(accumulation_mode<1.5?meanv:peak)),meanv,q+center,peak*response_gain,nearv,meanv*response_gain);\n}",
+  "helpers": "struct MakerB344IterativeTrigonometricProximityField2D {float accumulated_field;float normalized_field;vec2 final_coordinates;float peak_response;float minimum_proximity;float mean_response;float mean_angular_response;float mean_exponential_proximity;};\nMakerB344IterativeTrigonometricProximityField2D maker_b344_iterative_trigonometric_proximity_field_2d(vec2 position,vec2 center,float time_offset,float strength_multiplier,float iterations,float spatial_period,float feedback_strength,float spatial_frequency,float animation_speed,float temporal_progression,float response_radius,float response_exponent,float response_gain,float layer_decay,float accumulation_mode,float response_profile,float tm,float refgeo,float rot,float nested,float start,float br,float fm,float cp,float af){\nfloat period=max(spatial_period,.1),t=(tm+time_offset)*animation_speed;vec2 p=mod(position-center+period*.5,period)-period*.5,q=p;float angular=0.,exponential=0.,count=0.;float sumv=0.,weights=0.,peak=0.,nearv=1e20,w=1.;int n=int(clamp(round(iterations),1.,32.));for(int j=0;j<32;j++){if(j>=n)break;float phase=t+float(j)*temporal_progression;float a0=radians(rot);q=mat2(cos(a0),sin(a0),-sin(a0),cos(a0))*q;q.y+=nested*sin(q.x*spatial_frequency+sin(q.y*spatial_frequency+phase));if(fm>.5)q+=feedback_strength*strength_multiplier*vec2(sin(q.y*spatial_frequency+cp*cos(q.x*spatial_frequency)+phase),cos(q.x*spatial_frequency+cp*sin(q.y*spatial_frequency)-phase));else q+=feedback_strength*strength_multiplier*vec2(sin(q.y*spatial_frequency+phase),cos(q.x*spatial_frequency-phase));q=mod(q+period*.5,period)-period*.5;vec2 delta=mod(q-p+period*.5,period)-period*.5;if(j<int(floor(start*float(n))))continue;float d=refgeo<.5?length(delta):refgeo<1.5?abs(q.y):refgeo<2.5?abs(q.x):abs(length(q)-br),a=pow(min(d/max(response_radius,.001),1e4),response_exponent);float r=response_profile<.5?1./(1.+a):(response_profile<1.5?exp(-a*a):exp(-a));angular+=length(delta)>1e-8?0.5+0.5*cos(af*atan(delta.y,delta.x)):1.;exponential+=exp(-a);count+=1.;sumv+=w*r;weights+=w;peak=max(peak,r);nearv=min(nearv,d);w*=layer_decay;}float meanv=sumv/max(weights,1e-6);return MakerB344IterativeTrigonometricProximityField2D(response_gain*(accumulation_mode<.5?sumv:(accumulation_mode<1.5?meanv:peak)),meanv,q+center,peak*response_gain,nearv,meanv*response_gain,angular/max(count,1.),exponential/max(count,1.));\n}",
   "glsl_outputs": {
-    "accumulated_field": "maker_b344_iterative_trigonometric_proximity_field_2d({position},{center},{time_offset},{strength_multiplier},{iterations},{spatial_period},{feedback_strength},{spatial_frequency},{animation_speed},{temporal_progression},{response_radius},{response_exponent},{response_gain},{layer_decay},{accumulation_mode},{response_profile},u_time,{reference_geometry},{rotation_step},{nested_displacement},{accumulation_start},{boundary_radius}).accumulated_field",
-    "normalized_field": "maker_b344_iterative_trigonometric_proximity_field_2d({position},{center},{time_offset},{strength_multiplier},{iterations},{spatial_period},{feedback_strength},{spatial_frequency},{animation_speed},{temporal_progression},{response_radius},{response_exponent},{response_gain},{layer_decay},{accumulation_mode},{response_profile},u_time,{reference_geometry},{rotation_step},{nested_displacement},{accumulation_start},{boundary_radius}).normalized_field",
-    "final_coordinates": "maker_b344_iterative_trigonometric_proximity_field_2d({position},{center},{time_offset},{strength_multiplier},{iterations},{spatial_period},{feedback_strength},{spatial_frequency},{animation_speed},{temporal_progression},{response_radius},{response_exponent},{response_gain},{layer_decay},{accumulation_mode},{response_profile},u_time,{reference_geometry},{rotation_step},{nested_displacement},{accumulation_start},{boundary_radius}).final_coordinates",
-    "peak_response": "maker_b344_iterative_trigonometric_proximity_field_2d({position},{center},{time_offset},{strength_multiplier},{iterations},{spatial_period},{feedback_strength},{spatial_frequency},{animation_speed},{temporal_progression},{response_radius},{response_exponent},{response_gain},{layer_decay},{accumulation_mode},{response_profile},u_time,{reference_geometry},{rotation_step},{nested_displacement},{accumulation_start},{boundary_radius}).peak_response",
-    "minimum_proximity": "maker_b344_iterative_trigonometric_proximity_field_2d({position},{center},{time_offset},{strength_multiplier},{iterations},{spatial_period},{feedback_strength},{spatial_frequency},{animation_speed},{temporal_progression},{response_radius},{response_exponent},{response_gain},{layer_decay},{accumulation_mode},{response_profile},u_time,{reference_geometry},{rotation_step},{nested_displacement},{accumulation_start},{boundary_radius}).minimum_proximity",
-    "mean_response": "maker_b344_iterative_trigonometric_proximity_field_2d({position},{center},{time_offset},{strength_multiplier},{iterations},{spatial_period},{feedback_strength},{spatial_frequency},{animation_speed},{temporal_progression},{response_radius},{response_exponent},{response_gain},{layer_decay},{accumulation_mode},{response_profile},u_time,{reference_geometry},{rotation_step},{nested_displacement},{accumulation_start},{boundary_radius}).mean_response"
+    "accumulated_field": "maker_b344_iterative_trigonometric_proximity_field_2d({position},{center},{time_offset},{strength_multiplier},{iterations},{spatial_period},{feedback_strength},{spatial_frequency},{animation_speed},{temporal_progression},{response_radius},{response_exponent},{response_gain},{layer_decay},{accumulation_mode},{response_profile},u_time,{reference_geometry},{rotation_step},{nested_displacement},{accumulation_start},{boundary_radius},{feedback_mode},{cross_axis_phase},{angular_frequency}).accumulated_field",
+    "normalized_field": "maker_b344_iterative_trigonometric_proximity_field_2d({position},{center},{time_offset},{strength_multiplier},{iterations},{spatial_period},{feedback_strength},{spatial_frequency},{animation_speed},{temporal_progression},{response_radius},{response_exponent},{response_gain},{layer_decay},{accumulation_mode},{response_profile},u_time,{reference_geometry},{rotation_step},{nested_displacement},{accumulation_start},{boundary_radius},{feedback_mode},{cross_axis_phase},{angular_frequency}).normalized_field",
+    "final_coordinates": "maker_b344_iterative_trigonometric_proximity_field_2d({position},{center},{time_offset},{strength_multiplier},{iterations},{spatial_period},{feedback_strength},{spatial_frequency},{animation_speed},{temporal_progression},{response_radius},{response_exponent},{response_gain},{layer_decay},{accumulation_mode},{response_profile},u_time,{reference_geometry},{rotation_step},{nested_displacement},{accumulation_start},{boundary_radius},{feedback_mode},{cross_axis_phase},{angular_frequency}).final_coordinates",
+    "peak_response": "maker_b344_iterative_trigonometric_proximity_field_2d({position},{center},{time_offset},{strength_multiplier},{iterations},{spatial_period},{feedback_strength},{spatial_frequency},{animation_speed},{temporal_progression},{response_radius},{response_exponent},{response_gain},{layer_decay},{accumulation_mode},{response_profile},u_time,{reference_geometry},{rotation_step},{nested_displacement},{accumulation_start},{boundary_radius},{feedback_mode},{cross_axis_phase},{angular_frequency}).peak_response",
+    "minimum_proximity": "maker_b344_iterative_trigonometric_proximity_field_2d({position},{center},{time_offset},{strength_multiplier},{iterations},{spatial_period},{feedback_strength},{spatial_frequency},{animation_speed},{temporal_progression},{response_radius},{response_exponent},{response_gain},{layer_decay},{accumulation_mode},{response_profile},u_time,{reference_geometry},{rotation_step},{nested_displacement},{accumulation_start},{boundary_radius},{feedback_mode},{cross_axis_phase},{angular_frequency}).minimum_proximity",
+    "mean_response": "maker_b344_iterative_trigonometric_proximity_field_2d({position},{center},{time_offset},{strength_multiplier},{iterations},{spatial_period},{feedback_strength},{spatial_frequency},{animation_speed},{temporal_progression},{response_radius},{response_exponent},{response_gain},{layer_decay},{accumulation_mode},{response_profile},u_time,{reference_geometry},{rotation_step},{nested_displacement},{accumulation_start},{boundary_radius},{feedback_mode},{cross_axis_phase},{angular_frequency}).mean_response",
+    "mean_angular_response": "maker_b344_iterative_trigonometric_proximity_field_2d({position},{center},{time_offset},{strength_multiplier},{iterations},{spatial_period},{feedback_strength},{spatial_frequency},{animation_speed},{temporal_progression},{response_radius},{response_exponent},{response_gain},{layer_decay},{accumulation_mode},{response_profile},u_time,{reference_geometry},{rotation_step},{nested_displacement},{accumulation_start},{boundary_radius},{feedback_mode},{cross_axis_phase},{angular_frequency}).mean_angular_response",
+    "mean_exponential_proximity": "maker_b344_iterative_trigonometric_proximity_field_2d({position},{center},{time_offset},{strength_multiplier},{iterations},{spatial_period},{feedback_strength},{spatial_frequency},{animation_speed},{temporal_progression},{response_radius},{response_exponent},{response_gain},{layer_decay},{accumulation_mode},{response_profile},u_time,{reference_geometry},{rotation_step},{nested_displacement},{accumulation_start},{boundary_radius},{feedback_mode},{cross_axis_phase},{angular_frequency}).mean_exponential_proximity"
   }
 }

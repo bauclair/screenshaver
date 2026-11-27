@@ -9,6 +9,13 @@ impl Library {
  fn load()->Self{
     let mut result=Self{modules:BTreeMap::new(),categories:BTreeMap::new(),sources:BTreeMap::new(),errors:Vec::new(),catalog_fingerprint:0xcbf29ce484222325};
     let official=[
+        ("fields/triangular_lattice_cellular_field_2d.smmod", include_str!("../assets/maker/modules/fields/triangular_lattice_cellular_field_2d.smmod")),
+
+        ("fields/harmonic_interval_array_field_2d.smmod", include_str!("../assets/maker/modules/fields/harmonic_interval_array_field_2d.smmod")),
+        ("coordinates/axially_modulated_coordinate_warp_2d.smmod", include_str!("../assets/maker/modules/coordinates/axially_modulated_coordinate_warp_2d.smmod")),
+        ("fields/quadratic_complex_escape_time_field_2d.smmod", include_str!("../assets/maker/modules/fields/quadratic_complex_escape_time_field_2d.smmod")),
+        ("coordinates/strip_indexed_coordinate_displacement_2d.smmod", include_str!("../assets/maker/modules/coordinates/strip_indexed_coordinate_displacement_2d.smmod")),
+
         ("geometry/phase_modulated_orbital_grid_field_2d.smmod", include_str!("../assets/maker/modules/geometry/phase_modulated_orbital_grid_field_2d.smmod")),
         ("geometry/temporal_harmonic_segment_field_2d.smmod", include_str!("../assets/maker/modules/geometry/temporal_harmonic_segment_field_2d.smmod")),
         ("fields/bilinear_reciprocal_response_field_2d.smmod", include_str!("../assets/maker/modules/fields/bilinear_reciprocal_response_field_2d.smmod")),
@@ -68,6 +75,11 @@ impl Library {
         ("coordinates/probabilistic_hierarchical_grid_coordinates_2d.smmod", include_str!("../assets/maker/modules/coordinates/probabilistic_hierarchical_grid_coordinates_2d.smmod")),
         ("fields/truchet_tile_distance_field_2d.smmod", include_str!("../assets/maker/modules/fields/truchet_tile_distance_field_2d.smmod")),
         ("lighting/ggx_microfacet_lighting.smmod", include_str!("../assets/maker/modules/lighting/ggx_microfacet_lighting.smmod")),
+        ("coordinates/iterative_vector_reflection_field_2d.smmod", include_str!("../assets/maker/modules/coordinates/iterative_vector_reflection_field_2d.smmod")),
+        ("geometry/ray_disc_intersection_3d.smmod", include_str!("../assets/maker/modules/geometry/ray_disc_intersection_3d.smmod")),
+        ("coordinates/complex_arithmetic_transformation_2d.smmod", include_str!("../assets/maker/modules/coordinates/complex_arithmetic_transformation_2d.smmod")),
+        ("coordinates/iterative_complex_rational_warp_2d.smmod", include_str!("../assets/maker/modules/coordinates/iterative_complex_rational_warp_2d.smmod")),
+        ("geometry/multiscale_polygonal_contour_field_2d.smmod", include_str!("../assets/maker/modules/geometry/multiscale_polygonal_contour_field_2d.smmod")),
         ("noise/fractal_triangle_wave_noise_2d.smmod", include_str!("../assets/maker/modules/noise/fractal_triangle_wave_noise_2d.smmod")),
         ("noise/fractal_simplex_noise_3d.smmod", include_str!("../assets/maker/modules/noise/fractal_simplex_noise_3d.smmod")),
         ("coordinates/product_harmonic_coordinate_warp_2d.smmod", include_str!("../assets/maker/modules/coordinates/product_harmonic_coordinate_warp_2d.smmod")),
