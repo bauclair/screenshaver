@@ -3,6 +3,7 @@ use std::{sync::Arc, time::Instant};
 use sdl2::{event::Event, mouse::MouseButton};
 
 use crate::maker_graph::{Graph, NodeId};
+use crate::maker_compiler::ExportFormat;
 #[path = "maker_routing.rs"]
 mod maker_routing;
 use maker_routing::{Box2, PortPair, Routes};
@@ -1843,7 +1844,8 @@ pub struct MakerUi {
     thumbnail_hash: Option<String>,
     project_dialog: Option<MakerProjectBrowser>,
     examine_module: Option<String>,
-    glsl_export_dialog: Option<(String,String,bool)>,
+    glsl_export_dialog: Option<(String,String,bool,String,bool,ExportFormat)>,
+    last_glsl_curator: String,
     project_path: Option<std::path::PathBuf>,
     recent_projects: Vec<std::path::PathBuf>,
     saved_graph_snapshot: serde_json::Value,
@@ -2194,7 +2196,7 @@ impl MakerUi {
             egui::TextureOptions::LINEAR,
         );
         Ok(Self{inactive_tabs:Vec::new(),close_all_running:false,active_tab:0,project_tab_scroll_x:0.0,project_open:true,next_tab_epoch:1,context,painter,events:Vec::new(),pointer:egui::Pos2::ZERO,
-            modifiers:egui::Modifiers::default(),start:Instant::now(),graph,project_name:"Untitled".into(),thumbnail_workspace:false,thumbnail_hash:None,project_dialog:None,examine_module:None,glsl_export_dialog:None,project_path:None,recent_projects,saved_graph_snapshot,unsaved_action:None,after_save_action:None,discard_approved:None,selected,parameter_popup:None,pending_source:None,dragging_wire:None,
+            modifiers:egui::Modifiers::default(),start:Instant::now(),graph,project_name:"Untitled".into(),thumbnail_workspace:false,thumbnail_hash:None,project_dialog:None,examine_module:None,glsl_export_dialog:None,last_glsl_curator:String::new(),project_path:None,recent_projects,saved_graph_snapshot,unsaved_action:None,after_save_action:None,discard_approved:None,selected,parameter_popup:None,pending_source:None,dragging_wire:None,
             status:"Click an output port, then a compatible input port".into(),menu_icon,branding_texture,branding_aspect_ratio,open:true,
             preview_rect:egui::Rect::from_min_size(egui::pos2(210.0,600.0),egui::vec2(950.0,210.0)),
             preview_height:maker_saved_preview_height(),preview_active:true,routes:Routes::new(),canvas_pan:egui::Vec2::ZERO,canvas_zoom:1.0,pending_zoom:None,pending_zoom_to_fit:false,pending_menu_command:None,pending_tools_action:None,canvas_rect:egui::Rect::NOTHING,parameter_wheel_rect:egui::Rect::NOTHING,pinpoint_next:HashMap::new(),pinpoint_target:None,pinpoint_pulse:None,pinpoint_boxes:BTreeMap::new(),workspace_min:[-1000.0,-1000.0],workspace_max:[2000.0,2000.0],routing_undo:Vec::new(),routing_redo:Vec::new(),candidate_mode:2,candidate_sort:0,max_wire_connections:saved_max_wires,min_wire_connections:saved_min_wires,max_enumerations:saved_max_enumerations,max_candidates:saved_max_candidates,
@@ -2417,6 +2419,7 @@ impl MakerUi {
             }
             Event::MouseWheel { x, y, .. } => {
                 if self.canvas_rect.contains(self.pointer) && self.examine_module.is_none()
+                    && self.glsl_export_dialog.is_none()
                     && !(self.parameter_popup.is_some() && self.parameter_wheel_rect.contains(self.pointer)) {
                     let delta = if self.modifiers.shift { *y as f32 + *x as f32 }
                                 else { *y as f32 };
@@ -2557,6 +2560,7 @@ impl MakerUi {
         let project_dialog=&mut self.project_dialog;
         let examine_module=&mut self.examine_module;
         let glsl_export_dialog=&mut self.glsl_export_dialog;
+        let last_glsl_curator=&mut self.last_glsl_curator;
         let project_path=&mut self.project_path;
         let recent_projects=&mut self.recent_projects;
         let saved_graph_snapshot=&mut self.saved_graph_snapshot;
@@ -3126,14 +3130,34 @@ impl MakerUi {
                         });
                     });
             }
-            if let Some((directory,filename,confirm_overwrite))=glsl_export_dialog.as_mut(){
+            if let Some((directory,filename,confirm_overwrite,curator,clipboard,export_format))=glsl_export_dialog.as_mut(){
                 let mut close_export=false;
-                egui::Window::new("Export GLSL File")
+                egui::Window::new(if *clipboard {"Export GLSL Code"} else {"Export GLSL File"})
                     .id(egui::Id::new("maker_export_glsl"))
+                    .order(egui::Order::Foreground)
                     .collapsible(false).resizable(false).default_width(440.0)
                     .anchor(egui::Align2::CENTER_CENTER,egui::Vec2::ZERO)
                     .show(ctx,|ui|{
                         ui.label("Export the current Node Graph as a GLSL shader:");
+                        let previous_format=*export_format;
+                        egui::ComboBox::from_label("Export format:")
+                            .selected_text(export_format.label())
+                            .show_ui(ui,|ui|{
+                                for target in ExportFormat::ALL {
+                                    ui.selectable_value(export_format,target,target.label());
+                                }
+                            });
+                        if previous_format!=*export_format {
+                            *confirm_overwrite=false;
+                            if !*clipboard {
+                                let path=std::path::Path::new(filename.as_str());
+                                *filename=path.with_extension(export_format.extension()).to_string_lossy().into_owned();
+                            }
+                        }
+                        if *export_format!=ExportFormat::Native {
+                            ui.label("External host compatibility depends on GLSL features; not yet runtime verified.");
+                        }
+                        if !*clipboard {
                         ui.label("Export directory:");
                         if ui.add(egui::TextEdit::singleline(directory).desired_width(410.0)).changed(){
                             *confirm_overwrite=false;
@@ -3142,26 +3166,42 @@ impl MakerUi {
                         if ui.add(egui::TextEdit::singleline(filename).desired_width(410.0)).changed(){
                             *confirm_overwrite=false;
                         }
+                        }
+                        ui.label("Curated by:");
+                        ui.add(egui::TextEdit::singleline(curator).desired_width(410.0));
+                        ui.label("Optional composition attribution.");
                         if *confirm_overwrite {
                             ui.colored_label(egui::Color32::YELLOW,"File exists. Replace it?");
                         }
                         ui.horizontal(|ui|{
-                            if ui.button(if *confirm_overwrite {"Confirm Overwrite"} else {"Export"}).clicked(){
+                            if ui.button(if *clipboard {"Copy GLSL"} else if *confirm_overwrite {"Confirm Overwrite"} else {"Export"}).clicked(){
+                                if *clipboard {
+                                    match crate::maker_compiler::fragment_source_for_export(graph,curator,*export_format){
+                                        Ok(source)=>{
+                                            *pending_clipboard=Some(source);
+                                            *pending_clipboard_is_glsl=true;
+                                            *last_glsl_curator=curator.clone();
+                                            *status="Copying active project GLSL to clipboard".into();
+                                            close_export=true;
+                                        }
+                                        Err(e)=>*status=format!("GLSL generation failed: {e}"),
+                                    }
+                                }else{
                                 let name=filename.trim();
                                 let dir=directory.trim();
                                 let valid_name=!name.is_empty()
                                     && name!="." && name!=".."
                                     && !name.contains('/') && !name.contains('\\')
-                                    && std::path::Path::new(name).extension().and_then(|v|v.to_str())==Some("glsl");
+                                    && std::path::Path::new(name).extension().and_then(|v|v.to_str())==Some(export_format.extension());
                                 let path=std::path::PathBuf::from(dir).join(name);
                                 if dir.is_empty() {
                                     *status="Export directory cannot be empty".into();
                                 }else if !valid_name {
-                                    *status="Export filename must be a .glsl filename without directory separators".into();
+                                    *status=format!("Export filename must be a .{} filename without directory separators",export_format.extension());
                                 }else if path.exists() && !*confirm_overwrite {
                                     *confirm_overwrite=true;
                                 }else{
-                                    match crate::maker_compiler::fragment_source(graph){
+                                    match crate::maker_compiler::fragment_source_for_export(graph,curator,*export_format){
                                         Ok(source)=>{
                                             let result=(||->Result<(),String>{
                                                 let parent=path.parent().ok_or("Invalid export directory")?;
@@ -3169,13 +3209,14 @@ impl MakerUi {
                                                 std::fs::write(&path,source.as_bytes()).map_err(|e|e.to_string())
                                             })();
                                             match result {
-                                                Ok(())=>{*status=format!("Exported GLSL to {}",path.display());close_export=true;},
+                                                Ok(())=>{*last_glsl_curator=curator.clone();*status=format!("Exported GLSL to {}",path.display());close_export=true;},
                                                 Err(e)=>*status=format!("GLSL export failed: {e}"),
                                             }
                                         }
                                         Err(e)=>*status=format!("GLSL generation failed: {e}"),
                                     }
                                 }
+                            }
                             }
                             if ui.button("Cancel").clicked(){close_export=true;}
                         });
@@ -3438,21 +3479,14 @@ impl MakerUi {
                         }else{*project_dialog=Some(MakerProjectBrowser::open(true,None,thumbnail_hash.as_deref().unwrap_or(project_name)));}
                     }
                     Some("export_glsl_clipboard")=>{
-                        match crate::maker_compiler::fragment_source(graph) {
-                            Ok(source)=>{
-                                *pending_clipboard=Some(source);
-                                *pending_clipboard_is_glsl=true;
-                                *status="Copying active project GLSL to clipboard".into();
-                            }
-                            Err(e)=>*status=format!("GLSL generation failed: {e}"),
-                        }
+                        *glsl_export_dialog=Some((String::new(),String::new(),false,last_glsl_curator.clone(),true,ExportFormat::Native));
                     }
                     Some("export_glsl")=>{
                         let default_dir=std::env::var_os("HOME")
                             .map(|home|std::path::PathBuf::from(home).join(".config/screenshaver/shaders"))
                             .unwrap_or_else(||std::path::PathBuf::from("."));
                         let filename=format!("{}.glsl",project_name.trim_end_matches(".smprj"));
-                        *glsl_export_dialog=Some((default_dir.to_string_lossy().into_owned(),filename,false));
+                        *glsl_export_dialog=Some((default_dir.to_string_lossy().into_owned(),filename,false,last_glsl_curator.clone(),false,ExportFormat::Native));
                     }
                     Some("delete")=>*delete_project_confirm=true,
                     Some("exit")=>*open=false,
@@ -3533,7 +3567,7 @@ impl MakerUi {
                 // Keep panel sizing/resizing on its original layer, but register
                 // Inspector controls above independent graph-node Areas.
                 ui.with_layer_id(egui::LayerId::new(
-                    if project_dialog.is_some() || unsaved_action.is_some() { egui::Order::Background } else { egui::Order::Middle },
+                    if project_dialog.is_some() || unsaved_action.is_some() || glsl_export_dialog.is_some() { egui::Order::Background } else { egui::Order::Middle },
                     egui::Id::new("maker_inspector_interaction")), |ui| {
                 // Same 130 logical-point logo width as the Control Center header.
                 // Keep it at the top of the dock, above Shader Discovery.
@@ -4711,12 +4745,12 @@ impl MakerUi {
                 // Keep their geometry and pan calculations unchanged; only their
                 // interaction/paint layer is elevated above node Areas.
                 ui.with_layer_id(egui::LayerId::new(
-                    if project_dialog.is_some() || unsaved_action.is_some() { egui::Order::Background } else { egui::Order::Foreground },
+                    if project_dialog.is_some() || unsaved_action.is_some() || glsl_export_dialog.is_some() { egui::Order::Background } else { egui::Order::Foreground },
                     egui::Id::new("maker_graph_scrollbar_interaction")), |ui| {
                     graph_scrollbar(ui,canvas,available,true,canvas_pan,*canvas_zoom,
-                        workspace_min[0],workspace_max[0]);
+                        workspace_min[0],workspace_max[0],glsl_export_dialog.is_none());
                     graph_scrollbar(ui,canvas,available,false,canvas_pan,*canvas_zoom,
-                        workspace_min[1],workspace_max[1]);
+                        workspace_min[1],workspace_max[1],glsl_export_dialog.is_none());
                 });
                 ui.allocate_rect(available,egui::Sense::hover());
             });
@@ -4875,7 +4909,7 @@ impl MakerUi {
             // Keep Inspector controls above graph-node Areas within Middle order.
             // ComboBox popups use Foreground order, so they must remain above
             // Inspector controls rather than being occluded by them.
-            if project_dialog.is_none() && unsaved_action.is_none() {
+            if project_dialog.is_none() && unsaved_action.is_none() && glsl_export_dialog.is_none() {
                 ctx.move_to_top(egui::LayerId::new(
                     egui::Order::Middle, egui::Id::new("maker_inspector_interaction")));
             }
@@ -4888,6 +4922,11 @@ impl MakerUi {
                     egui::Order::Foreground,
                     egui::Id::new("maker_project_file_browser"),
                 ));
+            }
+            // Export shares the foreground order of the project browser.
+            if glsl_export_dialog.is_some() {
+                ctx.move_to_top(egui::LayerId::new(
+                    egui::Order::Foreground, egui::Id::new("maker_export_glsl")));
             }
             // The Unsaved Changes confirmation is modal as well. Raise it above
             // the foreground menu and restore Inspector/scrollbar priority when
@@ -5173,7 +5212,7 @@ pub fn run_discovery_test()->Result<(),String>{maker_discovery::run()}
 /// A drag on the track jumps toward the pointer; a drag on the thumb scrolls
 /// proportionally to its available travel. The ranges grow as needed.
 fn graph_scrollbar(ui:&mut egui::Ui,canvas:egui::Rect,available:egui::Rect,
-    horizontal:bool,pan:&mut egui::Vec2,zoom:f32,low:f32,high:f32) {
+    horizontal:bool,pan:&mut egui::Vec2,zoom:f32,low:f32,high:f32,interactive:bool) {
     let track=if horizontal {
         egui::Rect::from_min_max(egui::pos2(canvas.left(),canvas.bottom()+2.0),
             egui::pos2(canvas.right(),available.bottom()-2.0))
@@ -5198,11 +5237,12 @@ fn graph_scrollbar(ui:&mut egui::Ui,canvas:egui::Rect,available:egui::Rect,
         egui::Rect::from_min_size(egui::pos2(track.left(),track.top()+offset),
             egui::vec2(track.width(),thumb_length))
     };
+    ui.painter().rect_filled(track,3.0,egui::Color32::from_rgb(48,59,76));
+    ui.painter().rect_filled(thumb,3.0,egui::Color32::from_rgb(139,161,190));
+    if !interactive {return;}
     let axis=if horizontal {"horizontal"} else {"vertical"};
     let track_response=ui.interact(track,egui::Id::new(("maker_scroll_track",axis)),egui::Sense::click());
     let thumb_response=ui.interact(thumb,egui::Id::new(("maker_scroll_thumb",axis)),egui::Sense::click_and_drag());
-    ui.painter().rect_filled(track,3.0,egui::Color32::from_rgb(48,59,76));
-    ui.painter().rect_filled(thumb,3.0,egui::Color32::from_rgb(139,161,190));
     if thumb_response.dragged() && travel>0.0 {
         let delta=ui.input(|i|i.pointer.delta());
         let component=if horizontal {delta.x} else {delta.y};

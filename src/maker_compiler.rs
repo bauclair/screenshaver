@@ -6,12 +6,54 @@ fn attribution_text(value:&str)->String{
  let normalized=value.replace("*/", "* /");
  normalized.chars().map(|ch|if ch.is_control(){' '}else{ch}).collect()
 }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ExportFormat { Native, Shadertoy, Sandbox, Isf }
+impl ExportFormat {
+ pub const ALL: [Self;4] = [Self::Native, Self::Shadertoy, Self::Sandbox, Self::Isf];
+ pub fn identifier(self)-> &'static str { match self { Self::Native=>"Native", Self::Shadertoy=>"Shadertoy", Self::Sandbox=>"GLSL Sandbox", Self::Isf=>"ISF" } }
+ pub fn label(self)-> &'static str { match self { Self::Native=>"Screenshaver / Native GLSL", Self::Shadertoy=>"Shadertoy", Self::Sandbox=>"GLSL Sandbox (experimental)", Self::Isf=>"ISF 2.0 (fixed parameters)" } }
+ pub fn extension(self)-> &'static str { if self==Self::Isf {"fs"} else {"glsl"} }
+}
 pub fn fragment_source(graph:&Graph)->Result<String,String>{
+ fragment_source_impl(graph, "", None)
+}
+
+/// Standalone native GLSL for Effects Manager, with the current project values.
+pub fn fragment_source_with_curator(graph:&Graph, curator:&str)->Result<String,String>{
+ fragment_source_for_export(graph, curator, ExportFormat::Native)
+}
+
+pub fn fragment_source_for_export(graph:&Graph, curator:&str, format:ExportFormat)->Result<String,String>{
+ fragment_source_impl(graph, curator, Some(format))
+}
+
+// Match the preview's f32 uniform upload, including its zero fallback for
+// parameters absent from older projects. Reject non-finite export literals.
+fn export_float(value:Option<&serde_json::Value>)->Result<String,String>{
+ let number=value.and_then(|v|v.as_f64()).unwrap_or(0.0) as f32;
+ if !number.is_finite(){return Err("Non-finite Maker parameter cannot be exported".into())}
+ Ok(format!("{:e}",number))
+}
+
+fn fragment_source_impl(graph:&Graph, curator:&str, format:Option<ExportFormat>)->Result<String,String>{
+ let production=format.is_some();
  graph.validate_renderable()?;
  let reachable=graph.output_reachable_ids();
  let out=graph.nodes.iter().find(|n|n.definition().terminal).ok_or("Missing output")?;
  // Keep #version first; include each contributing module instance and the terminal.
- let mut src=String::from("#version 330 core\n/*\n * Created using Screenshaver Maker\n * Maker modules used to create this shader:\n");
+ let mut src=String::new();
+ match format {
+  None | Some(ExportFormat::Native)=>src.push_str("#version 330 core\n"),
+  Some(ExportFormat::Isf)=>src.push_str("/*{\n  \"ISFVSN\": \"2.0\",\n  \"DESCRIPTION\": \"Created using Screenshaver Maker\",\n  \"CATEGORIES\": [\"Generator\"],\n  \"INPUTS\": []\n}*/\n"),
+  _=>{}
+ }
+ src.push_str("/*\n * Created using Screenshaver Maker\n");
+ if let Some(target)=format {src.push_str(&format!(" * GLSL_format: {}\n",target.identifier()));}
+ let curator=attribution_text(curator).replace(['\u{2028}','\u{2029}'], " ");
+ if !curator.trim().is_empty(){
+  src.push_str(&format!(" * Curated by: {}\n",curator.trim()));
+ }
+ src.push_str(" * Maker modules used to create this shader:\n");
  for node in graph.nodes.iter().filter(|node|reachable.contains(&node.id)) {
   let module=node.definition();
   let name=attribution_text(&module.name);
@@ -22,12 +64,30 @@ pub fn fragment_source(graph:&Graph)->Result<String,String>{
   }
   src.push('\n');
  }
- src.push_str(" */\nout vec4 fragColor;\nuniform vec2 u_resolution;\nuniform vec2 u_viewport_origin;\nuniform float u_time;\n");
+ src.push_str(" */\n");
+ match format {
+  None=>src.push_str("out vec4 fragColor;\nuniform vec2 u_resolution;\nuniform vec2 u_viewport_origin;\nuniform float u_time;\n"),
+  Some(ExportFormat::Native)=>src.push_str("out vec4 fragColor;\nuniform vec3 iResolution;\nuniform float iTime;\n#define u_resolution (iResolution.xy)\n#define u_time (iTime)\n"),
+  Some(ExportFormat::Shadertoy)=>src.push_str("#define u_resolution (iResolution.xy)\n#define u_time (iTime)\n"),
+  Some(ExportFormat::Sandbox)=>src.push_str("#ifdef GL_ES\nprecision highp float;\nprecision highp int;\n#endif\nuniform vec2 resolution;\nuniform float time;\n#define u_resolution (resolution)\n#define u_time (time)\n#define fragColor gl_FragColor\n"),
+  Some(ExportFormat::Isf)=>src.push_str("#define u_resolution (RENDERSIZE)\n#define u_time (TIME)\n#define fragColor gl_FragColor\n"),
+ }
+ if production {src.push_str("const vec2 u_viewport_origin=vec2(0.0);\n");}
  let mut emitted=HashSet::new();let mut helpers=HashSet::new();
   // Uniforms precede helpers because callable traversal functions read node parameters.
   for n in graph.nodes.iter().filter(|n|reachable.contains(&n.id)){for p in &n.definition().parameters{
    let ty=if p.ty=="color3"{"vec3"}else{"float"};
-   src.push_str(&format!("uniform {ty} u_n{}_{};\n",n.id,p.id));
+   if production {
+    let value=n.parameters.get(&p.id);
+    let literal=if p.ty=="color3" {
+     let components=value.and_then(|v|v.as_array()).filter(|a|a.len()==3);
+     let component=|i:usize|export_float(components.and_then(|a|a.get(i)));
+     format!("vec3({},{},{})",component(0)?,component(1)?,component(2)?)
+    }else{export_float(value)?};
+    src.push_str(&format!("const {ty} u_n{}_{} = {literal};\n",n.id,p.id));
+   }else{
+    src.push_str(&format!("uniform {ty} u_n{}_{};\n",n.id,p.id));
+   }
   }}
   src.push_str(r#"
 float maker_twisted_ring(vec3 p,float radius,float w,float h,float twists,float fold){
@@ -545,7 +605,11 @@ vec3 maker_reflection_trace_{id}(vec3 hitPosition,vec3 surfaceNormal,vec3 incomi
 "#));
   }
  }
- src.push_str("void main(){\n  vec2 maker_uv=(gl_FragCoord.xy-u_viewport_origin-0.5*u_resolution)/max(u_resolution.y,1.0);\n");
+ if format==Some(ExportFormat::Shadertoy){
+  src.push_str("void mainImage(out vec4 fragColor, in vec2 fragCoord){\n  vec2 maker_uv=(fragCoord-u_viewport_origin-0.5*u_resolution)/max(u_resolution.y,1.0);\n");
+ }else{
+  src.push_str("void main(){\n  vec2 maker_uv=(gl_FragCoord.xy-u_viewport_origin-0.5*u_resolution)/max(u_resolution.y,1.0);\n");
+ }
  if graph.input_connection(out.id,0).is_some(){
   let c=graph.input_connection(out.id,0).unwrap();emit(graph,c.from,&reachable,&mut emitted,&mut src)?;
   src.push_str(&format!("  fragColor=vec4(clamp(v{}_p{},0.0,1.0),1.0);\n",c.from,c.from_port));
