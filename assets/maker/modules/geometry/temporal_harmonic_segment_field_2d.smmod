@@ -1,0 +1,243 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.geometry.temporal_harmonic_segment_field_2d",
+  "name": "Temporal Harmonic Segment Field 2D",
+  "category": "Geometry",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Stateless time-indexed segments; positive spacing samples past times. Maximum response is attenuation-weighted.",
+  "uses": "Temporal Harmonic Segment Field 2D",
+  "notes": "Stateless time-indexed segments; positive spacing samples past times. Maximum response is attenuation-weighted.",
+  "header_color": "#527D94",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec2",
+      "default": "vec2(0.0)"
+    },
+    {
+      "id": "time_offset",
+      "name": "Time Offset",
+      "type": "float",
+      "default": "0.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "nearest_distance",
+      "name": "Nearest Distance",
+      "type": "float"
+    },
+    {
+      "id": "accumulated_response",
+      "name": "Accumulated Response",
+      "type": "float"
+    },
+    {
+      "id": "normalized_response",
+      "name": "Normalized Response",
+      "type": "float"
+    },
+    {
+      "id": "nearest_index",
+      "name": "Nearest Index",
+      "type": "float"
+    },
+    {
+      "id": "segment_fraction",
+      "name": "Segment Fraction",
+      "type": "float"
+    },
+    {
+      "id": "closest_point",
+      "name": "Closest Point",
+      "type": "vec2"
+    },
+    {
+      "id": "maximum_response",
+      "name": "Maximum Response",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "segment_count",
+      "name": "Segment Count",
+      "type": "float",
+      "default": 24,
+      "min": 1,
+      "max": 128
+    },
+    {
+      "id": "temporal_spacing",
+      "name": "Temporal Spacing",
+      "type": "float",
+      "default": 0.035,
+      "min": -2,
+      "max": 2
+    },
+    {
+      "id": "temporal_quantization",
+      "name": "Temporal Quantization",
+      "type": "float",
+      "default": 0,
+      "min": 0,
+      "max": 2
+    },
+    {
+      "id": "a_x_amplitude",
+      "name": "A X Amplitude",
+      "type": "float",
+      "default": 0.7,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "a_x_frequency",
+      "name": "A X Frequency",
+      "type": "float",
+      "default": 3.1,
+      "min": -20,
+      "max": 20
+    },
+    {
+      "id": "a_x_phase",
+      "name": "A X Phase",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "a_y_amplitude",
+      "name": "A Y Amplitude",
+      "type": "float",
+      "default": 0.7,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "a_y_frequency",
+      "name": "A Y Frequency",
+      "type": "float",
+      "default": 4.3,
+      "min": -20,
+      "max": 20
+    },
+    {
+      "id": "a_y_phase",
+      "name": "A Y Phase",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "b_x_amplitude",
+      "name": "B X Amplitude",
+      "type": "float",
+      "default": 0.7,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "b_x_frequency",
+      "name": "B X Frequency",
+      "type": "float",
+      "default": 4.7,
+      "min": -20,
+      "max": 20
+    },
+    {
+      "id": "b_x_phase",
+      "name": "B X Phase",
+      "type": "float",
+      "default": 90,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "b_y_amplitude",
+      "name": "B Y Amplitude",
+      "type": "float",
+      "default": 0.7,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "b_y_frequency",
+      "name": "B Y Frequency",
+      "type": "float",
+      "default": 2.3,
+      "min": -20,
+      "max": 20
+    },
+    {
+      "id": "b_y_phase",
+      "name": "B Y Phase",
+      "type": "float",
+      "default": 90,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "speed",
+      "name": "Speed",
+      "type": "float",
+      "default": 1,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "attenuation",
+      "name": "Attenuation",
+      "type": "float",
+      "default": 0.95,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "length_multiplier",
+      "name": "Length Multiplier",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 4
+    },
+    {
+      "id": "line_width",
+      "name": "Line Width",
+      "type": "float",
+      "default": 0.008,
+      "min": 0.0001,
+      "max": 1
+    },
+    {
+      "id": "softness",
+      "name": "Softness",
+      "type": "float",
+      "default": 0.005,
+      "min": 0,
+      "max": 1
+    }
+  ],
+  "helpers": "struct MakerB396TemporalHarmonicSegmentField2D{float nearest_distance;float accumulated_response;float normalized_response;float nearest_index;float segment_fraction;vec2 closest_point;float maximum_response;};\nMakerB396TemporalHarmonicSegmentField2D maker_b396_temporal_harmonic_segment_field_2d(vec2 position,vec2 center,float time_offset,float segment_count,float temporal_spacing,float temporal_quantization,float a_x_amplitude,float a_x_frequency,float a_x_phase,float a_y_amplitude,float a_y_frequency,float a_y_phase,float b_x_amplitude,float b_x_frequency,float b_x_phase,float b_y_amplitude,float b_y_frequency,float b_y_phase,float speed,float attenuation,float length_multiplier,float line_width,float softness){int n=int(clamp(round(segment_count),1.,128.));float t=(u_time+time_offset)*speed;if(temporal_quantization>1e-6)t=floor(t/temporal_quantization)*temporal_quantization;float best=1e20,idx=0.,frac=0.,sum=0.,weights=0.,peak=0.,w=1.;vec2 cp=center;for(int i=0;i<128;i++){if(i>=n)break;float s=t-float(i)*temporal_spacing;vec2 a=center+vec2(a_x_amplitude*sin(s*a_x_frequency+radians(a_x_phase)),a_y_amplitude*sin(s*a_y_frequency+radians(a_y_phase))),b=center+vec2(b_x_amplitude*sin(s*b_x_frequency+radians(b_x_phase)),b_y_amplitude*sin(s*b_y_frequency+radians(b_y_phase)));vec2 mid=(a+b)*.5; a=mid+(a-mid)*length_multiplier;b=mid+(b-mid)*length_multiplier;vec2 v=b-a;float u=clamp(dot(position-a,v)/max(dot(v,v),1e-12),0.,1.);vec2 p=a+u*v;float d=length(position-p),m=1.-smoothstep(line_width,line_width+max(softness,1e-6),d);if(d<best){best=d;idx=float(i);frac=u;cp=p;}sum+=w*m;weights+=w;peak=max(peak,w*m);w*=attenuation;}return MakerB396TemporalHarmonicSegmentField2D(best,sum,sum/max(weights,1e-6),idx,frac,cp,peak);}",
+  "glsl_outputs": {
+    "nearest_distance": "maker_b396_temporal_harmonic_segment_field_2d({position},{center},{time_offset},{segment_count},{temporal_spacing},{temporal_quantization},{a_x_amplitude},{a_x_frequency},{a_x_phase},{a_y_amplitude},{a_y_frequency},{a_y_phase},{b_x_amplitude},{b_x_frequency},{b_x_phase},{b_y_amplitude},{b_y_frequency},{b_y_phase},{speed},{attenuation},{length_multiplier},{line_width},{softness}).nearest_distance",
+    "accumulated_response": "maker_b396_temporal_harmonic_segment_field_2d({position},{center},{time_offset},{segment_count},{temporal_spacing},{temporal_quantization},{a_x_amplitude},{a_x_frequency},{a_x_phase},{a_y_amplitude},{a_y_frequency},{a_y_phase},{b_x_amplitude},{b_x_frequency},{b_x_phase},{b_y_amplitude},{b_y_frequency},{b_y_phase},{speed},{attenuation},{length_multiplier},{line_width},{softness}).accumulated_response",
+    "normalized_response": "maker_b396_temporal_harmonic_segment_field_2d({position},{center},{time_offset},{segment_count},{temporal_spacing},{temporal_quantization},{a_x_amplitude},{a_x_frequency},{a_x_phase},{a_y_amplitude},{a_y_frequency},{a_y_phase},{b_x_amplitude},{b_x_frequency},{b_x_phase},{b_y_amplitude},{b_y_frequency},{b_y_phase},{speed},{attenuation},{length_multiplier},{line_width},{softness}).normalized_response",
+    "nearest_index": "maker_b396_temporal_harmonic_segment_field_2d({position},{center},{time_offset},{segment_count},{temporal_spacing},{temporal_quantization},{a_x_amplitude},{a_x_frequency},{a_x_phase},{a_y_amplitude},{a_y_frequency},{a_y_phase},{b_x_amplitude},{b_x_frequency},{b_x_phase},{b_y_amplitude},{b_y_frequency},{b_y_phase},{speed},{attenuation},{length_multiplier},{line_width},{softness}).nearest_index",
+    "segment_fraction": "maker_b396_temporal_harmonic_segment_field_2d({position},{center},{time_offset},{segment_count},{temporal_spacing},{temporal_quantization},{a_x_amplitude},{a_x_frequency},{a_x_phase},{a_y_amplitude},{a_y_frequency},{a_y_phase},{b_x_amplitude},{b_x_frequency},{b_x_phase},{b_y_amplitude},{b_y_frequency},{b_y_phase},{speed},{attenuation},{length_multiplier},{line_width},{softness}).segment_fraction",
+    "closest_point": "maker_b396_temporal_harmonic_segment_field_2d({position},{center},{time_offset},{segment_count},{temporal_spacing},{temporal_quantization},{a_x_amplitude},{a_x_frequency},{a_x_phase},{a_y_amplitude},{a_y_frequency},{a_y_phase},{b_x_amplitude},{b_x_frequency},{b_x_phase},{b_y_amplitude},{b_y_frequency},{b_y_phase},{speed},{attenuation},{length_multiplier},{line_width},{softness}).closest_point",
+    "maximum_response": "maker_b396_temporal_harmonic_segment_field_2d({position},{center},{time_offset},{segment_count},{temporal_spacing},{temporal_quantization},{a_x_amplitude},{a_x_frequency},{a_x_phase},{a_y_amplitude},{a_y_frequency},{a_y_phase},{b_x_amplitude},{b_x_frequency},{b_x_phase},{b_y_amplitude},{b_y_frequency},{b_y_phase},{speed},{attenuation},{length_multiplier},{line_width},{softness}).maximum_response"
+  }
+}

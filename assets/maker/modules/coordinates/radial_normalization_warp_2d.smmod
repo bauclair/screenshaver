@@ -7,7 +7,7 @@
   "creator_email": "screenshaver@proton.me",
   "description": "Compress planar coordinates into a bounded radial domain.",
   "uses": "Compress planar coordinates into a bounded radial domain.",
-  "notes": "Output is centered on Center. Compression Factor includes blend strength. Radii are measured relative to Center.",
+  "notes": "Output is centered on Center. Compression Factor includes blend strength. Radii are measured relative to Center. New restriction modes use +X at the origin; factor is zero there.",
   "header_color": "#527D94",
   "terminal": false,
   "inputs": [
@@ -78,13 +78,34 @@
       "default": 1,
       "min": 0,
       "max": 1
+    },
+    {
+      "id": "restriction_mode",
+      "name": "Restriction Mode",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Existing",
+        "Maximum Radius",
+        "Minimum Radius",
+        "Fixed Radius",
+        "Offset and Clamp"
+      ]
+    },
+    {
+      "id": "radial_offset",
+      "name": "Radial Offset",
+      "type": "float",
+      "default": 0,
+      "min": -100,
+      "max": 100
     }
   ],
-  "helpers": "struct MakerRNW { vec2 warped; float original_radius; float warped_radius; float factor; };\nMakerRNW maker_rnw_eval(vec2 pos,vec2 center,float dm,float depth,float radius,float blend){\n if(any(isnan(pos))||any(isinf(pos))||any(isnan(center))||any(isinf(center))||isnan(dm)||isinf(dm))return MakerRNW(vec2(0.0),0.0,0.0,0.0);\n center=clamp(center,vec2(-1e6),vec2(1e6));\n vec2 q=clamp(pos,vec2(-1e6),vec2(1e6))-center;\n float h=depth*clamp(dm,0.0001,100.0), r=length(q);\n float factor=mix(1.0,radius/sqrt(dot(q,q)+h*h),blend);\n vec2 w=q*factor;\n return MakerRNW(center+w,r,length(w),factor);\n}",
+  "helpers": "struct MakerRNW { vec2 warped; float original_radius; float warped_radius; float factor; };\nMakerRNW maker_rnw_eval(vec2 pos,vec2 center,float dm,float depth,float radius,float blend,float mode,float offset){\n if(any(isnan(pos))||any(isinf(pos))||any(isnan(center))||any(isinf(center))||isnan(dm)||isinf(dm))return MakerRNW(vec2(0.0),0.0,0.0,0.0);\n center=clamp(center,vec2(-1e6),vec2(1e6));\n vec2 q=clamp(pos,vec2(-1e6),vec2(1e6))-center;\n float h=depth*clamp(dm,0.0001,100.0), r=length(q);\n float factor=mix(1.0,radius/sqrt(dot(q,q)+h*h),blend);\n vec2 w=q*factor;\n if(mode>.5){float target=mode<1.5?min(r,radius):mode<2.5?max(r,radius):mode<3.5?radius:clamp(r+offset,0.,radius);float outR=mix(r,target,blend);w=(r>1e-8?q/r:vec2(1.,0.))*outR;factor=r>1e-8?outR/r:0.;}\n return MakerRNW(center+w,r,length(w),factor);\n}",
   "glsl_outputs": {
-    "warped": "maker_rnw_eval({position},{center},{depth_multiplier},{depth},{radius},{blend}).warped",
-    "original_radius": "maker_rnw_eval({position},{center},{depth_multiplier},{depth},{radius},{blend}).original_radius",
-    "warped_radius": "maker_rnw_eval({position},{center},{depth_multiplier},{depth},{radius},{blend}).warped_radius",
-    "factor": "maker_rnw_eval({position},{center},{depth_multiplier},{depth},{radius},{blend}).factor"
+    "warped": "maker_rnw_eval({position},{center},{depth_multiplier},{depth},{radius},{blend},{restriction_mode},{radial_offset}).warped",
+    "original_radius": "maker_rnw_eval({position},{center},{depth_multiplier},{depth},{radius},{blend},{restriction_mode},{radial_offset}).original_radius",
+    "warped_radius": "maker_rnw_eval({position},{center},{depth_multiplier},{depth},{radius},{blend},{restriction_mode},{radial_offset}).warped_radius",
+    "factor": "maker_rnw_eval({position},{center},{depth_multiplier},{depth},{radius},{blend},{restriction_mode},{radial_offset}).factor"
   }
 }

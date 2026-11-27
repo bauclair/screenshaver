@@ -1,0 +1,198 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.geometry.phase_modulated_orbital_grid_field_2d",
+  "name": "Phase-Modulated Orbital Grid Field 2D",
+  "category": "Geometry",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Fixed 5x5 neighborhood. Radii and widths are fractions of minimum spacing; orbital offsets capped to 0.75 cell spacing per axis. Nearest distance is unsigned distance to enabled filled geometry within searched cells.",
+  "uses": "Phase-Modulated Orbital Grid Field 2D",
+  "notes": "Fixed 5x5 neighborhood. Radii and widths are fractions of minimum spacing; orbital offsets capped to 0.75 cell spacing per axis. Nearest distance is unsigned distance to enabled filled geometry within searched cells.",
+  "header_color": "#527D94",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec2",
+      "default": "vec2(0.0)"
+    },
+    {
+      "id": "time_offset",
+      "name": "Time Offset",
+      "type": "float",
+      "default": "0.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "stationary_mask",
+      "name": "Stationary Mask",
+      "type": "float"
+    },
+    {
+      "id": "orbiting_mask",
+      "name": "Orbiting Mask",
+      "type": "float"
+    },
+    {
+      "id": "combined_mask",
+      "name": "Combined Mask",
+      "type": "float"
+    },
+    {
+      "id": "nearest_distance",
+      "name": "Nearest Distance",
+      "type": "float"
+    },
+    {
+      "id": "nearest_cell",
+      "name": "Nearest Cell",
+      "type": "vec2"
+    },
+    {
+      "id": "nearest_orbit_center",
+      "name": "Nearest Orbit Center",
+      "type": "vec2"
+    },
+    {
+      "id": "local_phase",
+      "name": "Local Phase",
+      "type": "float"
+    },
+    {
+      "id": "normalized_response",
+      "name": "Normalized Response",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "spacing_x",
+      "name": "Spacing X",
+      "type": "float",
+      "default": 0.25,
+      "min": 0.001,
+      "max": 10
+    },
+    {
+      "id": "spacing_y",
+      "name": "Spacing Y",
+      "type": "float",
+      "default": 0.25,
+      "min": 0.001,
+      "max": 10
+    },
+    {
+      "id": "orbit_radius",
+      "name": "Orbit Radius",
+      "type": "float",
+      "default": 0.3,
+      "min": 0,
+      "max": 0.75
+    },
+    {
+      "id": "orbit_aspect",
+      "name": "Orbit Aspect",
+      "type": "float",
+      "default": 1,
+      "min": 0.1,
+      "max": 2
+    },
+    {
+      "id": "phase_x",
+      "name": "Phase X",
+      "type": "float",
+      "default": 0.7,
+      "min": -6.283,
+      "max": 6.283
+    },
+    {
+      "id": "phase_y",
+      "name": "Phase Y",
+      "type": "float",
+      "default": -0.7,
+      "min": -6.283,
+      "max": 6.283
+    },
+    {
+      "id": "speed",
+      "name": "Speed",
+      "type": "float",
+      "default": 1,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "initial_phase",
+      "name": "Initial Phase",
+      "type": "float",
+      "default": 0,
+      "min": -6.283,
+      "max": 6.283
+    },
+    {
+      "id": "ring_radius",
+      "name": "Ring Radius",
+      "type": "float",
+      "default": 0.3,
+      "min": 0,
+      "max": 0.75
+    },
+    {
+      "id": "primitive_radius",
+      "name": "Primitive Radius",
+      "type": "float",
+      "default": 0.1,
+      "min": 0.001,
+      "max": 0.5
+    },
+    {
+      "id": "line_width",
+      "name": "Line Width",
+      "type": "float",
+      "default": 0.02,
+      "min": 0.001,
+      "max": 0.25
+    },
+    {
+      "id": "softness",
+      "name": "Softness",
+      "type": "float",
+      "default": 0.01,
+      "min": 0,
+      "max": 0.25
+    },
+    {
+      "id": "arrangement",
+      "name": "Arrangement",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Combined Discs",
+        "Stationary Rings",
+        "Orbiting Discs",
+        "Orbiting Rings",
+        "Combined Rings"
+      ]
+    }
+  ],
+  "helpers": "struct MakerB396PhaseModulatedOrbitalGridField2D{float stationary_mask;float orbiting_mask;float combined_mask;float nearest_distance;vec2 nearest_cell;vec2 nearest_orbit_center;float local_phase;float normalized_response;};\nMakerB396PhaseModulatedOrbitalGridField2D maker_b396_phase_modulated_orbital_grid_field_2d(vec2 position,vec2 center,float time_offset,float spacing_x,float spacing_y,float orbit_radius,float orbit_aspect,float phase_x,float phase_y,float speed,float initial_phase,float ring_radius,float primitive_radius,float line_width,float softness,float arrangement){vec2 spacing=vec2(spacing_x,spacing_y),q=position-center,base=floor(q/spacing+.5);float unit=min(spacing_x,spacing_y),rr=ring_radius*unit,pr=primitive_radius*unit,w=line_width*unit,soft=max(softness*unit,1e-7),a=0.,b=0.,best=1e20,ph=0.;vec2 cell=base,oc=center;bool ring=arrangement>2.5;for(int y=-2;y<=2;y++){for(int x=-2;x<=2;x++){vec2 id=base+vec2(x,y),p=id*spacing;float t=initial_phase+dot(id,vec2(phase_x,phase_y))+(u_time+time_offset)*speed;vec2 off=unit*orbit_radius*vec2(cos(t),sin(t)*orbit_aspect);off=clamp(off,-.75*spacing,.75*spacing);vec2 o=p+off;float d0=abs(length(q-p)-rr),d1=length(q-o)-pr;if(ring)d1=abs(d1)-w;float m0=1.-smoothstep(w,w+soft,d0),m1=1.-smoothstep(0.,soft,d1);a=max(a,m0);b=max(b,m1);float d=arrangement>.5&&arrangement<1.5?max(d0-w,0.):arrangement>1.5&&arrangement<3.5?max(d1,0.):min(max(d0-w,0.),max(d1,0.));if(d<best){best=d;cell=id;oc=center+o;ph=mod(t,6.2831853);}}}float m=arrangement>.5&&arrangement<1.5?a:arrangement>1.5&&arrangement<3.5?b:max(a,b);return MakerB396PhaseModulatedOrbitalGridField2D(a,b,m,best,cell,oc,ph,m);}",
+  "glsl_outputs": {
+    "stationary_mask": "maker_b396_phase_modulated_orbital_grid_field_2d({position},{center},{time_offset},{spacing_x},{spacing_y},{orbit_radius},{orbit_aspect},{phase_x},{phase_y},{speed},{initial_phase},{ring_radius},{primitive_radius},{line_width},{softness},{arrangement}).stationary_mask",
+    "orbiting_mask": "maker_b396_phase_modulated_orbital_grid_field_2d({position},{center},{time_offset},{spacing_x},{spacing_y},{orbit_radius},{orbit_aspect},{phase_x},{phase_y},{speed},{initial_phase},{ring_radius},{primitive_radius},{line_width},{softness},{arrangement}).orbiting_mask",
+    "combined_mask": "maker_b396_phase_modulated_orbital_grid_field_2d({position},{center},{time_offset},{spacing_x},{spacing_y},{orbit_radius},{orbit_aspect},{phase_x},{phase_y},{speed},{initial_phase},{ring_radius},{primitive_radius},{line_width},{softness},{arrangement}).combined_mask",
+    "nearest_distance": "maker_b396_phase_modulated_orbital_grid_field_2d({position},{center},{time_offset},{spacing_x},{spacing_y},{orbit_radius},{orbit_aspect},{phase_x},{phase_y},{speed},{initial_phase},{ring_radius},{primitive_radius},{line_width},{softness},{arrangement}).nearest_distance",
+    "nearest_cell": "maker_b396_phase_modulated_orbital_grid_field_2d({position},{center},{time_offset},{spacing_x},{spacing_y},{orbit_radius},{orbit_aspect},{phase_x},{phase_y},{speed},{initial_phase},{ring_radius},{primitive_radius},{line_width},{softness},{arrangement}).nearest_cell",
+    "nearest_orbit_center": "maker_b396_phase_modulated_orbital_grid_field_2d({position},{center},{time_offset},{spacing_x},{spacing_y},{orbit_radius},{orbit_aspect},{phase_x},{phase_y},{speed},{initial_phase},{ring_radius},{primitive_radius},{line_width},{softness},{arrangement}).nearest_orbit_center",
+    "local_phase": "maker_b396_phase_modulated_orbital_grid_field_2d({position},{center},{time_offset},{spacing_x},{spacing_y},{orbit_radius},{orbit_aspect},{phase_x},{phase_y},{speed},{initial_phase},{ring_radius},{primitive_radius},{line_width},{softness},{arrangement}).local_phase",
+    "normalized_response": "maker_b396_phase_modulated_orbital_grid_field_2d({position},{center},{time_offset},{spacing_x},{spacing_y},{orbit_radius},{orbit_aspect},{phase_x},{phase_y},{speed},{initial_phase},{ring_radius},{primitive_radius},{line_width},{softness},{arrangement}).normalized_response"
+  }
+}

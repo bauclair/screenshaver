@@ -1,0 +1,171 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.radially_modulated_filament_field_3d",
+  "name": "Radially Modulated Filament Field 3D",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Local radial-shell proximity residual, not an exact or conservative signed distance. Direction is radial orientation, not curve tangent.",
+  "uses": "Radially Modulated Filament Field 3D",
+  "notes": "Local radial-shell proximity residual, not an exact or conservative signed distance. Direction is radial orientation, not curve tangent.",
+  "header_color": "#527D94",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "default": "vec3(maker_uv,0.0)",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec3",
+      "default": "vec3(0.0)"
+    },
+    {
+      "id": "time_offset",
+      "name": "Time Offset",
+      "type": "float",
+      "default": "0.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "proximity",
+      "name": "Proximity",
+      "type": "float"
+    },
+    {
+      "id": "mask",
+      "name": "Mask",
+      "type": "float"
+    },
+    {
+      "id": "glow",
+      "name": "Glow",
+      "type": "float"
+    },
+    {
+      "id": "nearest_index",
+      "name": "Nearest Index",
+      "type": "float"
+    },
+    {
+      "id": "radial_distance",
+      "name": "Radial Distance",
+      "type": "float"
+    },
+    {
+      "id": "filament_direction",
+      "name": "Filament Direction",
+      "type": "vec3"
+    },
+    {
+      "id": "radial_envelope",
+      "name": "Radial Envelope",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "filament_count",
+      "name": "Filament Count",
+      "type": "float",
+      "default": 8,
+      "min": 1,
+      "max": 32
+    },
+    {
+      "id": "inner_radius",
+      "name": "Inner Radius",
+      "type": "float",
+      "default": 0.1,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "outer_radius",
+      "name": "Outer Radius",
+      "type": "float",
+      "default": 1,
+      "min": 0.001,
+      "max": 10
+    },
+    {
+      "id": "thickness",
+      "name": "Thickness",
+      "type": "float",
+      "default": 0.025,
+      "min": 0.0001,
+      "max": 1
+    },
+    {
+      "id": "angular_amplitude",
+      "name": "Angular Amplitude",
+      "type": "float",
+      "default": 0.3,
+      "min": 0,
+      "max": 2
+    },
+    {
+      "id": "radial_frequency",
+      "name": "Radial Frequency",
+      "type": "float",
+      "default": 8,
+      "min": 0,
+      "max": 64
+    },
+    {
+      "id": "secondary_frequency",
+      "name": "Secondary Frequency",
+      "type": "float",
+      "default": 3,
+      "min": 0,
+      "max": 64
+    },
+    {
+      "id": "speed",
+      "name": "Speed",
+      "type": "float",
+      "default": 1,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "orientation",
+      "name": "Orientation",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "taper",
+      "name": "Taper",
+      "type": "float",
+      "default": 0.5,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "seed",
+      "name": "Seed",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 65535
+    }
+  ],
+  "helpers": "struct MakerB396RadiallyModulatedFilamentField3D{float proximity;float mask;float glow;float nearest_index;float radial_distance;vec3 filament_direction;float radial_envelope;};\nMakerB396RadiallyModulatedFilamentField3D maker_b396_radially_modulated_filament_field_3d(vec3 position,vec3 center,float time_offset,float filament_count,float inner_radius,float outer_radius,float thickness,float angular_amplitude,float radial_frequency,float secondary_frequency,float speed,float orientation,float taper,float seed){vec3 q=clamp(position-center,-1e5,1e5);float r=length(q),lo=min(inner_radius,outer_radius),hi=max(inner_radius,outer_radius),s=clamp((r-lo)/max(hi-lo,1e-6),0.,1.),rad=clamp(r,lo,hi),best=1e20,idx=0.;vec3 dir=vec3(0,0,1);int n=int(clamp(round(filament_count),1.,32.));float t=u_time+time_offset;for(int i=0;i<32;i++){if(i>=n)break;float j=float(i),z=1.-2.*(j+.5)/float(n),a=j*2.39996323+radians(orientation),ph=seed*.173+j*1.618;float polar=acos(clamp(z,-1.,1.))+angular_amplitude*sin(rad*secondary_frequency-t*speed+ph);a+=angular_amplitude*sin(rad*radial_frequency+t*speed+ph);vec3 v=vec3(sin(polar)*cos(a),sin(polar)*sin(a),cos(polar));float d=length(q-rad*v);if(d<best){best=d;idx=j;dir=v;}}float w=thickness*max(.05,1.-taper*s),d=best-w;return MakerB396RadiallyModulatedFilamentField3D(d,1.-smoothstep(0.,max(w*.25,1e-6),d),exp(-max(d,0.)/w),idx,r,dir,1.-s);}",
+  "glsl_outputs": {
+    "proximity": "maker_b396_radially_modulated_filament_field_3d({position},{center},{time_offset},{filament_count},{inner_radius},{outer_radius},{thickness},{angular_amplitude},{radial_frequency},{secondary_frequency},{speed},{orientation},{taper},{seed}).proximity",
+    "mask": "maker_b396_radially_modulated_filament_field_3d({position},{center},{time_offset},{filament_count},{inner_radius},{outer_radius},{thickness},{angular_amplitude},{radial_frequency},{secondary_frequency},{speed},{orientation},{taper},{seed}).mask",
+    "glow": "maker_b396_radially_modulated_filament_field_3d({position},{center},{time_offset},{filament_count},{inner_radius},{outer_radius},{thickness},{angular_amplitude},{radial_frequency},{secondary_frequency},{speed},{orientation},{taper},{seed}).glow",
+    "nearest_index": "maker_b396_radially_modulated_filament_field_3d({position},{center},{time_offset},{filament_count},{inner_radius},{outer_radius},{thickness},{angular_amplitude},{radial_frequency},{secondary_frequency},{speed},{orientation},{taper},{seed}).nearest_index",
+    "radial_distance": "maker_b396_radially_modulated_filament_field_3d({position},{center},{time_offset},{filament_count},{inner_radius},{outer_radius},{thickness},{angular_amplitude},{radial_frequency},{secondary_frequency},{speed},{orientation},{taper},{seed}).radial_distance",
+    "filament_direction": "maker_b396_radially_modulated_filament_field_3d({position},{center},{time_offset},{filament_count},{inner_radius},{outer_radius},{thickness},{angular_amplitude},{radial_frequency},{secondary_frequency},{speed},{orientation},{taper},{seed}).filament_direction",
+    "radial_envelope": "maker_b396_radially_modulated_filament_field_3d({position},{center},{time_offset},{filament_count},{inner_radius},{outer_radius},{thickness},{angular_amplitude},{radial_frequency},{secondary_frequency},{speed},{orientation},{taper},{seed}).radial_envelope"
+  }
+}

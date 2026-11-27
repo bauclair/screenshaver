@@ -1,0 +1,138 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.bilinear_reciprocal_response_field_2d",
+  "name": "Bilinear Reciprocal Response Field 2D",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Weighted bilinear responses with positive denominator floor and capped intensity.",
+  "uses": "Bilinear Reciprocal Response Field 2D",
+  "notes": "Weighted bilinear responses with positive denominator floor and capped intensity.",
+  "header_color": "#527D94",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "secondary",
+      "name": "Secondary",
+      "type": "vec2",
+      "default": "vec2(0.5)"
+    },
+    {
+      "id": "strength_multiplier",
+      "name": "Strength Multiplier",
+      "type": "float",
+      "default": "1.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "component_magnitude",
+      "name": "Component Magnitude",
+      "type": "float"
+    },
+    {
+      "id": "signed_dot",
+      "name": "Signed Dot",
+      "type": "float"
+    },
+    {
+      "id": "component_response",
+      "name": "Component Response",
+      "type": "float"
+    },
+    {
+      "id": "dot_response",
+      "name": "Dot Response",
+      "type": "float"
+    },
+    {
+      "id": "combined_response",
+      "name": "Combined Response",
+      "type": "float"
+    },
+    {
+      "id": "normalized_response",
+      "name": "Normalized Response",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "weight_x",
+      "name": "Weight X",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "weight_y",
+      "name": "Weight Y",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "exponent",
+      "name": "Exponent",
+      "type": "float",
+      "default": 0.5,
+      "min": 0.1,
+      "max": 4
+    },
+    {
+      "id": "denominator_floor",
+      "name": "Denominator Floor",
+      "type": "float",
+      "default": 0.01,
+      "min": 0.0001,
+      "max": 10
+    },
+    {
+      "id": "intensity",
+      "name": "Intensity",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "maximum_response",
+      "name": "Maximum Response",
+      "type": "float",
+      "default": 10,
+      "min": 0.001,
+      "max": 100
+    },
+    {
+      "id": "combination",
+      "name": "Combination",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Component Product",
+        "Dot Product",
+        "Sum",
+        "Product",
+        "Maximum"
+      ]
+    }
+  ],
+  "helpers": "struct MakerB396BilinearReciprocalResponseField2D{float component_magnitude;float signed_dot;float component_response;float dot_response;float combined_response;float normalized_response;};\nMakerB396BilinearReciprocalResponseField2D maker_b396_bilinear_reciprocal_response_field_2d(vec2 position,vec2 secondary,float strength_multiplier,float weight_x,float weight_y,float exponent,float denominator_floor,float intensity,float maximum_response,float combination){vec2 v=clamp(position,-1e5,1e5)*clamp(secondary,-1e5,1e5)*vec2(weight_x,weight_y);float a=abs(v.x)+abs(v.y),b=v.x+v.y,k=intensity*clamp(strength_multiplier,0.,100.);float x=min(maximum_response,k*pow(max(a,denominator_floor),-exponent)),y=min(maximum_response,k*pow(max(abs(b),denominator_floor),-exponent));float m=combination<.5?x:combination<1.5?y:combination<2.5?x+y:combination<3.5?x*y:max(x,y);m=min(m,maximum_response);return MakerB396BilinearReciprocalResponseField2D(a,b,x,y,m,m/maximum_response);}",
+  "glsl_outputs": {
+    "component_magnitude": "maker_b396_bilinear_reciprocal_response_field_2d({position},{secondary},{strength_multiplier},{weight_x},{weight_y},{exponent},{denominator_floor},{intensity},{maximum_response},{combination}).component_magnitude",
+    "signed_dot": "maker_b396_bilinear_reciprocal_response_field_2d({position},{secondary},{strength_multiplier},{weight_x},{weight_y},{exponent},{denominator_floor},{intensity},{maximum_response},{combination}).signed_dot",
+    "component_response": "maker_b396_bilinear_reciprocal_response_field_2d({position},{secondary},{strength_multiplier},{weight_x},{weight_y},{exponent},{denominator_floor},{intensity},{maximum_response},{combination}).component_response",
+    "dot_response": "maker_b396_bilinear_reciprocal_response_field_2d({position},{secondary},{strength_multiplier},{weight_x},{weight_y},{exponent},{denominator_floor},{intensity},{maximum_response},{combination}).dot_response",
+    "combined_response": "maker_b396_bilinear_reciprocal_response_field_2d({position},{secondary},{strength_multiplier},{weight_x},{weight_y},{exponent},{denominator_floor},{intensity},{maximum_response},{combination}).combined_response",
+    "normalized_response": "maker_b396_bilinear_reciprocal_response_field_2d({position},{secondary},{strength_multiplier},{weight_x},{weight_y},{exponent},{denominator_floor},{intensity},{maximum_response},{combination}).normalized_response"
+  }
+}

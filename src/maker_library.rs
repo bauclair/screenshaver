@@ -9,6 +9,10 @@ impl Library {
  fn load()->Self{
     let mut result=Self{modules:BTreeMap::new(),categories:BTreeMap::new(),sources:BTreeMap::new(),errors:Vec::new(),catalog_fingerprint:0xcbf29ce484222325};
     let official=[
+        ("geometry/phase_modulated_orbital_grid_field_2d.smmod", include_str!("../assets/maker/modules/geometry/phase_modulated_orbital_grid_field_2d.smmod")),
+        ("geometry/temporal_harmonic_segment_field_2d.smmod", include_str!("../assets/maker/modules/geometry/temporal_harmonic_segment_field_2d.smmod")),
+        ("fields/bilinear_reciprocal_response_field_2d.smmod", include_str!("../assets/maker/modules/fields/bilinear_reciprocal_response_field_2d.smmod")),
+        ("fields/radially_modulated_filament_field_3d.smmod", include_str!("../assets/maker/modules/fields/radially_modulated_filament_field_3d.smmod")),
         ("fields/indexed_angular_radial_superposition_field_2d.smmod", include_str!("../assets/maker/modules/fields/indexed_angular_radial_superposition_field_2d.smmod")),
         ("geometry/analytical_sphere_projection_2d.smmod", include_str!("../assets/maker/modules/geometry/analytical_sphere_projection_2d.smmod")),
         ("geometry/projected_polyhedral_array_field_2d.smmod", include_str!("../assets/maker/modules/geometry/projected_polyhedral_array_field_2d.smmod")),
