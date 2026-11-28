@@ -1,0 +1,73 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.math.complex_special_function_field_2d",
+  "name": "Complex Special Function Field 2D",
+  "category": "Math",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "header_color": "#348F8B",
+  "description": "Bounded Euler integral midpoint approximation for Gamma or truncated Dirichlet series for Zeta. Domain 2 <= real <= 8, |imaginary| <= 12; no analytic continuation. Connect shifted coordinates to enter domain.",
+  "uses": "Reusable coordinate and field composition.",
+  "notes": "Bounded Euler integral midpoint approximation for Gamma or truncated Dirichlet series for Zeta. Domain 2 <= real <= 8, |imaginary| <= 12; no analytic continuation. Connect shifted coordinates to enter domain.",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "semantic_role": "position2d",
+      "default": "vec2(3.0,0.0)+(maker_uv-vec2(0.5))*4.0"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "mode",
+      "name": "Mode",
+      "type": "float",
+      "default": 0,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "scale",
+      "name": "Scale",
+      "type": "float",
+      "default": 1,
+      "min": 0.1,
+      "max": 4
+    }
+  ],
+  "outputs": [
+    {
+      "id": "value",
+      "name": "Value",
+      "type": "vec2",
+      "semantic_role": ""
+    },
+    {
+      "id": "magnitude",
+      "name": "Magnitude",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "phase",
+      "name": "Phase",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "valid",
+      "name": "Valid",
+      "type": "float",
+      "semantic_role": "mask"
+    }
+  ],
+  "helpers": "\nstruct MakerO_complex_special_function_field_2d {vec2 value;float magnitude;float phase;float valid;};\nMakerO_complex_special_function_field_2d maker_o_complex_special_function_field_2d(vec2 position,float mode,float scale){\nvec2 s=position*scale; if(any(isnan(s))||any(isinf(s))||abs(s.y)>12.||s.x<2.||s.x>8.)return MakerO_complex_special_function_field_2d(vec2(0),0.,0.,0.); vec2 w=vec2(0); if(mode<.5){ // Gamma via midpoint quadrature of Euler integral, t in [0,40].\nfor(int i=0;i<160;i++){float t=(float(i)+.5)*.25; float a=log(t); w+=.25*exp((s.x-1.)*a-t)*vec2(cos(s.y*a),sin(s.y*a));}}else{for(int i=1;i<=128;i++){float a=log(float(i)); w+=exp(-s.x*a)*vec2(cos(-s.y*a),sin(-s.y*a));}} return MakerO_complex_special_function_field_2d(w,length(w),atan(w.y,w.x),1.);\n}",
+  "glsl_outputs": {
+    "value": "maker_o_complex_special_function_field_2d({position},{mode},{scale}).value",
+    "magnitude": "maker_o_complex_special_function_field_2d({position},{mode},{scale}).magnitude",
+    "phase": "maker_o_complex_special_function_field_2d({position},{mode},{scale}).phase",
+    "valid": "maker_o_complex_special_function_field_2d({position},{mode},{scale}).valid"
+  }
+}

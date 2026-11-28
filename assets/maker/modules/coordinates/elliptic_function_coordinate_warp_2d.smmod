@@ -1,0 +1,82 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.elliptic_function_coordinate_warp_2d",
+  "name": "Elliptic Function Coordinate Warp 2D",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "header_color": "#348F8B",
+  "description": "Truncated rectangular lattice sum for Weierstrass P; periodic wrapping enforces repetition but finite truncation may introduce seam error. Pole excluded. Not Jacobi sn/cn/dn.",
+  "uses": "Reusable coordinate and field composition.",
+  "notes": "Truncated rectangular lattice sum for Weierstrass P; periodic wrapping enforces repetition but finite truncation may introduce seam error. Pole excluded. Not Jacobi sn/cn/dn.",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "semantic_role": "position2d",
+      "default": "maker_uv-vec2(0.5)"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "period_x",
+      "name": "Period X",
+      "type": "float",
+      "default": 2,
+      "min": 0.5,
+      "max": 8
+    },
+    {
+      "id": "period_y",
+      "name": "Period Y",
+      "type": "float",
+      "default": 2,
+      "min": 0.5,
+      "max": 8
+    },
+    {
+      "id": "scale",
+      "name": "Scale",
+      "type": "float",
+      "default": 0.2,
+      "min": 0.01,
+      "max": 2
+    },
+    {
+      "id": "terms",
+      "name": "Terms",
+      "type": "float",
+      "default": 4,
+      "min": 1,
+      "max": 8
+    }
+  ],
+  "outputs": [
+    {
+      "id": "coordinates",
+      "name": "Coordinates",
+      "type": "vec2",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "magnitude",
+      "name": "Magnitude",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "valid",
+      "name": "Valid",
+      "type": "float",
+      "semantic_role": "mask"
+    }
+  ],
+  "helpers": "vec2 maker_o_cmul(vec2 a,vec2 b){return vec2(a.x*b.x-a.y*b.y,a.x*b.y+a.y*b.x);} vec2 maker_o_cinv(vec2 a){return vec2(a.x,-a.y)/max(dot(a,a),1e-12);} vec2 maker_o_cpow(vec2 a,float p){return exp(p*a.x)*vec2(cos(p*a.y),sin(p*a.y));}\nstruct MakerO_elliptic_function_coordinate_warp_2d {vec2 coordinates;float magnitude;float valid;};\nMakerO_elliptic_function_coordinate_warp_2d maker_o_elliptic_function_coordinate_warp_2d(vec2 position,float period_x,float period_y,float scale,float terms){\nvec2 period=vec2(period_x,period_y); vec2 p=mod(position+period*.5,period)-period*.5; if(dot(p,p)<1e-8)return MakerO_elliptic_function_coordinate_warp_2d(vec2(0),0.,0.); vec2 inv=maker_o_cinv(p); vec2 w=maker_o_cmul(inv,inv); int n=int(clamp(terms,1.,8.)); for(int i=-8;i<=8;i++){for(int j=-8;j<=8;j++){if(abs(i)>n||abs(j)>n||(i==0&&j==0))continue; vec2 l=vec2(float(i),float(j))*period; vec2 a=maker_o_cinv(p-l),b=maker_o_cinv(l); w+=maker_o_cmul(a,a)-maker_o_cmul(b,b);}} w*=scale; return MakerO_elliptic_function_coordinate_warp_2d(w,length(w),1.);\n}",
+  "glsl_outputs": {
+    "coordinates": "maker_o_elliptic_function_coordinate_warp_2d({position},{period_x},{period_y},{scale},{terms}).coordinates",
+    "magnitude": "maker_o_elliptic_function_coordinate_warp_2d({position},{period_x},{period_y},{scale},{terms}).magnitude",
+    "valid": "maker_o_elliptic_function_coordinate_warp_2d({position},{period_x},{period_y},{scale},{terms}).valid"
+  }
+}

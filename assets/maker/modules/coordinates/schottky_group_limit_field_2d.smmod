@@ -1,0 +1,103 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.schottky_group_limit_field_2d",
+  "name": "Schottky Group Limit Field 2D",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "header_color": "#348F8B",
+  "description": "Schottky Group Limit Field 2D",
+  "uses": "Reusable mathematical coordinate transformations.",
+  "notes": "Finite reduced-word orbit of two paired disjoint circle domains; complex fractional-linear maps, not anti-conformal inversion. Boundary distance is local, not global SDF.",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "semantic_role": "position2d",
+      "default": "maker_uv-vec2(0.5)"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "scale",
+      "name": "Scale",
+      "type": "float",
+      "default": 2,
+      "min": 0.01,
+      "max": 20
+    },
+    {
+      "id": "radius",
+      "name": "Radius",
+      "type": "float",
+      "default": 0.32,
+      "min": 0.05,
+      "max": 0.6
+    },
+    {
+      "id": "iterations",
+      "name": "Iterations",
+      "type": "float",
+      "default": 8,
+      "min": 1,
+      "max": 16
+    },
+    {
+      "id": "rotation",
+      "name": "Rotation",
+      "type": "float",
+      "default": 0,
+      "min": -6.283,
+      "max": 6.283
+    }
+  ],
+  "outputs": [
+    {
+      "id": "transformed",
+      "name": "Transformed",
+      "type": "vec2",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "boundary_distance",
+      "name": "Boundary Distance",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "depth",
+      "name": "Depth",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "pair_index",
+      "name": "Pair Index",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "local_scale",
+      "name": "Local Scale",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "validity",
+      "name": "Validity",
+      "type": "float",
+      "semantic_role": "mask"
+    }
+  ],
+  "helpers": "struct MakerKSchottky {vec2 transformed;float boundary_distance;float depth;float pair_index;float local_scale;float validity;};\nMakerKSchottky maker_k_schottky_group_limit_field_2d(vec2 position,float scale,float radius,float iterations,float rotation){\n vec2 z=position*scale;float cs=cos(rotation),sn=sin(rotation);z=mat2(cs,sn,-sn,cs)*z;\n if(any(isnan(z))||any(isinf(z))||length(z)>1e4)return MakerKSchottky(vec2(0),0.,0.,0.,0.,0.);\n vec2 centers[4]=vec2[4](vec2(-1,0),vec2(1,0),vec2(0,-1),vec2(0,1));\n float depth=0.,last=-1.,logscale=0.,bd=0.;float r2=radius*radius;\n for(int i=0;i<=16;i++){int hit=-1;bd=1e10;for(int j=0;j<4;j++){float d=length(z-centers[j]);bd=min(bd,abs(d-radius));if(d<radius)hit=j;}\n if(hit<0||i>=int(clamp(floor(iterations+.5),1.,16.)))break;\n vec2 v=z-centers[hit];float q=dot(v,v);if(q<1e-10)return MakerKSchottky(vec2(0),bd,depth,last,0.,0.);\n z=centers[hit^1]+r2*vec2(v.x,-v.y)/q;logscale=clamp(logscale+log(r2/q),-30.,30.);depth+=1.;last=float(hit);}\n return MakerKSchottky(z,bd,depth,last,exp(logscale)*scale,1.);\n}",
+  "glsl_outputs": {
+    "transformed": "maker_k_schottky_group_limit_field_2d({position},{scale},{radius},{iterations},{rotation}).transformed",
+    "boundary_distance": "maker_k_schottky_group_limit_field_2d({position},{scale},{radius},{iterations},{rotation}).boundary_distance",
+    "depth": "maker_k_schottky_group_limit_field_2d({position},{scale},{radius},{iterations},{rotation}).depth",
+    "pair_index": "maker_k_schottky_group_limit_field_2d({position},{scale},{radius},{iterations},{rotation}).pair_index",
+    "local_scale": "maker_k_schottky_group_limit_field_2d({position},{scale},{radius},{iterations},{rotation}).local_scale",
+    "validity": "maker_k_schottky_group_limit_field_2d({position},{scale},{radius},{iterations},{rotation}).validity"
+  }
+}

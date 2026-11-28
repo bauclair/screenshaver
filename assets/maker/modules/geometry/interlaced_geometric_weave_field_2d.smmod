@@ -1,0 +1,96 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.geometry.interlaced_geometric_weave_field_2d",
+  "name": "Interlaced Geometric Weave Field 2D",
+  "category": "Geometry",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "header_color": "#348F8B",
+  "description": "Orthogonal periodic ribbon weave with alternating crossing parity, top-strand selection and a smooth raised profile. Not a physical cloth simulation.",
+  "uses": "Decorative geometric fields and reusable composition.",
+  "notes": "Orthogonal periodic ribbon weave with alternating crossing parity, top-strand selection and a smooth raised profile. Not a physical cloth simulation.",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "semantic_role": "position2d",
+      "default": "maker_uv-vec2(0.5)"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "frequency",
+      "name": "Frequency",
+      "type": "float",
+      "default": 8,
+      "min": 0.1,
+      "max": 40
+    },
+    {
+      "id": "angle",
+      "name": "Angle",
+      "type": "float",
+      "default": 0,
+      "min": -6.283,
+      "max": 6.283
+    },
+    {
+      "id": "width",
+      "name": "Width",
+      "type": "float",
+      "default": 0.24,
+      "min": 0.01,
+      "max": 0.48
+    },
+    {
+      "id": "softness",
+      "name": "Softness",
+      "type": "float",
+      "default": 0.02,
+      "min": 0.001,
+      "max": 0.1
+    }
+  ],
+  "outputs": [
+    {
+      "id": "mask",
+      "name": "Mask",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "height",
+      "name": "Height",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "strand",
+      "name": "Strand",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "crossing",
+      "name": "Crossing",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "distance",
+      "name": "Distance",
+      "type": "float",
+      "semantic_role": ""
+    }
+  ],
+  "helpers": "struct MakerP_interlaced_geometric_weave_field_2d {float mask;float height;float strand;float crossing;float distance;};\nMakerP_interlaced_geometric_weave_field_2d maker_p_interlaced_geometric_weave_field_2d(vec2 position,float frequency,float angle,float width,float softness){\nfloat c=cos(angle),s=sin(angle);vec2 p=mat2(c,s,-s,c)*position*frequency;vec2 cell=floor(p+0.5),q=abs(p-cell);float w=max(width,0.001),e=max(softness,0.001);vec2 m=vec2(1.0)-smoothstep(vec2(w-e),vec2(w+e),q);float parity=mod(cell.x+cell.y,2.0);float crossMask=m.x*m.y;float strand=mix(step(q.y,q.x),parity,crossMask);float h=max(m.x*sqrt(max(0.0,1.0-pow(min(q.x/w,1.0),2.0))),m.y*sqrt(max(0.0,1.0-pow(min(q.y/w,1.0),2.0))));return MakerP_interlaced_geometric_weave_field_2d(max(m.x,m.y),h*(0.65+0.35*crossMask),strand,crossMask,min(q.x,q.y)/max(frequency,0.001));\n}",
+  "glsl_outputs": {
+    "mask": "maker_p_interlaced_geometric_weave_field_2d({position},{frequency},{angle},{width},{softness}).mask",
+    "height": "maker_p_interlaced_geometric_weave_field_2d({position},{frequency},{angle},{width},{softness}).height",
+    "strand": "maker_p_interlaced_geometric_weave_field_2d({position},{frequency},{angle},{width},{softness}).strand",
+    "crossing": "maker_p_interlaced_geometric_weave_field_2d({position},{frequency},{angle},{width},{softness}).crossing",
+    "distance": "maker_p_interlaced_geometric_weave_field_2d({position},{frequency},{angle},{width},{softness}).distance"
+  }
+}

@@ -1,0 +1,105 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.geometry.dendritic_growth_approximation_field_2d",
+  "name": "Dendritic Growth Approximation Field 2D",
+  "category": "Geometry",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "header_color": "#348F8B",
+  "description": "Local greedy folded branch proximity approximation, not diffusion-limited aggregation or global nearest distance. Residuals are evaluated in successive local coordinate scales.",
+  "uses": "Procedural botanical geometry and composition.",
+  "notes": "Local greedy folded branch proximity approximation, not diffusion-limited aggregation or global nearest distance. Residuals are evaluated in successive local coordinate scales.",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "semantic_role": "position2d",
+      "default": "maker_uv-vec2(0.5)"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "scale",
+      "name": "Scale",
+      "type": "float",
+      "default": 2.0,
+      "min": 0.1,
+      "max": 10
+    },
+    {
+      "id": "depth",
+      "name": "Depth",
+      "type": "float",
+      "default": 6,
+      "min": 1,
+      "max": 8
+    },
+    {
+      "id": "spread",
+      "name": "Spread",
+      "type": "float",
+      "default": 0.7,
+      "min": 0.1,
+      "max": 1.4
+    },
+    {
+      "id": "shrink",
+      "name": "Shrink",
+      "type": "float",
+      "default": 0.62,
+      "min": 0.3,
+      "max": 0.85
+    },
+    {
+      "id": "width",
+      "name": "Width",
+      "type": "float",
+      "default": 0.025,
+      "min": 0.001,
+      "max": 0.1
+    },
+    {
+      "id": "seed",
+      "name": "Seed",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 100
+    }
+  ],
+  "outputs": [
+    {
+      "id": "distance",
+      "name": "Distance",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "mask",
+      "name": "Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    },
+    {
+      "id": "generation",
+      "name": "Generation",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "local_coordinates",
+      "name": "Local Coordinates",
+      "type": "vec2",
+      "semantic_role": "position2d"
+    }
+  ],
+  "helpers": "struct MakerQ_dendritic_growth_approximation_field_2d {float distance;float mask;float generation;vec2 local_coordinates;};\nMakerQ_dendritic_growth_approximation_field_2d maker_q_dendritic_growth_approximation_field_2d(vec2 position,float scale,float depth,float spread,float shrink,float width,float seed){\nvec2 p=position*scale;float best=1e9,g=0.,w=width;int n=int(clamp(depth,1.,8.));for(int i=0;i<8;i++){if(i>=n)break;float d=length(vec2(p.x,p.y-clamp(p.y,0.,1.)))-w;if(d<best){best=d;g=float(i);}p.y-=1.;float side=p.x<0.?-1.:1.;float a=side*spread*(.8+.2*sin(seed+float(i)*7.));float c=cos(a),s=sin(a);p=vec2(c*p.x+s*p.y,-s*p.x+c*p.y)/shrink;w*=.8;}return MakerQ_dendritic_growth_approximation_field_2d(best/scale,1.-smoothstep(0.,width*.2,best),g,p);\n}",
+  "glsl_outputs": {
+    "distance": "maker_q_dendritic_growth_approximation_field_2d({position},{scale},{depth},{spread},{shrink},{width},{seed}).distance",
+    "mask": "maker_q_dendritic_growth_approximation_field_2d({position},{scale},{depth},{spread},{shrink},{width},{seed}).mask",
+    "generation": "maker_q_dendritic_growth_approximation_field_2d({position},{scale},{depth},{spread},{shrink},{width},{seed}).generation",
+    "local_coordinates": "maker_q_dendritic_growth_approximation_field_2d({position},{scale},{depth},{spread},{shrink},{width},{seed}).local_coordinates"
+  }
+}

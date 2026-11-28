@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.quaternion_dynamical_transformation_3d",
+  "name": "Quaternion Dynamical Transformation 3D",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "header_color": "#527D94",
+  "description": "Bounded normalized quaternion recurrence with orbit statistics, distinct from escape-time Julia fields.",
+  "uses": "Stateless spatial dynamics and orbit geometry.",
+  "notes": "Bounded numerical evaluation; no persistent state. Proximity is not an exact signed distance field.",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "default": "vec3(maker_uv-vec2(0.5),0.2)"
+    },
+    {
+      "id": "axis",
+      "name": "Axis",
+      "type": "vec3",
+      "default": "vec3(0.3,0.7,0.2)"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "scalar_part",
+      "name": "Scalar Part",
+      "type": "float",
+      "default": 0.6,
+      "min": -2,
+      "max": 2
+    },
+    {
+      "id": "angle",
+      "name": "Angle",
+      "type": "float",
+      "default": 0.8,
+      "min": -3.14159,
+      "max": 3.14159
+    },
+    {
+      "id": "feedback",
+      "name": "Feedback",
+      "type": "float",
+      "default": 0.35,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "iterations",
+      "name": "Iterations",
+      "type": "float",
+      "default": 12,
+      "min": 1,
+      "max": 32
+    }
+  ],
+  "outputs": [
+    {
+      "id": "transformed",
+      "name": "Transformed",
+      "type": "vec3"
+    },
+    {
+      "id": "orbit_mean",
+      "name": "Orbit Mean",
+      "type": "vec3"
+    },
+    {
+      "id": "scalar_value",
+      "name": "Scalar Value",
+      "type": "float"
+    },
+    {
+      "id": "orbit_spread",
+      "name": "Orbit Spread",
+      "type": "float"
+    }
+  ],
+  "helpers": "\nstruct MakerS_quaternion_dynamical_transformation_3d {vec3 transformed;vec3 orbit_mean;float scalar_value;float orbit_spread;};\nMakerS_quaternion_dynamical_transformation_3d maker_s_quaternion_dynamical_transformation_3d(vec3 position,vec3 axis,float scalar_part,float angle,float feedback,float iterations){\nvec4 q=vec4(position,scalar_part);q/=max(length(q),1e-6);vec3 a=axis/max(length(axis),1e-6);vec4 c=vec4(a*sin(angle*.5),cos(angle*.5));c/=max(length(c),1e-6);vec3 sum=vec3(0);float spread=0.,count=0.;for(int i=0;i<32;i++){if(i>=int(iterations))break;vec4 s=vec4(2.*q.w*q.xyz,q.w*q.w-dot(q.xyz,q.xyz));vec4 t=vec4(s.w*c.xyz+c.w*s.xyz+cross(s.xyz,c.xyz),s.w*c.w-dot(s.xyz,c.xyz));q=t+feedback*vec4(position/(1.+length(position)),scalar_part);q/=max(length(q),1e-6);sum+=q.xyz;spread+=dot(q.xyz,q.xyz);count+=1.;}vec3 mean=sum/max(count,1.);return MakerS_quaternion_dynamical_transformation_3d(q.xyz,mean,q.w,sqrt(max(0.,spread/max(count,1.)-dot(mean,mean))));\n}",
+  "glsl_outputs": {
+    "transformed": "maker_s_quaternion_dynamical_transformation_3d({position},{axis},{scalar_part},{angle},{feedback},{iterations}).transformed",
+    "orbit_mean": "maker_s_quaternion_dynamical_transformation_3d({position},{axis},{scalar_part},{angle},{feedback},{iterations}).orbit_mean",
+    "scalar_value": "maker_s_quaternion_dynamical_transformation_3d({position},{axis},{scalar_part},{angle},{feedback},{iterations}).scalar_value",
+    "orbit_spread": "maker_s_quaternion_dynamical_transformation_3d({position},{axis},{scalar_part},{angle},{feedback},{iterations}).orbit_spread"
+  }
+}

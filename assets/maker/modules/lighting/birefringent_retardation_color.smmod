@@ -1,0 +1,129 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.lighting.birefringent_retardation_color",
+  "name": "Birefringent Retardation Color",
+  "category": "Lighting",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "header_color": "#348F8B",
+  "description": "Ideal linear retarder between linear polarizers with three representative wavelengths.",
+  "uses": "Reusable optical response and field composition.",
+  "notes": "Position x controls thickness gradient; y controls optic-axis gradient. No absorption, dispersion or full spectral integration.",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "semantic_role": "position2d",
+      "default": "maker_uv-vec2(0.5)"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "thickness_nm",
+      "name": "Thickness Nm",
+      "type": "float",
+      "default": 12000,
+      "min": 0,
+      "max": 50000
+    },
+    {
+      "id": "thickness_gradient",
+      "name": "Thickness Gradient",
+      "type": "float",
+      "default": 1,
+      "min": -4,
+      "max": 4
+    },
+    {
+      "id": "birefringence",
+      "name": "Birefringence",
+      "type": "float",
+      "default": 0.035,
+      "min": 0,
+      "max": 0.2
+    },
+    {
+      "id": "axis_angle",
+      "name": "Axis Angle",
+      "type": "float",
+      "default": 45,
+      "min": -180,
+      "max": 180
+    },
+    {
+      "id": "axis_gradient",
+      "name": "Axis Gradient",
+      "type": "float",
+      "default": 90,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "analyzer_angle",
+      "name": "Analyzer Angle",
+      "type": "float",
+      "default": 90,
+      "min": -180,
+      "max": 180
+    },
+    {
+      "id": "red_nm",
+      "name": "Red Nm",
+      "type": "float",
+      "default": 650,
+      "min": 590,
+      "max": 750
+    },
+    {
+      "id": "green_nm",
+      "name": "Green Nm",
+      "type": "float",
+      "default": 530,
+      "min": 490,
+      "max": 590
+    },
+    {
+      "id": "blue_nm",
+      "name": "Blue Nm",
+      "type": "float",
+      "default": 450,
+      "min": 380,
+      "max": 490
+    }
+  ],
+  "outputs": [
+    {
+      "id": "retardation_color",
+      "name": "Retardation Color",
+      "type": "vec3",
+      "semantic_role": ""
+    },
+    {
+      "id": "intensity",
+      "name": "Intensity",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "optical_path_difference",
+      "name": "Optical Path Difference",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "valid",
+      "name": "Valid",
+      "type": "float",
+      "semantic_role": "mask"
+    }
+  ],
+  "helpers": "struct MakerN_birefringent_retardation_color {vec3 retardation_color;float intensity;float optical_path_difference;float valid;};\nMakerN_birefringent_retardation_color maker_n_birefringent_retardation_color(vec2 position,float thickness_nm,float thickness_gradient,float birefringence,float axis_angle,float axis_gradient,float analyzer_angle,float red_nm,float green_nm,float blue_nm){\nif(any(isnan(position))||any(isinf(position)))return MakerN_birefringent_retardation_color(vec3(0),0.,0.,0.);\nvec2 p=clamp(position,vec2(-100),vec2(100));float t=thickness_nm*clamp(1.+p.x*thickness_gradient,0.,4.);float opd=t*birefringence;float theta=radians(axis_angle+p.y*axis_gradient);float beta=radians(analyzer_angle);float a=cos(theta)*cos(beta-theta);float b=-sin(theta)*sin(beta-theta);vec3 phase=6.2831853*opd/max(vec3(red_nm,green_nm,blue_nm),vec3(1));vec3 v=clamp(vec3(a*a+b*b)+2.*a*b*cos(phase),0.,1.);return MakerN_birefringent_retardation_color(v,dot(v,vec3(.2126,.7152,.0722)),opd,1.);\n}",
+  "glsl_outputs": {
+    "retardation_color": "maker_n_birefringent_retardation_color({position},{thickness_nm},{thickness_gradient},{birefringence},{axis_angle},{axis_gradient},{analyzer_angle},{red_nm},{green_nm},{blue_nm}).retardation_color",
+    "intensity": "maker_n_birefringent_retardation_color({position},{thickness_nm},{thickness_gradient},{birefringence},{axis_angle},{axis_gradient},{analyzer_angle},{red_nm},{green_nm},{blue_nm}).intensity",
+    "optical_path_difference": "maker_n_birefringent_retardation_color({position},{thickness_nm},{thickness_gradient},{birefringence},{axis_angle},{axis_gradient},{analyzer_angle},{red_nm},{green_nm},{blue_nm}).optical_path_difference",
+    "valid": "maker_n_birefringent_retardation_color({position},{thickness_nm},{thickness_gradient},{birefringence},{axis_angle},{axis_gradient},{analyzer_angle},{red_nm},{green_nm},{blue_nm}).valid"
+  }
+}

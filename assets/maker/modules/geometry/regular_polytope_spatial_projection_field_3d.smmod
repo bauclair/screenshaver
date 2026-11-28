@@ -1,0 +1,111 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.geometry.regular_polytope_spatial_projection_field_3d",
+  "name": "Regular Polytope Spatial Projection Field 3D",
+  "category": "Geometry",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "header_color": "#348F8B",
+  "description": "Regular Polytope Spatial Projection Field 3D",
+  "uses": "Reusable mathematical geometry and field composition.",
+  "notes": "Mode 0 hypercube (32 edges), mode 1 16-cell (24 edges). Perspective 4D to 3D, exact distance to projected segments minus tube radius; not exact signed distance inside overlapping tubes. Two coupled rotation planes. Time input can be connected to animate. No 5-cell or 24-cell in this initial spatial implementation.",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "semantic_role": "position3d",
+      "default": "vec3(maker_uv-vec2(0.5),0.0)"
+    },
+    {
+      "id": "time_offset",
+      "name": "Time Offset",
+      "type": "float",
+      "semantic_role": "time",
+      "default": "0.0"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "size",
+      "name": "Size",
+      "type": "float",
+      "default": 0.5,
+      "min": 0.01,
+      "max": 5
+    },
+    {
+      "id": "polytope",
+      "name": "Polytope",
+      "type": "float",
+      "default": 0,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "angle",
+      "name": "Angle",
+      "type": "float",
+      "default": 25,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "speed",
+      "name": "Speed",
+      "type": "float",
+      "default": 0.3,
+      "min": -2,
+      "max": 2
+    },
+    {
+      "id": "tube_radius",
+      "name": "Tube Radius",
+      "type": "float",
+      "default": 0.025,
+      "min": 0.001,
+      "max": 0.2
+    }
+  ],
+  "outputs": [
+    {
+      "id": "distance",
+      "name": "Distance",
+      "type": "float",
+      "semantic_role": "distance"
+    },
+    {
+      "id": "edge_distance",
+      "name": "Edge Distance",
+      "type": "float",
+      "semantic_role": "distance"
+    },
+    {
+      "id": "vertex_distance",
+      "name": "Vertex Distance",
+      "type": "float",
+      "semantic_role": "distance"
+    },
+    {
+      "id": "edge_index",
+      "name": "Edge Index",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "mask",
+      "name": "Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    }
+  ],
+  "helpers": "struct MakerLPoly {float distance;float edge_distance;float vertex_distance;float edge_index;float mask;};\nvec4 maker_l_poly_vertex(int i,int mode){if(mode==0)return vec4((i&1)==0?-0.5:0.5,(i&2)==0?-0.5:0.5,(i&4)==0?-0.5:0.5,(i&8)==0?-0.5:0.5);vec4 v=vec4(0);v[i/2]=(i%2==0)?-1.:1.;return v;}\nvec3 maker_l_poly_project(vec4 v,float a,float size){float c=cos(a),s=sin(a);v.xw=mat2(c,s,-s,c)*v.xw;float b=a*.618;c=cos(b);s=sin(b);v.yz=mat2(c,s,-s,c)*v.yz;return size*v.xyz*2.5/(2.5-v.w);}\nMakerLPoly maker_l_regular_polytope_spatial_projection_field_3d(vec3 position,float time_offset,float size,float polytope,float angle,float speed,float tube_radius){\n int mode=int(clamp(floor(polytope+.5),0.,1.));int count=mode==0?16:8;vec3 v[16];float a=radians(angle)+time_offset*speed;float vd=1e10,ed=1e10,idx=0.;\n for(int i=0;i<16;i++){if(i>=count)break;v[i]=maker_l_poly_project(maker_l_poly_vertex(i,mode),a,size);vd=min(vd,length(position-v[i]));}\n int edge=0;for(int i=0;i<16;i++){if(i>=count)break;for(int j=i+1;j<16;j++){if(j>=count)break;int x=i^j;bool adjacent=mode==0?((x&(x-1))==0):(i/2!=j/2);if(!adjacent)continue;vec3 d=v[j]-v[i],p=position-v[i];float h=clamp(dot(p,d)/max(dot(d,d),1e-12),0.,1.);float e=length(p-h*d);if(e<ed){ed=e;idx=float(edge);}edge++;}}\n return MakerLPoly(ed-tube_radius,ed,vd,idx,step(ed,tube_radius));\n}",
+  "glsl_outputs": {
+    "distance": "maker_l_regular_polytope_spatial_projection_field_3d({position},{time_offset},{size},{polytope},{angle},{speed},{tube_radius}).distance",
+    "edge_distance": "maker_l_regular_polytope_spatial_projection_field_3d({position},{time_offset},{size},{polytope},{angle},{speed},{tube_radius}).edge_distance",
+    "vertex_distance": "maker_l_regular_polytope_spatial_projection_field_3d({position},{time_offset},{size},{polytope},{angle},{speed},{tube_radius}).vertex_distance",
+    "edge_index": "maker_l_regular_polytope_spatial_projection_field_3d({position},{time_offset},{size},{polytope},{angle},{speed},{tube_radius}).edge_index",
+    "mask": "maker_l_regular_polytope_spatial_projection_field_3d({position},{time_offset},{size},{polytope},{angle},{speed},{tube_radius}).mask"
+  }
+}

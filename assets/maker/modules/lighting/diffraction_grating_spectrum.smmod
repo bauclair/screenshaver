@@ -1,0 +1,121 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.lighting.diffraction_grating_spectrum",
+  "name": "Diffraction Grating Spectrum",
+  "category": "Lighting",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "header_color": "#348F8B",
+  "description": "Three-wavelength transmission grating response with finite groove count and slit envelope.",
+  "uses": "Reusable optical response and field composition.",
+  "notes": "Fraunhofer scalar approximation; RGB channels are representative wavelengths, not integrated colorimetry. Position x maps to outgoing angle, y is unused.",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "semantic_role": "position2d",
+      "default": "maker_uv-vec2(0.5)"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "angle_scale",
+      "name": "Angle Scale",
+      "type": "float",
+      "default": 2,
+      "min": 0.1,
+      "max": 6
+    },
+    {
+      "id": "incidence_angle",
+      "name": "Incidence Angle",
+      "type": "float",
+      "default": 0,
+      "min": -70,
+      "max": 70
+    },
+    {
+      "id": "spacing_nm",
+      "name": "Spacing Nm",
+      "type": "float",
+      "default": 1600,
+      "min": 400,
+      "max": 5000
+    },
+    {
+      "id": "grooves",
+      "name": "Grooves",
+      "type": "float",
+      "default": 12,
+      "min": 2,
+      "max": 32
+    },
+    {
+      "id": "fill_factor",
+      "name": "Fill Factor",
+      "type": "float",
+      "default": 0.35,
+      "min": 0.05,
+      "max": 1
+    },
+    {
+      "id": "red_nm",
+      "name": "Red Nm",
+      "type": "float",
+      "default": 650,
+      "min": 590,
+      "max": 750
+    },
+    {
+      "id": "green_nm",
+      "name": "Green Nm",
+      "type": "float",
+      "default": 530,
+      "min": 490,
+      "max": 590
+    },
+    {
+      "id": "blue_nm",
+      "name": "Blue Nm",
+      "type": "float",
+      "default": 450,
+      "min": 380,
+      "max": 490
+    }
+  ],
+  "outputs": [
+    {
+      "id": "spectrum",
+      "name": "Spectrum",
+      "type": "vec3",
+      "semantic_role": ""
+    },
+    {
+      "id": "intensity",
+      "name": "Intensity",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "order_coordinate",
+      "name": "Order Coordinate",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "valid",
+      "name": "Valid",
+      "type": "float",
+      "semantic_role": "mask"
+    }
+  ],
+  "helpers": "struct MakerN_diffraction_grating_spectrum {vec3 spectrum;float intensity;float order_coordinate;float valid;};\nMakerN_diffraction_grating_spectrum maker_n_diffraction_grating_spectrum(vec2 position,float angle_scale,float incidence_angle,float spacing_nm,float grooves,float fill_factor,float red_nm,float green_nm,float blue_nm){\nif(any(isnan(position))||any(isinf(position)))return MakerN_diffraction_grating_spectrum(vec3(0),0.,0.,0.);\nfloat a=atan(clamp(position.x,-1000.,1000.)*angle_scale);float delta=sin(a)-sin(radians(incidence_angle));vec3 q=spacing_nm*delta/max(vec3(red_nm,green_nm,blue_nm),vec3(1));int n=int(clamp(floor(grooves+.5),2.,32.));vec3 sumc=vec3(0);for(int i=0;i<32;i++){if(i>=n)break;sumc+=cos(3.14159265*(2.*float(i)-float(n-1))*q);}vec3 v=sumc/float(n);vec3 x=3.14159265*fill_factor*q;vec3 env=vec3(1);for(int j=0;j<3;j++){if(abs(x[j])>1e-4)env[j]=sin(x[j])/x[j];}v*=env;v*=v;return MakerN_diffraction_grating_spectrum(v,dot(v,vec3(.2126,.7152,.0722)),q.y,1.);\n}",
+  "glsl_outputs": {
+    "spectrum": "maker_n_diffraction_grating_spectrum({position},{angle_scale},{incidence_angle},{spacing_nm},{grooves},{fill_factor},{red_nm},{green_nm},{blue_nm}).spectrum",
+    "intensity": "maker_n_diffraction_grating_spectrum({position},{angle_scale},{incidence_angle},{spacing_nm},{grooves},{fill_factor},{red_nm},{green_nm},{blue_nm}).intensity",
+    "order_coordinate": "maker_n_diffraction_grating_spectrum({position},{angle_scale},{incidence_angle},{spacing_nm},{grooves},{fill_factor},{red_nm},{green_nm},{blue_nm}).order_coordinate",
+    "valid": "maker_n_diffraction_grating_spectrum({position},{angle_scale},{incidence_angle},{spacing_nm},{grooves},{fill_factor},{red_nm},{green_nm},{blue_nm}).valid"
+  }
+}

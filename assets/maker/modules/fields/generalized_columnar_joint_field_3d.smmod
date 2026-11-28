@@ -1,0 +1,92 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.generalized_columnar_joint_field_3d",
+  "name": "Generalized Columnar Joint Field 3D",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "header_color": "#527D94",
+  "description": "Jittered hexagonal column centers with axial bending and approximate Voronoi joint proximity.",
+  "uses": "Procedural terrain and geological morphology.",
+  "notes": "Stateless analytical approximation; no physical simulation.",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "default": "vec3(maker_uv-vec2(0.5),0.2)"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "density",
+      "name": "Density",
+      "type": "float",
+      "default": 5,
+      "min": 0.5,
+      "max": 30
+    },
+    {
+      "id": "jitter",
+      "name": "Jitter",
+      "type": "float",
+      "default": 0.15,
+      "min": 0,
+      "max": 0.35
+    },
+    {
+      "id": "bend",
+      "name": "Bend",
+      "type": "float",
+      "default": 0.1,
+      "min": 0,
+      "max": 0.5
+    },
+    {
+      "id": "joint_width",
+      "name": "Joint Width",
+      "type": "float",
+      "default": 0.04,
+      "min": 0.005,
+      "max": 0.2
+    },
+    {
+      "id": "seed",
+      "name": "Seed",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 100
+    }
+  ],
+  "outputs": [
+    {
+      "id": "joint_distance",
+      "name": "Joint Distance",
+      "type": "float"
+    },
+    {
+      "id": "joint_mask",
+      "name": "Joint Mask",
+      "type": "float"
+    },
+    {
+      "id": "column_value",
+      "name": "Column Value",
+      "type": "float"
+    },
+    {
+      "id": "column_radius",
+      "name": "Column Radius",
+      "type": "float"
+    }
+  ],
+  "helpers": "\nstruct MakerT_generalized_columnar_joint_field_3d {float joint_distance;float joint_mask;float column_value;float column_radius;};\nMakerT_generalized_columnar_joint_field_3d maker_t_generalized_columnar_joint_field_3d(vec3 position,float density,float jitter,float bend,float joint_width,float seed){\nvec2 p=(position.xz+bend*vec2(sin(position.y*2.),cos(position.y*2.)))*density;vec2 g=vec2(p.x-p.y*.57735027,p.y*1.15470054);vec2 b=floor(g);float d1=1e6,d2=1e6,val=0.;for(int y=-2;y<=2;y++){for(int x=-2;x<=2;x++){vec2 k=b+vec2(float(x),float(y));float h=fract(sin(dot(k,vec2(127.1,311.7))+seed)*43758.5453);float j=fract(sin(dot(k,vec2(269.5,183.3))+seed)*43758.5453);vec2 a=vec2(k.x+.5*k.y,.8660254*k.y)+jitter*(vec2(h,j)-.5);float d=length(p-a);if(d<d1){d2=d1;d1=d;val=h;}else d2=min(d2,d);}}float edge=.5*(d2-d1);return MakerT_generalized_columnar_joint_field_3d(edge/density,1.-smoothstep(0.,joint_width,edge),val,d1/density);\n}",
+  "glsl_outputs": {
+    "joint_distance": "maker_t_generalized_columnar_joint_field_3d({position},{density},{jitter},{bend},{joint_width},{seed}).joint_distance",
+    "joint_mask": "maker_t_generalized_columnar_joint_field_3d({position},{density},{jitter},{bend},{joint_width},{seed}).joint_mask",
+    "column_value": "maker_t_generalized_columnar_joint_field_3d({position},{density},{jitter},{bend},{joint_width},{seed}).column_value",
+    "column_radius": "maker_t_generalized_columnar_joint_field_3d({position},{density},{jitter},{bend},{joint_width},{seed}).column_radius"
+  }
+}

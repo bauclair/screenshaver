@@ -1,0 +1,84 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.generalized_chaotic_flow_transformation_3d",
+  "name": "Generalized Chaotic Flow Transformation 3D",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "header_color": "#527D94",
+  "description": "Midpoint integration of Lorenz, Rossler, Thomas, Aizawa and Dadras flows.",
+  "uses": "Stateless spatial dynamics and orbit geometry.",
+  "notes": "Bounded numerical evaluation; no persistent state. Proximity is not an exact signed distance field.",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "default": "vec3(maker_uv-vec2(0.5),0.2)"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "system",
+      "name": "System",
+      "type": "float",
+      "default": 0,
+      "min": 0,
+      "max": 4
+    },
+    {
+      "id": "step_size",
+      "name": "Step Size",
+      "type": "float",
+      "default": 0.008,
+      "min": 0.001,
+      "max": 0.02
+    },
+    {
+      "id": "iterations",
+      "name": "Iterations",
+      "type": "float",
+      "default": 24,
+      "min": 1,
+      "max": 64
+    },
+    {
+      "id": "scale",
+      "name": "Scale",
+      "type": "float",
+      "default": 1,
+      "min": 0.05,
+      "max": 10
+    }
+  ],
+  "outputs": [
+    {
+      "id": "transformed",
+      "name": "Transformed",
+      "type": "vec3"
+    },
+    {
+      "id": "speed",
+      "name": "Speed",
+      "type": "float"
+    },
+    {
+      "id": "displacement",
+      "name": "Displacement",
+      "type": "float"
+    },
+    {
+      "id": "valid",
+      "name": "Valid",
+      "type": "float"
+    }
+  ],
+  "helpers": "vec3 maker_s_flow(vec3 p,int m){float x=p.x,y=p.y,z=p.z;if(m==0)return vec3(10.*(y-x),x*(28.-z)-y,x*y-2.6666667*z);if(m==1)return vec3(-y-z,x+.2*y,.2+z*(x-5.7));if(m==2)return vec3(sin(y)-.208186*x,sin(z)-.208186*y,sin(x)-.208186*z);if(m==3)return vec3((z-.7)*x-3.5*y,3.5*x+(z-.7)*y,.6+.95*z-z*z*z/3.-(x*x+y*y)*(1.+.25*z)+.1*z*x*x*x);return vec3(y-3.*x+2.7*y*z,1.7*y-x*z+z,2.*x*y-9.*z);}\nvec3 maker_s_flow_step(vec3 p,int m,float h){vec3 k=maker_s_flow(p,m);return p+h*maker_s_flow(p+.5*h*k,m);}\nstruct MakerS_generalized_chaotic_flow_transformation_3d {vec3 transformed;float speed;float displacement;float valid;};\nMakerS_generalized_chaotic_flow_transformation_3d maker_s_generalized_chaotic_flow_transformation_3d(vec3 position,float system,float step_size,float iterations,float scale){\nvec3 p=position*scale;int m=int(clamp(floor(system+.5),0.,4.));if(length(p)>64.)return MakerS_generalized_chaotic_flow_transformation_3d(position,0.,0.,0.);for(int i=0;i<64;i++){if(i>=int(iterations))break;vec3 q=maker_s_flow_step(p,m,step_size);if(any(isnan(q))||any(isinf(q))||length(q)>64.)return MakerS_generalized_chaotic_flow_transformation_3d(p/scale,0.,length(p/scale-position),0.);p=q;}return MakerS_generalized_chaotic_flow_transformation_3d(p/scale,length(maker_s_flow(p,m))/scale,length(p/scale-position),1.);\n}",
+  "glsl_outputs": {
+    "transformed": "maker_s_generalized_chaotic_flow_transformation_3d({position},{system},{step_size},{iterations},{scale}).transformed",
+    "speed": "maker_s_generalized_chaotic_flow_transformation_3d({position},{system},{step_size},{iterations},{scale}).speed",
+    "displacement": "maker_s_generalized_chaotic_flow_transformation_3d({position},{system},{step_size},{iterations},{scale}).displacement",
+    "valid": "maker_s_generalized_chaotic_flow_transformation_3d({position},{system},{step_size},{iterations},{scale}).valid"
+  }
+}

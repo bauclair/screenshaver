@@ -1,0 +1,100 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.aeolian_ripple_field_2d",
+  "name": "Aeolian Ripple Field 2D",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "header_color": "#527D94",
+  "description": "Asymmetric wind ripple profile with transverse crest modulation and secondary ripple bands.",
+  "uses": "Procedural terrain and geological morphology.",
+  "notes": "Stateless analytical approximation; no physical simulation.",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv-vec2(0.5)"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "frequency",
+      "name": "Frequency",
+      "type": "float",
+      "default": 18,
+      "min": 1,
+      "max": 100
+    },
+    {
+      "id": "direction",
+      "name": "Direction",
+      "type": "float",
+      "default": 0,
+      "min": -3.14159,
+      "max": 3.14159
+    },
+    {
+      "id": "asymmetry",
+      "name": "Asymmetry",
+      "type": "float",
+      "default": 0.7,
+      "min": 0.1,
+      "max": 0.9
+    },
+    {
+      "id": "crest_warp",
+      "name": "Crest Warp",
+      "type": "float",
+      "default": 0.3,
+      "min": 0,
+      "max": 2
+    },
+    {
+      "id": "secondary",
+      "name": "Secondary",
+      "type": "float",
+      "default": 0.2,
+      "min": 0,
+      "max": 0.5
+    },
+    {
+      "id": "phase",
+      "name": "Phase",
+      "type": "float",
+      "default": 0,
+      "min": -6.28,
+      "max": 6.28
+    }
+  ],
+  "outputs": [
+    {
+      "id": "height",
+      "name": "Height",
+      "type": "float"
+    },
+    {
+      "id": "crest_mask",
+      "name": "Crest Mask",
+      "type": "float"
+    },
+    {
+      "id": "lee_mask",
+      "name": "Lee Mask",
+      "type": "float"
+    },
+    {
+      "id": "ripple_phase",
+      "name": "Ripple Phase",
+      "type": "float"
+    }
+  ],
+  "helpers": "\nstruct MakerT_aeolian_ripple_field_2d {float height;float crest_mask;float lee_mask;float ripple_phase;};\nMakerT_aeolian_ripple_field_2d maker_t_aeolian_ripple_field_2d(vec2 position,float frequency,float direction,float asymmetry,float crest_warp,float secondary,float phase){\nvec2 a=vec2(cos(direction),sin(direction));float u=dot(position,a),v=dot(position,vec2(-a.y,a.x));float q=u*frequency+crest_warp*sin(v*frequency*.35)+phase;float f=fract(q/6.2831853);float h=f<asymmetry?f/asymmetry:(1.-f)/(1.-asymmetry);h=h*h*(3.-2.*h);h=mix(h,.5+.5*cos(q*3.+sin(v*frequency)),secondary);return MakerT_aeolian_ripple_field_2d(h,1.-smoothstep(.02,.15,abs(f-asymmetry)),step(asymmetry,f),f);\n}",
+  "glsl_outputs": {
+    "height": "maker_t_aeolian_ripple_field_2d({position},{frequency},{direction},{asymmetry},{crest_warp},{secondary},{phase}).height",
+    "crest_mask": "maker_t_aeolian_ripple_field_2d({position},{frequency},{direction},{asymmetry},{crest_warp},{secondary},{phase}).crest_mask",
+    "lee_mask": "maker_t_aeolian_ripple_field_2d({position},{frequency},{direction},{asymmetry},{crest_warp},{secondary},{phase}).lee_mask",
+    "ripple_phase": "maker_t_aeolian_ripple_field_2d({position},{frequency},{direction},{asymmetry},{crest_warp},{secondary},{phase}).ripple_phase"
+  }
+}

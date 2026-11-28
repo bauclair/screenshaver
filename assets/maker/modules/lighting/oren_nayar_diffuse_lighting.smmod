@@ -1,0 +1,68 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.lighting.oren_nayar_diffuse_lighting",
+  "name": "Oren\u2013Nayar Diffuse Lighting",
+  "category": "Lighting",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "header_color": "#527D94",
+  "description": "Common simplified Oren\u2013Nayar rough diffuse model, cosine weighted.",
+  "uses": "Reusable analytical material shading.",
+  "notes": "Directions point away from the surface. Linear RGB where applicable. No persistent state or full light transport.",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "surface_normal",
+      "name": "Surface Normal",
+      "type": "vec3",
+      "default": "vec3(0,0,1)"
+    },
+    {
+      "id": "light_direction",
+      "name": "Light Direction",
+      "type": "vec3",
+      "default": "vec3(0.4,0.5,1)"
+    },
+    {
+      "id": "view_direction",
+      "name": "View Direction",
+      "type": "vec3",
+      "default": "vec3(0,0,1)"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "roughness",
+      "name": "Roughness",
+      "type": "float",
+      "default": 0.65,
+      "min": 0,
+      "max": 1.57
+    },
+    {
+      "id": "albedo",
+      "name": "Albedo",
+      "type": "float",
+      "default": 0.8,
+      "min": 0,
+      "max": 1
+    }
+  ],
+  "outputs": [
+    {
+      "id": "diffuse",
+      "name": "Diffuse",
+      "type": "float"
+    },
+    {
+      "id": "roughness_response",
+      "name": "Roughness Response",
+      "type": "float"
+    }
+  ],
+  "helpers": "struct MakerR_oren_nayar_diffuse_lighting {float diffuse;float roughness_response;};\nMakerR_oren_nayar_diffuse_lighting maker_r_oren_nayar_diffuse_lighting(vec3 surface_normal,vec3 light_direction,vec3 view_direction,float roughness,float albedo){\nvec3 n=surface_normal/max(length(surface_normal),1e-6),l=light_direction/max(length(light_direction),1e-6),v=view_direction/max(length(view_direction),1e-6);float nl=max(dot(n,l),0.),nv=max(dot(n,v),0.);if(nl<=0.||nv<=0.)return MakerR_oren_nayar_diffuse_lighting(0.,0.);float s=roughness*roughness;float a=1.-.5*s/(s+.33),b=.45*s/(s+.09);vec3 lp=l-n*nl,vp=v-n*nv;float c=max(0.,dot(lp,vp)/max(length(lp)*length(vp),1e-6));float sa=sqrt(max(0.,1.-min(nl,nv)*min(nl,nv)));float cb=max(nl,nv);float tb=sqrt(max(0.,1.-cb*cb))/max(cb,1e-4);float response=a+b*c*sa*tb;return MakerR_oren_nayar_diffuse_lighting(albedo*nl*response/3.14159265,response);\n}",
+  "glsl_outputs": {
+    "diffuse": "maker_r_oren_nayar_diffuse_lighting({surface_normal},{light_direction},{view_direction},{roughness},{albedo}).diffuse",
+    "roughness_response": "maker_r_oren_nayar_diffuse_lighting({surface_normal},{light_direction},{view_direction},{roughness},{albedo}).roughness_response"
+  }
+}

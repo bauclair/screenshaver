@@ -1,0 +1,120 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.catastrophe_geometry_field",
+  "name": "Catastrophe Geometry Field",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "header_color": "#348F8B",
+  "description": "Canonical fold, cusp, swallowtail and butterfly potential and stationary residual fields.",
+  "uses": "Reusable nonlinear mathematical transformations and field composition.",
+  "notes": "Uses x as state and y as a spatially varying control coefficient. Outputs are polynomial potential and derivatives, not signed distances or solved caustics.",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "semantic_role": "position2d",
+      "default": "maker_uv-vec2(0.5)"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "mode",
+      "name": "Mode",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 3
+    },
+    {
+      "id": "scale",
+      "name": "Scale",
+      "type": "float",
+      "default": 2,
+      "min": 0.1,
+      "max": 8
+    },
+    {
+      "id": "control_a",
+      "name": "Control A",
+      "type": "float",
+      "default": -0.6,
+      "min": -4,
+      "max": 4
+    },
+    {
+      "id": "control_b",
+      "name": "Control B",
+      "type": "float",
+      "default": 0.2,
+      "min": -4,
+      "max": 4
+    },
+    {
+      "id": "control_c",
+      "name": "Control C",
+      "type": "float",
+      "default": 0.1,
+      "min": -4,
+      "max": 4
+    },
+    {
+      "id": "control_d",
+      "name": "Control D",
+      "type": "float",
+      "default": 0,
+      "min": -4,
+      "max": 4
+    },
+    {
+      "id": "width",
+      "name": "Width",
+      "type": "float",
+      "default": 0.08,
+      "min": 0.001,
+      "max": 2
+    }
+  ],
+  "outputs": [
+    {
+      "id": "potential",
+      "name": "Potential",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "stationary_residual",
+      "name": "Stationary Residual",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "curvature",
+      "name": "Curvature",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "boundary",
+      "name": "Boundary",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "mask",
+      "name": "Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    }
+  ],
+  "helpers": "struct MakerMcatastrophe_geometry_field {float potential;float stationary_residual;float curvature;float boundary;float mask;};\nMakerMcatastrophe_geometry_field maker_m_catastrophe_geometry_field(vec2 position,float mode,float scale,float control_a,float control_b,float control_c,float control_d,float width){\nif(any(isnan(position))||any(isinf(position)))return MakerMcatastrophe_geometry_field(0.,0.,0.,0.,0.);\n vec2 q=clamp(position*scale,vec2(-4),vec2(4));float x=q.x,y=q.y;float x2=x*x,x3=x2*x,x4=x2*x2,x5=x4*x,x6=x3*x3;float a=control_a,b=control_b,c=control_c,d=control_d;float v,g,h;\n if(mode<.5){v=x3/3.+y*x;g=x2+y;h=2.*x;}\n else if(mode<1.5){v=x4/4.+a*x2/2.+y*x;g=x3+a*x+y;h=3.*x2+a;}\n else if(mode<2.5){v=x5/5.+a*x3/3.+b*x2/2.+y*x;g=x4+a*x2+b*x+y;h=4.*x3+2.*a*x+b;}\n else{v=x6/6.+a*x4/4.+b*x3/3.+c*x2/2.+(y+d)*x;g=x5+a*x3+b*x2+c*x+y+d;h=5.*x4+3.*a*x2+2.*b*x+c;}\n float edge=abs(g);return MakerMcatastrophe_geometry_field(v,g,h,edge,1.-smoothstep(0.,max(width,.001),edge));\n}",
+  "glsl_outputs": {
+    "potential": "maker_m_catastrophe_geometry_field({position},{mode},{scale},{control_a},{control_b},{control_c},{control_d},{width}).potential",
+    "stationary_residual": "maker_m_catastrophe_geometry_field({position},{mode},{scale},{control_a},{control_b},{control_c},{control_d},{width}).stationary_residual",
+    "curvature": "maker_m_catastrophe_geometry_field({position},{mode},{scale},{control_a},{control_b},{control_c},{control_d},{width}).curvature",
+    "boundary": "maker_m_catastrophe_geometry_field({position},{mode},{scale},{control_a},{control_b},{control_c},{control_d},{width}).boundary",
+    "mask": "maker_m_catastrophe_geometry_field({position},{mode},{scale},{control_a},{control_b},{control_c},{control_d},{width}).mask"
+  }
+}

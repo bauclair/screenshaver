@@ -1,0 +1,68 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.lighting.retroreflective_material_response",
+  "name": "Retroreflective Material Response",
+  "category": "Lighting",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "header_color": "#527D94",
+  "description": "Bounded empirical retroreflection lobe centered on the incident light direction.",
+  "uses": "Reusable analytical material shading.",
+  "notes": "Directions point away from the surface. Linear RGB where applicable. No persistent state or full light transport.",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "surface_normal",
+      "name": "Surface Normal",
+      "type": "vec3",
+      "default": "vec3(0,0,1)"
+    },
+    {
+      "id": "light_direction",
+      "name": "Light Direction",
+      "type": "vec3",
+      "default": "vec3(0.4,0.5,1)"
+    },
+    {
+      "id": "view_direction",
+      "name": "View Direction",
+      "type": "vec3",
+      "default": "vec3(0,0,1)"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "sharpness",
+      "name": "Sharpness",
+      "type": "float",
+      "default": 32,
+      "min": 1,
+      "max": 256
+    },
+    {
+      "id": "strength",
+      "name": "Strength",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 4
+    }
+  ],
+  "outputs": [
+    {
+      "id": "response",
+      "name": "Response",
+      "type": "float"
+    },
+    {
+      "id": "alignment",
+      "name": "Alignment",
+      "type": "float"
+    }
+  ],
+  "helpers": "struct MakerR_retroreflective_material_response {float response;float alignment;};\nMakerR_retroreflective_material_response maker_r_retroreflective_material_response(vec3 surface_normal,vec3 light_direction,vec3 view_direction,float sharpness,float strength){\nvec3 n=surface_normal/max(length(surface_normal),1e-6),l=light_direction/max(length(light_direction),1e-6),v=view_direction/max(length(view_direction),1e-6);float nl=max(dot(n,l),0.),nv=max(dot(n,v),0.);float a=clamp(dot(l,v),0.,1.);return MakerR_retroreflective_material_response(nl*step(1e-6,nv)*strength*pow(a,sharpness),a);\n}",
+  "glsl_outputs": {
+    "response": "maker_r_retroreflective_material_response({surface_normal},{light_direction},{view_direction},{sharpness},{strength}).response",
+    "alignment": "maker_r_retroreflective_material_response({surface_normal},{light_direction},{view_direction},{sharpness},{strength}).alignment"
+  }
+}

@@ -1,0 +1,74 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.divergence_free_procedural_flow_field_2d",
+  "name": "Divergence-Free Procedural Flow Field 2D",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "header_color": "#348F8B",
+  "description": "Velocity is the perpendicular gradient of a sinusoidal stream function; divergence is analytically zero. Phase can be animated externally through coordinate inputs.",
+  "uses": "Reusable coordinate and field composition.",
+  "notes": "Velocity is the perpendicular gradient of a sinusoidal stream function; divergence is analytically zero. Phase can be animated externally through coordinate inputs.",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "semantic_role": "position2d",
+      "default": "maker_uv-vec2(0.5)"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "frequency",
+      "name": "Frequency",
+      "type": "float",
+      "default": 5,
+      "min": 0.1,
+      "max": 20
+    },
+    {
+      "id": "phase",
+      "name": "Phase",
+      "type": "float",
+      "default": 0,
+      "min": -6.283,
+      "max": 6.283
+    },
+    {
+      "id": "strength",
+      "name": "Strength",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 4
+    }
+  ],
+  "outputs": [
+    {
+      "id": "velocity",
+      "name": "Velocity",
+      "type": "vec2",
+      "semantic_role": ""
+    },
+    {
+      "id": "speed",
+      "name": "Speed",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "stream",
+      "name": "Stream",
+      "type": "float",
+      "semantic_role": ""
+    }
+  ],
+  "helpers": "\nstruct MakerO_divergence_free_procedural_flow_field_2d {vec2 velocity;float speed;float stream;};\nMakerO_divergence_free_procedural_flow_field_2d maker_o_divergence_free_procedural_flow_field_2d(vec2 position,float frequency,float phase,float strength){\nvec2 p=position*frequency+vec2(phase,-phase); float a=sin(p.x),b=sin(p.y); vec2 v=strength*frequency*vec2(a*cos(p.y),-cos(p.x)*b); return MakerO_divergence_free_procedural_flow_field_2d(v,length(v),strength*a*b);\n}",
+  "glsl_outputs": {
+    "velocity": "maker_o_divergence_free_procedural_flow_field_2d({position},{frequency},{phase},{strength}).velocity",
+    "speed": "maker_o_divergence_free_procedural_flow_field_2d({position},{frequency},{phase},{strength}).speed",
+    "stream": "maker_o_divergence_free_procedural_flow_field_2d({position},{frequency},{phase},{strength}).stream"
+  }
+}

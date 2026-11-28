@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.chirikov_standard_map_2d",
+  "name": "Chirikov Standard Map 2D",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "header_color": "#348F8B",
+  "description": "Iterated area-preserving kicked rotor map on a periodic phase space.",
+  "uses": "Reusable nonlinear mathematical transformations and field composition.",
+  "notes": "Coordinates are normalized to radians internally. Mode is forward or inverse; wrapping introduces seams. Area preservation applies to the mathematical map away from seams, not arbitrary downstream transforms.",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "semantic_role": "position2d",
+      "default": "maker_uv-vec2(0.5)"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "strength",
+      "name": "Strength",
+      "type": "float",
+      "default": 1.2,
+      "min": -8,
+      "max": 8
+    },
+    {
+      "id": "iterations",
+      "name": "Iterations",
+      "type": "float",
+      "default": 6,
+      "min": 1,
+      "max": 32
+    },
+    {
+      "id": "scale",
+      "name": "Scale",
+      "type": "float",
+      "default": 6.283185,
+      "min": 0.1,
+      "max": 20
+    },
+    {
+      "id": "direction",
+      "name": "Direction",
+      "type": "float",
+      "default": 1,
+      "min": -1,
+      "max": 1
+    }
+  ],
+  "outputs": [
+    {
+      "id": "coordinates",
+      "name": "Coordinates",
+      "type": "vec2",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "momentum",
+      "name": "Momentum",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "phase",
+      "name": "Phase",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "orbit_trap",
+      "name": "Orbit Trap",
+      "type": "float",
+      "semantic_role": ""
+    }
+  ],
+  "helpers": "struct MakerMchirikov_standard_map_2d {vec2 coordinates;float momentum;float phase;float orbit_trap;};\nMakerMchirikov_standard_map_2d maker_m_chirikov_standard_map_2d(vec2 position,float strength,float iterations,float scale,float direction){\nif(any(isnan(position))||any(isinf(position)))return MakerMchirikov_standard_map_2d(vec2(0),0.,0.,0.);\n const float pi=3.14159265359; const float tau=6.28318530718; vec2 q=mod(clamp(position,vec2(-10000),vec2(10000))*scale+pi,tau)-pi; float trap=length(q); int n=int(clamp(iterations,1.,32.));\n for(int i=0;i<32;i++){if(i>=n)break; if(direction>=0.){q.y+=strength*sin(q.x);q.x+=q.y;}else{q.x-=q.y;q.y-=strength*sin(q.x);}q=mod(q+pi,tau)-pi;trap=min(trap,length(q));}\n return MakerMchirikov_standard_map_2d(q/tau,q.y,q.x,trap/tau);\n}",
+  "glsl_outputs": {
+    "coordinates": "maker_m_chirikov_standard_map_2d({position},{strength},{iterations},{scale},{direction}).coordinates",
+    "momentum": "maker_m_chirikov_standard_map_2d({position},{strength},{iterations},{scale},{direction}).momentum",
+    "phase": "maker_m_chirikov_standard_map_2d({position},{strength},{iterations},{scale},{direction}).phase",
+    "orbit_trap": "maker_m_chirikov_standard_map_2d({position},{strength},{iterations},{scale},{direction}).orbit_trap"
+  }
+}

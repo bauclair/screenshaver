@@ -1,0 +1,97 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.geometry.hierarchical_leaf_venation_field_2d",
+  "name": "Hierarchical Leaf Venation Field 2D",
+  "category": "Geometry",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "header_color": "#348F8B",
+  "description": "Symmetric leaf envelope with midrib, secondary and tertiary segment veins; procedural approximation.",
+  "uses": "Procedural botanical geometry and composition.",
+  "notes": "Symmetric leaf envelope with midrib, secondary and tertiary segment veins; procedural approximation.",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "semantic_role": "position2d",
+      "default": "maker_uv-vec2(0.5)"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "length_scale",
+      "name": "Length Scale",
+      "type": "float",
+      "default": 0.9,
+      "min": 0.1,
+      "max": 3
+    },
+    {
+      "id": "breadth",
+      "name": "Breadth",
+      "type": "float",
+      "default": 0.28,
+      "min": 0.02,
+      "max": 1
+    },
+    {
+      "id": "veins",
+      "name": "Veins",
+      "type": "float",
+      "default": 8,
+      "min": 2,
+      "max": 16
+    },
+    {
+      "id": "width",
+      "name": "Width",
+      "type": "float",
+      "default": 0.008,
+      "min": 0.001,
+      "max": 0.05
+    },
+    {
+      "id": "sweep",
+      "name": "Sweep",
+      "type": "float",
+      "default": 0.15,
+      "min": 0,
+      "max": 0.5
+    }
+  ],
+  "outputs": [
+    {
+      "id": "distance",
+      "name": "Distance",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "vein_mask",
+      "name": "Vein Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    },
+    {
+      "id": "leaf_mask",
+      "name": "Leaf Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    },
+    {
+      "id": "generation",
+      "name": "Generation",
+      "type": "float",
+      "semantic_role": ""
+    }
+  ],
+  "helpers": "struct MakerQ_hierarchical_leaf_venation_field_2d {float distance;float vein_mask;float leaf_mask;float generation;};\nMakerQ_hierarchical_leaf_venation_field_2d maker_q_hierarchical_leaf_venation_field_2d(vec2 position,float length_scale,float breadth,float veins,float width,float sweep){\nvec2 p=position;float y=p.y/length_scale+.5;float edge=breadth*sin(3.14159265*clamp(y,0.,1.));float leaf=step(0.,y)*step(y,1.)*step(abs(p.x),edge);float d=length(p-vec2(0.,clamp(p.y,-length_scale*.5,length_scale*.5)))-width;float g=0.;int n=int(clamp(veins,2.,16.));\nfor(int i=0;i<16;i++){if(i>=n)break;float t=(float(i)+.5)/float(n);vec2 a=vec2(0.,(t-.5)*length_scale);float e=min(t+sweep,1.);vec2 b=vec2(breadth*sin(3.14159265*e),(e-.5)*length_scale);vec2 q=vec2(abs(p.x),p.y);vec2 v=b-a;float h=clamp(dot(q-a,v)/max(dot(v,v),1e-8),0.,1.);float z=length(q-a-h*v)-width*.55;if(z<d){d=z;g=1.;}for(int j=1;j<=3;j++){vec2 c=mix(a,b,float(j)*.22);float cy=clamp(c.y/length_scale+.5+.08,0.,1.);vec2 f=vec2(min(c.x+breadth*.15,breadth*sin(3.14159265*cy)),(cy-.5)*length_scale);vec2 w=f-c;float k=clamp(dot(q-c,w)/max(dot(w,w),1e-8),0.,1.);z=length(q-c-k*w)-width*.25;if(z<d){d=z;g=2.;}}}return MakerQ_hierarchical_leaf_venation_field_2d(d,leaf*(1.-smoothstep(0.,width*.4,d)),leaf,g);\n}",
+  "glsl_outputs": {
+    "distance": "maker_q_hierarchical_leaf_venation_field_2d({position},{length_scale},{breadth},{veins},{width},{sweep}).distance",
+    "vein_mask": "maker_q_hierarchical_leaf_venation_field_2d({position},{length_scale},{breadth},{veins},{width},{sweep}).vein_mask",
+    "leaf_mask": "maker_q_hierarchical_leaf_venation_field_2d({position},{length_scale},{breadth},{veins},{width},{sweep}).leaf_mask",
+    "generation": "maker_q_hierarchical_leaf_venation_field_2d({position},{length_scale},{breadth},{veins},{width},{sweep}).generation"
+  }
+}

@@ -1,0 +1,113 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.generalized_nonlinear_attractor_transformation_2d",
+  "name": "Generalized Nonlinear Attractor Transformation 2D",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "header_color": "#348F8B",
+  "description": "Bounded Clifford and De Jong recurrence with orbit diagnostics.",
+  "uses": "Reusable nonlinear mathematical transformations and field composition.",
+  "notes": "Mode 0 Clifford, mode 1 De Jong. Stateless orbit mapping, not accumulated attractor density. Parameters can be animated upstream only where supported by Maker.",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "semantic_role": "position2d",
+      "default": "maker_uv-vec2(0.5)"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "mode",
+      "name": "Mode",
+      "type": "float",
+      "default": 0,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "a",
+      "name": "A",
+      "type": "float",
+      "default": -1.4,
+      "min": -4,
+      "max": 4
+    },
+    {
+      "id": "b",
+      "name": "B",
+      "type": "float",
+      "default": 1.6,
+      "min": -4,
+      "max": 4
+    },
+    {
+      "id": "c",
+      "name": "C",
+      "type": "float",
+      "default": 1.0,
+      "min": -4,
+      "max": 4
+    },
+    {
+      "id": "d",
+      "name": "D",
+      "type": "float",
+      "default": 0.7,
+      "min": -4,
+      "max": 4
+    },
+    {
+      "id": "iterations",
+      "name": "Iterations",
+      "type": "float",
+      "default": 8,
+      "min": 1,
+      "max": 24
+    },
+    {
+      "id": "scale",
+      "name": "Scale",
+      "type": "float",
+      "default": 3,
+      "min": 0.1,
+      "max": 12
+    }
+  ],
+  "outputs": [
+    {
+      "id": "coordinates",
+      "name": "Coordinates",
+      "type": "vec2",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "radius",
+      "name": "Radius",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "orbit_trap",
+      "name": "Orbit Trap",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "displacement",
+      "name": "Displacement",
+      "type": "float",
+      "semantic_role": ""
+    }
+  ],
+  "helpers": "struct MakerMgeneralized_nonlinear_attractor_transformation_2d {vec2 coordinates;float radius;float orbit_trap;float displacement;};\nMakerMgeneralized_nonlinear_attractor_transformation_2d maker_m_generalized_nonlinear_attractor_transformation_2d(vec2 position,float mode,float a,float b,float c,float d,float iterations,float scale){\nif(any(isnan(position))||any(isinf(position)))return MakerMgeneralized_nonlinear_attractor_transformation_2d(vec2(0),0.,0.,0.);\n vec2 q=clamp(position,vec2(-100),vec2(100))*scale; vec2 initial=q; float trap=length(q); int n=int(clamp(iterations,1.,24.));\n for(int i=0;i<24;i++){if(i>=n)break; vec2 v=q; if(mode<.5)q=vec2(sin(a*v.y)+c*cos(a*v.x),sin(b*v.x)+d*cos(b*v.y)); else q=vec2(sin(a*v.y)-cos(b*v.x),sin(c*v.x)-cos(d*v.y)); trap=min(trap,length(q));}\n return MakerMgeneralized_nonlinear_attractor_transformation_2d(q,length(q),trap,length(q-initial));\n}",
+  "glsl_outputs": {
+    "coordinates": "maker_m_generalized_nonlinear_attractor_transformation_2d({position},{mode},{a},{b},{c},{d},{iterations},{scale}).coordinates",
+    "radius": "maker_m_generalized_nonlinear_attractor_transformation_2d({position},{mode},{a},{b},{c},{d},{iterations},{scale}).radius",
+    "orbit_trap": "maker_m_generalized_nonlinear_attractor_transformation_2d({position},{mode},{a},{b},{c},{d},{iterations},{scale}).orbit_trap",
+    "displacement": "maker_m_generalized_nonlinear_attractor_transformation_2d({position},{mode},{a},{b},{c},{d},{iterations},{scale}).displacement"
+  }
+}

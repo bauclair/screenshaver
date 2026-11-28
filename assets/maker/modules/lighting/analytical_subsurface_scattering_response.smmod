@@ -1,0 +1,94 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.lighting.analytical_subsurface_scattering_response",
+  "name": "Analytical Subsurface Scattering Response",
+  "category": "Lighting",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "header_color": "#527D94",
+  "description": "Artistic wrapped diffuse and thickness-dependent backlighting approximation.",
+  "uses": "Reusable analytical material shading.",
+  "notes": "Directions point away from the surface. Linear RGB where applicable. No persistent state or full light transport.",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "surface_normal",
+      "name": "Surface Normal",
+      "type": "vec3",
+      "default": "vec3(0,0,1)"
+    },
+    {
+      "id": "light_direction",
+      "name": "Light Direction",
+      "type": "vec3",
+      "default": "vec3(0.4,0.5,1)"
+    },
+    {
+      "id": "view_direction",
+      "name": "View Direction",
+      "type": "vec3",
+      "default": "vec3(0,0,1)"
+    },
+    {
+      "id": "thickness",
+      "name": "Thickness",
+      "type": "float",
+      "default": "0.35"
+    },
+    {
+      "id": "scatter_color",
+      "name": "Scatter Color",
+      "type": "vec3",
+      "default": "vec3(1,0.35,0.15)"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "wrap",
+      "name": "Wrap",
+      "type": "float",
+      "default": 0.5,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "absorption",
+      "name": "Absorption",
+      "type": "float",
+      "default": 2,
+      "min": 0,
+      "max": 12
+    },
+    {
+      "id": "strength",
+      "name": "Strength",
+      "type": "float",
+      "default": 0.8,
+      "min": 0,
+      "max": 2
+    }
+  ],
+  "outputs": [
+    {
+      "id": "color",
+      "name": "Color",
+      "type": "vec3"
+    },
+    {
+      "id": "wrapped_diffuse",
+      "name": "Wrapped Diffuse",
+      "type": "float"
+    },
+    {
+      "id": "transmission",
+      "name": "Transmission",
+      "type": "float"
+    }
+  ],
+  "helpers": "struct MakerR_analytical_subsurface_scattering_response {vec3 color;float wrapped_diffuse;float transmission;};\nMakerR_analytical_subsurface_scattering_response maker_r_analytical_subsurface_scattering_response(vec3 surface_normal,vec3 light_direction,vec3 view_direction,float thickness,vec3 scatter_color,float wrap,float absorption,float strength){\nvec3 n=surface_normal/max(length(surface_normal),1e-6),l=light_direction/max(length(light_direction),1e-6),v=view_direction/max(length(view_direction),1e-6);float nl=max(dot(n,l),0.),nv=max(dot(n,v),0.);float d=dot(n,l);float wrapped=clamp((d+wrap)/(1.+wrap),0.,1.);float tr=exp(-absorption*max(thickness,0.))*max(-d,0.)*(.25+.75*nv);return MakerR_analytical_subsurface_scattering_response(max(scatter_color,vec3(0))*strength*(wrapped+tr),wrapped,tr);\n}",
+  "glsl_outputs": {
+    "color": "maker_r_analytical_subsurface_scattering_response({surface_normal},{light_direction},{view_direction},{thickness},{scatter_color},{wrap},{absorption},{strength}).color",
+    "wrapped_diffuse": "maker_r_analytical_subsurface_scattering_response({surface_normal},{light_direction},{view_direction},{thickness},{scatter_color},{wrap},{absorption},{strength}).wrapped_diffuse",
+    "transmission": "maker_r_analytical_subsurface_scattering_response({surface_normal},{light_direction},{view_direction},{thickness},{scatter_color},{wrap},{absorption},{strength}).transmission"
+  }
+}

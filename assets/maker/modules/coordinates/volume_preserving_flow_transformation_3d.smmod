@@ -1,0 +1,75 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.volume_preserving_flow_transformation_3d",
+  "name": "Volume-Preserving Flow Transformation 3D",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "header_color": "#348F8B",
+  "description": "Composition of three exact volume-preserving sinusoidal shears per step; approximates cyclic divergence-free advection. Not a general fluid solver.",
+  "uses": "Reusable coordinate and field composition.",
+  "notes": "Composition of three exact volume-preserving sinusoidal shears per step; approximates cyclic divergence-free advection. Not a general fluid solver.",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "semantic_role": "position3d",
+      "default": "vec3(maker_uv-vec2(0.5),0.0)"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "frequency",
+      "name": "Frequency",
+      "type": "float",
+      "default": 4,
+      "min": 0.1,
+      "max": 12
+    },
+    {
+      "id": "strength",
+      "name": "Strength",
+      "type": "float",
+      "default": 0.25,
+      "min": -1,
+      "max": 1
+    },
+    {
+      "id": "phase",
+      "name": "Phase",
+      "type": "float",
+      "default": 0,
+      "min": -6.283,
+      "max": 6.283
+    },
+    {
+      "id": "iterations",
+      "name": "Iterations",
+      "type": "float",
+      "default": 4,
+      "min": 1,
+      "max": 16
+    }
+  ],
+  "outputs": [
+    {
+      "id": "coordinates",
+      "name": "Coordinates",
+      "type": "vec3",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "displacement",
+      "name": "Displacement",
+      "type": "float",
+      "semantic_role": ""
+    }
+  ],
+  "helpers": "\nstruct MakerO_volume_preserving_flow_transformation_3d {vec3 coordinates;float displacement;};\nMakerO_volume_preserving_flow_transformation_3d maker_o_volume_preserving_flow_transformation_3d(vec3 position,float frequency,float strength,float phase,float iterations){\nvec3 p=position; int n=int(clamp(iterations,1.,16.)); float h=strength/float(n); for(int i=0;i<16;i++){if(i>=n)break; p.x+=h*sin(frequency*p.y+phase); p.y+=h*sin(frequency*p.z+phase); p.z+=h*sin(frequency*p.x+phase);} return MakerO_volume_preserving_flow_transformation_3d(p,length(p-position));\n}",
+  "glsl_outputs": {
+    "coordinates": "maker_o_volume_preserving_flow_transformation_3d({position},{frequency},{strength},{phase},{iterations}).coordinates",
+    "displacement": "maker_o_volume_preserving_flow_transformation_3d({position},{frequency},{strength},{phase},{iterations}).displacement"
+  }
+}

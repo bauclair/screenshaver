@@ -1,0 +1,112 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.chaotic_trajectory_proximity_field_3d",
+  "name": "Chaotic Trajectory Proximity Field 3D",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "header_color": "#527D94",
+  "description": "Minimum distance to sampled midpoint-integrated attractor trajectory segments.",
+  "uses": "Stateless spatial dynamics and orbit geometry.",
+  "notes": "Bounded numerical evaluation; no persistent state. Proximity is not an exact signed distance field.",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "default": "vec3(maker_uv-vec2(0.5),0.2)"
+    },
+    {
+      "id": "initial_state",
+      "name": "Initial State",
+      "type": "vec3",
+      "default": "vec3(0.1,0.2,0.3)"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "system",
+      "name": "System",
+      "type": "float",
+      "default": 2,
+      "min": 0,
+      "max": 4
+    },
+    {
+      "id": "step_size",
+      "name": "Step Size",
+      "type": "float",
+      "default": 0.015,
+      "min": 0.001,
+      "max": 0.025
+    },
+    {
+      "id": "warmup",
+      "name": "Warmup",
+      "type": "float",
+      "default": 64,
+      "min": 0,
+      "max": 128
+    },
+    {
+      "id": "segments",
+      "name": "Segments",
+      "type": "float",
+      "default": 128,
+      "min": 8,
+      "max": 256
+    },
+    {
+      "id": "scale",
+      "name": "Scale",
+      "type": "float",
+      "default": 0.5,
+      "min": 0.01,
+      "max": 5
+    },
+    {
+      "id": "width",
+      "name": "Width",
+      "type": "float",
+      "default": 0.025,
+      "min": 0.001,
+      "max": 0.2
+    }
+  ],
+  "outputs": [
+    {
+      "id": "distance",
+      "name": "Distance",
+      "type": "float"
+    },
+    {
+      "id": "strand_mask",
+      "name": "Strand Mask",
+      "type": "float"
+    },
+    {
+      "id": "orbit_phase",
+      "name": "Orbit Phase",
+      "type": "float"
+    },
+    {
+      "id": "tangent",
+      "name": "Tangent",
+      "type": "vec3"
+    },
+    {
+      "id": "valid",
+      "name": "Valid",
+      "type": "float"
+    }
+  ],
+  "helpers": "vec3 maker_s_traj(vec3 p,int m){float x=p.x,y=p.y,z=p.z;if(m==0)return vec3(10.*(y-x),x*(28.-z)-y,x*y-2.6666667*z);if(m==1)return vec3(-y-z,x+.2*y,.2+z*(x-5.7));if(m==2)return vec3(sin(y)-.208186*x,sin(z)-.208186*y,sin(x)-.208186*z);if(m==3)return vec3((z-.7)*x-3.5*y,3.5*x+(z-.7)*y,.6+.95*z-z*z*z/3.-(x*x+y*y)*(1.+.25*z)+.1*z*x*x*x);return vec3(y-3.*x+2.7*y*z,1.7*y-x*z+z,2.*x*y-9.*z);}\nvec3 maker_s_traj_step(vec3 p,int m,float h){vec3 k=maker_s_traj(p,m);return p+h*maker_s_traj(p+.5*h*k,m);}\nstruct MakerS_chaotic_trajectory_proximity_field_3d {float distance;float strand_mask;float orbit_phase;vec3 tangent;float valid;};\nMakerS_chaotic_trajectory_proximity_field_3d maker_s_chaotic_trajectory_proximity_field_3d(vec3 position,vec3 initial_state,float system,float step_size,float warmup,float segments,float scale,float width){\nint m=int(clamp(floor(system+.5),0.,4.));vec3 p=initial_state;float best=1e6,phase=0.;vec3 tangent=vec3(0);if(length(p)>64.)return MakerS_chaotic_trajectory_proximity_field_3d(best,0.,0.,tangent,0.);for(int i=0;i<128;i++){if(i>=int(warmup))break;p=maker_s_traj_step(p,m,step_size);if(any(isnan(p))||any(isinf(p))||length(p)>64.)return MakerS_chaotic_trajectory_proximity_field_3d(best,0.,0.,tangent,0.);}for(int i=0;i<256;i++){if(i>=int(segments))break;vec3 q=maker_s_traj_step(p,m,step_size);if(any(isnan(q))||any(isinf(q))||length(q)>64.)return MakerS_chaotic_trajectory_proximity_field_3d(best,0.,phase,tangent,0.);vec3 a=p*scale,b=q*scale,v=b-a;float t=clamp(dot(position-a,v)/max(dot(v,v),1e-12),0.,1.);float d=length(position-a-t*v);if(d<best){best=d;phase=(float(i)+t)/segments;tangent=v/max(length(v),1e-6);}p=q;}return MakerS_chaotic_trajectory_proximity_field_3d(best,1.-smoothstep(width*.5,width,best),phase,tangent,1.);\n}",
+  "glsl_outputs": {
+    "distance": "maker_s_chaotic_trajectory_proximity_field_3d({position},{initial_state},{system},{step_size},{warmup},{segments},{scale},{width}).distance",
+    "strand_mask": "maker_s_chaotic_trajectory_proximity_field_3d({position},{initial_state},{system},{step_size},{warmup},{segments},{scale},{width}).strand_mask",
+    "orbit_phase": "maker_s_chaotic_trajectory_proximity_field_3d({position},{initial_state},{system},{step_size},{warmup},{segments},{scale},{width}).orbit_phase",
+    "tangent": "maker_s_chaotic_trajectory_proximity_field_3d({position},{initial_state},{system},{step_size},{warmup},{segments},{scale},{width}).tangent",
+    "valid": "maker_s_chaotic_trajectory_proximity_field_3d({position},{initial_state},{system},{step_size},{warmup},{segments},{scale},{width}).valid"
+  }
+}

@@ -1,0 +1,73 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.polygonal_conformal_mapping_2d",
+  "name": "Polygonal Conformal Mapping 2D",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "header_color": "#348F8B",
+  "description": "Polygonal Conformal Mapping 2D",
+  "uses": "Reusable mathematical coordinate transformations.",
+  "notes": "Forward disk-to-regular-polygon Schwarz-Christoffel map via 24-term power series; restricted to interior radius 0.95. Polygon circumradius is not normalized; derivative is analytic for the target map, not exact derivative of truncated series.",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "semantic_role": "position2d",
+      "default": "maker_uv-vec2(0.5)"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "scale",
+      "name": "Scale",
+      "type": "float",
+      "default": 1,
+      "min": 0.01,
+      "max": 10
+    },
+    {
+      "id": "sides",
+      "name": "Sides",
+      "type": "float",
+      "default": 4,
+      "min": 3,
+      "max": 12
+    }
+  ],
+  "outputs": [
+    {
+      "id": "transformed",
+      "name": "Transformed",
+      "type": "vec2",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "local_scale",
+      "name": "Local Scale",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "boundary_proximity",
+      "name": "Boundary Proximity",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "validity",
+      "name": "Validity",
+      "type": "float",
+      "semantic_role": "mask"
+    }
+  ],
+  "helpers": "struct MakerKPolygon {vec2 transformed;float local_scale;float boundary_proximity;float validity;};\nvec2 maker_k_poly_mul(vec2 a,vec2 b){return vec2(a.x*b.x-a.y*b.y,a.x*b.y+a.y*b.x);}\nMakerKPolygon maker_k_polygonal_conformal_mapping_2d(vec2 position,float scale,float sides){\n vec2 z=position*scale;float r=length(z);if(any(isnan(z))||any(isinf(z))||r>.95)return MakerKPolygon(vec2(0),0.,0.,0.);\n int n=int(clamp(floor(sides+.5),3.,12.));vec2 zn=vec2(1,0);for(int j=0;j<12;j++){if(j>=n)break;zn=maker_k_poly_mul(zn,z);}\n vec2 power=vec2(1,0),sum=power;float a=2./float(n),coef=1.;\n for(int k=1;k<24;k++){coef*= (a+float(k-1))/float(k);power=maker_k_poly_mul(power,zn);sum+=coef*power/(1.+float(n*k));}\n return MakerKPolygon(maker_k_poly_mul(z,sum),scale*pow(max(length(vec2(1,0)-zn),1e-6),-a),1.-r,1.);\n}",
+  "glsl_outputs": {
+    "transformed": "maker_k_polygonal_conformal_mapping_2d({position},{scale},{sides}).transformed",
+    "local_scale": "maker_k_polygonal_conformal_mapping_2d({position},{scale},{sides}).local_scale",
+    "boundary_proximity": "maker_k_polygonal_conformal_mapping_2d({position},{scale},{sides}).boundary_proximity",
+    "validity": "maker_k_polygonal_conformal_mapping_2d({position},{scale},{sides}).validity"
+  }
+}

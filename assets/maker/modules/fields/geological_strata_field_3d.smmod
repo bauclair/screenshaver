@@ -1,0 +1,100 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.geological_strata_field_3d",
+  "name": "Geological Strata Field 3D",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "header_color": "#527D94",
+  "description": "Folded sedimentary bands with fault displacement and variable thickness.",
+  "uses": "Procedural terrain and geological morphology.",
+  "notes": "Stateless analytical approximation; no physical simulation.",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "default": "vec3(maker_uv-vec2(0.5),0.2)"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "frequency",
+      "name": "Frequency",
+      "type": "float",
+      "default": 15,
+      "min": 1,
+      "max": 80
+    },
+    {
+      "id": "fold_amplitude",
+      "name": "Fold Amplitude",
+      "type": "float",
+      "default": 0.2,
+      "min": 0,
+      "max": 2
+    },
+    {
+      "id": "fold_frequency",
+      "name": "Fold Frequency",
+      "type": "float",
+      "default": 4,
+      "min": 0.1,
+      "max": 20
+    },
+    {
+      "id": "fault_offset",
+      "name": "Fault Offset",
+      "type": "float",
+      "default": 0.1,
+      "min": -1,
+      "max": 1
+    },
+    {
+      "id": "fault_position",
+      "name": "Fault Position",
+      "type": "float",
+      "default": 0,
+      "min": -2,
+      "max": 2
+    },
+    {
+      "id": "boundary_width",
+      "name": "Boundary Width",
+      "type": "float",
+      "default": 0.08,
+      "min": 0.005,
+      "max": 0.4
+    }
+  ],
+  "outputs": [
+    {
+      "id": "layer_phase",
+      "name": "Layer Phase",
+      "type": "float"
+    },
+    {
+      "id": "layer_index",
+      "name": "Layer Index",
+      "type": "float"
+    },
+    {
+      "id": "boundary_mask",
+      "name": "Boundary Mask",
+      "type": "float"
+    },
+    {
+      "id": "folded_height",
+      "name": "Folded Height",
+      "type": "float"
+    }
+  ],
+  "helpers": "\nstruct MakerT_geological_strata_field_3d {float layer_phase;float layer_index;float boundary_mask;float folded_height;};\nMakerT_geological_strata_field_3d maker_t_geological_strata_field_3d(vec3 position,float frequency,float fold_amplitude,float fold_frequency,float fault_offset,float fault_position,float boundary_width){\nfloat h=position.y+fold_amplitude*sin(position.x*fold_frequency+.6*sin(position.z*fold_frequency))+fault_offset*step(fault_position,position.x);float q=h*frequency;float f=fract(q);float d=min(f,1.-f);return MakerT_geological_strata_field_3d(f,floor(q),1.-smoothstep(0.,boundary_width,d),h);\n}",
+  "glsl_outputs": {
+    "layer_phase": "maker_t_geological_strata_field_3d({position},{frequency},{fold_amplitude},{fold_frequency},{fault_offset},{fault_position},{boundary_width}).layer_phase",
+    "layer_index": "maker_t_geological_strata_field_3d({position},{frequency},{fold_amplitude},{fold_frequency},{fault_offset},{fault_position},{boundary_width}).layer_index",
+    "boundary_mask": "maker_t_geological_strata_field_3d({position},{frequency},{fold_amplitude},{fold_frequency},{fault_offset},{fault_position},{boundary_width}).boundary_mask",
+    "folded_height": "maker_t_geological_strata_field_3d({position},{frequency},{fold_amplitude},{fold_frequency},{fault_offset},{fault_position},{boundary_width}).folded_height"
+  }
+}

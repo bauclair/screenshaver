@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.lighting.anisotropic_microfacet_lighting",
+  "name": "Anisotropic Microfacet Lighting",
+  "category": "Lighting",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "header_color": "#527D94",
+  "description": "Anisotropic GGX distribution with Smith masking and Schlick Fresnel.",
+  "uses": "Reusable analytical material shading.",
+  "notes": "Directions point away from the surface. Linear RGB where applicable. No persistent state or full light transport.",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "surface_normal",
+      "name": "Surface Normal",
+      "type": "vec3",
+      "default": "vec3(0,0,1)"
+    },
+    {
+      "id": "light_direction",
+      "name": "Light Direction",
+      "type": "vec3",
+      "default": "vec3(0.4,0.5,1)"
+    },
+    {
+      "id": "view_direction",
+      "name": "View Direction",
+      "type": "vec3",
+      "default": "vec3(0,0,1)"
+    },
+    {
+      "id": "tangent",
+      "name": "Tangent",
+      "type": "vec3",
+      "default": "vec3(1,0,0)"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "roughness_x",
+      "name": "Roughness X",
+      "type": "float",
+      "default": 0.18,
+      "min": 0.04,
+      "max": 1
+    },
+    {
+      "id": "roughness_y",
+      "name": "Roughness Y",
+      "type": "float",
+      "default": 0.55,
+      "min": 0.04,
+      "max": 1
+    },
+    {
+      "id": "reflectance",
+      "name": "Reflectance",
+      "type": "float",
+      "default": 0.65,
+      "min": 0,
+      "max": 1
+    }
+  ],
+  "outputs": [
+    {
+      "id": "specular",
+      "name": "Specular",
+      "type": "float"
+    },
+    {
+      "id": "distribution",
+      "name": "Distribution",
+      "type": "float"
+    },
+    {
+      "id": "fresnel",
+      "name": "Fresnel",
+      "type": "float"
+    }
+  ],
+  "helpers": "struct MakerR_anisotropic_microfacet_lighting {float specular;float distribution;float fresnel;};\nMakerR_anisotropic_microfacet_lighting maker_r_anisotropic_microfacet_lighting(vec3 surface_normal,vec3 light_direction,vec3 view_direction,vec3 tangent,float roughness_x,float roughness_y,float reflectance){\nvec3 n=surface_normal/max(length(surface_normal),1e-6),l=light_direction/max(length(light_direction),1e-6),v=view_direction/max(length(view_direction),1e-6);float nl=max(dot(n,l),0.),nv=max(dot(n,v),0.);if(nl<=0.||nv<=0.)return MakerR_anisotropic_microfacet_lighting(0.,0.,0.);vec3 t=tangent-n*dot(n,tangent);if(length(t)<1e-5)t=cross(n,abs(n.z)<.9?vec3(0,0,1):vec3(0,1,0));t=normalize(t);vec3 b=cross(n,t),h=normalize(l+v);float ax=max(.002,roughness_x*roughness_x),ay=max(.002,roughness_y*roughness_y);float q=pow(dot(h,t)/ax,2.)+pow(dot(h,b)/ay,2.)+pow(max(dot(h,n),0.),2.);float d=1./max(3.14159265*ax*ay*q*q,1e-8);float gl=2.*nl/(nl+sqrt(nl*nl+pow(ax*dot(l,t),2.)+pow(ay*dot(l,b),2.)));float gv=2.*nv/(nv+sqrt(nv*nv+pow(ax*dot(v,t),2.)+pow(ay*dot(v,b),2.)));float f=reflectance+(1.-reflectance)*pow(1.-clamp(dot(v,h),0.,1.),5.);return MakerR_anisotropic_microfacet_lighting(min(64.,d*gl*gv*f/(4.*nv)),min(d,1024.),f);\n}",
+  "glsl_outputs": {
+    "specular": "maker_r_anisotropic_microfacet_lighting({surface_normal},{light_direction},{view_direction},{tangent},{roughness_x},{roughness_y},{reflectance}).specular",
+    "distribution": "maker_r_anisotropic_microfacet_lighting({surface_normal},{light_direction},{view_direction},{tangent},{roughness_x},{roughness_y},{reflectance}).distribution",
+    "fresnel": "maker_r_anisotropic_microfacet_lighting({surface_normal},{light_direction},{view_direction},{tangent},{roughness_x},{roughness_y},{reflectance}).fresnel"
+  }
+}

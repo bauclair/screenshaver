@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.lighting.pearlescent_material_response",
+  "name": "Pearlescent Material Response",
+  "category": "Lighting",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "header_color": "#527D94",
+  "description": "Artistic layered body and grazing-angle pearl coloration, not spectral simulation.",
+  "uses": "Reusable analytical material shading.",
+  "notes": "Directions point away from the surface. Linear RGB where applicable. No persistent state or full light transport.",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "surface_normal",
+      "name": "Surface Normal",
+      "type": "vec3",
+      "default": "vec3(0,0,1)"
+    },
+    {
+      "id": "view_direction",
+      "name": "View Direction",
+      "type": "vec3",
+      "default": "vec3(0,0,1)"
+    },
+    {
+      "id": "body_color",
+      "name": "Body Color",
+      "type": "vec3",
+      "default": "vec3(0.75,0.55,0.8)"
+    },
+    {
+      "id": "pearl_color",
+      "name": "Pearl Color",
+      "type": "vec3",
+      "default": "vec3(0.35,0.85,1)"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "layer_strength",
+      "name": "Layer Strength",
+      "type": "float",
+      "default": 0.8,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "angular_power",
+      "name": "Angular Power",
+      "type": "float",
+      "default": 2,
+      "min": 0.1,
+      "max": 8
+    },
+    {
+      "id": "sheen",
+      "name": "Sheen",
+      "type": "float",
+      "default": 0.3,
+      "min": 0,
+      "max": 1
+    }
+  ],
+  "outputs": [
+    {
+      "id": "color",
+      "name": "Color",
+      "type": "vec3"
+    },
+    {
+      "id": "layer_mix",
+      "name": "Layer Mix",
+      "type": "float"
+    },
+    {
+      "id": "rim",
+      "name": "Rim",
+      "type": "float"
+    }
+  ],
+  "helpers": "struct MakerR_pearlescent_material_response {vec3 color;float layer_mix;float rim;};\nMakerR_pearlescent_material_response maker_r_pearlescent_material_response(vec3 surface_normal,vec3 view_direction,vec3 body_color,vec3 pearl_color,float layer_strength,float angular_power,float sheen){\nfloat nv=clamp(dot(surface_normal/max(length(surface_normal),1e-6),view_direction/max(length(view_direction),1e-6)),0.,1.);float rim=pow(1.-nv,angular_power);float m=layer_strength*rim;return MakerR_pearlescent_material_response(max(vec3(0),mix(body_color,pearl_color,m)+sheen*rim*pearl_color),m,rim);\n}",
+  "glsl_outputs": {
+    "color": "maker_r_pearlescent_material_response({surface_normal},{view_direction},{body_color},{pearl_color},{layer_strength},{angular_power},{sheen}).color",
+    "layer_mix": "maker_r_pearlescent_material_response({surface_normal},{view_direction},{body_color},{pearl_color},{layer_strength},{angular_power},{sheen}).layer_mix",
+    "rim": "maker_r_pearlescent_material_response({surface_normal},{view_direction},{body_color},{pearl_color},{layer_strength},{angular_power},{sheen}).rim"
+  }
+}

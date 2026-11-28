@@ -1,0 +1,112 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.geometry.recursive_botanical_branch_field_2d",
+  "name": "Recursive Botanical Branch Field 2D",
+  "category": "Geometry",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "header_color": "#348F8B",
+  "description": "Bounded binary branching tree of tapered capsule segments; evaluates at most 63 segments, no simulation. Distance is union capsule residual, not exact interior signed distance.",
+  "uses": "Procedural botanical geometry and composition.",
+  "notes": "Bounded binary branching tree of tapered capsule segments; evaluates at most 63 segments, no simulation. Distance is union capsule residual, not exact interior signed distance.",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "semantic_role": "position2d",
+      "default": "maker_uv-vec2(0.5)"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "depth",
+      "name": "Depth",
+      "type": "float",
+      "default": 5,
+      "min": 1,
+      "max": 6
+    },
+    {
+      "id": "branch_length",
+      "name": "Branch Length",
+      "type": "float",
+      "default": 0.32,
+      "min": 0.02,
+      "max": 2
+    },
+    {
+      "id": "angle",
+      "name": "Angle",
+      "type": "float",
+      "default": 0.55,
+      "min": 0.05,
+      "max": 1.5
+    },
+    {
+      "id": "shrink",
+      "name": "Shrink",
+      "type": "float",
+      "default": 0.68,
+      "min": 0.25,
+      "max": 0.85
+    },
+    {
+      "id": "width",
+      "name": "Width",
+      "type": "float",
+      "default": 0.018,
+      "min": 0.001,
+      "max": 0.1
+    },
+    {
+      "id": "taper",
+      "name": "Taper",
+      "type": "float",
+      "default": 0.65,
+      "min": 0.2,
+      "max": 0.95
+    }
+  ],
+  "outputs": [
+    {
+      "id": "distance",
+      "name": "Distance",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "centerline",
+      "name": "Centerline",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "mask",
+      "name": "Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    },
+    {
+      "id": "generation",
+      "name": "Generation",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "tangent",
+      "name": "Tangent",
+      "type": "vec2",
+      "semantic_role": ""
+    }
+  ],
+  "helpers": "struct MakerQ_recursive_botanical_branch_field_2d {float distance;float centerline;float mask;float generation;vec2 tangent;};\nMakerQ_recursive_botanical_branch_field_2d maker_q_recursive_botanical_branch_field_2d(vec2 position,float depth,float branch_length,float angle,float shrink,float width,float taper){\nfloat best=1e10, center=1e10, gen=0.; vec2 tangent=vec2(0.,1.); int n=int(clamp(floor(depth+0.5),1.,6.));\nfor(int level=0;level<6;level++){if(level>=n)break;int count=1<<level;for(int j=0;j<32;j++){if(j>=count)break;vec2 a=vec2(0.,-0.45),d=vec2(0.,1.);float len=branch_length,w=width;\nfor(int k=0;k<5;k++){if(k>=level)break;a+=d*len;int bit=(j>>k)&1;float ang=angle*(bit==0?-1.:1.);float c=cos(ang),s=sin(ang); d=vec2(c*d.x-s*d.y,s*d.x+c*d.y);len*=shrink;w*=taper;}\nvec2 delta=position-a;float h=clamp(dot(delta,d),0.,len);float dist=length(delta-d*h);float sd=dist-w;if(sd<best){best=sd;center=dist;gen=float(level);tangent=d;}}}\nreturn MakerQ_recursive_botanical_branch_field_2d(best,center,1.-smoothstep(0.,max(width*.15,0.0001),best),gen,tangent);\n}",
+  "glsl_outputs": {
+    "distance": "maker_q_recursive_botanical_branch_field_2d({position},{depth},{branch_length},{angle},{shrink},{width},{taper}).distance",
+    "centerline": "maker_q_recursive_botanical_branch_field_2d({position},{depth},{branch_length},{angle},{shrink},{width},{taper}).centerline",
+    "mask": "maker_q_recursive_botanical_branch_field_2d({position},{depth},{branch_length},{angle},{shrink},{width},{taper}).mask",
+    "generation": "maker_q_recursive_botanical_branch_field_2d({position},{depth},{branch_length},{angle},{shrink},{width},{taper}).generation",
+    "tangent": "maker_q_recursive_botanical_branch_field_2d({position},{depth},{branch_length},{angle},{shrink},{width},{taper}).tangent"
+  }
+}

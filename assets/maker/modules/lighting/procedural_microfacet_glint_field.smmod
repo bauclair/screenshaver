@@ -1,0 +1,96 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.lighting.procedural_microfacet_glint_field",
+  "name": "Procedural Microfacet Glint Field",
+  "category": "Lighting",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "header_color": "#527D94",
+  "description": "Cell-hashed oriented microfacets with bounded angular glint response; no texture sampling.",
+  "uses": "Reusable analytical material shading.",
+  "notes": "Directions point away from the surface. Linear RGB where applicable. No persistent state or full light transport.",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv-vec2(0.5)"
+    },
+    {
+      "id": "surface_normal",
+      "name": "Surface Normal",
+      "type": "vec3",
+      "default": "vec3(0,0,1)"
+    },
+    {
+      "id": "light_direction",
+      "name": "Light Direction",
+      "type": "vec3",
+      "default": "vec3(0.4,0.5,1)"
+    },
+    {
+      "id": "view_direction",
+      "name": "View Direction",
+      "type": "vec3",
+      "default": "vec3(0,0,1)"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "density",
+      "name": "Density",
+      "type": "float",
+      "default": 60,
+      "min": 2,
+      "max": 250
+    },
+    {
+      "id": "spread",
+      "name": "Spread",
+      "type": "float",
+      "default": 0.5,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "sharpness",
+      "name": "Sharpness",
+      "type": "float",
+      "default": 80,
+      "min": 2,
+      "max": 256
+    },
+    {
+      "id": "seed",
+      "name": "Seed",
+      "type": "float",
+      "default": 0,
+      "min": 0,
+      "max": 1000
+    }
+  ],
+  "outputs": [
+    {
+      "id": "glint",
+      "name": "Glint",
+      "type": "float"
+    },
+    {
+      "id": "facet_normal",
+      "name": "Facet Normal",
+      "type": "vec3"
+    },
+    {
+      "id": "cell_random",
+      "name": "Cell Random",
+      "type": "float"
+    }
+  ],
+  "helpers": "struct MakerR_procedural_microfacet_glint_field {float glint;vec3 facet_normal;float cell_random;};\nMakerR_procedural_microfacet_glint_field maker_r_procedural_microfacet_glint_field(vec2 position,vec3 surface_normal,vec3 light_direction,vec3 view_direction,float density,float spread,float sharpness,float seed){\nvec3 n=surface_normal/max(length(surface_normal),1e-6),l=light_direction/max(length(light_direction),1e-6),v=view_direction/max(length(view_direction),1e-6);float nl=max(dot(n,l),0.),nv=max(dot(n,v),0.);vec2 c=floor(clamp(position,vec2(-10000),vec2(10000))*density);vec3 q=fract(sin(vec3(dot(c,vec2(127.1,311.7)),dot(c,vec2(269.5,183.3)),dot(c,vec2(419.2,371.9)))+seed)*43758.5453);vec3 t=cross(n,abs(n.z)<.9?vec3(0,0,1):vec3(0,1,0));t/=max(length(t),1e-6);vec3 b=cross(n,t);float a=6.2831853*q.x;vec3 f=n+spread*sqrt(q.y)*(cos(a)*t+sin(a)*b);f/=max(length(f),1e-6);vec3 h=(l+v)/max(length(l+v),1e-6);float g=nl*step(1e-6,nv)*pow(max(dot(f,h),0.),sharpness);return MakerR_procedural_microfacet_glint_field(g,f,q.z);\n}",
+  "glsl_outputs": {
+    "glint": "maker_r_procedural_microfacet_glint_field({position},{surface_normal},{light_direction},{view_direction},{density},{spread},{sharpness},{seed}).glint",
+    "facet_normal": "maker_r_procedural_microfacet_glint_field({position},{surface_normal},{light_direction},{view_direction},{density},{spread},{sharpness},{seed}).facet_normal",
+    "cell_random": "maker_r_procedural_microfacet_glint_field({position},{surface_normal},{light_direction},{view_direction},{density},{spread},{sharpness},{seed}).cell_random"
+  }
+}

@@ -1,0 +1,91 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.hyperbolic_model_conversion_2d",
+  "name": "Hyperbolic Model Conversion 2D",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "header_color": "#348F8B",
+  "description": "Hyperbolic Model Conversion 2D",
+  "uses": "Reusable mathematical coordinate transformations.",
+  "notes": "Unit curvature models. Upper half-plane origin is (0,1). Invalid or near-boundary inputs return finite zero outputs and validity zero.",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "semantic_role": "position2d",
+      "default": "maker_uv-vec2(0.5)"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "input_model",
+      "name": "Input Model",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Poincare",
+        "Klein",
+        "Upper Half Plane",
+        "Hyperboloid Spatial"
+      ]
+    },
+    {
+      "id": "scale",
+      "name": "Scale",
+      "type": "float",
+      "default": 1,
+      "min": 0.01,
+      "max": 10
+    }
+  ],
+  "outputs": [
+    {
+      "id": "poincare",
+      "name": "Poincare",
+      "type": "vec2",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "klein",
+      "name": "Klein",
+      "type": "vec2",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "half_plane",
+      "name": "Half Plane",
+      "type": "vec2",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "hyperboloid_spatial",
+      "name": "Hyperboloid Spatial",
+      "type": "vec2",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "origin_distance",
+      "name": "Origin Distance",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "validity",
+      "name": "Validity",
+      "type": "float",
+      "semantic_role": "mask"
+    }
+  ],
+  "helpers": "struct MakerKHyper {vec2 poincare;vec2 klein;vec2 half_plane;vec2 hyperboloid_spatial;float origin_distance;float validity;};\nMakerKHyper maker_k_hyperbolic_model_conversion_2d(vec2 position,float input_model,float scale){\n MakerKHyper bad=MakerKHyper(vec2(0),vec2(0),vec2(0),vec2(0),0.,0.);\n vec2 z=position*scale; if(any(isnan(z))||any(isinf(z))||length(z)>1000.)return bad;\n vec2 h;float w;float q=dot(z,z);\n if(input_model<1.5){if(q>=.9999)return bad;if(input_model<.5){h=2.*z/(1.-q);w=(1.+q)/(1.-q);}else{w=inversesqrt(1.-q);h=z*w;}}\n else if(input_model<2.5){if(z.y<.0001)return bad;h=vec2(z.x/z.y,(q-1.)/(2.*z.y));w=(q+1.)/(2.*z.y);}\n else{h=z;w=sqrt(1.+q);}\n vec2 p=h/(w+1.);float den=dot(p-vec2(0,1),p-vec2(0,1));if(den<1e-8)return bad;\n return MakerKHyper(p,h/w,vec2(2.*p.x,1.-dot(p,p))/den,h,asinh(length(h)),1.);\n}",
+  "glsl_outputs": {
+    "poincare": "maker_k_hyperbolic_model_conversion_2d({position},{input_model},{scale}).poincare",
+    "klein": "maker_k_hyperbolic_model_conversion_2d({position},{input_model},{scale}).klein",
+    "half_plane": "maker_k_hyperbolic_model_conversion_2d({position},{input_model},{scale}).half_plane",
+    "hyperboloid_spatial": "maker_k_hyperbolic_model_conversion_2d({position},{input_model},{scale}).hyperboloid_spatial",
+    "origin_distance": "maker_k_hyperbolic_model_conversion_2d({position},{input_model},{scale}).origin_distance",
+    "validity": "maker_k_hyperbolic_model_conversion_2d({position},{input_model},{scale}).validity"
+  }
+}

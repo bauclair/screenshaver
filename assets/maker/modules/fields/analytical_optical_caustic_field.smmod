@@ -1,0 +1,97 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.analytical_optical_caustic_field",
+  "name": "Analytical Optical Caustic Field",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "header_color": "#348F8B",
+  "description": "Regularized inverse-Jacobian intensity of a separable sinusoidal ray mapping.",
+  "uses": "Reusable optical response and field composition.",
+  "notes": "Position is receiver-plane coordinate. Sums all monotonic ray branches in a finite source aperture; finite intensity cap approximates smoothing near folds. Not a full refractive ray tracer.",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "semantic_role": "position2d",
+      "default": "maker_uv-vec2(0.5)"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "frequency",
+      "name": "Frequency",
+      "type": "float",
+      "default": 6,
+      "min": 1,
+      "max": 12
+    },
+    {
+      "id": "strength",
+      "name": "Strength",
+      "type": "float",
+      "default": 1.6,
+      "min": 0,
+      "max": 3
+    },
+    {
+      "id": "phase",
+      "name": "Phase",
+      "type": "float",
+      "default": 0,
+      "min": -6.2832,
+      "max": 6.2832
+    },
+    {
+      "id": "softness",
+      "name": "Softness",
+      "type": "float",
+      "default": 0.08,
+      "min": 0.01,
+      "max": 0.5
+    },
+    {
+      "id": "gain",
+      "name": "Gain",
+      "type": "float",
+      "default": 1,
+      "min": 0.1,
+      "max": 4
+    }
+  ],
+  "outputs": [
+    {
+      "id": "intensity",
+      "name": "Intensity",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "horizontal_density",
+      "name": "Horizontal Density",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "vertical_density",
+      "name": "Vertical Density",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "valid",
+      "name": "Valid",
+      "type": "float",
+      "semantic_role": "mask"
+    }
+  ],
+  "helpers": "struct MakerN_analytical_optical_caustic_field {float intensity;float horizontal_density;float vertical_density;float valid;};\nMakerN_analytical_optical_caustic_field maker_n_analytical_optical_caustic_field(vec2 position,float frequency,float strength,float phase,float softness,float gain){\nif(any(isnan(position))||any(isinf(position)))return MakerN_analytical_optical_caustic_field(0.,0.,0.,0.);\n// Source coordinate t in [-pi,pi], receiver x=t+k*sin(t+phase).\nvec2 target=position*frequency;vec2 density=vec2(0);float k=clamp(strength,0.,3.);float eps=max(softness,.01);float pi=3.14159265;\n// Partition at analytical stationary points, then bisect each monotone interval.\nfor(int axis=0;axis<2;axis++){float ph=phase+float(axis)*1.57079633;float cuts[8];int count=1;cuts[0]=-pi;if(k>1.){float c=acos(-1./k);for(int j=-2;j<=2;j++){for(int s=0;s<2;s++){float t=(s==0?-c:c)+6.2831853*float(j)-ph;if(t>-pi&&t<pi&&count<7){cuts[count]=t;count++;}}}}cuts[count]=pi;count++;for(int i=1;i<8;i++){if(i>=count)break;for(int j=i;j>0;j--){if(cuts[j]>=cuts[j-1])break;float tmp=cuts[j];cuts[j]=cuts[j-1];cuts[j-1]=tmp;}}\nfor(int i=0;i<7;i++){if(i+1>=count)break;float lo=cuts[i],hi=cuts[i+1];float a=lo+k*sin(lo+ph),b=hi+k*sin(hi+ph);float x=target[axis];if(x<min(a,b)||x>max(a,b))continue;for(int j=0;j<18;j++){float mid=(lo+hi)*.5;float y=mid+k*sin(mid+ph);if((y<x)==(a<b))lo=mid;else hi=mid;}float t=(lo+hi)*.5;float jac=1.+k*cos(t+ph);density[axis]+=1./sqrt(jac*jac+eps*eps);}}\nreturn MakerN_analytical_optical_caustic_field(min(64.,gain*density.x*density.y),density.x,density.y,1.);\n}",
+  "glsl_outputs": {
+    "intensity": "maker_n_analytical_optical_caustic_field({position},{frequency},{strength},{phase},{softness},{gain}).intensity",
+    "horizontal_density": "maker_n_analytical_optical_caustic_field({position},{frequency},{strength},{phase},{softness},{gain}).horizontal_density",
+    "vertical_density": "maker_n_analytical_optical_caustic_field({position},{frequency},{strength},{phase},{softness},{gain}).vertical_density",
+    "valid": "maker_n_analytical_optical_caustic_field({position},{frequency},{strength},{phase},{softness},{gain}).valid"
+  }
+}

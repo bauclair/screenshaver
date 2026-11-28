@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.analytical_terrain_erosion_field_2d",
+  "name": "Analytical Terrain Erosion Field 2D",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "header_color": "#527D94",
+  "description": "Slope-oriented incision of a supplied height field using a supplied gradient; procedural erosion approximation.",
+  "uses": "Procedural terrain and geological morphology.",
+  "notes": "Stateless analytical approximation; no physical simulation.",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv-vec2(0.5)"
+    },
+    {
+      "id": "height",
+      "name": "Height",
+      "type": "float",
+      "default": "0.5"
+    },
+    {
+      "id": "gradient",
+      "name": "Gradient",
+      "type": "vec2",
+      "default": "vec2(0.3,0.7)"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "frequency",
+      "name": "Frequency",
+      "type": "float",
+      "default": 12,
+      "min": 1,
+      "max": 80
+    },
+    {
+      "id": "strength",
+      "name": "Strength",
+      "type": "float",
+      "default": 0.15,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "sharpness",
+      "name": "Sharpness",
+      "type": "float",
+      "default": 3,
+      "min": 1,
+      "max": 8
+    },
+    {
+      "id": "phase",
+      "name": "Phase",
+      "type": "float",
+      "default": 0,
+      "min": -6.28,
+      "max": 6.28
+    }
+  ],
+  "outputs": [
+    {
+      "id": "eroded_height",
+      "name": "Eroded Height",
+      "type": "float"
+    },
+    {
+      "id": "incision",
+      "name": "Incision",
+      "type": "float"
+    },
+    {
+      "id": "slope",
+      "name": "Slope",
+      "type": "float"
+    }
+  ],
+  "helpers": "\nstruct MakerT_analytical_terrain_erosion_field_2d {float eroded_height;float incision;float slope;};\nMakerT_analytical_terrain_erosion_field_2d maker_t_analytical_terrain_erosion_field_2d(vec2 position,float height,vec2 gradient,float frequency,float strength,float sharpness,float phase){\nfloat s=length(gradient);vec2 across=vec2(-gradient.y,gradient.x)/max(s,1e-6);float q=dot(position,across)*frequency+phase+0.35*sin(dot(position,gradient)*frequency);float cut=pow(0.5+0.5*cos(q),sharpness)*strength*s/(1.+s);return MakerT_analytical_terrain_erosion_field_2d(height-cut,cut,s);\n}",
+  "glsl_outputs": {
+    "eroded_height": "maker_t_analytical_terrain_erosion_field_2d({position},{height},{gradient},{frequency},{strength},{sharpness},{phase}).eroded_height",
+    "incision": "maker_t_analytical_terrain_erosion_field_2d({position},{height},{gradient},{frequency},{strength},{sharpness},{phase}).incision",
+    "slope": "maker_t_analytical_terrain_erosion_field_2d({position},{height},{gradient},{frequency},{strength},{sharpness},{phase}).slope"
+  }
+}

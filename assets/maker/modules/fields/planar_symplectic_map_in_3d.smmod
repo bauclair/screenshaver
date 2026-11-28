@@ -1,0 +1,94 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.planar_symplectic_map_in_3d",
+  "name": "Planar Symplectic Map in 3D",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "header_color": "#527D94",
+  "description": "Canonical kick-drift map on xy, yz or zx planes; third coordinate is invariant. Unwrapped standard-map dynamics.",
+  "uses": "Stateless spatial dynamics and orbit geometry.",
+  "notes": "Bounded numerical evaluation; no persistent state. Proximity is not an exact signed distance field.",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "default": "vec3(maker_uv-vec2(0.5),0.2)"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "plane",
+      "name": "Plane",
+      "type": "float",
+      "default": 0,
+      "min": 0,
+      "max": 2
+    },
+    {
+      "id": "strength",
+      "name": "Strength",
+      "type": "float",
+      "default": 1.2,
+      "min": 0,
+      "max": 4
+    },
+    {
+      "id": "frequency",
+      "name": "Frequency",
+      "type": "float",
+      "default": 1,
+      "min": 0.1,
+      "max": 4
+    },
+    {
+      "id": "phase",
+      "name": "Phase",
+      "type": "float",
+      "default": 0,
+      "min": -6.283,
+      "max": 6.283
+    },
+    {
+      "id": "iterations",
+      "name": "Iterations",
+      "type": "float",
+      "default": 8,
+      "min": 1,
+      "max": 32
+    },
+    {
+      "id": "inverse",
+      "name": "Inverse",
+      "type": "float",
+      "default": 0,
+      "min": 0,
+      "max": 1
+    }
+  ],
+  "outputs": [
+    {
+      "id": "transformed",
+      "name": "Transformed",
+      "type": "vec3"
+    },
+    {
+      "id": "displacement",
+      "name": "Displacement",
+      "type": "float"
+    },
+    {
+      "id": "orbit_radius",
+      "name": "Orbit Radius",
+      "type": "float"
+    }
+  ],
+  "helpers": "\nstruct MakerS_planar_symplectic_map_in_3d {vec3 transformed;float displacement;float orbit_radius;};\nMakerS_planar_symplectic_map_in_3d maker_s_planar_symplectic_map_in_3d(vec3 position,float plane,float strength,float frequency,float phase,float iterations,float inverse){\nint m=int(clamp(floor(plane+.5),0.,2.));vec3 p=m==0?position:(m==1?position.yzx:position.zxy);for(int i=0;i<32;i++){if(i>=int(iterations))break;if(inverse<.5){p.y+=strength*sin(frequency*p.x+phase);p.x+=p.y;}else{p.x-=p.y;p.y-=strength*sin(frequency*p.x+phase);}}vec3 q=m==0?p:(m==1?p.zxy:p.yzx);return MakerS_planar_symplectic_map_in_3d(q,length(q-position),length(p.xy));\n}",
+  "glsl_outputs": {
+    "transformed": "maker_s_planar_symplectic_map_in_3d({position},{plane},{strength},{frequency},{phase},{iterations},{inverse}).transformed",
+    "displacement": "maker_s_planar_symplectic_map_in_3d({position},{plane},{strength},{frequency},{phase},{iterations},{inverse}).displacement",
+    "orbit_radius": "maker_s_planar_symplectic_map_in_3d({position},{plane},{strength},{frequency},{phase},{iterations},{inverse}).orbit_radius"
+  }
+}
