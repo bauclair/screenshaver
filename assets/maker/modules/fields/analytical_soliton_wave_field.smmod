@@ -1,0 +1,98 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.analytical_soliton_wave_field",
+  "name": "Analytical Soliton Wave Field",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "header_color": "#348F8B",
+  "description": "Analytical Soliton Wave Field",
+  "uses": "Analytical mathematical fields and independent color composition.",
+  "notes": "Dimensionless KdV solitary pulse and normalized focusing nonlinear Schr\u00f6dinger bright soliton and Peregrine breather. Complex outputs for NLS; no simulation state.",
+  "inputs": [
+    {
+      "id": "coordinate",
+      "name": "Coordinate",
+      "type": "float",
+      "default": "maker_uv.x*2.0-1.0",
+      "semantic_role": ""
+    },
+    {
+      "id": "time",
+      "name": "Time",
+      "type": "float",
+      "default": "u_time",
+      "semantic_role": "time"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "family",
+      "name": "Family",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "KdV Pulse",
+        "Bright NLS",
+        "Peregrine"
+      ]
+    },
+    {
+      "id": "scale",
+      "name": "Scale",
+      "type": "float",
+      "default": 2,
+      "min": 0.01,
+      "max": 20
+    },
+    {
+      "id": "speed",
+      "name": "Speed",
+      "type": "float",
+      "default": 1,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "time_scale",
+      "name": "Time Scale",
+      "type": "float",
+      "default": 1,
+      "min": -10,
+      "max": 10
+    }
+  ],
+  "outputs": [
+    {
+      "id": "amplitude",
+      "name": "Amplitude",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "intensity",
+      "name": "Intensity",
+      "type": "float",
+      "semantic_role": "intensity"
+    },
+    {
+      "id": "complex_value",
+      "name": "Complex Value",
+      "type": "vec2",
+      "semantic_role": ""
+    },
+    {
+      "id": "envelope",
+      "name": "Envelope",
+      "type": "float",
+      "semantic_role": ""
+    }
+  ],
+  "helpers": "struct MakerI_analytical_soliton_wave_field {float amplitude; float intensity; vec2 complex_value; float envelope;};\nMakerI_analytical_soliton_wave_field maker_analytical_soliton_wave_field(float coordinate,float time,float family,float scale,float speed,float time_scale){\nfloat x=coordinate*scale,t=time*time_scale;vec2 z;float a;if(family<.5){float k=max(.01,abs(speed));float s=1./cosh(clamp(k*(x-4.*k*k*t),-40.,40.));a=2.*k*k*s*s;z=vec2(a,0.);}else if(family<1.5){float v=speed;a=1./cosh(clamp(x-v*t,-40.,40.));float phase=v*x+(.5-.5*v*v)*t;z=a*vec2(cos(phase),sin(phase));}else{float d=1.+4.*x*x+4.*t*t;vec2 q=vec2(1.-4./d,-8.*t/d);z=vec2(q.x*cos(t)-q.y*sin(t),q.x*sin(t)+q.y*cos(t));a=length(z);}return MakerI_analytical_soliton_wave_field(z.x,dot(z,z),z,a);\n}",
+  "glsl_outputs": {
+    "amplitude": "maker_analytical_soliton_wave_field({coordinate},{time},{family},{scale},{speed},{time_scale}).amplitude",
+    "intensity": "maker_analytical_soliton_wave_field({coordinate},{time},{family},{scale},{speed},{time_scale}).intensity",
+    "complex_value": "maker_analytical_soliton_wave_field({coordinate},{time},{family},{scale},{speed},{time_scale}).complex_value",
+    "envelope": "maker_analytical_soliton_wave_field({coordinate},{time},{family},{scale},{speed},{time_scale}).envelope"
+  }
+}

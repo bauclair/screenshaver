@@ -1,0 +1,116 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.geometry.classical_polar_curve_field_2d",
+  "name": "Classical Polar Curve Field 2D",
+  "category": "Geometry",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "header_color": "#557C9C",
+  "description": "Classical Polar Curve Field 2D",
+  "uses": "Procedural geometric patterns and independent color composition.",
+  "notes": "Finite parametric classical curves including non-single-valued radial forms; not a radial residual. Distance is to sampled polyline, not analytic curve. Parameter is normalized, not arc length.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "vec2(0.0)",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec2",
+      "default": "vec2(0.0)",
+      "semantic_role": ""
+    }
+  ],
+  "parameters": [
+    {
+      "id": "family",
+      "name": "Family",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Cardioid",
+        "Limacon",
+        "Nephroid",
+        "Cayley Sextic",
+        "Butterfly"
+      ]
+    },
+    {
+      "id": "radius",
+      "name": "Radius",
+      "type": "float",
+      "default": 0.18,
+      "min": 0.001,
+      "max": 5
+    },
+    {
+      "id": "shape",
+      "name": "Shape",
+      "type": "float",
+      "default": 0.5,
+      "min": 0,
+      "max": 2
+    },
+    {
+      "id": "orientation",
+      "name": "Orientation",
+      "type": "float",
+      "default": 0,
+      "min": -6.283185,
+      "max": 6.283185
+    },
+    {
+      "id": "segments",
+      "name": "Segments",
+      "type": "float",
+      "default": 128,
+      "min": 16,
+      "max": 512
+    },
+    {
+      "id": "line_width",
+      "name": "Line Width",
+      "type": "float",
+      "default": 0.005,
+      "min": 1e-05,
+      "max": 1
+    }
+  ],
+  "outputs": [
+    {
+      "id": "distance",
+      "name": "Distance",
+      "type": "float",
+      "semantic_role": "distance"
+    },
+    {
+      "id": "nearest_point",
+      "name": "Nearest Point",
+      "type": "vec2",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "curve_parameter",
+      "name": "Curve Parameter",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "line_mask",
+      "name": "Line Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    }
+  ],
+  "helpers": "struct MakerG_classical_polar_curve_field_2d {float distance; vec2 nearest_point; float curve_parameter; float line_mask;};\nMakerG_classical_polar_curve_field_2d maker_classical_polar_curve_field_2d(vec2 position,vec2 center,float family,float radius,float shape,float orientation,float segments,float line_width){\nvec2 prev=vec2(0.),nearest=vec2(0.);float best=1e30,param=0.;int n=int(clamp(floor(segments+.5),16.,512.));for(int i=0;i<=512;i++){if(i>n)break;float t=float(i)/float(n);vec2 v;float a=6.28318530718*t,r=0.;if(family<.5)r=radius*(1.+cos(a));else if(family<1.5)r=radius*(shape+cos(a));else if(family<2.5){v=radius*.5*vec2(3.*cos(a)-cos(3.*a),3.*sin(a)-sin(3.*a));}else if(family<3.5){a*=3.;r=2.*radius*(cos(a/3.)*cos(a/3.)*cos(a/3.)); }else{a*=12.;r=radius*.25*(exp(cos(a))-2.*cos(4.*a)-(sin(a/12.)*sin(a/12.)*sin(a/12.)*sin(a/12.)*sin(a/12.)));}if(family<1.5||family>=2.5)v=r*vec2(cos(a),sin(a));float c=cos(orientation),s=sin(orientation);v=mat2(c,s,-s,c)*v; v+=center;if(i>0){vec2 e=v-prev;float h=clamp(dot(position-prev,e)/max(dot(e,e),1e-20),0.,1.);vec2 q=prev+h*e;float d=dot(position-q,position-q);if(d<best){best=d;nearest=q;param=(float(i-1)+h)/float(n);}}prev=v;}float d=sqrt(best);return MakerG_classical_polar_curve_field_2d(d,nearest,param,1.-smoothstep(line_width,2.*line_width,d));\n}",
+  "glsl_outputs": {
+    "distance": "maker_classical_polar_curve_field_2d({position},{center},{family},{radius},{shape},{orientation},{segments},{line_width}).distance",
+    "nearest_point": "maker_classical_polar_curve_field_2d({position},{center},{family},{radius},{shape},{orientation},{segments},{line_width}).nearest_point",
+    "curve_parameter": "maker_classical_polar_curve_field_2d({position},{center},{family},{radius},{shape},{orientation},{segments},{line_width}).curve_parameter",
+    "line_mask": "maker_classical_polar_curve_field_2d({position},{center},{family},{radius},{shape},{orientation},{segments},{line_width}).line_mask"
+  }
+}

@@ -1,0 +1,93 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.math.orthogonal_polynomial_response",
+  "name": "Orthogonal Polynomial Response",
+  "category": "Math",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "header_color": "#348F8B",
+  "description": "Orthogonal Polynomial Response",
+  "uses": "Analytical mathematical fields and independent color composition.",
+  "notes": "Unnormalized classical polynomials; physicists Hermite, ordinary Laguerre, Jacobi alpha/beta nonnegative. Argument clamped to [-1,1] for Chebyshev/Legendre/Jacobi, [-6,6] Hermite, [0,24] Laguerre.",
+  "inputs": [
+    {
+      "id": "argument",
+      "name": "Argument",
+      "type": "float",
+      "default": "maker_uv.x*2.0-1.0",
+      "semantic_role": ""
+    }
+  ],
+  "parameters": [
+    {
+      "id": "family",
+      "name": "Family",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Chebyshev T",
+        "Legendre",
+        "Hermite",
+        "Laguerre",
+        "Jacobi"
+      ]
+    },
+    {
+      "id": "degree",
+      "name": "Degree",
+      "type": "float",
+      "default": 4,
+      "min": 0,
+      "max": 16
+    },
+    {
+      "id": "alpha",
+      "name": "Alpha",
+      "type": "float",
+      "default": 0,
+      "min": 0,
+      "max": 4
+    },
+    {
+      "id": "beta",
+      "name": "Beta",
+      "type": "float",
+      "default": 0,
+      "min": 0,
+      "max": 4
+    }
+  ],
+  "outputs": [
+    {
+      "id": "value",
+      "name": "Value",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "magnitude",
+      "name": "Magnitude",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "evaluated_argument",
+      "name": "Evaluated Argument",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "valid",
+      "name": "Valid",
+      "type": "float",
+      "semantic_role": "mask"
+    }
+  ],
+  "helpers": "struct MakerI_orthogonal_polynomial_response {float value; float magnitude; float evaluated_argument; float valid;};\nMakerI_orthogonal_polynomial_response maker_orthogonal_polynomial_response(float argument,float family,float degree,float alpha,float beta){\nfloat x=clamp(argument,-1.,1.);if(family>1.5&&family<2.5)x=clamp(argument,-6.,6.);if(family>2.5&&family<3.5)x=clamp(argument,0.,24.);int n=int(clamp(floor(degree+.5),0.,16.));float a=1.,b=x;if(family>1.5&&family<2.5)b=2.*x;else if(family>2.5&&family<3.5)b=1.-x;else if(family>3.5)b=.5*(alpha-beta+(alpha+beta+2.)*x);for(int j=2;j<=16;j++){if(j>n)break;float k=float(j),c;if(family<.5)c=2.*x*b-a;else if(family<1.5)c=((2.*k-1.)*x*b-(k-1.)*a)/k;else if(family<2.5)c=2.*x*b-2.*(k-1.)*a;else if(family<3.5)c=((2.*k-1.-x)*b-(k-1.)*a)/k;else{float s=2.*k+alpha+beta;c=((s-1.)*(s*(s-2.)*x+alpha*alpha-beta*beta)*b-2.*(k+alpha-1.)*(k+beta-1.)*s*a)/(2.*k*(k+alpha+beta)*(s-2.));}a=b;b=c;}float v=n==0?1.:b;return MakerI_orthogonal_polynomial_response(v,abs(v),x,argument==x?1.:0.);\n}",
+  "glsl_outputs": {
+    "value": "maker_orthogonal_polynomial_response({argument},{family},{degree},{alpha},{beta}).value",
+    "magnitude": "maker_orthogonal_polynomial_response({argument},{family},{degree},{alpha},{beta}).magnitude",
+    "evaluated_argument": "maker_orthogonal_polynomial_response({argument},{family},{degree},{alpha},{beta}).evaluated_argument",
+    "valid": "maker_orthogonal_polynomial_response({argument},{family},{degree},{alpha},{beta}).valid"
+  }
+}

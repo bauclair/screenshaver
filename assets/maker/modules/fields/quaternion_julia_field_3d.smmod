@@ -1,0 +1,122 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.quaternion_julia_field_3d",
+  "name": "Quaternion Julia Field 3D",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "header_color": "#348F8B",
+  "description": "Quaternion Julia Field 3D",
+  "uses": "Mathematical field and color composition.",
+  "notes": "Quaternion square plus constant on a 3D slice. Exterior derivative-bound estimate, zero for nonescaped or degenerate derivative. Not an exact SDF.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "semantic_role": "position3d",
+      "default": "vec3(maker_uv-vec2(0.5),0.0)"
+    },
+    {
+      "id": "constant_vector",
+      "name": "Constant Vector",
+      "type": "vec3",
+      "semantic_role": "",
+      "default": "vec3(0.2,0.3,0.1)"
+    },
+    {
+      "id": "constant_scalar",
+      "name": "Constant Scalar",
+      "type": "float",
+      "semantic_role": "",
+      "default": "-0.4"
+    },
+    {
+      "id": "slice",
+      "name": "Slice",
+      "type": "float",
+      "semantic_role": "",
+      "default": "0.0"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "iterations",
+      "name": "Iterations",
+      "type": "float",
+      "default": 16,
+      "min": 1,
+      "max": 64
+    },
+    {
+      "id": "escape_radius",
+      "name": "Escape Radius",
+      "type": "float",
+      "default": 4,
+      "min": 2,
+      "max": 32
+    },
+    {
+      "id": "scale",
+      "name": "Scale",
+      "type": "float",
+      "default": 2,
+      "min": 0.001,
+      "max": 20
+    }
+  ],
+  "outputs": [
+    {
+      "id": "estimate",
+      "name": "Estimate",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "escaped",
+      "name": "Escaped",
+      "type": "float",
+      "semantic_role": "mask"
+    },
+    {
+      "id": "iteration_count",
+      "name": "Iteration Count",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "final_vector",
+      "name": "Final Vector",
+      "type": "vec3",
+      "semantic_role": ""
+    },
+    {
+      "id": "final_scalar",
+      "name": "Final Scalar",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "minimum_magnitude",
+      "name": "Minimum Magnitude",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "valid",
+      "name": "Valid",
+      "type": "float",
+      "semantic_role": "mask"
+    }
+  ],
+  "helpers": "struct MakerQJulia {float estimate;float escaped;float iteration_count;vec3 final_vector;float final_scalar;float minimum_magnitude;float valid;};\nMakerQJulia maker_quaternion_julia_field_3d(vec3 position,vec3 constant_vector,float constant_scalar,float slice,float iterations,float escape_radius,float scale){vec4 z=vec4(position*scale,slice),c=vec4(constant_vector,constant_scalar);float r=length(z),mn=r,dr=1.,n=0.;if(any(isnan(z))||any(isinf(z))||any(isnan(c))||any(isinf(c))||r>1e6||length(c)>1e6)return MakerQJulia(0.,0.,0.,vec3(0.),0.,0.,0.);for(int i=0;i<64;i++){if(i>=int(floor(iterations+.5))||r>escape_radius)break;dr*=2.*r;z=vec4(2.*z.w*z.xyz,z.w*z.w-dot(z.xyz,z.xyz))+c;r=length(z);mn=min(mn,r);n+=1.;if(isinf(dr)||isnan(dr)||isinf(r)||isnan(r))return MakerQJulia(0.,0.,n,vec3(0.),0.,mn,0.);}float e=float(r>escape_radius);float d=e>.5&&dr>1e-12?.5*r*log(r)/dr/scale:0.;return MakerQJulia(d,e,n,z.xyz,z.w,mn,1.);}\n",
+  "glsl_outputs": {
+    "estimate": "maker_quaternion_julia_field_3d({position},{constant_vector},{constant_scalar},{slice},{iterations},{escape_radius},{scale}).estimate",
+    "escaped": "maker_quaternion_julia_field_3d({position},{constant_vector},{constant_scalar},{slice},{iterations},{escape_radius},{scale}).escaped",
+    "iteration_count": "maker_quaternion_julia_field_3d({position},{constant_vector},{constant_scalar},{slice},{iterations},{escape_radius},{scale}).iteration_count",
+    "final_vector": "maker_quaternion_julia_field_3d({position},{constant_vector},{constant_scalar},{slice},{iterations},{escape_radius},{scale}).final_vector",
+    "final_scalar": "maker_quaternion_julia_field_3d({position},{constant_vector},{constant_scalar},{slice},{iterations},{escape_radius},{scale}).final_scalar",
+    "minimum_magnitude": "maker_quaternion_julia_field_3d({position},{constant_vector},{constant_scalar},{slice},{iterations},{escape_radius},{scale}).minimum_magnitude",
+    "valid": "maker_quaternion_julia_field_3d({position},{constant_vector},{constant_scalar},{slice},{iterations},{escape_radius},{scale}).valid"
+  }
+}

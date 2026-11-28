@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.archimedean_tiling_coordinates_2d",
+  "name": "Archimedean Tiling Coordinates 2D",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "header_color": "#557C9C",
+  "description": "Archimedean Tiling Coordinates 2D",
+  "uses": "Procedural geometric patterns and independent color composition.",
+  "notes": "Exact 4.8.8 truncated-square tiling or 3.6.3.6 trihexagonal tiling. Boundary distance measured within selected convex polygon; local coordinates centered on tile.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "vec2(0.0)",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec2",
+      "default": "vec2(0.0)",
+      "semantic_role": ""
+    }
+  ],
+  "parameters": [
+    {
+      "id": "tile_size",
+      "name": "Tile Size",
+      "type": "float",
+      "default": 0.2,
+      "min": 0.001,
+      "max": 10
+    },
+    {
+      "id": "family",
+      "name": "Family",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Truncated Square 4.8.8",
+        "Trihexagonal 3.6.3.6"
+      ]
+    }
+  ],
+  "outputs": [
+    {
+      "id": "local",
+      "name": "Local",
+      "type": "vec2",
+      "semantic_role": ""
+    },
+    {
+      "id": "tile_center",
+      "name": "Tile Center",
+      "type": "vec2",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "boundary",
+      "name": "Boundary",
+      "type": "float",
+      "semantic_role": "distance"
+    },
+    {
+      "id": "sides",
+      "name": "Sides",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "tile_random",
+      "name": "Tile Random",
+      "type": "float",
+      "semantic_role": ""
+    }
+  ],
+  "helpers": "struct MakerG_archimedean_tiling_coordinates_2d {vec2 local; vec2 tile_center; float boundary; float sides; float tile_random;};\nMakerG_archimedean_tiling_coordinates_2d maker_archimedean_tiling_coordinates_2d(vec2 position,vec2 center,float tile_size,float family){\nvec2 p=(position-center)/tile_size;vec2 o;float e,sides;if(family<.5){vec2 cell=floor(p+.5);vec2 v=p-cell;float cut=1./(2.+sqrt(2.));vec2 corner=cell+vec2(v.x>=0.? .5:-.5,v.y>=0.? .5:-.5);vec2 w=p-corner;if(abs(w.x)+abs(w.y)<cut){o=corner;e=(cut-abs(w.x)-abs(w.y))/sqrt(2.);sides=4.;}else{o=cell;e=min(.5-max(abs(v.x),abs(v.y)),(1.-cut-abs(v.x)-abs(v.y))/sqrt(2.));sides=8.;}}else{vec2 a=vec2(1.,0.),b=vec2(.5,.86602540378);vec2 t=vec2(p.x-p.y/sqrt(3.),p.y/b.y);vec2 k=floor(t);vec2 v=fract(t);vec2 h=k.x*a+k.y*b;vec2 verts[3];if(v.x+v.y<=1.){verts[0]=h;verts[1]=h+a;verts[2]=h+b;}else{verts[0]=h+a+b;verts[1]=h+b;verts[2]=h+a;}float nearest=1e20;int idx=0;for(int i=0;i<3;i++){float dist=length(p-verts[i]);if(dist<nearest){nearest=dist;idx=i;}}vec2 h0=verts[idx];vec2 w=p-h0;float m=0.;for(int i=0;i<3;i++){float ang=(float(i)+.5)*1.0471975512;m=max(m,abs(dot(w,vec2(cos(ang),sin(ang)))));}if(m<=.43301270189){o=h0;e=.43301270189-m;sides=6.;}else{o=(verts[0]+verts[1]+verts[2])/3.;e=1e20;for(int i=0;i<3;i++){vec2 dir=normalize(o-verts[i]);e=min(e,dot(p-verts[i],dir)-.43301270189);}sides=3.;}}return MakerG_archimedean_tiling_coordinates_2d(p-o,o*tile_size+center,max(e,0.)*tile_size,sides,fract(sin(dot(o,vec2(12.9898,78.233)))*43758.5453));\n}",
+  "glsl_outputs": {
+    "local": "maker_archimedean_tiling_coordinates_2d({position},{center},{tile_size},{family}).local",
+    "tile_center": "maker_archimedean_tiling_coordinates_2d({position},{center},{tile_size},{family}).tile_center",
+    "boundary": "maker_archimedean_tiling_coordinates_2d({position},{center},{tile_size},{family}).boundary",
+    "sides": "maker_archimedean_tiling_coordinates_2d({position},{center},{tile_size},{family}).sides",
+    "tile_random": "maker_archimedean_tiling_coordinates_2d({position},{center},{tile_size},{family}).tile_random"
+  }
+}

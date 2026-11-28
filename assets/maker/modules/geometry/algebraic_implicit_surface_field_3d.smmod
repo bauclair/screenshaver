@@ -1,0 +1,121 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.geometry.algebraic_implicit_surface_field_3d",
+  "name": "Algebraic Implicit Surface Field 3D",
+  "category": "Geometry",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "header_color": "#348F8B",
+  "description": "Algebraic Implicit Surface Field 3D",
+  "uses": "Mathematical geometry and field composition.",
+  "notes": "Classical polynomial zero sets; Cayley cubic in symmetric coordinates, Roman surface, Whitney umbrella, Tanglecube and Barth sextic. Gradient is analytical with respect to world position within coordinate clamp. Linearized residual is only a local approximation, not a conservative SDF; negative mask is sign classification, not necessarily a solid interior. Singular points may have zero gradient.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "default": "vec3(maker_uv-vec2(0.5),0.0)",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec3",
+      "default": "vec3(0.0)",
+      "semantic_role": ""
+    }
+  ],
+  "parameters": [
+    {
+      "id": "surface",
+      "name": "Surface",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Tanglecube",
+        "Cayley Cubic",
+        "Roman Surface",
+        "Whitney Umbrella",
+        "Barth Sextic"
+      ]
+    },
+    {
+      "id": "scale",
+      "name": "Scale",
+      "type": "float",
+      "default": 2,
+      "min": 0.001,
+      "max": 100
+    },
+    {
+      "id": "level",
+      "name": "Level",
+      "type": "float",
+      "default": 0,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "contour_width",
+      "name": "Contour Width",
+      "type": "float",
+      "default": 0.03,
+      "min": 1e-05,
+      "max": 2
+    }
+  ],
+  "outputs": [
+    {
+      "id": "residual",
+      "name": "Residual",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "gradient",
+      "name": "Gradient",
+      "type": "vec3",
+      "semantic_role": ""
+    },
+    {
+      "id": "gradient_magnitude",
+      "name": "Gradient Magnitude",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "normal",
+      "name": "Normal",
+      "type": "vec3",
+      "semantic_role": "normal3d"
+    },
+    {
+      "id": "linearized_residual",
+      "name": "Linearized Residual",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "negative_mask",
+      "name": "Negative Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    },
+    {
+      "id": "contour_mask",
+      "name": "Contour Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    }
+  ],
+  "helpers": "struct MakerTopology_algebraic_implicit_surface_field_3d {float residual; vec3 gradient; float gradient_magnitude; vec3 normal; float linearized_residual; float negative_mask; float contour_mask;};\nMakerTopology_algebraic_implicit_surface_field_3d maker_algebraic_implicit_surface_field_3d(vec3 position,vec3 center,float surface,float scale,float level,float contour_width){\nvec3 v=clamp((position-center)*scale,vec3(-100.),vec3(100.));float x=v.x,y=v.y,z=v.z,X=x*x,Y=y*y,Z=z*z;float f;vec3 g;int m=int(clamp(floor(surface+.5),0.,4.));if(m==0){f=X*X+Y*Y+Z*Z-5.*(X+Y+Z)+11.8;g=4.*v*v*v-10.*v;}else if(m==1){f=X+Y+Z+2.*x*y*z-1.;g=2.*vec3(x+y*z,y+x*z,z+x*y);}else if(m==2){f=X*Y+Y*Z+Z*X-x*y*z;g=vec3(2.*x*(Y+Z)-y*z,2.*y*(X+Z)-x*z,2.*z*(X+Y)-x*y);}else if(m==3){f=X-Y*z;g=vec3(2.*x,-2.*y*z,-Y);}else{float t=2.61803398875,k=4.2360679775,A=t*X-Y,B=t*Y-Z,C=t*Z-X,S=X+Y+Z-1.;f=4.*A*B*C-k*S*S;g=vec3(8.*x*B*(t*C-A),8.*y*C*(t*A-B),8.*z*A*(t*B-C))-4.*k*S*v;}f-=level;g*=scale;float mag=length(g);vec3 n=mag>1e-8?g/mag:vec3(0.);float d=f/max(mag,1e-6);return MakerTopology_algebraic_implicit_surface_field_3d(f,g,mag,n,d,step(f,0.),1.-smoothstep(0.,contour_width,abs(d)));\n}",
+  "glsl_outputs": {
+    "residual": "maker_algebraic_implicit_surface_field_3d({position},{center},{surface},{scale},{level},{contour_width}).residual",
+    "gradient": "maker_algebraic_implicit_surface_field_3d({position},{center},{surface},{scale},{level},{contour_width}).gradient",
+    "gradient_magnitude": "maker_algebraic_implicit_surface_field_3d({position},{center},{surface},{scale},{level},{contour_width}).gradient_magnitude",
+    "normal": "maker_algebraic_implicit_surface_field_3d({position},{center},{surface},{scale},{level},{contour_width}).normal",
+    "linearized_residual": "maker_algebraic_implicit_surface_field_3d({position},{center},{surface},{scale},{level},{contour_width}).linearized_residual",
+    "negative_mask": "maker_algebraic_implicit_surface_field_3d({position},{center},{surface},{scale},{level},{contour_width}).negative_mask",
+    "contour_mask": "maker_algebraic_implicit_surface_field_3d({position},{center},{surface},{scale},{level},{contour_width}).contour_mask"
+  }
+}

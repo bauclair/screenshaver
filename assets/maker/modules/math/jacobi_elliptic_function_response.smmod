@@ -1,0 +1,86 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.math.jacobi_elliptic_function_response",
+  "name": "Jacobi Elliptic Function Response",
+  "category": "Math",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "header_color": "#348F8B",
+  "description": "Jacobi Elliptic Function Response",
+  "uses": "Analytical mathematical fields and independent color composition.",
+  "notes": "Real Jacobi sn, cn, dn for parameter m in [0,0.95]. Inverts incomplete elliptic integral using fixed bisection and Simpson quadrature; argument limited to +/-32, periodic reduction by computed K. Approximate.",
+  "inputs": [
+    {
+      "id": "argument",
+      "name": "Argument",
+      "type": "float",
+      "default": "maker_uv.x*2.0-1.0",
+      "semantic_role": ""
+    }
+  ],
+  "parameters": [
+    {
+      "id": "parameter_m",
+      "name": "Parameter M",
+      "type": "float",
+      "default": 0.5,
+      "min": 0,
+      "max": 0.95
+    },
+    {
+      "id": "argument_scale",
+      "name": "Argument Scale",
+      "type": "float",
+      "default": 8,
+      "min": 0.01,
+      "max": 32
+    }
+  ],
+  "outputs": [
+    {
+      "id": "sn",
+      "name": "Sn",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "cn",
+      "name": "Cn",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "dn",
+      "name": "Dn",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "amplitude",
+      "name": "Amplitude",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "quarter_period",
+      "name": "Quarter Period",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "valid",
+      "name": "Valid",
+      "type": "float",
+      "semantic_role": "mask"
+    }
+  ],
+  "helpers": "struct MakerI_jacobi_elliptic_function_response {float sn; float cn; float dn; float amplitude; float quarter_period; float valid;};\nMakerI_jacobi_elliptic_function_response maker_jacobi_elliptic_function_response(float argument,float parameter_m,float argument_scale){\nfloat u=clamp(argument*argument_scale,-32.,32.),m=parameter_m;float K=0.;for(int j=0;j<=64;j++){float a=1.57079632679*float(j)/64.,s=sin(a);K+=(j==0||j==64?1.:j%2==0?2.:4.)/sqrt(1.-m*s*s);}K*=1.57079632679/192.;float v=mod(u+2.*K,4.*K)-2.*K;float lo=-3.14159265359,hi=3.14159265359;for(int i=0;i<20;i++){float a=.5*(lo+hi),sum=0.;for(int j=0;j<=64;j++){float s=sin(a*float(j)/64.);sum+=(j==0||j==64?1.:j%2==0?2.:4.)/sqrt(1.-m*s*s);}float val=a*sum/192.;if(val<v)lo=a;else hi=a;}float a=.5*(lo+hi),s=sin(a);return MakerI_jacobi_elliptic_function_response(s,cos(a),sqrt(1.-m*s*s),a,K,abs(argument*argument_scale)<=32.?1.:0.);\n}",
+  "glsl_outputs": {
+    "sn": "maker_jacobi_elliptic_function_response({argument},{parameter_m},{argument_scale}).sn",
+    "cn": "maker_jacobi_elliptic_function_response({argument},{parameter_m},{argument_scale}).cn",
+    "dn": "maker_jacobi_elliptic_function_response({argument},{parameter_m},{argument_scale}).dn",
+    "amplitude": "maker_jacobi_elliptic_function_response({argument},{parameter_m},{argument_scale}).amplitude",
+    "quarter_period": "maker_jacobi_elliptic_function_response({argument},{parameter_m},{argument_scale}).quarter_period",
+    "valid": "maker_jacobi_elliptic_function_response({argument},{parameter_m},{argument_scale}).valid"
+  }
+}

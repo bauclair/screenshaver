@@ -1,0 +1,82 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.generalized_curvilinear_coordinates_2d",
+  "name": "Generalized Curvilinear Coordinates 2D",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "header_color": "#348F8B",
+  "description": "Generalized Curvilinear Coordinates 2D",
+  "uses": "Analytical mathematical fields and independent color composition.",
+  "notes": "Forward Cartesian to elliptic, parabolic or bipolar coordinates. Parabolic convention x=(u^2-v^2)/2, y=u*v; principal branch. Elliptic foci +/-a; bipolar angle principal branch. Validity excludes singular points.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv-vec2(0.5)",
+      "semantic_role": "position2d"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "family",
+      "name": "Family",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Elliptic",
+        "Parabolic",
+        "Bipolar"
+      ]
+    },
+    {
+      "id": "focal_distance",
+      "name": "Focal Distance",
+      "type": "float",
+      "default": 0.2,
+      "min": 0.001,
+      "max": 10
+    }
+  ],
+  "outputs": [
+    {
+      "id": "coordinates",
+      "name": "Coordinates",
+      "type": "vec2",
+      "semantic_role": ""
+    },
+    {
+      "id": "first",
+      "name": "First",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "second",
+      "name": "Second",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "metric_scale",
+      "name": "Metric Scale",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "valid",
+      "name": "Valid",
+      "type": "float",
+      "semantic_role": "mask"
+    }
+  ],
+  "helpers": "struct MakerJ_generalized_curvilinear_coordinates_2d {vec2 coordinates; float first; float second; float metric_scale; float valid;};\nMakerJ_generalized_curvilinear_coordinates_2d maker_generalized_curvilinear_coordinates_2d(vec2 position,float family,float focal_distance){\nvec2 p=position;float a=focal_distance;vec2 q;float h;float valid=1.;if(any(isnan(p))||any(isinf(p))||length(p)>1e5)return MakerJ_generalized_curvilinear_coordinates_2d(vec2(0.),0.,0.,0.,0.);if(family<.5){float l=length(p+vec2(a,0.)),r=length(p-vec2(a,0.));q=vec2(acosh(max(1.,(l+r)/(2.*a))),acos(clamp((l-r)/(2.*a),-1.,1.)));if(p.y<0.)q.y=-q.y;h=a*length(vec2(sinh(q.x),sin(q.y)));}else if(family<1.5){float r=length(p);q=vec2(sqrt(max(0.,r+p.x)),sqrt(max(0.,r-p.x))*(p.y<0.?-1.:1.));h=length(q);}else{vec2 l=p+vec2(a,0.),r=p-vec2(a,0.);float dl=length(l),dr=length(r);if(min(dl,dr)<1e-8)return MakerJ_generalized_curvilinear_coordinates_2d(vec2(0.),0.,0.,0.,0.);q=vec2(log(dl/dr),atan(l.y,l.x)-atan(r.y,r.x));q.y=mod(q.y+3.14159265,6.2831853)-3.14159265;h=dl*dr/(2.*a);}if(h<1e-8)valid=0.;return MakerJ_generalized_curvilinear_coordinates_2d(q,q.x,q.y,h,valid);\n}",
+  "glsl_outputs": {
+    "coordinates": "maker_generalized_curvilinear_coordinates_2d({position},{family},{focal_distance}).coordinates",
+    "first": "maker_generalized_curvilinear_coordinates_2d({position},{family},{focal_distance}).first",
+    "second": "maker_generalized_curvilinear_coordinates_2d({position},{family},{focal_distance}).second",
+    "metric_scale": "maker_generalized_curvilinear_coordinates_2d({position},{family},{focal_distance}).metric_scale",
+    "valid": "maker_generalized_curvilinear_coordinates_2d({position},{family},{focal_distance}).valid"
+  }
+}

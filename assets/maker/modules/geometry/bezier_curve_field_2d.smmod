@@ -1,0 +1,153 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.geometry.bezier_curve_field_2d",
+  "name": "B\u00e9zier Curve Field 2D",
+  "category": "Geometry",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "header_color": "#557C9C",
+  "description": "B\u00e9zier Curve Field 2D",
+  "uses": "Procedural geometric patterns and independent color composition.",
+  "notes": "Quadratic or cubic B\u00e9zier curve with editable control points; finite sampled curve. Distance is to sampled polyline, not analytic curve. Parameter is normalized, not arc length.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "vec2(0.0)",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec2",
+      "default": "vec2(0.0)",
+      "semantic_role": ""
+    }
+  ],
+  "parameters": [
+    {
+      "id": "family",
+      "name": "Family",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Cubic",
+        "Quadratic"
+      ]
+    },
+    {
+      "id": "p0_x",
+      "name": "P0 X",
+      "type": "float",
+      "default": -0.35,
+      "min": -5,
+      "max": 5
+    },
+    {
+      "id": "p0_y",
+      "name": "P0 Y",
+      "type": "float",
+      "default": -0.2,
+      "min": -5,
+      "max": 5
+    },
+    {
+      "id": "p1_x",
+      "name": "P1 X",
+      "type": "float",
+      "default": -0.2,
+      "min": -5,
+      "max": 5
+    },
+    {
+      "id": "p1_y",
+      "name": "P1 Y",
+      "type": "float",
+      "default": 0.4,
+      "min": -5,
+      "max": 5
+    },
+    {
+      "id": "p2_x",
+      "name": "P2 X",
+      "type": "float",
+      "default": 0.2,
+      "min": -5,
+      "max": 5
+    },
+    {
+      "id": "p2_y",
+      "name": "P2 Y",
+      "type": "float",
+      "default": -0.4,
+      "min": -5,
+      "max": 5
+    },
+    {
+      "id": "p3_x",
+      "name": "P3 X",
+      "type": "float",
+      "default": 0.35,
+      "min": -5,
+      "max": 5
+    },
+    {
+      "id": "p3_y",
+      "name": "P3 Y",
+      "type": "float",
+      "default": 0.2,
+      "min": -5,
+      "max": 5
+    },
+    {
+      "id": "segments",
+      "name": "Segments",
+      "type": "float",
+      "default": 128,
+      "min": 16,
+      "max": 512
+    },
+    {
+      "id": "line_width",
+      "name": "Line Width",
+      "type": "float",
+      "default": 0.005,
+      "min": 1e-05,
+      "max": 1
+    }
+  ],
+  "outputs": [
+    {
+      "id": "distance",
+      "name": "Distance",
+      "type": "float",
+      "semantic_role": "distance"
+    },
+    {
+      "id": "nearest_point",
+      "name": "Nearest Point",
+      "type": "vec2",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "curve_parameter",
+      "name": "Curve Parameter",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "line_mask",
+      "name": "Line Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    }
+  ],
+  "helpers": "struct MakerG_bezier_curve_field_2d {float distance; vec2 nearest_point; float curve_parameter; float line_mask;};\nMakerG_bezier_curve_field_2d maker_bezier_curve_field_2d(vec2 position,vec2 center,float family,float p0_x,float p0_y,float p1_x,float p1_y,float p2_x,float p2_y,float p3_x,float p3_y,float segments,float line_width){\nvec2 prev=vec2(0.),nearest=vec2(0.);float best=1e30,param=0.;int n=int(clamp(floor(segments+.5),16.,512.));for(int i=0;i<=512;i++){if(i>n)break;float t=float(i)/float(n);vec2 v;vec2 a=vec2(p0_x,p0_y),b=vec2(p1_x,p1_y),c=vec2(p2_x,p2_y),d=vec2(p3_x,p3_y);vec2 ab=mix(a,b,t),bc=mix(b,c,t),cd=mix(c,d,t);vec2 u=mix(ab,bc,t);v=family<.5?mix(u,mix(bc,cd,t),t):u; v+=center;if(i>0){vec2 e=v-prev;float h=clamp(dot(position-prev,e)/max(dot(e,e),1e-20),0.,1.);vec2 q=prev+h*e;float d=dot(position-q,position-q);if(d<best){best=d;nearest=q;param=(float(i-1)+h)/float(n);}}prev=v;}float d=sqrt(best);return MakerG_bezier_curve_field_2d(d,nearest,param,1.-smoothstep(line_width,2.*line_width,d));\n}",
+  "glsl_outputs": {
+    "distance": "maker_bezier_curve_field_2d({position},{center},{family},{p0_x},{p0_y},{p1_x},{p1_y},{p2_x},{p2_y},{p3_x},{p3_y},{segments},{line_width}).distance",
+    "nearest_point": "maker_bezier_curve_field_2d({position},{center},{family},{p0_x},{p0_y},{p1_x},{p1_y},{p2_x},{p2_y},{p3_x},{p3_y},{segments},{line_width}).nearest_point",
+    "curve_parameter": "maker_bezier_curve_field_2d({position},{center},{family},{p0_x},{p0_y},{p1_x},{p1_y},{p2_x},{p2_y},{p3_x},{p3_y},{segments},{line_width}).curve_parameter",
+    "line_mask": "maker_bezier_curve_field_2d({position},{center},{family},{p0_x},{p0_y},{p1_x},{p1_y},{p2_x},{p2_y},{p3_x},{p3_y},{segments},{line_width}).line_mask"
+  }
+}

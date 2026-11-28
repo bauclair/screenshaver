@@ -1,0 +1,134 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.color.complex_domain_coloring",
+  "name": "Complex Domain Coloring",
+  "category": "Color",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "header_color": "#A65B8D",
+  "description": "Complex Domain Coloring",
+  "uses": "Mathematical field and color composition.",
+  "notes": "Phase maps to hue in turns, magnitude to bounded brightness, optional logarithmic radial and angular contours. Zero is black with undefined phase. Integer angular frequency gives seamless angular contours; fractional values can produce a seam. RGB output is a numerical palette, not perceptually uniform.",
+  "inputs": [
+    {
+      "id": "complex_value",
+      "name": "Complex Value",
+      "type": "vec2",
+      "semantic_role": "",
+      "default": "(maker_uv-vec2(0.5))*4.0"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "hue_offset",
+      "name": "Hue Offset",
+      "type": "float",
+      "default": 0,
+      "min": -1,
+      "max": 1
+    },
+    {
+      "id": "saturation",
+      "name": "Saturation",
+      "type": "float",
+      "default": 0.85,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "brightness",
+      "name": "Brightness",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "magnitude_scale",
+      "name": "Magnitude Scale",
+      "type": "float",
+      "default": 1,
+      "min": 0.001,
+      "max": 100
+    },
+    {
+      "id": "radial_frequency",
+      "name": "Radial Frequency",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 16
+    },
+    {
+      "id": "angular_frequency",
+      "name": "Angular Frequency",
+      "type": "float",
+      "default": 12,
+      "min": 0,
+      "max": 64
+    },
+    {
+      "id": "contour_strength",
+      "name": "Contour Strength",
+      "type": "float",
+      "default": 0.45,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "contour_width",
+      "name": "Contour Width",
+      "type": "float",
+      "default": 0.08,
+      "min": 0.001,
+      "max": 0.49
+    }
+  ],
+  "outputs": [
+    {
+      "id": "color",
+      "name": "Color",
+      "type": "vec3",
+      "semantic_role": "color"
+    },
+    {
+      "id": "phase",
+      "name": "Phase",
+      "type": "float",
+      "semantic_role": "angle"
+    },
+    {
+      "id": "magnitude",
+      "name": "Magnitude",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "radial_contour",
+      "name": "Radial Contour",
+      "type": "float",
+      "semantic_role": "mask"
+    },
+    {
+      "id": "angular_contour",
+      "name": "Angular Contour",
+      "type": "float",
+      "semantic_role": "mask"
+    },
+    {
+      "id": "phase_valid",
+      "name": "Phase Valid",
+      "type": "float",
+      "semantic_role": "mask"
+    }
+  ],
+  "helpers": "struct MakerDomainResult {vec3 color;float phase;float magnitude;float radial_contour;float angular_contour;float phase_valid;};\nMakerDomainResult maker_complex_domain_coloring(vec2 complex_value,float hue_offset,float saturation,float brightness,float magnitude_scale,float radial_frequency,float angular_frequency,float contour_strength,float contour_width){\nif(any(isnan(complex_value))||any(isinf(complex_value)))return MakerDomainResult(vec3(0.),0.,0.,0.,0.,0.);vec2 z=clamp(complex_value,vec2(-1e15),vec2(1e15));float mag=length(z),valid=step(1e-8,mag),phase=valid>.5?atan(z.y,z.x):0.;float h=fract(phase/6.28318530718+hue_offset);float r=mag*magnitude_scale;float rv=fract(log2(max(r,1e-8))*radial_frequency),av=fract(phase/6.28318530718*angular_frequency);float rc=radial_frequency>0.&&valid>.5?1.-smoothstep(0.,contour_width,min(rv,1.-rv)):0.;float ac=angular_frequency>0.&&valid>.5?1.-smoothstep(0.,contour_width,min(av,1.-av)):0.;vec3 rgb=clamp(abs(fract(h+vec3(0.,2./3.,1./3.))*6.-3.)-1.,0.,1.);float v=brightness*(r/(1.+r))*(1.-contour_strength*max(rc,ac));return MakerDomainResult(mix(vec3(1.),rgb,saturation)*v,phase,mag,rc,ac,valid);}\n",
+  "glsl_outputs": {
+    "color": "maker_complex_domain_coloring({complex_value},{hue_offset},{saturation},{brightness},{magnitude_scale},{radial_frequency},{angular_frequency},{contour_strength},{contour_width}).color",
+    "phase": "maker_complex_domain_coloring({complex_value},{hue_offset},{saturation},{brightness},{magnitude_scale},{radial_frequency},{angular_frequency},{contour_strength},{contour_width}).phase",
+    "magnitude": "maker_complex_domain_coloring({complex_value},{hue_offset},{saturation},{brightness},{magnitude_scale},{radial_frequency},{angular_frequency},{contour_strength},{contour_width}).magnitude",
+    "radial_contour": "maker_complex_domain_coloring({complex_value},{hue_offset},{saturation},{brightness},{magnitude_scale},{radial_frequency},{angular_frequency},{contour_strength},{contour_width}).radial_contour",
+    "angular_contour": "maker_complex_domain_coloring({complex_value},{hue_offset},{saturation},{brightness},{magnitude_scale},{radial_frequency},{angular_frequency},{contour_strength},{contour_width}).angular_contour",
+    "phase_valid": "maker_complex_domain_coloring({complex_value},{hue_offset},{saturation},{brightness},{magnitude_scale},{radial_frequency},{angular_frequency},{contour_strength},{contour_width}).phase_valid"
+  }
+}

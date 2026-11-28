@@ -1,0 +1,85 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.math.fresnel_integral_response",
+  "name": "Fresnel Integral Response",
+  "category": "Math",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "header_color": "#348F8B",
+  "description": "Fresnel Integral Response",
+  "uses": "Analytical mathematical fields and independent color composition.",
+  "notes": "Normalized Fresnel C and S integrals with phase pi*t^2/2. Composite Simpson quadrature 256 intervals; argument bounded to +/-8. Derivatives evaluated analytically at clamped argument.",
+  "inputs": [
+    {
+      "id": "argument",
+      "name": "Argument",
+      "type": "float",
+      "default": "maker_uv.x*2.0-1.0",
+      "semantic_role": ""
+    }
+  ],
+  "parameters": [
+    {
+      "id": "argument_scale",
+      "name": "Argument Scale",
+      "type": "float",
+      "default": 4,
+      "min": 0.01,
+      "max": 16
+    }
+  ],
+  "outputs": [
+    {
+      "id": "cosine_integral",
+      "name": "Cosine Integral",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "sine_integral",
+      "name": "Sine Integral",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "complex_value",
+      "name": "Complex Value",
+      "type": "vec2",
+      "semantic_role": ""
+    },
+    {
+      "id": "magnitude",
+      "name": "Magnitude",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "cosine_derivative",
+      "name": "Cosine Derivative",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "sine_derivative",
+      "name": "Sine Derivative",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "valid",
+      "name": "Valid",
+      "type": "float",
+      "semantic_role": "mask"
+    }
+  ],
+  "helpers": "struct MakerI_fresnel_integral_response {float cosine_integral; float sine_integral; vec2 complex_value; float magnitude; float cosine_derivative; float sine_derivative; float valid;};\nMakerI_fresnel_integral_response maker_fresnel_integral_response(float argument,float argument_scale){\nfloat raw=argument*argument_scale,x=clamp(raw,-8.,8.);vec2 sum=vec2(0.);for(int j=0;j<=256;j++){float t=x*float(j)/256.,a=1.57079632679*t*t;sum+=(j==0||j==256?1.:j%2==0?2.:4.)*vec2(cos(a),sin(a));}sum*=x/768.;float a=1.57079632679*x*x;return MakerI_fresnel_integral_response(sum.x,sum.y,sum,length(sum),cos(a),sin(a),raw==x?1.:0.);\n}",
+  "glsl_outputs": {
+    "cosine_integral": "maker_fresnel_integral_response({argument},{argument_scale}).cosine_integral",
+    "sine_integral": "maker_fresnel_integral_response({argument},{argument_scale}).sine_integral",
+    "complex_value": "maker_fresnel_integral_response({argument},{argument_scale}).complex_value",
+    "magnitude": "maker_fresnel_integral_response({argument},{argument_scale}).magnitude",
+    "cosine_derivative": "maker_fresnel_integral_response({argument},{argument_scale}).cosine_derivative",
+    "sine_derivative": "maker_fresnel_integral_response({argument},{argument_scale}).sine_derivative",
+    "valid": "maker_fresnel_integral_response({argument},{argument_scale}).valid"
+  }
+}

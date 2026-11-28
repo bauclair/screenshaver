@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.geometry.clifford_torus_projection_field",
+  "name": "Clifford Torus Projection Field",
+  "category": "Geometry",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "header_color": "#557C9C",
+  "description": "Clifford Torus Projection Field",
+  "uses": "Procedural geometry and contour composition.",
+  "notes": "Parametric two-angle torus on unit S3; equal radii at 45 degrees is Clifford torus. Stereographic projection singularity flagged and denominator bounded. Not a distance field.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec2",
+      "default": "vec2(0.5)",
+      "semantic_role": ""
+    }
+  ],
+  "parameters": [
+    {
+      "id": "radius",
+      "name": "Radius",
+      "type": "float",
+      "default": 1,
+      "min": 0.01,
+      "max": 5
+    },
+    {
+      "id": "mix_angle",
+      "name": "Mix Angle",
+      "type": "float",
+      "default": 45,
+      "min": 1,
+      "max": 89
+    },
+    {
+      "id": "rotation_xw",
+      "name": "Rotation Xw",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "rotation_yw",
+      "name": "Rotation Yw",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    }
+  ],
+  "outputs": [
+    {
+      "id": "projected",
+      "name": "Projected",
+      "type": "vec3",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "fourth",
+      "name": "Fourth",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "valid",
+      "name": "Valid",
+      "type": "float",
+      "semantic_role": "mask"
+    }
+  ],
+  "helpers": "\nstruct MakerShape2 {vec3 projected; float fourth; float valid;};\nMakerShape2 maker_clifford_torus_projection_field(vec2 position,vec2 center,float radius,float mix_angle,float rotation_xw,float rotation_yw){\nvec2 a=(position-center)*6.2831853;float b=radians(mix_angle);vec4 q=vec4(cos(b)*vec2(cos(a.x),sin(a.x)),sin(b)*vec2(cos(a.y),sin(a.y)));float c=cos(radians(rotation_xw)),s=sin(radians(rotation_xw));q.xw=mat2(c,s,-s,c)*q.xw;c=cos(radians(rotation_yw));s=sin(radians(rotation_yw));q.yw=mat2(c,s,-s,c)*q.yw;float d=1.-q.w;return MakerShape2(radius*q.xyz/max(d,1e-5),q.w,step(1e-5,d));\n}",
+  "glsl_outputs": {
+    "projected": "maker_clifford_torus_projection_field({position},{center},{radius},{mix_angle},{rotation_xw},{rotation_yw}).projected",
+    "fourth": "maker_clifford_torus_projection_field({position},{center},{radius},{mix_angle},{rotation_xw},{rotation_yw}).fourth",
+    "valid": "maker_clifford_torus_projection_field({position},{center},{radius},{mix_angle},{rotation_xw},{rotation_yw}).valid"
+  }
+}

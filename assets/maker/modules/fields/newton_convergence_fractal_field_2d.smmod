@@ -1,0 +1,138 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.newton_convergence_fractal_field_2d",
+  "name": "Newton Convergence Fractal Field 2D",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "header_color": "#348F8B",
+  "description": "Newton Convergence Fractal Field 2D",
+  "uses": "Mathematical field and color composition.",
+  "notes": "Newton iteration for z^n=c, nonzero complex constant. Root index is zero-based, -1 when not converged. Residual tolerance relative to max(1,abs(c)). Validity is numerical evaluation status, not convergence. Bounds reject singular derivatives and extreme orbits. No arbitrary polynomial coefficients.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "semantic_role": "position2d",
+      "default": "maker_uv-vec2(0.5)"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec2",
+      "semantic_role": "",
+      "default": "vec2(0.0)"
+    },
+    {
+      "id": "constant",
+      "name": "Constant",
+      "type": "vec2",
+      "semantic_role": "",
+      "default": "vec2(1.0,0.0)"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "degree",
+      "name": "Degree",
+      "type": "float",
+      "default": 3,
+      "min": 2,
+      "max": 8
+    },
+    {
+      "id": "iterations",
+      "name": "Iterations",
+      "type": "float",
+      "default": 32,
+      "min": 1,
+      "max": 128
+    },
+    {
+      "id": "scale",
+      "name": "Scale",
+      "type": "float",
+      "default": 3,
+      "min": 0.001,
+      "max": 100
+    },
+    {
+      "id": "relaxation",
+      "name": "Relaxation",
+      "type": "float",
+      "default": 1,
+      "min": 0.1,
+      "max": 2
+    },
+    {
+      "id": "tolerance",
+      "name": "Tolerance",
+      "type": "float",
+      "default": 0.0001,
+      "min": 1e-06,
+      "max": 0.01
+    }
+  ],
+  "outputs": [
+    {
+      "id": "root_index",
+      "name": "Root Index",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "iteration_count",
+      "name": "Iteration Count",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "normalized_iterations",
+      "name": "Normalized Iterations",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "converged",
+      "name": "Converged",
+      "type": "float",
+      "semantic_role": "mask"
+    },
+    {
+      "id": "final_coordinate",
+      "name": "Final Coordinate",
+      "type": "vec2",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "residual",
+      "name": "Residual",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "root_coordinate",
+      "name": "Root Coordinate",
+      "type": "vec2",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "valid",
+      "name": "Valid",
+      "type": "float",
+      "semantic_role": "mask"
+    }
+  ],
+  "helpers": "struct MakerNewtonResult {float root_index;float iteration_count;float normalized_iterations;float converged;vec2 final_coordinate;float residual;vec2 root_coordinate;float valid;};\nvec2 maker_newton_mul(vec2 a,vec2 b){return vec2(a.x*b.x-a.y*b.y,a.x*b.y+a.y*b.x);}\nMakerNewtonResult maker_newton_convergence_fractal_field_2d(vec2 position,vec2 center,vec2 constant_value,float degree,float iterations,float scale,float relaxation,float tolerance){\nint n=int(clamp(floor(degree+0.5),2.,8.)),lim=int(clamp(floor(iterations+0.5),1.,128.));vec2 z=(position-center)*scale,c=constant_value;float valid=1.,converged=0.,count=0.,residual=0.;vec2 root=vec2(0.);float index=-1.;\nif(any(isnan(z))||any(isinf(z))||any(isnan(c))||any(isinf(c))||length(c)<1e-8||length(c)>1e6||length(z)>1e4)return MakerNewtonResult(-1.,0.,0.,0.,vec2(0.),0.,vec2(0.),0.);\nfor(int i=0;i<=128;i++){vec2 power=vec2(1.,0.);for(int j=1;j<8;j++){if(j>=n)break;power=maker_newton_mul(power,z);}vec2 f=maker_newton_mul(power,z)-c;residual=length(f);if(isnan(residual)||isinf(residual)){valid=0.;residual=0.;break;}if(residual<=tolerance*max(1.,length(c))){converged=1.;break;}if(i>=lim)break;vec2 deriv=float(n)*power;float ds=max(abs(deriv.x),abs(deriv.y));if(ds<1e-12){valid=0.;break;}vec2 d=deriv/ds,ff=f/ds;vec2 stepv=vec2(dot(ff,d),ff.y*d.x-ff.x*d.y)/dot(d,d);vec2 next=z-relaxation*stepv;if(any(isnan(next))||any(isinf(next))||length(next)>1e4){valid=0.;break;}z=next;count+=1.;}\nif(converged>.5){float base=atan(c.y,c.x),rad=pow(length(c),1./float(n)),best=1e30;for(int k=0;k<8;k++){if(k>=n)break;float a=(base+6.28318530718*float(k))/float(n);vec2 candidate=rad*vec2(cos(a),sin(a));float dist=length(z-candidate);if(dist<best){best=dist;root=candidate;index=float(k);}}}return MakerNewtonResult(index,count,count/float(lim),converged,z,residual,root,valid);}\n",
+  "glsl_outputs": {
+    "root_index": "maker_newton_convergence_fractal_field_2d({position},{center},{constant},{degree},{iterations},{scale},{relaxation},{tolerance}).root_index",
+    "iteration_count": "maker_newton_convergence_fractal_field_2d({position},{center},{constant},{degree},{iterations},{scale},{relaxation},{tolerance}).iteration_count",
+    "normalized_iterations": "maker_newton_convergence_fractal_field_2d({position},{center},{constant},{degree},{iterations},{scale},{relaxation},{tolerance}).normalized_iterations",
+    "converged": "maker_newton_convergence_fractal_field_2d({position},{center},{constant},{degree},{iterations},{scale},{relaxation},{tolerance}).converged",
+    "final_coordinate": "maker_newton_convergence_fractal_field_2d({position},{center},{constant},{degree},{iterations},{scale},{relaxation},{tolerance}).final_coordinate",
+    "residual": "maker_newton_convergence_fractal_field_2d({position},{center},{constant},{degree},{iterations},{scale},{relaxation},{tolerance}).residual",
+    "root_coordinate": "maker_newton_convergence_fractal_field_2d({position},{center},{constant},{degree},{iterations},{scale},{relaxation},{tolerance}).root_coordinate",
+    "valid": "maker_newton_convergence_fractal_field_2d({position},{center},{constant},{degree},{iterations},{scale},{relaxation},{tolerance}).valid"
+  }
+}

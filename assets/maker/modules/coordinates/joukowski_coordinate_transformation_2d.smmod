@@ -1,0 +1,79 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.joukowski_coordinate_transformation_2d",
+  "name": "Joukowski Coordinate Transformation 2D",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "header_color": "#348F8B",
+  "description": "Joukowski Coordinate Transformation 2D",
+  "uses": "Analytical mathematical fields and independent color composition.",
+  "notes": "Forward z + a^2/z; singular origin rejected when a nonzero. Derivative magnitude is local conformal scale, not a global distance bound.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv-vec2(0.5)",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec2",
+      "default": "vec2(0.)",
+      "semantic_role": "position2d"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "scale",
+      "name": "Scale",
+      "type": "float",
+      "default": 1,
+      "min": 0.001,
+      "max": 20
+    },
+    {
+      "id": "radius",
+      "name": "Radius",
+      "type": "float",
+      "default": 0.2,
+      "min": 0,
+      "max": 5
+    }
+  ],
+  "outputs": [
+    {
+      "id": "transformed",
+      "name": "Transformed",
+      "type": "vec2",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "derivative",
+      "name": "Derivative",
+      "type": "vec2",
+      "semantic_role": ""
+    },
+    {
+      "id": "local_scale",
+      "name": "Local Scale",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "valid",
+      "name": "Valid",
+      "type": "float",
+      "semantic_role": "mask"
+    }
+  ],
+  "helpers": "struct MakerJ_joukowski_coordinate_transformation_2d {vec2 transformed; vec2 derivative; float local_scale; float valid;};\nMakerJ_joukowski_coordinate_transformation_2d maker_joukowski_coordinate_transformation_2d(vec2 position,vec2 center,float scale,float radius){\nvec2 z=(position-center)*scale;float d=dot(z,z),a=radius*radius;if(any(isnan(z))||any(isinf(z))||d>1e12)return MakerJ_joukowski_coordinate_transformation_2d(vec2(0.),vec2(0.),0.,0.);if(a==0.)return MakerJ_joukowski_coordinate_transformation_2d(z,vec2(scale,0.),scale,1.);if(d<1e-12)return MakerJ_joukowski_coordinate_transformation_2d(vec2(0.),vec2(0.),0.,0.);vec2 inv=vec2(z.x,-z.y)/d;vec2 deriv=scale*(vec2(1.,0.)-a*vec2(inv.x*inv.x-inv.y*inv.y,2.*inv.x*inv.y));return MakerJ_joukowski_coordinate_transformation_2d(z+a*inv,deriv,length(deriv),1.);\n}",
+  "glsl_outputs": {
+    "transformed": "maker_joukowski_coordinate_transformation_2d({position},{center},{scale},{radius}).transformed",
+    "derivative": "maker_joukowski_coordinate_transformation_2d({position},{center},{scale},{radius}).derivative",
+    "local_scale": "maker_joukowski_coordinate_transformation_2d({position},{center},{scale},{radius}).local_scale",
+    "valid": "maker_joukowski_coordinate_transformation_2d({position},{center},{scale},{radius}).valid"
+  }
+}

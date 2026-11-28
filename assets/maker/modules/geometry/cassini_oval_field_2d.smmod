@@ -1,0 +1,109 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.geometry.cassini_oval_field_2d",
+  "name": "Cassini Oval Field 2D",
+  "category": "Geometry",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "header_color": "#557C9C",
+  "description": "Cassini Oval Field 2D",
+  "uses": "Procedural geometry and contour composition.",
+  "notes": "Cassini locus: product of focal distances equals product_radius squared. Residual is square root of distance product minus radius, not exact Euclidean distance. Equal radius and focal half separation gives Bernoulli lemniscate.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec2",
+      "default": "vec2(0.5)",
+      "semantic_role": ""
+    }
+  ],
+  "parameters": [
+    {
+      "id": "focal_half_separation",
+      "name": "Focal Half Separation",
+      "type": "float",
+      "default": 0.2,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "product_radius",
+      "name": "Product Radius",
+      "type": "float",
+      "default": 0.2,
+      "min": 0.001,
+      "max": 10
+    },
+    {
+      "id": "orientation",
+      "name": "Orientation",
+      "type": "float",
+      "default": 0,
+      "min": -6.283185,
+      "max": 6.283185
+    },
+    {
+      "id": "contour_width",
+      "name": "Contour Width",
+      "type": "float",
+      "default": 0.01,
+      "min": 1e-05,
+      "max": 1
+    }
+  ],
+  "outputs": [
+    {
+      "id": "residual",
+      "name": "Residual",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "interior_mask",
+      "name": "Interior Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    },
+    {
+      "id": "contour",
+      "name": "Contour",
+      "type": "float",
+      "semantic_role": "mask"
+    },
+    {
+      "id": "first_focal_distance",
+      "name": "First Focal Distance",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "second_focal_distance",
+      "name": "Second Focal Distance",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "distance_product",
+      "name": "Distance Product",
+      "type": "float",
+      "semantic_role": ""
+    }
+  ],
+  "helpers": "\nstruct MakerShape4 {float residual; float interior_mask; float contour; float first_focal_distance; float second_focal_distance; float distance_product;};\nMakerShape4 maker_cassini_oval_field_2d(vec2 position,vec2 center,float focal_half_separation,float product_radius,float orientation,float contour_width){\nvec2 q=clamp(position-center,vec2(-1e6),vec2(1e6));float c=cos(orientation),s=sin(orientation);q=mat2(c,-s,s,c)*q;vec2 f=vec2(focal_half_separation,0.);float a=length(q-f),b=length(q+f),p=a*b,d=sqrt(p)-product_radius;return MakerShape4(d,step(d,0.),1.-smoothstep(0.,contour_width,abs(d)),a,b,p);\n}",
+  "glsl_outputs": {
+    "residual": "maker_cassini_oval_field_2d({position},{center},{focal_half_separation},{product_radius},{orientation},{contour_width}).residual",
+    "interior_mask": "maker_cassini_oval_field_2d({position},{center},{focal_half_separation},{product_radius},{orientation},{contour_width}).interior_mask",
+    "contour": "maker_cassini_oval_field_2d({position},{center},{focal_half_separation},{product_radius},{orientation},{contour_width}).contour",
+    "first_focal_distance": "maker_cassini_oval_field_2d({position},{center},{focal_half_separation},{product_radius},{orientation},{contour_width}).first_focal_distance",
+    "second_focal_distance": "maker_cassini_oval_field_2d({position},{center},{focal_half_separation},{product_radius},{orientation},{contour_width}).second_focal_distance",
+    "distance_product": "maker_cassini_oval_field_2d({position},{center},{focal_half_separation},{product_radius},{orientation},{contour_width}).distance_product"
+  }
+}

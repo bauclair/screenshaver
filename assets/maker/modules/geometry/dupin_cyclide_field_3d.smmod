@@ -1,0 +1,103 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.geometry.dupin_cyclide_field_3d",
+  "name": "Dupin Cyclide Field 3D",
+  "category": "Geometry",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "header_color": "#557C9C",
+  "description": "Dupin Cyclide Field 3D",
+  "uses": "Procedural geometry and contour composition.",
+  "notes": "Inversion of a torus produces a cyclide. Residual measured in inverted coordinates, not world-space distance. Inversion center invalid; ring torus when major radius exceeds minor radius.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "default": "vec3(0.0)",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec3",
+      "default": "vec3(0.0)",
+      "semantic_role": ""
+    }
+  ],
+  "parameters": [
+    {
+      "id": "major_radius",
+      "name": "Major Radius",
+      "type": "float",
+      "default": 1,
+      "min": 0.01,
+      "max": 5
+    },
+    {
+      "id": "minor_radius",
+      "name": "Minor Radius",
+      "type": "float",
+      "default": 0.35,
+      "min": 0.001,
+      "max": 4
+    },
+    {
+      "id": "inversion_offset",
+      "name": "Inversion Offset",
+      "type": "float",
+      "default": 1.8,
+      "min": -8,
+      "max": 8
+    },
+    {
+      "id": "inversion_radius",
+      "name": "Inversion Radius",
+      "type": "float",
+      "default": 1,
+      "min": 0.01,
+      "max": 5
+    },
+    {
+      "id": "width",
+      "name": "Width",
+      "type": "float",
+      "default": 0.02,
+      "min": 1e-05,
+      "max": 1
+    }
+  ],
+  "outputs": [
+    {
+      "id": "residual",
+      "name": "Residual",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "shell",
+      "name": "Shell",
+      "type": "float",
+      "semantic_role": "mask"
+    },
+    {
+      "id": "negative_mask",
+      "name": "Negative Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    },
+    {
+      "id": "valid",
+      "name": "Valid",
+      "type": "float",
+      "semantic_role": "mask"
+    }
+  ],
+  "helpers": "\nstruct MakerShape1 {float residual; float shell; float negative_mask; float valid;};\nMakerShape1 maker_dupin_cyclide_field_3d(vec3 position,vec3 center,float major_radius,float minor_radius,float inversion_offset,float inversion_radius,float width){\nvec3 p=position-center;float d=dot(p,p);if(d<1e-10)return MakerShape1(1e6,0.,0.,0.);vec3 q=p*(inversion_radius*inversion_radius/d)+vec3(inversion_offset,0.,0.);float f=length(vec2(length(q.xy)-major_radius,q.z))-minor_radius;return MakerShape1(f,1.-smoothstep(0.,width,abs(f)),step(f,0.),1.);\n}",
+  "glsl_outputs": {
+    "residual": "maker_dupin_cyclide_field_3d({position},{center},{major_radius},{minor_radius},{inversion_offset},{inversion_radius},{width}).residual",
+    "shell": "maker_dupin_cyclide_field_3d({position},{center},{major_radius},{minor_radius},{inversion_offset},{inversion_radius},{width}).shell",
+    "negative_mask": "maker_dupin_cyclide_field_3d({position},{center},{major_radius},{minor_radius},{inversion_offset},{inversion_radius},{width}).negative_mask",
+    "valid": "maker_dupin_cyclide_field_3d({position},{center},{major_radius},{minor_radius},{inversion_offset},{inversion_radius},{width}).valid"
+  }
+}

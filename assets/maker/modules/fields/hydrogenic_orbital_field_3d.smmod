@@ -1,0 +1,95 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.hydrogenic_orbital_field_3d",
+  "name": "Hydrogenic Orbital Field 3D",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "header_color": "#348F8B",
+  "description": "Hydrogenic Orbital Field 3D",
+  "uses": "Analytical mathematical fields and independent color composition.",
+  "notes": "Real hydrogenic orbital shape, unnormalized radial and angular factors; n 1\u20136, l<n, |m|<=l. Coordinates in configurable Bohr-radius units. Density is relative, not normalized probability.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "default": "vec3(maker_uv-vec2(0.5),0.0)",
+      "semantic_role": "position3d"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "principal",
+      "name": "Principal",
+      "type": "float",
+      "default": 3,
+      "min": 1,
+      "max": 6
+    },
+    {
+      "id": "angular",
+      "name": "Angular",
+      "type": "float",
+      "default": 2,
+      "min": 0,
+      "max": 5
+    },
+    {
+      "id": "magnetic",
+      "name": "Magnetic",
+      "type": "float",
+      "default": 1,
+      "min": -5,
+      "max": 5
+    },
+    {
+      "id": "bohr_radius",
+      "name": "Bohr Radius",
+      "type": "float",
+      "default": 0.05,
+      "min": 0.001,
+      "max": 5
+    }
+  ],
+  "outputs": [
+    {
+      "id": "amplitude",
+      "name": "Amplitude",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "density",
+      "name": "Density",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "radial",
+      "name": "Radial",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "angular_value",
+      "name": "Angular Value",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "valid",
+      "name": "Valid",
+      "type": "float",
+      "semantic_role": "mask"
+    }
+  ],
+  "helpers": "struct MakerI_hydrogenic_orbital_field_3d {float amplitude; float density; float radial; float angular_value; float valid;};\nMakerI_hydrogenic_orbital_field_3d maker_hydrogenic_orbital_field_3d(vec3 position,float principal,float angular,float magnetic,float bohr_radius){\nint n=int(floor(principal+.5)),l=int(floor(angular+.5)),m=int(floor(magnetic+.5)),am=abs(m);if(l>=n||am>l)return MakerI_hydrogenic_orbital_field_3d(0.,0.,0.,0.,0.);float r=length(position),rho=2.*r/(float(n)*bohr_radius);if(rho>100.)return MakerI_hydrogenic_orbital_field_3d(0.,0.,0.,0.,1.);float x=r>1e-12?clamp(position.z/r,-1.,1.):1.;float p=1.;for(int j=1;j<=5;j++){if(j>am)break;p*=-float(2*j-1)*sqrt(max(0.,1.-x*x));}float a=p,b=x*float(2*am+1)*p;for(int j=am+2;j<=5;j++){if(j>l)break;float c=(float(2*j-1)*x*b-float(j+am-1)*a)/float(j-am);a=b;b=c;}float phi=dot(position.xy,position.xy)>1e-20?atan(position.y,position.x):0.;float ang=(l==am?p:b)*(m<0?sin(float(am)*phi):cos(float(am)*phi));int k=n-l-1;float al=float(2*l+1),u=1.,v=1.+al-rho;for(int j=2;j<=5;j++){if(j>k)break;float z=float(j),w=((2.*z-1.+al-rho)*v-(z-1.+al)*u)/z;u=v;v=w;}float rad=exp(-rho*.5)*(l==0?1.:pow(rho,float(l)))*(k==0?1.:v);float val=rad*ang;return MakerI_hydrogenic_orbital_field_3d(val,val*val,rad,ang,1.);\n}",
+  "glsl_outputs": {
+    "amplitude": "maker_hydrogenic_orbital_field_3d({position},{principal},{angular},{magnetic},{bohr_radius}).amplitude",
+    "density": "maker_hydrogenic_orbital_field_3d({position},{principal},{angular},{magnetic},{bohr_radius}).density",
+    "radial": "maker_hydrogenic_orbital_field_3d({position},{principal},{angular},{magnetic},{bohr_radius}).radial",
+    "angular_value": "maker_hydrogenic_orbital_field_3d({position},{principal},{angular},{magnetic},{bohr_radius}).angular_value",
+    "valid": "maker_hydrogenic_orbital_field_3d({position},{principal},{angular},{magnetic},{bohr_radius}).valid"
+  }
+}

@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.phyllotactic_point_distribution_field",
+  "name": "Phyllotactic Point Distribution Field",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "header_color": "#557C9C",
+  "description": "Phyllotactic Point Distribution Field",
+  "uses": "Procedural geometric patterns and independent color composition.",
+  "notes": "Planar Fermat spiral with configurable angular increment. Exhaustive bounded search over all points, not accelerated inverse Fibonacci mapping. Distance is exact to the finite point set up to floating point precision.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "vec2(0.0)",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec2",
+      "default": "vec2(0.0)",
+      "semantic_role": ""
+    }
+  ],
+  "parameters": [
+    {
+      "id": "spacing",
+      "name": "Spacing",
+      "type": "float",
+      "default": 0.035,
+      "min": 0.0001,
+      "max": 2
+    },
+    {
+      "id": "count",
+      "name": "Count",
+      "type": "float",
+      "default": 256,
+      "min": 1,
+      "max": 1024
+    },
+    {
+      "id": "angle_turns",
+      "name": "Angle Turns",
+      "type": "float",
+      "default": 0.38196601125,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "phase",
+      "name": "Phase",
+      "type": "float",
+      "default": 0,
+      "min": -6.2831853,
+      "max": 6.2831853
+    },
+    {
+      "id": "point_radius",
+      "name": "Point Radius",
+      "type": "float",
+      "default": 0.008,
+      "min": 1e-05,
+      "max": 1
+    }
+  ],
+  "outputs": [
+    {
+      "id": "distance",
+      "name": "Distance",
+      "type": "float",
+      "semantic_role": "distance"
+    },
+    {
+      "id": "nearest_point",
+      "name": "Nearest Point",
+      "type": "vec2",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "index",
+      "name": "Index",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "disc_residual",
+      "name": "Disc Residual",
+      "type": "float",
+      "semantic_role": "distance"
+    },
+    {
+      "id": "mask",
+      "name": "Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    }
+  ],
+  "helpers": "struct MakerG_phyllotactic_point_distribution_field {float distance; vec2 nearest_point; float index; float disc_residual; float mask;};\nMakerG_phyllotactic_point_distribution_field maker_phyllotactic_point_distribution_field(vec2 position,vec2 center,float spacing,float count,float angle_turns,float phase,float point_radius){\nvec2 p=position-center;float best=1e30;vec2 nearest=vec2(0.);float index=0.;int n=int(clamp(floor(count+.5),1.,1024.));for(int i=0;i<1024;i++){if(i>=n)break;float a=6.28318530718*fract(float(i)*angle_turns)+phase;vec2 v=spacing*sqrt(float(i))*vec2(cos(a),sin(a));float d=dot(p-v,p-v);if(d<best){best=d;nearest=v;index=float(i);}}float dist=sqrt(best);return MakerG_phyllotactic_point_distribution_field(dist,nearest+center,index,dist-point_radius,step(dist,point_radius));\n}",
+  "glsl_outputs": {
+    "distance": "maker_phyllotactic_point_distribution_field({position},{center},{spacing},{count},{angle_turns},{phase},{point_radius}).distance",
+    "nearest_point": "maker_phyllotactic_point_distribution_field({position},{center},{spacing},{count},{angle_turns},{phase},{point_radius}).nearest_point",
+    "index": "maker_phyllotactic_point_distribution_field({position},{center},{spacing},{count},{angle_turns},{phase},{point_radius}).index",
+    "disc_residual": "maker_phyllotactic_point_distribution_field({position},{center},{spacing},{count},{angle_turns},{phase},{point_radius}).disc_residual",
+    "mask": "maker_phyllotactic_point_distribution_field({position},{center},{spacing},{count},{angle_turns},{phase},{point_radius}).mask"
+  }
+}

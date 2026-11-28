@@ -1,0 +1,119 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.lyapunov_fractal_field_2d",
+  "name": "Lyapunov Fractal Field 2D",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "header_color": "#348F8B",
+  "description": "Lyapunov Fractal Field 2D",
+  "uses": "Mathematical field and color composition.",
+  "notes": "Finite-time logistic-map Lyapunov exponent. Sequence bits read least-significant first (0=A, 1=B); default AB. Derivative magnitude floor 1e-12 regularizes singular logarithms. Stability masks classify finite-time estimates only.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "semantic_role": "position2d",
+      "default": "maker_uv"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "minimum_rate",
+      "name": "Minimum Rate",
+      "type": "float",
+      "default": 2,
+      "min": 0,
+      "max": 4
+    },
+    {
+      "id": "maximum_rate",
+      "name": "Maximum Rate",
+      "type": "float",
+      "default": 4,
+      "min": 0,
+      "max": 4
+    },
+    {
+      "id": "initial_state",
+      "name": "Initial State",
+      "type": "float",
+      "default": 0.5,
+      "min": 0.001,
+      "max": 0.999
+    },
+    {
+      "id": "burn_in",
+      "name": "Burn In",
+      "type": "float",
+      "default": 32,
+      "min": 0,
+      "max": 128
+    },
+    {
+      "id": "iterations",
+      "name": "Iterations",
+      "type": "float",
+      "default": 64,
+      "min": 1,
+      "max": 256
+    },
+    {
+      "id": "sequence_bits",
+      "name": "Sequence Bits",
+      "type": "float",
+      "default": 2,
+      "min": 0,
+      "max": 255
+    },
+    {
+      "id": "sequence_length",
+      "name": "Sequence Length",
+      "type": "float",
+      "default": 2,
+      "min": 1,
+      "max": 8
+    }
+  ],
+  "outputs": [
+    {
+      "id": "exponent",
+      "name": "Exponent",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "stable",
+      "name": "Stable",
+      "type": "float",
+      "semantic_role": "mask"
+    },
+    {
+      "id": "chaotic",
+      "name": "Chaotic",
+      "type": "float",
+      "semantic_role": "mask"
+    },
+    {
+      "id": "final_state",
+      "name": "Final State",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "valid",
+      "name": "Valid",
+      "type": "float",
+      "semantic_role": "mask"
+    }
+  ],
+  "helpers": "struct MakerLyap {float exponent;float stable;float chaotic;float final_state;float valid;};\nMakerLyap maker_lyapunov_fractal_field_2d(vec2 position,float minimum_rate,float maximum_rate,float initial_state,float burn_in,float iterations,float sequence_bits,float sequence_length){if(any(isnan(position))||any(isinf(position)))return MakerLyap(0.,0.,0.,0.,0.);vec2 rates=mix(vec2(minimum_rate),vec2(maximum_rate),clamp(position,0.,1.));int bits=int(floor(sequence_bits+.5)),len=int(clamp(floor(sequence_length+.5),1.,8.)),burn=int(floor(burn_in+.5)),lim=int(floor(iterations+.5));float x=initial_state,sumv=0.;for(int i=0;i<384;i++){if(i>=burn+lim)break;float r=((bits>>(i%len))&1)==0?rates.x:rates.y;if(i>=burn)sumv+=log(max(abs(r*(1.-2.*x)),1e-12));x=clamp(r*x*(1.-x),0.,1.);}float e=sumv/float(lim);return MakerLyap(e,float(e<0.),float(e>0.),x,1.);}\n",
+  "glsl_outputs": {
+    "exponent": "maker_lyapunov_fractal_field_2d({position},{minimum_rate},{maximum_rate},{initial_state},{burn_in},{iterations},{sequence_bits},{sequence_length}).exponent",
+    "stable": "maker_lyapunov_fractal_field_2d({position},{minimum_rate},{maximum_rate},{initial_state},{burn_in},{iterations},{sequence_bits},{sequence_length}).stable",
+    "chaotic": "maker_lyapunov_fractal_field_2d({position},{minimum_rate},{maximum_rate},{initial_state},{burn_in},{iterations},{sequence_bits},{sequence_length}).chaotic",
+    "final_state": "maker_lyapunov_fractal_field_2d({position},{minimum_rate},{maximum_rate},{initial_state},{burn_in},{iterations},{sequence_bits},{sequence_length}).final_state",
+    "valid": "maker_lyapunov_fractal_field_2d({position},{minimum_rate},{maximum_rate},{initial_state},{burn_in},{iterations},{sequence_bits},{sequence_length}).valid"
+  }
+}

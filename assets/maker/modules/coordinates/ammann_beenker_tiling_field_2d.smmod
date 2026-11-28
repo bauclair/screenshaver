@@ -1,0 +1,93 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.ammann_beenker_tiling_field_2d",
+  "name": "Ammann\u2013Beenker Tiling Field 2D",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "header_color": "#557C9C",
+  "description": "Ammann\u2013Beenker Tiling Field 2D",
+  "uses": "Procedural geometric patterns and independent color composition.",
+  "notes": "Dual multigrid rhombi, bounded local intersection search. Validity identifies unresolved samples. Tile type distinguishes acute rhombus families (square vs rhombus for eightfold). Generic grid offsets avoid most singular intersections; finite precision and singular grids can cause ambiguity. No matching-rule decorations.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "vec2(0.0)",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec2",
+      "default": "vec2(0.0)",
+      "semantic_role": ""
+    }
+  ],
+  "parameters": [
+    {
+      "id": "tile_size",
+      "name": "Tile Size",
+      "type": "float",
+      "default": 0.15,
+      "min": 0.001,
+      "max": 10
+    },
+    {
+      "id": "phase",
+      "name": "Phase",
+      "type": "float",
+      "default": 0.17,
+      "min": -1,
+      "max": 1
+    }
+  ],
+  "outputs": [
+    {
+      "id": "local",
+      "name": "Local",
+      "type": "vec2",
+      "semantic_role": ""
+    },
+    {
+      "id": "tile_origin",
+      "name": "Tile Origin",
+      "type": "vec2",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "boundary",
+      "name": "Boundary",
+      "type": "float",
+      "semantic_role": "distance"
+    },
+    {
+      "id": "tile_type",
+      "name": "Tile Type",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "tile_random",
+      "name": "Tile Random",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "valid",
+      "name": "Valid",
+      "type": "float",
+      "semantic_role": "mask"
+    }
+  ],
+  "helpers": "struct MakerG_ammann_beenker_tiling_field_2d {vec2 local; vec2 tile_origin; float boundary; float tile_type; float tile_random; float valid;};\nMakerG_ammann_beenker_tiling_field_2d maker_ammann_beenker_tiling_field_2d(vec2 position,vec2 center,float tile_size,float phase){\nconst int N=4; vec2 p=(position-center)/tile_size; vec2 dirs[N]; float shift[N]; vec2 shiftSum=vec2(0.); for(int i=0;i<N;i++){float a=float(i)*3.14159265359/4.;dirs[i]=vec2(cos(a),sin(a));shift[i]=float(i-(N-1)/2)*phase+0.137*sin(float(i+1)*2.31);shiftSum+=shift[i]*dirs[i];} vec2 guess=(p-shiftSum)*2./float(N); float best=-1e20;vec2 uv=vec2(0.),origin=vec2(0.);float kind=0.,key=0.;\n for(int i=0;i<N;i++)for(int j=i+1;j<N;j++){vec2 a=dirs[i],b=dirs[j];float det=a.x*b.y-a.y*b.x;float ai=floor(dot(guess,a)+shift[i]),bj=floor(dot(guess,b)+shift[j]);for(int u=-3;u<=3;u++)for(int v=-3;v<=3;v++){float ki=ai+float(u),kj=bj+float(v);float x=ki-shift[i],y=kj-shift[j];vec2 crosspoint=vec2(x*b.y-a.y*y,a.x*y-x*b.x)/det;vec2 o=vec2(0.);for(int k=0;k<N;k++){float z=k==i?ki:(k==j?kj:floor(dot(crosspoint,dirs[k])+shift[k]));o+=z*dirs[k];}vec2 d=p-o;vec2 t=vec2(d.x*b.y-d.y*b.x,a.x*d.y-a.y*d.x)/det;float edge=min(min(t.x,1.-t.x),min(t.y,1.-t.y))*abs(det);if(edge>best){best=edge;uv=t;origin=o;kind=abs(dot(a,b))>0.5?1.:0.;key=fract(sin(dot(o,vec2(12.9898,78.233))+float(i*7+j))*43758.5453);}}}float valid=step(-0.0001,best);return MakerG_ammann_beenker_tiling_field_2d(uv,origin*tile_size,abs(best)*tile_size,kind,key,valid);\n}",
+  "glsl_outputs": {
+    "local": "maker_ammann_beenker_tiling_field_2d({position},{center},{tile_size},{phase}).local",
+    "tile_origin": "maker_ammann_beenker_tiling_field_2d({position},{center},{tile_size},{phase}).tile_origin",
+    "boundary": "maker_ammann_beenker_tiling_field_2d({position},{center},{tile_size},{phase}).boundary",
+    "tile_type": "maker_ammann_beenker_tiling_field_2d({position},{center},{tile_size},{phase}).tile_type",
+    "tile_random": "maker_ammann_beenker_tiling_field_2d({position},{center},{tile_size},{phase}).tile_random",
+    "valid": "maker_ammann_beenker_tiling_field_2d({position},{center},{tile_size},{phase}).valid"
+  }
+}

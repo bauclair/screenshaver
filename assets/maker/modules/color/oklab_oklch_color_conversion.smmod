@@ -1,0 +1,102 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.color.oklab_oklch_color_conversion",
+  "name": "Oklab and OKLCH Color Conversion",
+  "category": "Color",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "header_color": "#348F8B",
+  "description": "Oklab and OKLCH Color Conversion",
+  "uses": "Analytical mathematical fields and independent color composition.",
+  "notes": "D65 linear sRGB primaries; optional signed sRGB transfer. Oklab L nominal 0\u20131, hue radians; RGB gamut tested before optional clipping. Numeric Lab/LCh ports are not display RGB. Standard Oklab transform coefficients (Bj\u00f6rn Ottosson, 2020); independently expressed GLSL.",
+  "inputs": [
+    {
+      "id": "components",
+      "name": "Components",
+      "type": "vec3",
+      "default": "vec3(0.5)",
+      "semantic_role": ""
+    }
+  ],
+  "parameters": [
+    {
+      "id": "direction",
+      "name": "Direction",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "RGB to Lab",
+        "Lab to RGB",
+        "RGB to LCh",
+        "LCh to RGB"
+      ]
+    },
+    {
+      "id": "rgb_encoding",
+      "name": "Rgb_Encoding",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Linear RGB",
+        "sRGB"
+      ]
+    },
+    {
+      "id": "gamut_policy",
+      "name": "Gamut_Policy",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Unrestricted",
+        "Clip RGB"
+      ]
+    }
+  ],
+  "outputs": [
+    {
+      "id": "converted",
+      "name": "Converted",
+      "type": "vec3",
+      "semantic_role": ""
+    },
+    {
+      "id": "lab",
+      "name": "Lab",
+      "type": "vec3",
+      "semantic_role": ""
+    },
+    {
+      "id": "lch",
+      "name": "Lch",
+      "type": "vec3",
+      "semantic_role": ""
+    },
+    {
+      "id": "rgb",
+      "name": "Rgb",
+      "type": "vec3",
+      "semantic_role": "color"
+    },
+    {
+      "id": "gamut_mask",
+      "name": "Gamut Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    },
+    {
+      "id": "valid",
+      "name": "Valid",
+      "type": "float",
+      "semantic_role": "mask"
+    }
+  ],
+  "helpers": "struct MakerJ_oklab_oklch_color_conversion {vec3 converted; vec3 lab; vec3 lch; vec3 rgb; float gamut_mask; float valid;};\nMakerJ_oklab_oklch_color_conversion maker_oklab_oklch_color_conversion(vec3 components,float direction,float rgb_encoding,float gamut_policy){\nif(any(isnan(components))||any(isinf(components))||any(greaterThan(abs(components),vec3(1e4))))return MakerJ_oklab_oklch_color_conversion(vec3(0.),vec3(0.),vec3(0.),vec3(0.),0.,0.);bool forward=direction<.5||(direction>1.5&&direction<2.5);vec3 rgb=components,lab; if(forward){if(rgb_encoding>.5){vec3 a=abs(rgb);rgb=sign(rgb)*mix(a/12.92,pow((a+.055)/1.055,vec3(2.4)),greaterThan(a,vec3(.04045)));}vec3 lms=mat3(.4122214708,.2119034982,.0883024619,.5363325363,.6806995451,.2817188376,.0514459929,.1073969566,.6299787005)*rgb;lms=sign(lms)*pow(abs(lms),vec3(1./3.));lab=mat3(.2104542553,1.9779984951,.0259040371,.7936177850,-2.4285922050,.7827717662,-.0040720468,.4505937099,-.8086757660)*lms;}else{lab=components;if(direction>2.5)lab=vec3(components.x,components.y*cos(components.z),components.y*sin(components.z));vec3 lms=mat3(1.,1.,1.,.3963377774,-.1055613458,-.0894841775,.2158037573,-.0638541728,-1.2914855480)*lab;lms=lms*lms*lms;rgb=mat3(4.0767416621,-1.2684380046,-.0041960863,-3.3077115913,2.6097574011,-.7034186147,.2309699292,-.3413193965,1.7076147010)*lms;}vec3 lch=vec3(lab.x,length(lab.yz),length(lab.yz)>1e-7?mod(atan(lab.z,lab.y)+6.28318530718,6.28318530718):0.);float gamut=all(greaterThanEqual(rgb,vec3(-1e-6)))&&all(lessThanEqual(rgb,vec3(1.000001)))?1.:0.;if(gamut_policy>.5)rgb=clamp(rgb,0.,1.);if(rgb_encoding>.5){vec3 a=abs(rgb);rgb=sign(rgb)*mix(12.92*a,1.055*pow(a,vec3(1./2.4))-.055,greaterThan(a,vec3(.0031308)));}vec3 converted=forward?(direction<.5?lab:lch):rgb;return MakerJ_oklab_oklch_color_conversion(converted,lab,lch,rgb,gamut,1.);\n}",
+  "glsl_outputs": {
+    "converted": "maker_oklab_oklch_color_conversion({components},{direction},{rgb_encoding},{gamut_policy}).converted",
+    "lab": "maker_oklab_oklch_color_conversion({components},{direction},{rgb_encoding},{gamut_policy}).lab",
+    "lch": "maker_oklab_oklch_color_conversion({components},{direction},{rgb_encoding},{gamut_policy}).lch",
+    "rgb": "maker_oklab_oklch_color_conversion({components},{direction},{rgb_encoding},{gamut_policy}).rgb",
+    "gamut_mask": "maker_oklab_oklch_color_conversion({components},{direction},{rgb_encoding},{gamut_policy}).gamut_mask",
+    "valid": "maker_oklab_oklch_color_conversion({components},{direction},{rgb_encoding},{gamut_policy}).valid"
+  }
+}

@@ -1,0 +1,139 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.geometry.trochoidal_curve_field_2d",
+  "name": "Trochoidal Curve Field 2D",
+  "category": "Geometry",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "header_color": "#557C9C",
+  "description": "Trochoidal Curve Field 2D",
+  "uses": "Procedural geometry and contour composition.",
+  "notes": "Distance to sampled polyline, not exact distance to analytic curve. Finite parameter interval; no forced closure. Cycloid modes use rolling radius as pen offset. Interior rolling radius is limited to fixed radius. High frequency or many turns may need more segments; maximum 512.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec2",
+      "default": "vec2(0.5)",
+      "semantic_role": ""
+    }
+  ],
+  "parameters": [
+    {
+      "id": "family",
+      "name": "Family",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Hypotrochoid",
+        "Epitrochoid",
+        "Hypocycloid",
+        "Epicycloid"
+      ]
+    },
+    {
+      "id": "fixed_radius",
+      "name": "Fixed Radius",
+      "type": "float",
+      "default": 0.25,
+      "min": 0.001,
+      "max": 10
+    },
+    {
+      "id": "rolling_radius",
+      "name": "Rolling Radius",
+      "type": "float",
+      "default": 0.075,
+      "min": 0.001,
+      "max": 10
+    },
+    {
+      "id": "pen_offset",
+      "name": "Pen Offset",
+      "type": "float",
+      "default": 0.12,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "turns",
+      "name": "Turns",
+      "type": "float",
+      "default": 3,
+      "min": 1,
+      "max": 16
+    },
+    {
+      "id": "segments",
+      "name": "Segments",
+      "type": "float",
+      "default": 128,
+      "min": 16,
+      "max": 512
+    },
+    {
+      "id": "orientation",
+      "name": "Orientation",
+      "type": "float",
+      "default": 0,
+      "min": -6.283185,
+      "max": 6.283185
+    },
+    {
+      "id": "line_width",
+      "name": "Line Width",
+      "type": "float",
+      "default": 0.008,
+      "min": 1e-05,
+      "max": 1
+    },
+    {
+      "id": "softness",
+      "name": "Softness",
+      "type": "float",
+      "default": 0.003,
+      "min": 1e-05,
+      "max": 1
+    }
+  ],
+  "outputs": [
+    {
+      "id": "distance",
+      "name": "Distance",
+      "type": "float",
+      "semantic_role": "distance"
+    },
+    {
+      "id": "line_mask",
+      "name": "Line Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    },
+    {
+      "id": "nearest_point",
+      "name": "Nearest Point",
+      "type": "vec2",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "curve_parameter",
+      "name": "Curve Parameter",
+      "type": "float",
+      "semantic_role": ""
+    }
+  ],
+  "helpers": "\nstruct MakerShape3 {float distance; float line_mask; vec2 nearest_point; float curve_parameter;};\nMakerShape3 maker_trochoidal_curve_field_2d(vec2 position,vec2 center,float family,float fixed_radius,float rolling_radius,float pen_offset,float turns,float segments,float orientation,float line_width,float softness){\nvec2 q=clamp(position-center,vec2(-1e6),vec2(1e6));float co=cos(orientation),si=sin(orientation);mat2 rot=mat2(co,si,-si,co);bool outer=family>.5&&family<1.5||family>2.5;float R=fixed_radius,r=outer?rolling_radius:min(rolling_radius,R),d=family>1.5?r:pen_offset,k=outer?R+r:R-r;int n=int(clamp(floor(segments+.5),16.,512.));float end=6.2831853*floor(turns+.5),best=1e20,bt=0.;vec2 prev=rot*vec2(k+(outer?-d:d),0.),bp=prev;for(int i=1;i<=512;i++){if(i>n)break;float t=end*float(i)/float(n),a=k/r*t;vec2 v=outer?vec2(k*cos(t)-d*cos(a),k*sin(t)-d*sin(a)):vec2(k*cos(t)+d*cos(a),k*sin(t)-d*sin(a));v=rot*v;vec2 e=v-prev;float f=clamp(dot(q-prev,e)/max(dot(e,e),1e-20),0.,1.);vec2 p=prev+f*e;float ds=dot(q-p,q-p);if(ds<best){best=ds;bp=p;bt=end*(float(i-1)+f)/float(n);}prev=v;}float dist=sqrt(best);return MakerShape3(dist,1.-smoothstep(line_width,line_width+softness,dist),center+bp,bt);\n}",
+  "glsl_outputs": {
+    "distance": "maker_trochoidal_curve_field_2d({position},{center},{family},{fixed_radius},{rolling_radius},{pen_offset},{turns},{segments},{orientation},{line_width},{softness}).distance",
+    "line_mask": "maker_trochoidal_curve_field_2d({position},{center},{family},{fixed_radius},{rolling_radius},{pen_offset},{turns},{segments},{orientation},{line_width},{softness}).line_mask",
+    "nearest_point": "maker_trochoidal_curve_field_2d({position},{center},{family},{fixed_radius},{rolling_radius},{pen_offset},{turns},{segments},{orientation},{line_width},{softness}).nearest_point",
+    "curve_parameter": "maker_trochoidal_curve_field_2d({position},{center},{family},{fixed_radius},{rolling_radius},{pen_offset},{turns},{segments},{orientation},{line_width},{softness}).curve_parameter"
+  }
+}

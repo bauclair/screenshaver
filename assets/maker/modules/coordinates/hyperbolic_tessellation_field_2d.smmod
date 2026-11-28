@@ -1,0 +1,102 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.hyperbolic_tessellation_field_2d",
+  "name": "Hyperbolic Tessellation Field 2D",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "header_color": "#557C9C",
+  "description": "Hyperbolic Tessellation Field 2D",
+  "uses": "Procedural geometric patterns and independent color composition.",
+  "notes": "Poincare disk reflection into a (2,p,q) fundamental triangle. Boundary is Euclidean distance to chamber mirrors in folded coordinates, not polygon edge distance in original disk. Invalid outside disk, nonhyperbolic orders or exhausted reflection budget.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "vec2(0.0)",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec2",
+      "default": "vec2(0.0)",
+      "semantic_role": ""
+    }
+  ],
+  "parameters": [
+    {
+      "id": "radius",
+      "name": "Radius",
+      "type": "float",
+      "default": 0.5,
+      "min": 0.001,
+      "max": 10
+    },
+    {
+      "id": "p_order",
+      "name": "P Order",
+      "type": "float",
+      "default": 7,
+      "min": 3,
+      "max": 12
+    },
+    {
+      "id": "q_order",
+      "name": "Q Order",
+      "type": "float",
+      "default": 3,
+      "min": 3,
+      "max": 12
+    },
+    {
+      "id": "iterations",
+      "name": "Iterations",
+      "type": "float",
+      "default": 24,
+      "min": 1,
+      "max": 64
+    }
+  ],
+  "outputs": [
+    {
+      "id": "local",
+      "name": "Local",
+      "type": "vec2",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "boundary",
+      "name": "Boundary",
+      "type": "float",
+      "semantic_role": "distance"
+    },
+    {
+      "id": "parity",
+      "name": "Parity",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "reflections",
+      "name": "Reflections",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "valid",
+      "name": "Valid",
+      "type": "float",
+      "semantic_role": "mask"
+    }
+  ],
+  "helpers": "struct MakerG_hyperbolic_tessellation_field_2d {vec2 local; float boundary; float parity; float reflections; float valid;};\nMakerG_hyperbolic_tessellation_field_2d maker_hyperbolic_tessellation_field_2d(vec2 position,vec2 center,float radius,float p_order,float q_order,float iterations){\nvec2 z=(position-center)/radius;float p=clamp(floor(p_order+.5),3.,12.),q=clamp(floor(q_order+.5),3.,12.);float a=3.14159265359/p,b=3.14159265359/q;float disc=cos(b)*cos(b)-sin(a)*sin(a);if(dot(z,z)>=.999999||disc<=0.000001)return MakerG_hyperbolic_tessellation_field_2d(vec2(0.),0.,0.,0.,0.);float d=cos(b)/sqrt(disc),r=sqrt(d*d-1.);vec2 c=vec2(d,0.),normal=vec2(-sin(a),cos(a));float count=0.;for(int i=0;i<64;i++){if(i>=int(clamp(floor(iterations+.5),1.,64.)))break;if(z.y<0.)z.y=-z.y;else if(dot(z,normal)>0.)z-=2.*dot(z,normal)*normal;else if(length(z-c)<r){vec2 v=z-c;z=c+v*(r*r/max(dot(v,v),1e-12));}else break;count+=1.;}float e=min(min(z.y,-dot(z,normal)),length(z-c)-r);return MakerG_hyperbolic_tessellation_field_2d(z,e*radius,mod(count,2.),count,step(-.00001,e));\n}",
+  "glsl_outputs": {
+    "local": "maker_hyperbolic_tessellation_field_2d({position},{center},{radius},{p_order},{q_order},{iterations}).local",
+    "boundary": "maker_hyperbolic_tessellation_field_2d({position},{center},{radius},{p_order},{q_order},{iterations}).boundary",
+    "parity": "maker_hyperbolic_tessellation_field_2d({position},{center},{radius},{p_order},{q_order},{iterations}).parity",
+    "reflections": "maker_hyperbolic_tessellation_field_2d({position},{center},{radius},{p_order},{q_order},{iterations}).reflections",
+    "valid": "maker_hyperbolic_tessellation_field_2d({position},{center},{radius},{p_order},{q_order},{iterations}).valid"
+  }
+}

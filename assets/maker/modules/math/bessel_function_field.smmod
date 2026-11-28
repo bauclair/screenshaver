@@ -1,0 +1,109 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.math.bessel_function_field",
+  "name": "Bessel Function Field",
+  "category": "Math",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "header_color": "#348F8B",
+  "description": "Bessel Function Field",
+  "uses": "Mathematical field and contour composition.",
+  "notes": "Integer-order Bessel J_n via 128-point midpoint quadrature of the defining integral. Orders 0\u201312; argument clamped to \u00b164. Derivative is with respect to evaluated argument, not input. Intensity is J squared. Default argument is radial; arbitrary scalar inputs supported.",
+  "inputs": [
+    {
+      "id": "argument",
+      "name": "Argument",
+      "type": "float",
+      "default": "length(maker_uv-vec2(0.5))*32.0",
+      "semantic_role": ""
+    }
+  ],
+  "parameters": [
+    {
+      "id": "order",
+      "name": "Order",
+      "type": "float",
+      "default": 0,
+      "min": 0,
+      "max": 12
+    },
+    {
+      "id": "argument_scale",
+      "name": "Argument Scale",
+      "type": "float",
+      "default": 1,
+      "min": -16,
+      "max": 16
+    },
+    {
+      "id": "argument_offset",
+      "name": "Argument Offset",
+      "type": "float",
+      "default": 0,
+      "min": -64,
+      "max": 64
+    },
+    {
+      "id": "contour_width",
+      "name": "Contour Width",
+      "type": "float",
+      "default": 0.02,
+      "min": 1e-05,
+      "max": 1
+    }
+  ],
+  "outputs": [
+    {
+      "id": "value",
+      "name": "Value",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "magnitude",
+      "name": "Magnitude",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "derivative",
+      "name": "Derivative",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "intensity",
+      "name": "Intensity",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "nodal_mask",
+      "name": "Nodal Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    },
+    {
+      "id": "evaluated_argument",
+      "name": "Evaluated Argument",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "clamped_mask",
+      "name": "Clamped Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    }
+  ],
+  "helpers": "\nstruct MakerSpecial416_1 {float value; float magnitude; float derivative; float intensity; float nodal_mask; float evaluated_argument; float clamped_mask;};\nMakerSpecial416_1 maker_bessel_function_field(float argument,float order,float argument_scale,float argument_offset,float contour_width){\nint n=int(clamp(floor(order+.5),0.,12.));float raw=argument*argument_scale+argument_offset,x=clamp(raw,-64.,64.);float v=0.,d=0.;for(int k=0;k<128;k++){float t=3.14159265359*(float(k)+.5)/128.;float s=sin(t),a=float(n)*t-x*s;v+=cos(a);d+=s*sin(a);}v/=128.;d/=128.;return MakerSpecial416_1(v,abs(v),d,v*v,1.-smoothstep(0.,contour_width,abs(v)),x,abs(raw)>64.?1.:0.);\n}",
+  "glsl_outputs": {
+    "value": "maker_bessel_function_field({argument},{order},{argument_scale},{argument_offset},{contour_width}).value",
+    "magnitude": "maker_bessel_function_field({argument},{order},{argument_scale},{argument_offset},{contour_width}).magnitude",
+    "derivative": "maker_bessel_function_field({argument},{order},{argument_scale},{argument_offset},{contour_width}).derivative",
+    "intensity": "maker_bessel_function_field({argument},{order},{argument_scale},{argument_offset},{contour_width}).intensity",
+    "nodal_mask": "maker_bessel_function_field({argument},{order},{argument_scale},{argument_offset},{contour_width}).nodal_mask",
+    "evaluated_argument": "maker_bessel_function_field({argument},{order},{argument_scale},{argument_offset},{contour_width}).evaluated_argument",
+    "clamped_mask": "maker_bessel_function_field({argument},{order},{argument_scale},{argument_offset},{contour_width}).clamped_mask"
+  }
+}

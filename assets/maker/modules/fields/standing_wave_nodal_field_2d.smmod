@@ -1,0 +1,200 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.standing_wave_nodal_field_2d",
+  "name": "Standing-Wave Nodal Field 2D",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "header_color": "#348F8B",
+  "description": "Standing-Wave Nodal Field 2D",
+  "uses": "Mathematical field and contour composition.",
+  "notes": "Idealized rectangular standing-wave basis, not a physical elastic plate solver. Cosine or sine separable modes, swapped indices, configurable signed combination and temporal weight. Equal indices in difference mode can cancel identically. Nodal width is field-value units; gradient magnitude is analytical spatial derivative inside domain.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec2",
+      "default": "vec2(0.5)",
+      "semantic_role": ""
+    },
+    {
+      "id": "phase_offset",
+      "name": "Phase Offset",
+      "type": "float",
+      "default": "0.0",
+      "semantic_role": "angle"
+    },
+    {
+      "id": "time_offset",
+      "name": "Time Offset",
+      "type": "float",
+      "default": "0.0",
+      "semantic_role": ""
+    }
+  ],
+  "parameters": [
+    {
+      "id": "width",
+      "name": "Width",
+      "type": "float",
+      "default": 1,
+      "min": 0.001,
+      "max": 100
+    },
+    {
+      "id": "height",
+      "name": "Height",
+      "type": "float",
+      "default": 1,
+      "min": 0.001,
+      "max": 100
+    },
+    {
+      "id": "mode_m",
+      "name": "Mode M",
+      "type": "float",
+      "default": 5,
+      "min": 0,
+      "max": 32
+    },
+    {
+      "id": "mode_n",
+      "name": "Mode N",
+      "type": "float",
+      "default": 3,
+      "min": 0,
+      "max": 32
+    },
+    {
+      "id": "orientation",
+      "name": "Orientation",
+      "type": "float",
+      "default": 0,
+      "min": -6.283185,
+      "max": 6.283185
+    },
+    {
+      "id": "secondary_weight",
+      "name": "Secondary Weight",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 4
+    },
+    {
+      "id": "animation_speed",
+      "name": "Animation Speed",
+      "type": "float",
+      "default": 0,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "nodal_width",
+      "name": "Nodal Width",
+      "type": "float",
+      "default": 0.05,
+      "min": 1e-05,
+      "max": 2
+    },
+    {
+      "id": "basis",
+      "name": "Basis",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Cosine",
+        "Sine"
+      ]
+    },
+    {
+      "id": "combination",
+      "name": "Combination",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Difference",
+        "Sum",
+        "Single Mode"
+      ]
+    },
+    {
+      "id": "domain",
+      "name": "Domain",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Plate Only",
+        "Unbounded"
+      ]
+    }
+  ],
+  "outputs": [
+    {
+      "id": "field",
+      "name": "Field",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "magnitude",
+      "name": "Magnitude",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "nodal_mask",
+      "name": "Nodal Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    },
+    {
+      "id": "first_mode",
+      "name": "First Mode",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "second_mode",
+      "name": "Second Mode",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "gradient_magnitude",
+      "name": "Gradient Magnitude",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "domain_mask",
+      "name": "Domain Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    },
+    {
+      "id": "intensity",
+      "name": "Intensity",
+      "type": "float",
+      "semantic_role": ""
+    }
+  ],
+  "helpers": "\nstruct MakerSpecial416_3 {float field; float magnitude; float nodal_mask; float first_mode; float second_mode; float gradient_magnitude; float domain_mask; float intensity;};\nMakerSpecial416_3 maker_standing_wave_nodal_field_2d(vec2 position,vec2 center,float phase_offset,float time_offset,float width,float height,float mode_m,float mode_n,float orientation,float secondary_weight,float animation_speed,float nodal_width,float basis,float combination,float domain){\nvec2 q=position-center;float c=cos(orientation),s=sin(orientation);q=mat2(c,-s,s,c)*q;vec2 uv=q/vec2(width,height)+.5;float m=floor(mode_m+.5)*3.14159265359,n=floor(mode_n+.5)*3.14159265359;vec4 a=vec4(m*uv.x,n*uv.y,n*uv.x,m*uv.y);vec4 f=basis<.5?cos(a):sin(a),df=basis<.5?-sin(a):cos(a);float v1=f.x*f.y,v2=f.z*f.w;float w=combination>1.5?0.:secondary_weight*(combination<.5?-1.:1.)*cos(phase_offset+(u_time+time_offset)*animation_speed);float v=v1+w*v2;vec2 g=vec2(m*df.x*f.y+w*n*df.z*f.w,n*f.x*df.y+w*m*f.z*df.w)/vec2(width,height);float inside=all(greaterThanEqual(uv,vec2(0.)))&&all(lessThanEqual(uv,vec2(1.)))?1.:0.;float mask=domain<.5?inside:1.;return MakerSpecial416_3(v*mask,abs(v)*mask,(1.-smoothstep(0.,nodal_width,abs(v)))*mask,v1*mask,v2*mask,length(g)*mask,inside,v*v*mask);\n}",
+  "glsl_outputs": {
+    "field": "maker_standing_wave_nodal_field_2d({position},{center},{phase_offset},{time_offset},{width},{height},{mode_m},{mode_n},{orientation},{secondary_weight},{animation_speed},{nodal_width},{basis},{combination},{domain}).field",
+    "magnitude": "maker_standing_wave_nodal_field_2d({position},{center},{phase_offset},{time_offset},{width},{height},{mode_m},{mode_n},{orientation},{secondary_weight},{animation_speed},{nodal_width},{basis},{combination},{domain}).magnitude",
+    "nodal_mask": "maker_standing_wave_nodal_field_2d({position},{center},{phase_offset},{time_offset},{width},{height},{mode_m},{mode_n},{orientation},{secondary_weight},{animation_speed},{nodal_width},{basis},{combination},{domain}).nodal_mask",
+    "first_mode": "maker_standing_wave_nodal_field_2d({position},{center},{phase_offset},{time_offset},{width},{height},{mode_m},{mode_n},{orientation},{secondary_weight},{animation_speed},{nodal_width},{basis},{combination},{domain}).first_mode",
+    "second_mode": "maker_standing_wave_nodal_field_2d({position},{center},{phase_offset},{time_offset},{width},{height},{mode_m},{mode_n},{orientation},{secondary_weight},{animation_speed},{nodal_width},{basis},{combination},{domain}).second_mode",
+    "gradient_magnitude": "maker_standing_wave_nodal_field_2d({position},{center},{phase_offset},{time_offset},{width},{height},{mode_m},{mode_n},{orientation},{secondary_weight},{animation_speed},{nodal_width},{basis},{combination},{domain}).gradient_magnitude",
+    "domain_mask": "maker_standing_wave_nodal_field_2d({position},{center},{phase_offset},{time_offset},{width},{height},{mode_m},{mode_n},{orientation},{secondary_weight},{animation_speed},{nodal_width},{basis},{combination},{domain}).domain_mask",
+    "intensity": "maker_standing_wave_nodal_field_2d({position},{center},{phase_offset},{time_offset},{width},{height},{mode_m},{mode_n},{orientation},{secondary_weight},{animation_speed},{nodal_width},{basis},{combination},{domain}).intensity"
+  }
+}

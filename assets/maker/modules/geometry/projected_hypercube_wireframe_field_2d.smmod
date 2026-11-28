@@ -7,7 +7,7 @@
   "creator_email": "screenshaver@proton.me",
   "description": "Regular 16-vertex 32-edge hypercube; six orthogonal plane rotations, perspective 4D to 3D followed by orthographic 2D projection. Distances are screen-plane centerline distances.",
   "uses": "Projected Hypercube Wireframe Field 2D",
-  "notes": "Regular 16-vertex 32-edge hypercube; six orthogonal plane rotations, perspective 4D to 3D followed by orthographic 2D projection. Distances are screen-plane centerline distances.",
+  "notes": "Regular 16-vertex 32-edge hypercube; six orthogonal plane rotations, perspective 4D to 3D followed by orthographic 2D projection. Distances are screen-plane centerline distances. Added 5-cell, 16-cell and 24-cell modes. Original hypercube default and edge ordering retained. No hidden-line removal. Larger 600-cell and 120-cell deferred.",
   "header_color": "#557C9B",
   "terminal": false,
   "inputs": [
@@ -196,15 +196,27 @@
       "default": 0.025,
       "min": 0.001,
       "max": 0.5
+    },
+    {
+      "id": "polytope",
+      "name": "Polytope",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Hypercube",
+        "5-cell",
+        "16-cell",
+        "24-cell"
+      ]
     }
   ],
-  "helpers": "vec2 maker_hyper_plane(vec2 v,float a){float c=cos(a),s=sin(a);return vec2(c*v.x-s*v.y,s*v.x+c*v.y);}\nstruct MakerHyperResult {float edge;float vertex;float depth;float index;float em;float vm;};\nMakerHyperResult maker_projected_hypercube_wireframe_field_2d(vec2 p,vec2 center,float t,float size,float a0,float a1,float a2,float a3,float a4,float a5,float s0,float s1,float s2,float s3,float s4,float s5,float proj,float width,float vr){\nvec3 v[16];float tm=u_time+t;float ed=1e20,vd=1e20,depth=0.0,idx=0.0; p-=center;\nfor(int i=0;i<16;i++){vec4 q=vec4(float(i%2),float((i/2)%2),float((i/4)%2),float((i/8)%2))*2.0-1.0;\nq.xy=maker_hyper_plane(q.xy,radians(a0)+tm*s0);q.xz=maker_hyper_plane(q.xz,radians(a1)+tm*s1);q.xw=maker_hyper_plane(q.xw,radians(a2)+tm*s2);q.yz=maker_hyper_plane(q.yz,radians(a3)+tm*s3);q.yw=maker_hyper_plane(q.yw,radians(a4)+tm*s4);q.zw=maker_hyper_plane(q.zw,radians(a5)+tm*s5);\nfloat d=max(proj,2.1);vec3 r=q.xyz*d/max(d-q.w,.1);v[i]=vec3(r.xy*size,r.z*size);vd=min(vd,length(p-v[i].xy));}\nint k=0;for(int axis=0;axis<4;axis++){int stride=axis==0?1:axis==1?2:axis==2?4:8;for(int i=0;i<16;i++){if((i/stride)%2!=0)continue;vec3 a=v[i],b=v[i+stride];vec2 ab=b.xy-a.xy;float f=clamp(dot(p-a.xy,ab)/max(dot(ab,ab),1e-10),0.0,1.0);float d=length(p-mix(a.xy,b.xy,f));if(d<ed){ed=d;depth=mix(a.z,b.z,f);idx=float(k);}k++;}}\nreturn MakerHyperResult(ed,vd,depth,idx,1.0-smoothstep(width*.8,width,ed),1.0-smoothstep(vr*.8,vr,vd));}",
+  "helpers": "vec2 maker_hyper_plane(vec2 v,float a){float c=cos(a),s=sin(a);return vec2(c*v.x-s*v.y,s*v.x+c*v.y);}\nstruct MakerHyperResult {float edge;float vertex;float depth;float index;float em;float vm;};\nMakerHyperResult maker_projected_hypercube_wireframe_field_2d(vec2 p,vec2 center,float t,float size,float a0,float a1,float a2,float a3,float a4,float a5,float s0,float s1,float s2,float s3,float s4,float s5,float proj,float width,float vr,float polytope){\nvec3 v[24];float tm=u_time+t;float ed=1e20,vd=1e20,depth=0.0,idx=0.0; p-=center;\nint mode=int(clamp(floor(polytope+.5),0.,3.));int count=mode==0?16:mode==1?5:mode==2?8:24;vec4 raw[24];\nfor(int i=0;i<24;i++){if(i>=count)break;vec4 q=vec4(float(i%2),float((i/2)%2),float((i/4)%2),float((i/8)%2))*2.0-1.0;\nif(mode==1){q=vec4((1./sqrt(5.)-1.)*.25);if(i<4)q[i]+=1.;else q=vec4(-1./sqrt(5.));q*=1.8;}\nif(mode==2){q=vec4(0.);q[i/2]=(i%2==0?1.:-1.)*2.;}\nif(mode==3){int pair=i/4;int a=0,b=1;int k=0;for(int j=0;j<4;j++)for(int l=j+1;l<4;l++){if(k==pair){a=j;b=l;}k++;}q=vec4(0.);q[a]=(i%2==0?1.:-1.)*1.41421356;q[b]=((i/2)%2==0?1.:-1.)*1.41421356;}\nraw[i]=q;\nq.xy=maker_hyper_plane(q.xy,radians(a0)+tm*s0);q.xz=maker_hyper_plane(q.xz,radians(a1)+tm*s1);q.xw=maker_hyper_plane(q.xw,radians(a2)+tm*s2);q.yz=maker_hyper_plane(q.yz,radians(a3)+tm*s3);q.yw=maker_hyper_plane(q.yw,radians(a4)+tm*s4);q.zw=maker_hyper_plane(q.zw,radians(a5)+tm*s5);\nfloat d=max(proj,2.1);vec3 r=q.xyz*d/max(d-q.w,.1);v[i]=vec3(r.xy*size,r.z*size);vd=min(vd,length(p-v[i].xy));}\nint k=0;if(mode==0){for(int axis=0;axis<4;axis++){int stride=axis==0?1:axis==1?2:axis==2?4:8;for(int i=0;i<16;i++){if((i/stride)%2!=0)continue;vec3 a=v[i],b=v[i+stride];vec2 ab=b.xy-a.xy;float f=clamp(dot(p-a.xy,ab)/max(dot(ab,ab),1e-10),0.0,1.0);float d=length(p-mix(a.xy,b.xy,f));if(d<ed){ed=d;depth=mix(a.z,b.z,f);idx=float(k);}k++;}}}else{for(int i=0;i<24;i++){if(i>=count)break;for(int j=i+1;j<24;j++){if(j>=count)break;vec4 delta=raw[i]-raw[j];float ds=dot(delta,delta);if(mode==2&&ds>9.)continue;if(mode==3&&ds>4.01)continue;vec3 a=v[i],b=v[j];vec2 ab=b.xy-a.xy;float f=clamp(dot(p-a.xy,ab)/max(dot(ab,ab),1e-10),0.,1.);float dd=length(p-mix(a.xy,b.xy,f));if(dd<ed){ed=dd;depth=mix(a.z,b.z,f);idx=float(k);}k++;}}}\nreturn MakerHyperResult(ed,vd,depth,idx,1.0-smoothstep(width*.8,width,ed),1.0-smoothstep(vr*.8,vr,vd));}",
   "glsl_outputs": {
-    "edge_distance": "maker_projected_hypercube_wireframe_field_2d({position},{center},{time_offset},{size},{angle_xy},{angle_xz},{angle_xw},{angle_yz},{angle_yw},{angle_zw},{speed_xy},{speed_xz},{speed_xw},{speed_yz},{speed_yw},{speed_zw},{projection_distance},{line_width},{vertex_radius}).edge",
-    "vertex_distance": "maker_projected_hypercube_wireframe_field_2d({position},{center},{time_offset},{size},{angle_xy},{angle_xz},{angle_xw},{angle_yz},{angle_yw},{angle_zw},{speed_xy},{speed_xz},{speed_xw},{speed_yz},{speed_yw},{speed_zw},{projection_distance},{line_width},{vertex_radius}).vertex",
-    "edge_mask": "maker_projected_hypercube_wireframe_field_2d({position},{center},{time_offset},{size},{angle_xy},{angle_xz},{angle_xw},{angle_yz},{angle_yw},{angle_zw},{speed_xy},{speed_xz},{speed_xw},{speed_yz},{speed_yw},{speed_zw},{projection_distance},{line_width},{vertex_radius}).em",
-    "vertex_mask": "maker_projected_hypercube_wireframe_field_2d({position},{center},{time_offset},{size},{angle_xy},{angle_xz},{angle_xw},{angle_yz},{angle_yw},{angle_zw},{speed_xy},{speed_xz},{speed_xw},{speed_yz},{speed_yw},{speed_zw},{projection_distance},{line_width},{vertex_radius}).vm",
-    "nearest_edge_depth": "maker_projected_hypercube_wireframe_field_2d({position},{center},{time_offset},{size},{angle_xy},{angle_xz},{angle_xw},{angle_yz},{angle_yw},{angle_zw},{speed_xy},{speed_xz},{speed_xw},{speed_yz},{speed_yw},{speed_zw},{projection_distance},{line_width},{vertex_radius}).depth",
-    "nearest_edge_index": "maker_projected_hypercube_wireframe_field_2d({position},{center},{time_offset},{size},{angle_xy},{angle_xz},{angle_xw},{angle_yz},{angle_yw},{angle_zw},{speed_xy},{speed_xz},{speed_xw},{speed_yz},{speed_yw},{speed_zw},{projection_distance},{line_width},{vertex_radius}).index"
+    "edge_distance": "maker_projected_hypercube_wireframe_field_2d({position},{center},{time_offset},{size},{angle_xy},{angle_xz},{angle_xw},{angle_yz},{angle_yw},{angle_zw},{speed_xy},{speed_xz},{speed_xw},{speed_yz},{speed_yw},{speed_zw},{projection_distance},{line_width},{vertex_radius},{polytope}).edge",
+    "vertex_distance": "maker_projected_hypercube_wireframe_field_2d({position},{center},{time_offset},{size},{angle_xy},{angle_xz},{angle_xw},{angle_yz},{angle_yw},{angle_zw},{speed_xy},{speed_xz},{speed_xw},{speed_yz},{speed_yw},{speed_zw},{projection_distance},{line_width},{vertex_radius},{polytope}).vertex",
+    "edge_mask": "maker_projected_hypercube_wireframe_field_2d({position},{center},{time_offset},{size},{angle_xy},{angle_xz},{angle_xw},{angle_yz},{angle_yw},{angle_zw},{speed_xy},{speed_xz},{speed_xw},{speed_yz},{speed_yw},{speed_zw},{projection_distance},{line_width},{vertex_radius},{polytope}).em",
+    "vertex_mask": "maker_projected_hypercube_wireframe_field_2d({position},{center},{time_offset},{size},{angle_xy},{angle_xz},{angle_xw},{angle_yz},{angle_yw},{angle_zw},{speed_xy},{speed_xz},{speed_xw},{speed_yz},{speed_yw},{speed_zw},{projection_distance},{line_width},{vertex_radius},{polytope}).vm",
+    "nearest_edge_depth": "maker_projected_hypercube_wireframe_field_2d({position},{center},{time_offset},{size},{angle_xy},{angle_xz},{angle_xw},{angle_yz},{angle_yw},{angle_zw},{speed_xy},{speed_xz},{speed_xw},{speed_yz},{speed_yw},{speed_zw},{projection_distance},{line_width},{vertex_radius},{polytope}).depth",
+    "nearest_edge_index": "maker_projected_hypercube_wireframe_field_2d({position},{center},{time_offset},{size},{angle_xy},{angle_xz},{angle_xw},{angle_yz},{angle_yw},{angle_zw},{speed_xy},{speed_xz},{speed_xw},{speed_yz},{speed_yw},{speed_zw},{projection_distance},{line_width},{vertex_radius},{polytope}).index"
   }
 }

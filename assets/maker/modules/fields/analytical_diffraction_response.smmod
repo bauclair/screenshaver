@@ -1,0 +1,92 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.analytical_diffraction_response",
+  "name": "Analytical Diffraction Response",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "header_color": "#348F8B",
+  "description": "Analytical Diffraction Response",
+  "uses": "Analytical mathematical fields and independent color composition.",
+  "notes": "Ideal Fraunhofer intensity: circular aperture, slit, double slit, finite grating. Dimensionless phase arguments; circular J1 quadrature bounded to 64. No wavelength or physical propagation simulation.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv-vec2(0.5)",
+      "semantic_role": "position2d"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "family",
+      "name": "Family",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Circular Aperture",
+        "Single Slit",
+        "Double Slit",
+        "Grating"
+      ]
+    },
+    {
+      "id": "frequency",
+      "name": "Frequency",
+      "type": "float",
+      "default": 24,
+      "min": 0,
+      "max": 128
+    },
+    {
+      "id": "separation",
+      "name": "Separation",
+      "type": "float",
+      "default": 3,
+      "min": 0,
+      "max": 16
+    },
+    {
+      "id": "slits",
+      "name": "Slits",
+      "type": "float",
+      "default": 5,
+      "min": 2,
+      "max": 32
+    }
+  ],
+  "outputs": [
+    {
+      "id": "amplitude",
+      "name": "Amplitude",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "intensity",
+      "name": "Intensity",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "envelope",
+      "name": "Envelope",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "valid",
+      "name": "Valid",
+      "type": "float",
+      "semantic_role": "mask"
+    }
+  ],
+  "helpers": "struct MakerI_analytical_diffraction_response {float amplitude; float intensity; float envelope; float valid;};\nMakerI_analytical_diffraction_response maker_analytical_diffraction_response(vec2 position,float family,float frequency,float separation,float slits){\nfloat x=position.x*frequency;float a=1.,e=1.;if(family<.5){x=length(position)*frequency;if(x>64.)return MakerI_analytical_diffraction_response(0.,0.,0.,0.);if(x>1e-3){float j=0.;for(int k=0;k<128;k++){float t=3.14159265359*(float(k)+.5)/128.;j+=cos(t-x*sin(t));}a=2.*j/(128.*x);}e=a*a;}else{a=abs(x)<1e-4?1.:sin(x)/x;e=a*a;float y=x*separation;if(family>1.5&&family<2.5)a*=cos(y);else if(family>2.5){int n=int(clamp(floor(slits+.5),2.,32.));float g=0.;for(int k=0;k<32;k++){if(k>=n)break;g+=cos((2.*float(k)-float(n-1))*y);}a*=g/float(n);}}return MakerI_analytical_diffraction_response(a,a*a,e,1.);\n}",
+  "glsl_outputs": {
+    "amplitude": "maker_analytical_diffraction_response({position},{family},{frequency},{separation},{slits}).amplitude",
+    "intensity": "maker_analytical_diffraction_response({position},{family},{frequency},{separation},{slits}).intensity",
+    "envelope": "maker_analytical_diffraction_response({position},{family},{frequency},{separation},{slits}).envelope",
+    "valid": "maker_analytical_diffraction_response({position},{family},{frequency},{separation},{slits}).valid"
+  }
+}

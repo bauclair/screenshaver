@@ -1,0 +1,148 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.zernike_polynomial_field_2d",
+  "name": "Zernike Polynomial Field 2D",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "header_color": "#348F8B",
+  "description": "Zernike Polynomial Field 2D",
+  "uses": "Mathematical field and contour composition.",
+  "notes": "Real Zernike modes on unit disk, degree 0\u201310. Invalid degree/order parity or magnitude returns zero field and valid_mode=0. Outside disk field and radial polynomial zero. RMS normalization uses disk-average squared norm. Nodal width is field-value units.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec2",
+      "default": "vec2(0.5)",
+      "semantic_role": ""
+    },
+    {
+      "id": "phase_offset",
+      "name": "Phase Offset",
+      "type": "float",
+      "default": "0.0",
+      "semantic_role": "angle"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "degree",
+      "name": "Degree",
+      "type": "float",
+      "default": 4,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "order",
+      "name": "Order",
+      "type": "float",
+      "default": 2,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "radius",
+      "name": "Radius",
+      "type": "float",
+      "default": 0.5,
+      "min": 0.001,
+      "max": 10
+    },
+    {
+      "id": "orientation",
+      "name": "Orientation",
+      "type": "float",
+      "default": 0,
+      "min": -6.283185,
+      "max": 6.283185
+    },
+    {
+      "id": "contour_width",
+      "name": "Contour Width",
+      "type": "float",
+      "default": 0.02,
+      "min": 1e-05,
+      "max": 1
+    },
+    {
+      "id": "normalization",
+      "name": "Normalization",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Unnormalized",
+        "Unit Disk RMS"
+      ]
+    }
+  ],
+  "outputs": [
+    {
+      "id": "value",
+      "name": "Value",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "radial_polynomial",
+      "name": "Radial Polynomial",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "angular_response",
+      "name": "Angular Response",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "normalized_radius",
+      "name": "Normalized Radius",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "angle",
+      "name": "Angle",
+      "type": "float",
+      "semantic_role": "angle"
+    },
+    {
+      "id": "domain_mask",
+      "name": "Domain Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    },
+    {
+      "id": "nodal_mask",
+      "name": "Nodal Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    },
+    {
+      "id": "valid_mode",
+      "name": "Valid Mode",
+      "type": "float",
+      "semantic_role": "mask"
+    }
+  ],
+  "helpers": "\nstruct MakerSpecial416_2 {float value; float radial_polynomial; float angular_response; float normalized_radius; float angle; float domain_mask; float nodal_mask; float valid_mode;};\nMakerSpecial416_2 maker_zernike_polynomial_field_2d(vec2 position,vec2 center,float phase_offset,float degree,float order,float radius,float orientation,float contour_width,float normalization){\nvec2 q=clamp(position-center,vec2(-1e6),vec2(1e6));float raw=length(q)/radius,r=clamp(raw,0.,1.),phi=length(q)>1e-8?atan(q.y,q.x)-orientation:0.;int n=int(clamp(floor(degree+.5),0.,10.)),m=int(clamp(floor(order+.5),-10.,10.)),a=abs(m);bool valid=a<=n&&((n-a)%2==0);float radial=0.,ang=m==0?1.:(m<0?sin(float(a)*phi+phase_offset):cos(float(a)*phi+phase_offset));if(valid){int h=(n+a)/2,k=(n-a)/2;float coeff=1.;for(int j=1;j<=10;j++){if(j>k)break;coeff*=float(h+j)/float(j);}for(int s=0;s<=5;s++){if(s>k)break;int e=n-2*s;radial+=coeff*(e==0?1.:pow(r,float(e)));if(s<k)coeff*= -float((h-s)*(k-s))/float((s+1)*(n-s));}}float mask=raw<=1.?1.:0.;float norm=normalization<.5?1.:sqrt(float(n+1)*(m==0?1.:2.));float v=radial*ang*norm;return MakerSpecial416_2(v*mask,radial*mask,ang,raw,phi,mask,valid?mask*(1.-smoothstep(0.,contour_width,abs(v))):0.,valid?1.:0.);\n}",
+  "glsl_outputs": {
+    "value": "maker_zernike_polynomial_field_2d({position},{center},{phase_offset},{degree},{order},{radius},{orientation},{contour_width},{normalization}).value",
+    "radial_polynomial": "maker_zernike_polynomial_field_2d({position},{center},{phase_offset},{degree},{order},{radius},{orientation},{contour_width},{normalization}).radial_polynomial",
+    "angular_response": "maker_zernike_polynomial_field_2d({position},{center},{phase_offset},{degree},{order},{radius},{orientation},{contour_width},{normalization}).angular_response",
+    "normalized_radius": "maker_zernike_polynomial_field_2d({position},{center},{phase_offset},{degree},{order},{radius},{orientation},{contour_width},{normalization}).normalized_radius",
+    "angle": "maker_zernike_polynomial_field_2d({position},{center},{phase_offset},{degree},{order},{radius},{orientation},{contour_width},{normalization}).angle",
+    "domain_mask": "maker_zernike_polynomial_field_2d({position},{center},{phase_offset},{degree},{order},{radius},{orientation},{contour_width},{normalization}).domain_mask",
+    "nodal_mask": "maker_zernike_polynomial_field_2d({position},{center},{phase_offset},{degree},{order},{radius},{orientation},{contour_width},{normalization}).nodal_mask",
+    "valid_mode": "maker_zernike_polynomial_field_2d({position},{center},{phase_offset},{degree},{order},{radius},{orientation},{contour_width},{normalization}).valid_mode"
+  }
+}

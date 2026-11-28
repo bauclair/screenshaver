@@ -1,0 +1,112 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.geometry.four_dimensional_rotation_transformation",
+  "name": "Four-Dimensional Rotation Transformation",
+  "category": "Geometry",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "header_color": "#557C9C",
+  "description": "Four-Dimensional Rotation Transformation",
+  "uses": "Procedural geometry and contour composition.",
+  "notes": "Sequential plane rotations in XY, XZ, XW, YZ, YW, ZW order. Fourth coordinate is a parameter; outputs separate XYZ and W. Angles in degrees.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "default": "vec3(0.0)",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec3",
+      "default": "vec3(0.0)",
+      "semantic_role": ""
+    }
+  ],
+  "parameters": [
+    {
+      "id": "fourth_coordinate",
+      "name": "Fourth Coordinate",
+      "type": "float",
+      "default": 0,
+      "min": -10,
+      "max": 10
+    },
+    {
+      "id": "angle_xy",
+      "name": "Angle Xy",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "angle_xz",
+      "name": "Angle Xz",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "angle_xw",
+      "name": "Angle Xw",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "angle_yz",
+      "name": "Angle Yz",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "angle_yw",
+      "name": "Angle Yw",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    },
+    {
+      "id": "angle_zw",
+      "name": "Angle Zw",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    }
+  ],
+  "outputs": [
+    {
+      "id": "rotated",
+      "name": "Rotated",
+      "type": "vec3",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "fourth",
+      "name": "Fourth",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "magnitude",
+      "name": "Magnitude",
+      "type": "float",
+      "semantic_role": ""
+    }
+  ],
+  "helpers": "vec2 maker_f429rot(vec2 p,float a){float c=cos(a),s=sin(a);return mat2(c,s,-s,c)*p;}\nstruct MakerShape3 {vec3 rotated; float fourth; float magnitude;};\nMakerShape3 maker_four_dimensional_rotation_transformation(vec3 position,vec3 center,float fourth_coordinate,float angle_xy,float angle_xz,float angle_xw,float angle_yz,float angle_yw,float angle_zw){\nvec4 q=vec4(position-center,fourth_coordinate);q.xy=maker_f429rot(q.xy,radians(angle_xy));q.xz=maker_f429rot(q.xz,radians(angle_xz));q.xw=maker_f429rot(q.xw,radians(angle_xw));q.yz=maker_f429rot(q.yz,radians(angle_yz));q.yw=maker_f429rot(q.yw,radians(angle_yw));q.zw=maker_f429rot(q.zw,radians(angle_zw));return MakerShape3(q.xyz+center,q.w,length(q));\n}",
+  "glsl_outputs": {
+    "rotated": "maker_four_dimensional_rotation_transformation({position},{center},{fourth_coordinate},{angle_xy},{angle_xz},{angle_xw},{angle_yz},{angle_yw},{angle_zw}).rotated",
+    "fourth": "maker_four_dimensional_rotation_transformation({position},{center},{fourth_coordinate},{angle_xy},{angle_xz},{angle_xw},{angle_yz},{angle_yw},{angle_zw}).fourth",
+    "magnitude": "maker_four_dimensional_rotation_transformation({position},{center},{fourth_coordinate},{angle_xy},{angle_xz},{angle_xw},{angle_yz},{angle_yw},{angle_zw}).magnitude"
+  }
+}

@@ -1,0 +1,102 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.color.cie_lab_lch_color_conversion",
+  "name": "CIE Lab and LCh Color Conversion",
+  "category": "Color",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "header_color": "#348F8B",
+  "description": "CIE Lab and LCh Color Conversion",
+  "uses": "Analytical mathematical fields and independent color composition.",
+  "notes": "CIELAB D65 reference white, linear sRGB primaries; no D50 adaptation. L nominal 0\u2013100, hue radians. Optional signed sRGB transfer and RGB clipping; gamut tested before clipping. Numeric Lab/LCh ports are not display RGB.",
+  "inputs": [
+    {
+      "id": "components",
+      "name": "Components",
+      "type": "vec3",
+      "default": "vec3(0.5)",
+      "semantic_role": ""
+    }
+  ],
+  "parameters": [
+    {
+      "id": "direction",
+      "name": "Direction",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "RGB to Lab",
+        "Lab to RGB",
+        "RGB to LCh",
+        "LCh to RGB"
+      ]
+    },
+    {
+      "id": "rgb_encoding",
+      "name": "Rgb_Encoding",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Linear RGB",
+        "sRGB"
+      ]
+    },
+    {
+      "id": "gamut_policy",
+      "name": "Gamut_Policy",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Unrestricted",
+        "Clip RGB"
+      ]
+    }
+  ],
+  "outputs": [
+    {
+      "id": "converted",
+      "name": "Converted",
+      "type": "vec3",
+      "semantic_role": ""
+    },
+    {
+      "id": "lab",
+      "name": "Lab",
+      "type": "vec3",
+      "semantic_role": ""
+    },
+    {
+      "id": "lch",
+      "name": "Lch",
+      "type": "vec3",
+      "semantic_role": ""
+    },
+    {
+      "id": "rgb",
+      "name": "Rgb",
+      "type": "vec3",
+      "semantic_role": "color"
+    },
+    {
+      "id": "gamut_mask",
+      "name": "Gamut Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    },
+    {
+      "id": "valid",
+      "name": "Valid",
+      "type": "float",
+      "semantic_role": "mask"
+    }
+  ],
+  "helpers": "struct MakerJ_cie_lab_lch_color_conversion {vec3 converted; vec3 lab; vec3 lch; vec3 rgb; float gamut_mask; float valid;};\nMakerJ_cie_lab_lch_color_conversion maker_cie_lab_lch_color_conversion(vec3 components,float direction,float rgb_encoding,float gamut_policy){\nif(any(isnan(components))||any(isinf(components))||any(greaterThan(abs(components),vec3(1e4))))return MakerJ_cie_lab_lch_color_conversion(vec3(0.),vec3(0.),vec3(0.),vec3(0.),0.,0.);bool forward=direction<.5||(direction>1.5&&direction<2.5);vec3 rgb=components,lab; if(forward){if(rgb_encoding>.5){vec3 a=abs(rgb);rgb=sign(rgb)*mix(a/12.92,pow((a+.055)/1.055,vec3(2.4)),greaterThan(a,vec3(.04045)));}vec3 xyz=mat3(.4124564,.2126729,.0193339,.3575761,.7151522,.1191920,.1804375,.0721750,.9503041)*rgb/vec3(.95047,1.,1.08883);vec3 t=mix((903.296296*xyz+16.)/116.,pow(max(xyz,vec3(0.)),vec3(1./3.)),greaterThan(xyz,vec3(.00885645168)));lab=vec3(116.*t.y-16.,500.*(t.x-t.y),200.*(t.y-t.z));}else{lab=components;if(direction>2.5)lab=vec3(components.x,components.y*cos(components.z),components.y*sin(components.z));float y=(lab.x+16.)/116.;vec3 t=vec3(y+lab.y/500.,y,y-lab.z/200.);vec3 xyz=mix((116.*t-16.)/903.296296,t*t*t,greaterThan(t,vec3(.2068965517)))*vec3(.95047,1.,1.08883);rgb=mat3(3.2404542,-.9692660,.0556434,-1.5371385,1.8760108,-.2040259,-.4985314,.0415560,1.0572252)*xyz;}vec3 lch=vec3(lab.x,length(lab.yz),length(lab.yz)>1e-7?mod(atan(lab.z,lab.y)+6.28318530718,6.28318530718):0.);float gamut=all(greaterThanEqual(rgb,vec3(-1e-6)))&&all(lessThanEqual(rgb,vec3(1.000001)))?1.:0.;if(gamut_policy>.5)rgb=clamp(rgb,0.,1.);if(rgb_encoding>.5){vec3 a=abs(rgb);rgb=sign(rgb)*mix(12.92*a,1.055*pow(a,vec3(1./2.4))-.055,greaterThan(a,vec3(.0031308)));}vec3 converted=forward?(direction<.5?lab:lch):rgb;return MakerJ_cie_lab_lch_color_conversion(converted,lab,lch,rgb,gamut,1.);\n}",
+  "glsl_outputs": {
+    "converted": "maker_cie_lab_lch_color_conversion({components},{direction},{rgb_encoding},{gamut_policy}).converted",
+    "lab": "maker_cie_lab_lch_color_conversion({components},{direction},{rgb_encoding},{gamut_policy}).lab",
+    "lch": "maker_cie_lab_lch_color_conversion({components},{direction},{rgb_encoding},{gamut_policy}).lch",
+    "rgb": "maker_cie_lab_lch_color_conversion({components},{direction},{rgb_encoding},{gamut_policy}).rgb",
+    "gamut_mask": "maker_cie_lab_lch_color_conversion({components},{direction},{rgb_encoding},{gamut_policy}).gamut_mask",
+    "valid": "maker_cie_lab_lch_color_conversion({components},{direction},{rgb_encoding},{gamut_policy}).valid"
+  }
+}

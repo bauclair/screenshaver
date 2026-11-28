@@ -1,0 +1,100 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.hopf_fibration_coordinate_field_3d",
+  "name": "Hopf Fibration Coordinate Field 3D",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "header_color": "#348F8B",
+  "description": "Hopf Fibration Coordinate Field 3D",
+  "uses": "Mathematical geometry and field composition.",
+  "notes": "Inverse stereographic projection to S3 followed by Hopf map to S2. Base direction is constant along a fiber. Fiber phase uses the first complex coordinate and is undefined at its zero; validity output identifies this chart singularity. No explicit fiber search or distance estimate.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "default": "vec3(maker_uv-vec2(0.5),0.0)",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec3",
+      "default": "vec3(0.0)",
+      "semantic_role": ""
+    }
+  ],
+  "parameters": [
+    {
+      "id": "scale",
+      "name": "Scale",
+      "type": "float",
+      "default": 1,
+      "min": 0.001,
+      "max": 100
+    },
+    {
+      "id": "phase_offset",
+      "name": "Phase Offset",
+      "type": "float",
+      "default": 0,
+      "min": -6.283185,
+      "max": 6.283185
+    }
+  ],
+  "outputs": [
+    {
+      "id": "base_direction",
+      "name": "Base Direction",
+      "type": "vec3",
+      "semantic_role": "direction3d"
+    },
+    {
+      "id": "longitude",
+      "name": "Longitude",
+      "type": "float",
+      "semantic_role": "angle"
+    },
+    {
+      "id": "colatitude",
+      "name": "Colatitude",
+      "type": "float",
+      "semantic_role": "angle"
+    },
+    {
+      "id": "fiber_phase",
+      "name": "Fiber Phase",
+      "type": "float",
+      "semantic_role": "angle"
+    },
+    {
+      "id": "fiber_phase_valid",
+      "name": "Fiber Phase Valid",
+      "type": "float",
+      "semantic_role": "mask"
+    },
+    {
+      "id": "stereographic_radius",
+      "name": "Stereographic Radius",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "base_radius",
+      "name": "Base Radius",
+      "type": "float",
+      "semantic_role": ""
+    }
+  ],
+  "helpers": "struct MakerTopology_hopf_fibration_coordinate_field_3d {vec3 base_direction; float longitude; float colatitude; float fiber_phase; float fiber_phase_valid; float stereographic_radius; float base_radius;};\nMakerTopology_hopf_fibration_coordinate_field_3d maker_hopf_fibration_coordinate_field_3d(vec3 position,vec3 center,float scale,float phase_offset){\nvec3 x=clamp((position-center)*scale,vec3(-1e6),vec3(1e6));float r2=dot(x,x),den=1.+r2;vec2 a=2.*x.xy/den,b=vec2(2.*x.z,r2-1.)/den;vec3 h=vec3(2.*dot(a,b),2.*(a.y*b.x-a.x*b.y),dot(a,a)-dot(b,b));float lon=length(h.xy)>1e-8?atan(h.y,h.x):0.;float valid=step(1e-6,length(a));float phase=valid>.5?atan(a.y,a.x)+phase_offset:0.;return MakerTopology_hopf_fibration_coordinate_field_3d(h,lon,acos(clamp(h.z,-1.,1.)),phase,valid,sqrt(r2),length(h));\n}",
+  "glsl_outputs": {
+    "base_direction": "maker_hopf_fibration_coordinate_field_3d({position},{center},{scale},{phase_offset}).base_direction",
+    "longitude": "maker_hopf_fibration_coordinate_field_3d({position},{center},{scale},{phase_offset}).longitude",
+    "colatitude": "maker_hopf_fibration_coordinate_field_3d({position},{center},{scale},{phase_offset}).colatitude",
+    "fiber_phase": "maker_hopf_fibration_coordinate_field_3d({position},{center},{scale},{phase_offset}).fiber_phase",
+    "fiber_phase_valid": "maker_hopf_fibration_coordinate_field_3d({position},{center},{scale},{phase_offset}).fiber_phase_valid",
+    "stereographic_radius": "maker_hopf_fibration_coordinate_field_3d({position},{center},{scale},{phase_offset}).stereographic_radius",
+    "base_radius": "maker_hopf_fibration_coordinate_field_3d({position},{center},{scale},{phase_offset}).base_radius"
+  }
+}

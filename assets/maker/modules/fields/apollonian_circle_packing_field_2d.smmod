@@ -1,0 +1,87 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.apollonian_circle_packing_field_2d",
+  "name": "Apollonian Circle Packing Field 2D",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "header_color": "#348F8B",
+  "description": "Apollonian Circle Packing Field 2D",
+  "uses": "Mathematical field and color composition.",
+  "notes": "Finite symmetric Apollonian gasket using Descartes bend-center reflections. Depth 0\u20134, at most 160 circle evaluations including initial four; unsigned nearest circumference distance. No infinite packing claim.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "semantic_role": "position2d",
+      "default": "maker_uv-vec2(0.5)"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "radius",
+      "name": "Radius",
+      "type": "float",
+      "default": 0.45,
+      "min": 0.001,
+      "max": 10
+    },
+    {
+      "id": "depth",
+      "name": "Depth",
+      "type": "float",
+      "default": 3,
+      "min": 0,
+      "max": 4
+    },
+    {
+      "id": "contour_width",
+      "name": "Contour Width",
+      "type": "float",
+      "default": 0.005,
+      "min": 1e-05,
+      "max": 1
+    }
+  ],
+  "outputs": [
+    {
+      "id": "boundary_distance",
+      "name": "Boundary Distance",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "circle_center",
+      "name": "Circle Center",
+      "type": "vec2",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "circle_radius",
+      "name": "Circle Radius",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "generation",
+      "name": "Generation",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "contour",
+      "name": "Contour",
+      "type": "float",
+      "semantic_role": "mask"
+    }
+  ],
+  "helpers": "struct MakerAPack {float boundary_distance;vec2 circle_center;float circle_radius;float generation;float contour;};\nMakerAPack maker_apollonian_circle_packing_field_2d(vec2 position,float radius,float depth,float contour_width){\n// A circle is (bend, bend*center.x, bend*center.y). Descartes reflection is linear in these coordinates.\nvec3 circles[4];float small=1./(1.+2./sqrt(3.));circles[0]=vec3(-1.,0.,0.);for(int i=1;i<4;i++){float a=6.28318530718*float(i-1)/3.;circles[i]=vec3(1./small,(1.-small)/small*vec2(cos(a),sin(a)));}vec2 p=position/radius;float best=1e30,br=0.,gen=0.;vec2 bc=vec2(0.);for(int i=0;i<4;i++){vec2 cc=circles[i].yz/circles[i].x;float rr=abs(1./circles[i].x),d=abs(length(p-cc)-rr);if(d<best){best=d;bc=cc;br=rr;}}\n// Enumerate reduced reflection words: 4 choices initially, then 3 excluding immediate reversal.\nfor(int level=1;level<=4;level++){if(level>int(floor(depth+.5)))break;int count=4;for(int j=1;j<4;j++){if(j>=level)break;count*=3;}for(int word=0;word<108;word++){if(word>=count)break;vec3 a[4];for(int j=0;j<4;j++)a[j]=circles[j];int code=word,prev=-1;for(int j=0;j<4;j++){if(j>=level)break;int idx;if(j==0){idx=code%4;code/=4;}else{idx=code%3;code/=3;if(idx>=prev)idx++;}vec3 sumv=a[0]+a[1]+a[2]+a[3];a[idx]=2.*sumv-3.*a[idx];prev=idx;}vec3 v=a[prev];if(abs(v.x)>1e-6){vec2 cc=v.yz/v.x;float rr=abs(1./v.x),d=abs(length(p-cc)-rr);if(d<best){best=d;bc=cc;br=rr;gen=float(level);}}}}best*=radius;return MakerAPack(best,bc*radius,br*radius,gen,1.-smoothstep(0.,contour_width,best));}\n",
+  "glsl_outputs": {
+    "boundary_distance": "maker_apollonian_circle_packing_field_2d({position},{radius},{depth},{contour_width}).boundary_distance",
+    "circle_center": "maker_apollonian_circle_packing_field_2d({position},{radius},{depth},{contour_width}).circle_center",
+    "circle_radius": "maker_apollonian_circle_packing_field_2d({position},{radius},{depth},{contour_width}).circle_radius",
+    "generation": "maker_apollonian_circle_packing_field_2d({position},{radius},{depth},{contour_width}).generation",
+    "contour": "maker_apollonian_circle_packing_field_2d({position},{radius},{depth},{contour_width}).contour"
+  }
+}

@@ -1,0 +1,197 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.geometry.superformula_surface_field_3d",
+  "name": "Superformula Surface Field 3D",
+  "category": "Geometry",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "header_color": "#557C9C",
+  "description": "Superformula Surface Field 3D",
+  "uses": "Procedural geometry and contour composition.",
+  "notes": "Radial spherical extension of the Gielis formula: independent longitude and latitude factors multiply. Not the conventional separable parametric supershape embedding. Not an SDF or safe sphere-tracing bound. Angular seams and pole dependence possible for some parameters.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "default": "vec3(0.0)",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec3",
+      "default": "vec3(0.0)",
+      "semantic_role": ""
+    }
+  ],
+  "parameters": [
+    {
+      "id": "lon_symmetry",
+      "name": "Lon Symmetry",
+      "type": "float",
+      "default": 4,
+      "min": 0,
+      "max": 32
+    },
+    {
+      "id": "lon_a",
+      "name": "Lon A",
+      "type": "float",
+      "default": 1,
+      "min": 0.1,
+      "max": 4
+    },
+    {
+      "id": "lon_b",
+      "name": "Lon B",
+      "type": "float",
+      "default": 1,
+      "min": 0.1,
+      "max": 4
+    },
+    {
+      "id": "lon_n1",
+      "name": "Lon N1",
+      "type": "float",
+      "default": 1,
+      "min": 0.1,
+      "max": 8
+    },
+    {
+      "id": "lon_n2",
+      "name": "Lon N2",
+      "type": "float",
+      "default": 2,
+      "min": 0.1,
+      "max": 8
+    },
+    {
+      "id": "lon_n3",
+      "name": "Lon N3",
+      "type": "float",
+      "default": 2,
+      "min": 0.1,
+      "max": 8
+    },
+    {
+      "id": "lat_symmetry",
+      "name": "Lat Symmetry",
+      "type": "float",
+      "default": 4,
+      "min": 0,
+      "max": 32
+    },
+    {
+      "id": "lat_a",
+      "name": "Lat A",
+      "type": "float",
+      "default": 1,
+      "min": 0.1,
+      "max": 4
+    },
+    {
+      "id": "lat_b",
+      "name": "Lat B",
+      "type": "float",
+      "default": 1,
+      "min": 0.1,
+      "max": 4
+    },
+    {
+      "id": "lat_n1",
+      "name": "Lat N1",
+      "type": "float",
+      "default": 1,
+      "min": 0.1,
+      "max": 8
+    },
+    {
+      "id": "lat_n2",
+      "name": "Lat N2",
+      "type": "float",
+      "default": 2,
+      "min": 0.1,
+      "max": 8
+    },
+    {
+      "id": "lat_n3",
+      "name": "Lat N3",
+      "type": "float",
+      "default": 2,
+      "min": 0.1,
+      "max": 8
+    },
+    {
+      "id": "radius",
+      "name": "Radius",
+      "type": "float",
+      "default": 1,
+      "min": 0.001,
+      "max": 10
+    },
+    {
+      "id": "longitude_rotation",
+      "name": "Longitude Rotation",
+      "type": "float",
+      "default": 0,
+      "min": -6.283185,
+      "max": 6.283185
+    },
+    {
+      "id": "contour_width",
+      "name": "Contour Width",
+      "type": "float",
+      "default": 0.02,
+      "min": 1e-05,
+      "max": 1
+    }
+  ],
+  "outputs": [
+    {
+      "id": "radial_residual",
+      "name": "Radial Residual",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "target_radius",
+      "name": "Target Radius",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "interior_mask",
+      "name": "Interior Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    },
+    {
+      "id": "longitude",
+      "name": "Longitude",
+      "type": "float",
+      "semantic_role": "angle"
+    },
+    {
+      "id": "latitude",
+      "name": "Latitude",
+      "type": "float",
+      "semantic_role": "angle"
+    },
+    {
+      "id": "contour",
+      "name": "Contour",
+      "type": "float",
+      "semantic_role": "mask"
+    }
+  ],
+  "helpers": "float maker_sf412b(float t,float m,float a,float b,float n1,float n2,float n3){float v=m*t*.25;float s=pow(abs(cos(v))/a,n2)+pow(abs(sin(v))/b,n3);return exp(clamp(-log(max(s,1e-12))/n1,-6.907755,6.907755));}\nstruct MakerShape1 {float radial_residual; float target_radius; float interior_mask; float longitude; float latitude; float contour;};\nMakerShape1 maker_superformula_surface_field_3d(vec3 position,vec3 center,float lon_symmetry,float lon_a,float lon_b,float lon_n1,float lon_n2,float lon_n3,float lat_symmetry,float lat_a,float lat_b,float lat_n1,float lat_n2,float lat_n3,float radius,float longitude_rotation,float contour_width){\nvec3 q=clamp(position-center,vec3(-1e6),vec3(1e6));float r=length(q),h=length(q.xy);float lon=h>1e-8?atan(q.y,q.x)-longitude_rotation:0.;lon=mod(lon+3.14159265,6.2831853)-3.14159265;float lat=r>1e-8?atan(q.z,h):0.;float a=maker_sf412b(lon,lon_symmetry,lon_a,lon_b,lon_n1,lon_n2,lon_n3),b=maker_sf412b(lat,lat_symmetry,lat_a,lat_b,lat_n1,lat_n2,lat_n3);float target=radius*clamp(a*b,.001,1000.),d=r-target;return MakerShape1(d,target,step(d,0.),lon,lat,1.-smoothstep(0.,contour_width,abs(d)));\n}",
+  "glsl_outputs": {
+    "radial_residual": "maker_superformula_surface_field_3d({position},{center},{lon_symmetry},{lon_a},{lon_b},{lon_n1},{lon_n2},{lon_n3},{lat_symmetry},{lat_a},{lat_b},{lat_n1},{lat_n2},{lat_n3},{radius},{longitude_rotation},{contour_width}).radial_residual",
+    "target_radius": "maker_superformula_surface_field_3d({position},{center},{lon_symmetry},{lon_a},{lon_b},{lon_n1},{lon_n2},{lon_n3},{lat_symmetry},{lat_a},{lat_b},{lat_n1},{lat_n2},{lat_n3},{radius},{longitude_rotation},{contour_width}).target_radius",
+    "interior_mask": "maker_superformula_surface_field_3d({position},{center},{lon_symmetry},{lon_a},{lon_b},{lon_n1},{lon_n2},{lon_n3},{lat_symmetry},{lat_a},{lat_b},{lat_n1},{lat_n2},{lat_n3},{radius},{longitude_rotation},{contour_width}).interior_mask",
+    "longitude": "maker_superformula_surface_field_3d({position},{center},{lon_symmetry},{lon_a},{lon_b},{lon_n1},{lon_n2},{lon_n3},{lat_symmetry},{lat_a},{lat_b},{lat_n1},{lat_n2},{lat_n3},{radius},{longitude_rotation},{contour_width}).longitude",
+    "latitude": "maker_superformula_surface_field_3d({position},{center},{lon_symmetry},{lon_a},{lon_b},{lon_n1},{lon_n2},{lon_n3},{lat_symmetry},{lat_a},{lat_b},{lat_n1},{lat_n2},{lat_n3},{radius},{longitude_rotation},{contour_width}).latitude",
+    "contour": "maker_superformula_surface_field_3d({position},{center},{lon_symmetry},{lon_a},{lon_b},{lon_n1},{lon_n2},{lon_n3},{lat_symmetry},{lat_a},{lat_b},{lat_n1},{lat_n2},{lat_n3},{radius},{longitude_rotation},{contour_width}).contour"
+  }
+}

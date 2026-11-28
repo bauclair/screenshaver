@@ -1,0 +1,148 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.spherical_harmonic_field_3d",
+  "name": "Spherical Harmonic Field 3D",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "header_color": "#348F8B",
+  "description": "Spherical Harmonic Field 3D",
+  "uses": "Mathematical field and contour composition.",
+  "notes": "Real orthonormal spherical harmonics with Condon\u2013Shortley phase, degree 0\u201312, signed order clamped to degree. Positive order cosine, negative sine. Origin uses north pole convention. Absolute lobes radius = radius \u00d7 amplitude \u00d7 |Y|. Signed modulation is floored positive. Residual is not a conservative SDF; nodal width is harmonic-value units.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "default": "vec3(maker_uv-vec2(0.5),0.0)",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec3",
+      "default": "vec3(0.0)",
+      "semantic_role": ""
+    },
+    {
+      "id": "phase_offset",
+      "name": "Phase Offset",
+      "type": "float",
+      "default": "0.0",
+      "semantic_role": "angle"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "degree",
+      "name": "Degree",
+      "type": "float",
+      "default": 3,
+      "min": 0,
+      "max": 12
+    },
+    {
+      "id": "order",
+      "name": "Order",
+      "type": "float",
+      "default": 2,
+      "min": -12,
+      "max": 12
+    },
+    {
+      "id": "radius",
+      "name": "Radius",
+      "type": "float",
+      "default": 0.5,
+      "min": 0.001,
+      "max": 10
+    },
+    {
+      "id": "radial_amplitude",
+      "name": "Radial Amplitude",
+      "type": "float",
+      "default": 0.4,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "contour_width",
+      "name": "Contour Width",
+      "type": "float",
+      "default": 0.02,
+      "min": 1e-05,
+      "max": 1
+    },
+    {
+      "id": "surface_mode",
+      "name": "Surface Mode",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Absolute Lobes",
+        "Signed Modulation"
+      ]
+    }
+  ],
+  "outputs": [
+    {
+      "id": "harmonic",
+      "name": "Harmonic",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "magnitude",
+      "name": "Magnitude",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "radial_residual",
+      "name": "Radial Residual",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "target_radius",
+      "name": "Target Radius",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "interior_mask",
+      "name": "Interior Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    },
+    {
+      "id": "nodal_mask",
+      "name": "Nodal Mask",
+      "type": "float",
+      "semantic_role": "mask"
+    },
+    {
+      "id": "longitude",
+      "name": "Longitude",
+      "type": "float",
+      "semantic_role": "angle"
+    },
+    {
+      "id": "colatitude",
+      "name": "Colatitude",
+      "type": "float",
+      "semantic_role": "angle"
+    }
+  ],
+  "helpers": "\nstruct MakerSpecial416_0 {float harmonic; float magnitude; float radial_residual; float target_radius; float interior_mask; float nodal_mask; float longitude; float colatitude;};\nMakerSpecial416_0 maker_spherical_harmonic_field_3d(vec3 position,vec3 center,float phase_offset,float degree,float order,float radius,float radial_amplitude,float contour_width,float surface_mode){\nvec3 q=clamp(position-center,vec3(-1e6),vec3(1e6));float r=length(q),x=r>1e-8?clamp(q.z/r,-1.,1.):1.;float phi=length(q.xy)>1e-8?atan(q.y,q.x):0.;int l=int(clamp(floor(degree+.5),0.,12.)),m=int(clamp(floor(order+.5),-float(l),float(l))),a=abs(m);float p=1.;for(int i=1;i<=12;i++){if(i>a)break;p*= -float(2*i-1)*sqrt(max(0.,1.-x*x));}float prev=p,cur=x*float(2*a+1)*p;if(l>a){for(int j=2;j<=12;j++){int k=a+j;if(k>l)break;float v=(float(2*k-1)*x*cur-float(k+a-1)*prev)/float(k-a);prev=cur;cur=v;}p=cur;}float ratio=1.;for(int i=1;i<=24;i++){if(i>2*a)break;ratio/=float(l-a+i);}float norm=sqrt(float(2*l+1)*ratio/12.5663706144);float ang=float(a)*phi+phase_offset;float y=p*norm*(m==0?1.:1.41421356237*(m<0?sin(ang):cos(ang)));float target=surface_mode<.5?radius*abs(y)*radial_amplitude:max(.00001,radius*(1.+radial_amplitude*y));float d=r-target;return MakerSpecial416_0(y,abs(y),d,target,step(d,0.),1.-smoothstep(0.,contour_width,abs(y)),phi,acos(x));\n}",
+  "glsl_outputs": {
+    "harmonic": "maker_spherical_harmonic_field_3d({position},{center},{phase_offset},{degree},{order},{radius},{radial_amplitude},{contour_width},{surface_mode}).harmonic",
+    "magnitude": "maker_spherical_harmonic_field_3d({position},{center},{phase_offset},{degree},{order},{radius},{radial_amplitude},{contour_width},{surface_mode}).magnitude",
+    "radial_residual": "maker_spherical_harmonic_field_3d({position},{center},{phase_offset},{degree},{order},{radius},{radial_amplitude},{contour_width},{surface_mode}).radial_residual",
+    "target_radius": "maker_spherical_harmonic_field_3d({position},{center},{phase_offset},{degree},{order},{radius},{radial_amplitude},{contour_width},{surface_mode}).target_radius",
+    "interior_mask": "maker_spherical_harmonic_field_3d({position},{center},{phase_offset},{degree},{order},{radius},{radial_amplitude},{contour_width},{surface_mode}).interior_mask",
+    "nodal_mask": "maker_spherical_harmonic_field_3d({position},{center},{phase_offset},{degree},{order},{radius},{radial_amplitude},{contour_width},{surface_mode}).nodal_mask",
+    "longitude": "maker_spherical_harmonic_field_3d({position},{center},{phase_offset},{degree},{order},{radius},{radial_amplitude},{contour_width},{surface_mode}).longitude",
+    "colatitude": "maker_spherical_harmonic_field_3d({position},{center},{phase_offset},{degree},{order},{radius},{radial_amplitude},{contour_width},{surface_mode}).colatitude"
+  }
+}

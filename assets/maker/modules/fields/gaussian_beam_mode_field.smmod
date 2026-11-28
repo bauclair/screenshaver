@@ -1,0 +1,106 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.fields.gaussian_beam_mode_field",
+  "name": "Gaussian Beam Mode Field",
+  "category": "Fields",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "header_color": "#348F8B",
+  "description": "Gaussian Beam Mode Field",
+  "uses": "Analytical mathematical fields and independent color composition.",
+  "notes": "Transverse waist-plane Hermite-Gaussian or Laguerre-Gaussian mode; unnormalized amplitude, intensity and complex phase. No longitudinal propagation or physical power normalization.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "default": "maker_uv-vec2(0.5)",
+      "semantic_role": "position2d"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "family",
+      "name": "Family",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Hermite Gaussian",
+        "Laguerre Gaussian"
+      ]
+    },
+    {
+      "id": "waist",
+      "name": "Waist",
+      "type": "float",
+      "default": 0.2,
+      "min": 0.001,
+      "max": 5
+    },
+    {
+      "id": "order_x",
+      "name": "Order X",
+      "type": "float",
+      "default": 2,
+      "min": 0,
+      "max": 8
+    },
+    {
+      "id": "order_y",
+      "name": "Order Y",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 8
+    },
+    {
+      "id": "azimuthal_order",
+      "name": "Azimuthal Order",
+      "type": "float",
+      "default": 2,
+      "min": -8,
+      "max": 8
+    },
+    {
+      "id": "phase_offset",
+      "name": "Phase Offset",
+      "type": "float",
+      "default": 0,
+      "min": -6.283185,
+      "max": 6.283185
+    }
+  ],
+  "outputs": [
+    {
+      "id": "amplitude",
+      "name": "Amplitude",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "intensity",
+      "name": "Intensity",
+      "type": "float",
+      "semantic_role": "intensity"
+    },
+    {
+      "id": "complex_value",
+      "name": "Complex Value",
+      "type": "vec2",
+      "semantic_role": ""
+    },
+    {
+      "id": "phase",
+      "name": "Phase",
+      "type": "float",
+      "semantic_role": "angle"
+    }
+  ],
+  "helpers": "struct MakerI_gaussian_beam_mode_field {float amplitude; float intensity; vec2 complex_value; float phase;};\nMakerI_gaussian_beam_mode_field maker_gaussian_beam_mode_field(vec2 position,float family,float waist,float order_x,float order_y,float azimuthal_order,float phase_offset){\nvec2 p=position/waist;float r2=dot(p,p);if(r2>80.)return MakerI_gaussian_beam_mode_field(0.,0.,vec2(0.),0.);int nx=int(clamp(floor(order_x+.5),0.,8.)),ny=int(clamp(floor(order_y+.5),0.,8.));float a=1.,phase=phase_offset;if(family<.5){vec2 x=sqrt(2.)*p,h0=vec2(1.),h1=2.*x,h=vec2(nx==0?1.:h1.x,ny==0?1.:h1.y);for(int j=2;j<=8;j++){vec2 c=2.*x*h1-2.*float(j-1)*h0;if(j==nx)h.x=c.x;if(j==ny)h.y=c.y;h0=h1;h1=c;}a=h.x*h.y*exp(-r2);}else{float l=floor(azimuthal_order+.5),m=abs(l),x=2.*r2,b=1.+m-x,c=1.;for(int j=2;j<=8;j++){if(j>nx)break;float k=float(j),d=((2.*k-1.+m-x)*b-(k-1.+m)*c)/k;c=b;b=d;}a=(nx==0?1.:b)*(m==0.?1.:pow(sqrt(x),m))*exp(-r2);phase+=r2>1e-16?l*atan(p.y,p.x):0.;}return MakerI_gaussian_beam_mode_field(a,a*a,a*vec2(cos(phase),sin(phase)),phase);\n}",
+  "glsl_outputs": {
+    "amplitude": "maker_gaussian_beam_mode_field({position},{family},{waist},{order_x},{order_y},{azimuthal_order},{phase_offset}).amplitude",
+    "intensity": "maker_gaussian_beam_mode_field({position},{family},{waist},{order_x},{order_y},{azimuthal_order},{phase_offset}).intensity",
+    "complex_value": "maker_gaussian_beam_mode_field({position},{family},{waist},{order_x},{order_y},{azimuthal_order},{phase_offset}).complex_value",
+    "phase": "maker_gaussian_beam_mode_field({position},{family},{waist},{order_x},{order_y},{azimuthal_order},{phase_offset}).phase"
+  }
+}

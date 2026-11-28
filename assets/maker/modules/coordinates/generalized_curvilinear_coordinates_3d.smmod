@@ -1,0 +1,83 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.generalized_curvilinear_coordinates_3d",
+  "name": "Generalized Curvilinear Coordinates 3D",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "header_color": "#348F8B",
+  "description": "Generalized Curvilinear Coordinates 3D",
+  "uses": "Analytical mathematical fields and independent color composition.",
+  "notes": "Cartesian to prolate spheroidal, oblate spheroidal, bispherical or rotational parabolic coordinates around Z. Angular seam and axis singularities; validity zero on axis. Coordinates are dimensionless except parabolic square-root length.",
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "default": "vec3(maker_uv-vec2(0.5),0.)",
+      "semantic_role": "position3d"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "family",
+      "name": "Family",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Prolate Spheroidal",
+        "Oblate Spheroidal",
+        "Bispherical",
+        "Parabolic"
+      ]
+    },
+    {
+      "id": "focal_distance",
+      "name": "Focal Distance",
+      "type": "float",
+      "default": 0.2,
+      "min": 0.001,
+      "max": 10
+    }
+  ],
+  "outputs": [
+    {
+      "id": "coordinates",
+      "name": "Coordinates",
+      "type": "vec3",
+      "semantic_role": ""
+    },
+    {
+      "id": "first",
+      "name": "First",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "second",
+      "name": "Second",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "azimuth",
+      "name": "Azimuth",
+      "type": "float",
+      "semantic_role": "angle"
+    },
+    {
+      "id": "valid",
+      "name": "Valid",
+      "type": "float",
+      "semantic_role": "mask"
+    }
+  ],
+  "helpers": "struct MakerJ_generalized_curvilinear_coordinates_3d {vec3 coordinates; float first; float second; float azimuth; float valid;};\nMakerJ_generalized_curvilinear_coordinates_3d maker_generalized_curvilinear_coordinates_3d(vec3 position,float family,float focal_distance){\nvec3 p=position;float a=focal_distance;if(any(isnan(p))||any(isinf(p))||length(p)>1e5)return MakerJ_generalized_curvilinear_coordinates_3d(vec3(0.),0.,0.,0.,0.);float r=length(p.xy),z=p.z,phi=r>1e-8?atan(p.y,p.x):0.;vec2 q;float valid=r>1e-8?1.:0.;if(family<.5){float l=length(vec2(r,z+a)),b=length(vec2(r,z-a));q=vec2(acosh(max(1.,(l+b)/(2.*a))),acos(clamp((l-b)/(2.*a),-1.,1.)));}else if(family<1.5){float s=(r*r+z*z)/(a*a)-1.,v=z/a;float t=.5*(s+sqrt(s*s+4.*v*v));float u=sqrt(max(0.,t));q=vec2(asinh(u),u>1e-6?asin(clamp(v/u,-1.,1.)):acos(clamp(r/a,0.,1.)));if(u<=1e-6)valid=0.;}else if(family<2.5){vec2 l=vec2(z+a,r),b=vec2(z-a,r);float dl=length(l),db=length(b);if(min(dl,db)<1e-8)return MakerJ_generalized_curvilinear_coordinates_3d(vec3(0.),0.,0.,0.,0.);q=vec2(log(dl/db),atan(abs(l.x*b.y-l.y*b.x),dot(l,b)));}else{float d=length(p);q=sqrt(max(vec2(0.),vec2(d+z,d-z)));}return MakerJ_generalized_curvilinear_coordinates_3d(vec3(q,phi),q.x,q.y,phi,valid);\n}",
+  "glsl_outputs": {
+    "coordinates": "maker_generalized_curvilinear_coordinates_3d({position},{family},{focal_distance}).coordinates",
+    "first": "maker_generalized_curvilinear_coordinates_3d({position},{family},{focal_distance}).first",
+    "second": "maker_generalized_curvilinear_coordinates_3d({position},{family},{focal_distance}).second",
+    "azimuth": "maker_generalized_curvilinear_coordinates_3d({position},{family},{focal_distance}).azimuth",
+    "valid": "maker_generalized_curvilinear_coordinates_3d({position},{family},{focal_distance}).valid"
+  }
+}
