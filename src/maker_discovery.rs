@@ -16,9 +16,9 @@ fn wire_limit()->usize{PRODUCTION_WIRE_LIMIT.load(std::sync::atomic::Ordering::R
 pub(super) fn set_production_wire_limit(limit:usize){
     PRODUCTION_WIRE_LIMIT.store(limit.clamp(3,25),std::sync::atomic::Ordering::Relaxed);
 }
-fn seed()->u64{std::env::var("SCREENSHAVER_MAKER_TEST_SEED").ok().and_then(|s|s.parse().ok()).unwrap_or(0xBADC0FFEE)}
+pub(super) fn seed()->u64{std::env::var("SCREENSHAVER_MAKER_TEST_SEED").ok().and_then(|s|s.parse().ok()).unwrap_or(0xBADC0FFEE)}
 fn mix(mut x:u64)->u64{x^=x>>30;x=x.wrapping_mul(0xbf58476d1ce4e5b9);x^=x>>27;x=x.wrapping_mul(0x94d049bb133111eb);x^(x>>31)}
-fn edge_rank(e:Edge,seed:u64)->u64{
+pub(super) fn edge_rank(e:Edge,seed:u64)->u64{
     let mut x=mix(seed^e.0);
     x=mix(x^(e.1 as u64));x=mix(x^e.2);mix(x^(e.3 as u64))
 }
@@ -139,8 +139,8 @@ fn reference_parent(child:&Graph,output:NodeId)->Option<Edge>{
 }
 fn path_from_frames(frames:&[Frame])->Vec<Edge>{
     frames.windows(2).filter_map(|pair|{
-        let parent=graph_edges(&pair[0].graph);
-        graph_edges(&pair[1].graph).into_iter().find(|e|!parent.contains(e))
+        let parent=pair[0].edges.clone();
+        pair[1].edges.clone().into_iter().find(|e|!parent.contains(e))
     }).collect()
 }
 fn diagnostic_file(label:&str, payload:&serde_json::Value)->Result<PathBuf,String>{
@@ -150,48 +150,47 @@ fn diagnostic_file(label:&str, payload:&serde_json::Value)->Result<PathBuf,Strin
     Ok(path)
 }
 
-fn candidates(g:&Graph,output:NodeId,index:&ConnectionFeasibility,seed:u64)->Vec<Edge>{
-    let mut reachable=HashSet::from([output]);let mut frontier=vec![output];
-    while let Some(id)=frontier.pop(){for c in g.connections.iter().filter(|c|c.to==id){
-        if reachable.insert(c.from){frontier.push(c.from)}
-    }}
-    let mut edges=Vec::new();
-    for node in &g.nodes {
-        if !reachable.contains(&node.id){continue}
-        for port in 0..node.input_count(){
-            if g.input_connection(node.id,port).is_some(){continue}
-            if let Some(sources)=index.sources.get(&(node.id,port)){
-                for &(from,from_port) in sources {
-                    if g.check_connection(from,from_port,node.id,port).is_ok(){edges.push((from,from_port,node.id,port));}
-                }
-            }
+// Compact rooted state: at most 25 edges. No workspace node copies.
+fn reached(edges:&[Edge],root:NodeId,skip:Option<usize>,forward:bool)->Vec<NodeId>{
+    let mut seen=vec![root];let mut i=0;
+    while i<seen.len(){let n=seen[i];i+=1;
+        for (j,e) in edges.iter().enumerate(){if skip==Some(j){continue}
+            let (a,b)=if forward {(e.0,e.2)}else{(e.2,e.0)};
+            if a==n && !seen.contains(&b){seen.push(b);}
+        }
+    }seen
+}
+fn removable(edges:&[Edge],output:NodeId,i:usize)->bool{
+    let r=reached(edges,output,Some(i),false);
+    edges.iter().enumerate().all(|(j,e)|j==i || (r.contains(&e.0)&&r.contains(&e.2)))
+}
+fn compact_parent(edges:&[Edge],output:NodeId)->Option<Edge>{
+    edges.iter().enumerate().filter(|(i,_)|removable(edges,output,*i)).map(|(_,e)|*e).max()
+}
+fn candidates(edges:&[Edge],output:NodeId,index:&ConnectionFeasibility,_seed:u64)->Vec<Edge>{
+    let reachable=reached(edges,output,None,false);let mut choices=Vec::new();
+    for (i,&node) in index.node_ids.iter().enumerate(){
+        if !reachable.contains(&node){continue}
+        let forbidden=reached(edges,node,None,true);
+        for &p in &index.node_inputs[i]{
+            if edges.iter().any(|e|e.2==node && e.3==index.inputs[p].port){continue}
+            for &id in &index.incoming[p]{if !forbidden.contains(&index.edges[id].key.0){choices.push(id);}}
         }
     }
-    // Fixed seeded ordering for the entire exploration cycle, independent of
-    // resume boundaries and without storing RNG state for every DFS frame.
-    edges.sort_unstable_by_key(|e|(edge_rank(*e,seed),*e));
-    edges
+    choices.sort_unstable_by_key(|&id|(index.edges[id].rank,index.edges[id].key));
+    choices.into_iter().map(|id|index.edges[id].key).collect()
 }
-// Parent pruning lemma: if an edge can be deleted from a rooted parent,
-// it remains deletable after adding a valid edge only when the new target
-// is STILL reachable after that deletion. A newly attached edge may otherwise
-// reconnect an orphaned leaf, so edge ordering alone is not sufficient. This precheck precedes cloning.
-fn parent_threshold(g:&Graph,output:NodeId)->Option<(Edge,HashSet<NodeId>)>{
-    let edge=reference_parent(g,output)?;
-    let mut reached=HashSet::from([output]);
-    let mut frontier=vec![output];
-    while let Some(to)=frontier.pop(){
-        for c in &g.connections {
-            if (c.from,c.from_port,c.to,c.to_port)!=edge && c.to==to && reached.insert(c.from){
-                frontier.push(c.from);
-            }
-        }
-    }
-    Some((edge,reached))
+fn parent_threshold(edges:&[Edge],output:NodeId)->Option<(Edge,Vec<NodeId>)>{
+    let edge=compact_parent(edges,output)?;
+    Some((edge,reached(edges,output,edges.iter().position(|e|*e==edge),false)))
 }
-struct Frame {graph:Graph, choices:Vec<Edge>, next:usize, threshold:Option<(Edge,HashSet<NodeId>)>}
+fn materialize(base:&Graph,edges:&[Edge])->Result<Graph,String>{
+    let mut g=base.clone();g.connections.clear();
+    for &(a,b,c,d) in edges {g.connect(a,b,c,d)?;} Ok(g)
+}
+struct Frame {edges:Vec<Edge>, choices:Vec<Edge>, next:usize, threshold:Option<(Edge,Vec<NodeId>)>}
 struct Explorer {
-    base:Graph, output:NodeId, feasibility:ConnectionFeasibility,
+    base:Graph, output:NodeId, feasibility:ConnectionFeasibility, required:std::collections::HashMap<NodeId,Vec<usize>>, base_valid:bool,
     frames:Vec<Frame>, depth_limit:usize, min_depth:usize, max_depth:usize, seed:u64, examined:u64, valid:u64, rejected_parent:u64,
     reference_checks:u64, reference_mismatches:u64, reference_enabled:bool, prefilter_enabled:bool, prefiltered:u64, traversal_digest:u64,
 }
@@ -201,28 +200,36 @@ impl Explorer {
     }
     fn new_with_min(base:Graph,seed:u64,reference_enabled:bool,prefilter_enabled:bool,min_depth:usize)->Result<Self,String>{
         let output=base.nodes.iter().find(|n|n.definition().terminal).ok_or("Missing output node")?.id;
-        let feasibility=ConnectionFeasibility::build(&base,output);
-        let mut root=base.clone();root.connections.clear();
+        let started=Instant::now();
+        let feasibility=ConnectionFeasibility::build(&base,output,seed);
+        eprintln!("[MAKER ICE] index_build_ms={:.2}",started.elapsed().as_secs_f64()*1000.0);
+        Self::new_indexed(base,seed,reference_enabled,prefilter_enabled,min_depth,feasibility)
+    }
+    fn new_indexed(base:Graph,seed:u64,reference_enabled:bool,prefilter_enabled:bool,min_depth:usize,feasibility:ConnectionFeasibility)->Result<Self,String>{
+        let output=base.nodes.iter().find(|n|n.definition().terminal).ok_or("Missing output node")?.id;
+        let root=Vec::new();
         let choices=candidates(&root,output,&feasibility,seed);
         let cap=wire_limit();
-        let max_depth=if cap==0 {feasibility.sources.len()} else {feasibility.sources.len().min(cap)};
+        let max_depth=if cap==0 {feasibility.reachable_input_count()} else {feasibility.reachable_input_count().min(cap)};
         if min_depth==0 || min_depth>max_depth {return Err(format!("Invalid minimum wire depth {min_depth} for maximum {max_depth}"));}
-        Ok(Self{base,output,feasibility,frames:vec![Frame{graph:root,choices,next:0,threshold:None}],depth_limit:min_depth,min_depth,max_depth,seed,examined:0,valid:0,rejected_parent:0,reference_checks:0,reference_mismatches:0,reference_enabled,prefilter_enabled,prefiltered:0,traversal_digest:0x6a09e667f3bcc909})
+        let mut required=std::collections::HashMap::new();for n in &base.nodes {let ports:Vec<usize>=(0..n.input_count()).filter(|&p|base.input_required(n.id,p)).collect();required.insert(n.id,ports);}
+        let base_valid={let mut g=base.clone();g.connections.clear();g.validate().is_ok()};
+        Ok(Self{base,output,feasibility,required,base_valid,frames:vec![Frame{edges:root,choices,next:0,threshold:None}],depth_limit:min_depth,min_depth,max_depth,seed,examined:0,valid:0,rejected_parent:0,reference_checks:0,reference_mismatches:0,reference_enabled,prefilter_enabled,prefiltered:0,traversal_digest:0x6a09e667f3bcc909})
     }
     fn step(&mut self)->Result<Option<Vec<Edge>>,String>{
         loop {
             if self.frames.is_empty() {
                 if self.depth_limit>=self.max_depth {return Ok(None)}
                 self.depth_limit+=1;
-                let mut root=self.base.clone();root.connections.clear();
+                let root=Vec::new();
                 let choices=candidates(&root,self.output,&self.feasibility,self.seed);
-                self.frames.push(Frame{graph:root,choices,next:0,threshold:None});
+                self.frames.push(Frame{edges:root,choices,next:0,threshold:None});
                 continue;
             }
             let Some(frame)=self.frames.last_mut() else {return Ok(None)};
             // Expand only through the current iterative-deepening horizon.
             // Graph size is never used as an admission or gallery ranking criterion.
-            if frame.graph.connections.len()>=self.depth_limit {self.frames.pop();continue;}
+            if frame.edges.len()>=self.depth_limit {self.frames.pop();continue;}
             if frame.next>=frame.choices.len(){self.frames.pop();continue}
             let edge=frame.choices[frame.next];frame.next+=1;
             let predicted_rejection=self.prefilter_enabled && frame.threshold.as_ref().is_some_and(|(e,reached)|*e>edge && reached.contains(&edge.2));
@@ -231,13 +238,12 @@ impl Explorer {
                 self.rejected_parent+=1;
                 continue;
             }
-            let mut child=frame.graph.clone();
-            if child.connect(edge.0,edge.1,edge.2,edge.3).is_err(){continue}
-            let optimized=is_canonical_child(&child,edge,self.output);
+            let mut child=frame.edges.clone();child.push(edge);
+            let optimized=!child.iter().enumerate().any(|(i,e)|*e>edge && removable(&child,self.output,i));
             // Run the slow oracle for every attempted successor, including
             // rejected ones. This catches false negatives as well as duplicates.
             if self.reference_enabled {
-            let reference=reference_parent(&child,self.output);
+            let reference=reference_parent(&materialize(&self.base,&child)?,self.output);
             self.reference_checks+=1;
             if optimized!=(reference==Some(edge)) || (predicted_rejection && reference==Some(edge)) {
                 self.reference_mismatches+=1;
@@ -247,8 +253,8 @@ impl Explorer {
                     "attempt":self.reference_checks,
                     "added_edge":edge,"optimized_accepts":optimized,
                     "reference_parent_edge":reference,
-                    "parent_edges":graph_edges(&child).into_iter().filter(|e|*e!=edge).collect::<Vec<_>>(),
-                    "child_edges":graph_edges(&child),
+                    "parent_edges":child.clone().into_iter().filter(|e|*e!=edge).collect::<Vec<_>>(),
+                    "child_edges":child.clone(),
                     "path_to_parent":path_from_frames(&self.frames),
                     "seed":self.seed
                 });
@@ -259,13 +265,13 @@ impl Explorer {
             }
             if predicted_rejection {self.prefiltered+=1;}
             if !optimized {self.rejected_parent+=1;continue}
-            if child.connections.len()==self.depth_limit {self.examined+=1;}
-            if child.connections.len()==self.depth_limit && child.input_connection(self.output,0).is_some() && graph_preflight(&child,self.output).is_ok(){self.valid+=1}
-            let key=graph_edges(&child);
-            if child.connections.len()!=self.depth_limit {
+            if child.len()==self.depth_limit {self.examined+=1;}
+            if child.len()==self.depth_limit && child.iter().any(|e|e.2==self.output && e.3==0) && std::iter::once(self.output).chain(child.iter().map(|e|e.0)).all(|id|self.required.get(&id).is_some_and(|ports|ports.iter().all(|&p|child.iter().any(|e|e.2==id && e.3==p)))) && self.base_valid{self.valid+=1}
+            let mut key=child.clone();key.sort_unstable();
+            if child.len()!=self.depth_limit {
                 let choices=candidates(&child,self.output,&self.feasibility,self.seed);
                 let threshold=if self.prefilter_enabled {parent_threshold(&child,self.output)} else {None};
-                self.frames.push(Frame{graph:child,choices,next:0,threshold});
+                self.frames.push(Frame{edges:child,choices,next:0,threshold});
                 continue;
             }
             // Stable, order-sensitive fingerprint of every emitted graph, independent
@@ -283,8 +289,12 @@ impl Explorer {
     fn checkpoint(&self,scale:usize)->Result<usize,String>{self.checkpoint_at(scale,&checkpoint_path())}
     fn checkpoint_at(&self,scale:usize,path:&std::path::Path)->Result<usize,String>{
         let tmp=path.with_extension("tmp");
-        let frames:Vec<_>=self.frames.iter().map(|f|serde_json::json!({"edges":graph_edges(&f.graph),"next":f.next})).collect();
-        let bytes=serde_json::to_vec(&serde_json::json!({"version":15,"wire_limit":wire_limit(),"min_wire_limit":self.min_depth,"depth_limit":self.depth_limit,"scale":scale,"seed":self.seed,
+        let frames:Vec<_>=self.frames.iter().map(|f| {
+            let mut edges = f.edges.clone();
+            edges.sort_unstable();
+            serde_json::json!({"edges": edges, "next": f.next})
+        }).collect();
+        let bytes=serde_json::to_vec(&serde_json::json!({"version":17,"wire_limit":wire_limit(),"min_wire_limit":self.min_depth,"depth_limit":self.depth_limit,"scale":scale,"seed":self.seed,
             "catalog":catalog_fingerprint(&self.base),"examined":self.examined,"valid":self.valid,
             "rejected_parent":self.rejected_parent,"traversal_digest":self.traversal_digest,"prefiltered":self.prefiltered,"prefilter_enabled":self.prefilter_enabled,"reference_checks":self.reference_checks,
             "reference_mismatches":self.reference_mismatches,"frames":frames})).map_err(|e|e.to_string())?;
@@ -293,17 +303,17 @@ impl Explorer {
         Ok(bytes.len())
     }
     fn restore(base:Graph,scale:usize,seed:u64,reference_enabled:bool,prefilter_enabled:bool)->Result<Self,String>{
-        Self::restore_at(base,scale,seed,reference_enabled,prefilter_enabled,1,&checkpoint_path())
+        Self::restore_at(base,scale,seed,reference_enabled,prefilter_enabled,1,&checkpoint_path(),None)
     }
-    fn restore_at(base:Graph,scale:usize,seed:u64,reference_enabled:bool,prefilter_enabled:bool,min_depth:usize,path:&std::path::Path)->Result<Self,String>{
+    fn restore_at(base:Graph,scale:usize,seed:u64,reference_enabled:bool,prefilter_enabled:bool,min_depth:usize,path:&std::path::Path,index:Option<ConnectionFeasibility>)->Result<Self,String>{
         let bytes=std::fs::read(path).map_err(|e|e.to_string())?;
         let v:serde_json::Value=serde_json::from_slice(&bytes).map_err(|e|e.to_string())?;
-        if v["version"].as_u64()!=Some(15)||v["wire_limit"].as_u64()!=Some(wire_limit() as u64)||v["min_wire_limit"].as_u64()!=Some(min_depth as u64)||v["scale"].as_u64()!=Some(scale as u64)
+        if v["version"].as_u64()!=Some(17)||v["wire_limit"].as_u64()!=Some(wire_limit() as u64)||v["min_wire_limit"].as_u64()!=Some(min_depth as u64)||v["scale"].as_u64()!=Some(scale as u64)
             ||v["seed"].as_u64()!=Some(seed)||v["catalog"].as_u64()!=Some(catalog_fingerprint(&base))
             ||v["prefilter_enabled"].as_bool()!=Some(prefilter_enabled){
             return Err("Checkpoint version, catalog, scale or seed mismatch".into())
         }
-        let mut result=Self::new_with_min(base,seed,reference_enabled,prefilter_enabled,min_depth)?;
+        let mut result=match index {Some(index)=>Self::new_indexed(base,seed,reference_enabled,prefilter_enabled,min_depth,index)?,None=>Self::new_with_min(base,seed,reference_enabled,prefilter_enabled,min_depth)?};
         result.depth_limit=v["depth_limit"].as_u64().ok_or("Missing depth limit")? as usize;
         if result.depth_limit<result.min_depth || result.depth_limit>result.max_depth {return Err("Checkpoint depth limit out of bounds".into())}
         result.frames.clear();
@@ -316,11 +326,12 @@ impl Explorer {
                     a[2].as_u64().ok_or("Invalid to")?,a[3].as_u64().ok_or("Invalid to port")? as usize);
                 g.connect(e.0,e.1,e.2,e.3)?;
             }
-            let choices=candidates(&g,result.output,&result.feasibility,seed);
+            let edges=graph_edges(&g);
+            let choices=candidates(&edges,result.output,&result.feasibility,seed);
             let next=item["next"].as_u64().ok_or("Missing cursor")? as usize;
             if next>choices.len(){return Err("Checkpoint cursor out of bounds".into())}
-            let threshold=if prefilter_enabled {parent_threshold(&g,result.output)} else {None};
-            result.frames.push(Frame{graph:g,choices,next,threshold});
+            let threshold=if prefilter_enabled {parent_threshold(&edges,result.output)} else {None};
+            result.frames.push(Frame{edges,choices,next,threshold});
         }
         result.examined=v["examined"].as_u64().ok_or("Missing examined")?;
         result.valid=v["valid"].as_u64().ok_or("Missing valid")?;
@@ -340,7 +351,7 @@ fn catalog_fingerprint(g:&Graph)->u64{
     // the catalog fingerprint even when its module ID is unchanged.
     mix(hash ^ maker_library::get().catalog_fingerprint)
 }
-fn checkpoint_path()->PathBuf{std::env::temp_dir().join("screenshaver-maker-discovery-canonical-v15.json")}
+fn checkpoint_path()->PathBuf{std::env::temp_dir().join("screenshaver-maker-discovery-canonical-v17.json")}
 
 // Production adapter: the qualified traversal remains the single implementation.
 // Its checkpoint is intentionally separate from the /tmp test harness.
@@ -348,7 +359,7 @@ pub(super) struct ProductionEnumeration { explorer:Explorer, path:PathBuf }
 impl ProductionEnumeration {
     fn path(min_wires:usize,max_wires:usize)->Result<PathBuf,String>{
         let home=std::env::var_os("HOME").ok_or("HOME is not set")?;
-        Ok(PathBuf::from(home).join(format!(".config/screenshaver/maker/discovery-canonical-v15-minwires-{min_wires}-maxwires-{max_wires}.json")))
+        Ok(PathBuf::from(home).join(format!(".config/screenshaver/maker/discovery-canonical-v17-minwires-{min_wires}-maxwires-{max_wires}.json")))
     }
     pub(super) fn reset_checkpoint_for_range(min_wires:usize,max_wires:usize)->Result<(),String>{
         if !(2..=25).contains(&min_wires) || !(3..=25).contains(&max_wires) || min_wires>max_wires {
@@ -357,7 +368,7 @@ impl ProductionEnumeration {
         let path=Self::path(min_wires,max_wires)?;
         match std::fs::remove_file(path){Ok(())=>Ok(()),Err(e) if e.kind()==std::io::ErrorKind::NotFound=>Ok(()),Err(e)=>Err(e.to_string())}
     }
-    pub(super) fn open(base:Graph,min_wires:usize,max_wires:usize)->Result<(Self,bool),String>{
+    pub(super) fn open(base:Graph,min_wires:usize,max_wires:usize,index:ConnectionFeasibility)->Result<(Self,bool),String>{
         if !(2..=25).contains(&min_wires) || !(3..=25).contains(&max_wires) || min_wires>max_wires {
             return Err(format!("Invalid wire range: {min_wires}..={max_wires}"));
         }
@@ -384,18 +395,13 @@ impl ProductionEnumeration {
                 resumed=true;
             }
         }
-        let explorer=if catalog_changed || !resumed {Explorer::new_with_min(base,seed,false,true,min_wires)?}
-            else {Explorer::restore_at(base,1,seed,false,true,min_wires,&path)?};
+        let explorer=if catalog_changed || !resumed {Explorer::new_indexed(base,seed,false,true,min_wires,index)?}
+            else {Explorer::restore_at(base,1,seed,false,true,min_wires,&path,Some(index))?};
         Ok((Self{explorer,path},resumed && !catalog_changed))
     }
-    pub(super) fn next_graph(&mut self)->Result<Option<Graph>,String>{
-        let Some(edges)=self.explorer.step()? else {return Ok(None)};
-        // Iterative deepening emits horizon leaves without pushing a frame.
-        // Reconstruct the emitted graph, not its parent DFS frame.
-        let mut graph=self.explorer.base.clone();
-        graph.connections.clear();
-        for (from,from_port,to,to_port) in edges {graph.connect(from,from_port,to,to_port)?;}
-        Ok(Some(graph))
+    // The canonical engine emits sorted, validated structural edge tuples.
+    pub(super) fn next_edges(&mut self)->Result<Option<Vec<(NodeId,usize,NodeId,usize)>>,String>{
+        self.explorer.step()
     }
     pub(super) fn save(&self)->Result<(),String>{
         if let Some(dir)=self.path.parent(){std::fs::create_dir_all(dir).map_err(|e|e.to_string())?;}
@@ -432,6 +438,7 @@ fn exhaustive_oracle(base:&Graph,limit:usize)->Result<HashSet<Vec<Edge>>,String>
         let key=graph_edges(&graph);
         if !seen.insert(key){continue}
         if seen.len()>limit{return Err(format!("Small-catalog oracle exceeded {limit} states; reduce SCREENSHAVER_MAKER_TEST_SMALL_MODULES"))}
+        if graph.connections.len()>=wire_limit(){continue}
         let mut reachable=HashSet::from([output]);
         let mut stack=vec![output];
         while let Some(to)=stack.pop(){
@@ -505,7 +512,7 @@ pub(super) fn run()->Result<(),String>{
     println!("[MAKER CANONICAL LIMIT] max_wires={} (0 means unlimited)",wire_limit());
     println!("[MAKER CANONICAL TEST] catalog_nonterminal={} instances={} scale={} budget={} runs={} seed={} feasible_pairs={} verify={} reference={} prefilter={}",
         maker_library::get().modules.values().filter(|m|!m.terminal).count(),base.nodes.len()-1,scale,budget,runs,seed,explorer.feasibility.feasible_pairs,verify,reference_enabled,prefilter_enabled);
-    println!("[MAKER CANONICAL QUALIFICATION] resume={} initial_examined={} initial_digest={:016x} nodes={} reachability_path={}",resume,explorer.examined,explorer.traversal_digest,base.nodes.len(),if base.nodes.len()>64 {"general"} else {"bitset"});
+    println!("[MAKER CANONICAL QUALIFICATION] resume={} initial_examined={} initial_digest={:016x} nodes={} reachability_path={}",resume,explorer.examined,explorer.traversal_digest,base.nodes.len(),"compact-local");
     for session in 1..=runs {
         if session>1 {explorer=Explorer::restore(base.clone(),scale,seed,reference_enabled,prefilter_enabled)?;}
         let tick=Instant::now();let mut attempts=0;let mut repeats=0;
@@ -521,7 +528,7 @@ pub(super) fn run()->Result<(),String>{
                         "examined":explorer.examined,"seed":seed,
                         "sorted_edges":key,"first_path":first_path,
                         "second_path":current_path,
-                        "reference_parent":reference_parent(&explorer.frames.last().unwrap().graph,explorer.output),
+                        "reference_parent":compact_parent(&explorer.frames.last().unwrap().edges,explorer.output),
                         "rejected_parent":explorer.rejected_parent,
                         "reference_checks":explorer.reference_checks
                     });

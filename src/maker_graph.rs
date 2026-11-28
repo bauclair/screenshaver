@@ -155,13 +155,16 @@ impl Graph {
    let ap=source.output_port(from_port).ok_or("Source port missing")?;let bp=target.input_port(to_port).ok_or("Target port missing")?;
   if a.id=="screenshaver.test.universal_test" && ap.id=="preview_color" && !b.terminal {return Err("Preview Color connects only to Output Color".into())}
   if ap.ty!=bp.ty{return Err(format!("{} output '{}' ({}) cannot connect to {} input '{}' ({}): incompatible types",a.name,ap.name,ap.ty,b.name,bp.name,bp.ty))}
-  if self.reaches(to,from,&mut HashSet::new()){return Err("Connection would create a circular dependency".into())}
+  if self.connection_would_cycle(from,to){return Err("Connection would create a circular dependency".into())}
   Ok(())
  }
  pub fn connect(&mut self,from:NodeId,from_port:usize,to:NodeId,to_port:usize)->Result<(),String>{
   self.check_connection(from,from_port,to,to_port)?;
   let c=Connection{from,from_port,to,to_port};if self.input_connection(to,to_port)==Some(c){return Ok(())}
   self.disconnect_input(to,to_port);self.connections.push(c);self.revision+=1;Ok(())
+ }
+ pub(crate) fn connection_would_cycle(&self,from:NodeId,to:NodeId)->bool{
+  self.reaches(to,from,&mut HashSet::new())
  }
  fn reaches(&self,at:NodeId,target:NodeId,visited:&mut HashSet<NodeId>)->bool{
   if at==target{return true}if !visited.insert(at){return false}

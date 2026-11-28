@@ -10,7 +10,8 @@ const VERT:&str="#version 330 core\nconst vec2 p[3]=vec2[3](vec2(-1,-1),vec2(3,-
 // Runtime policy, not a hardware profile. Initial draws retain the old budget.
 const INITIAL_WORK:u64=500_000_000;
 mod trace { include!("maker_render_trace.rs"); }
-fn native_trial()->bool { std::env::var("SCREENSHAVER_MAKER_NATIVE_PREVIEW").as_deref()==Ok("1") }
+// Native-first live preview is the production default. Explicit 0 restores the legacy budget.
+fn native_preview_enabled()->bool { std::env::var("SCREENSHAVER_MAKER_NATIVE_PREVIEW").as_deref()!=Ok("0") }
 fn hardware_size(target:(i32,i32))->(i32,i32){
     let mut tex=0;let mut viewport=[0i32;2];
     unsafe{gl::GetIntegerv(gl::MAX_TEXTURE_SIZE,&mut tex);gl::GetIntegerv(gl::MAX_VIEWPORT_DIMS,viewport.as_mut_ptr());}
@@ -165,7 +166,7 @@ impl Preview {
                 let was_full=a.size==a.hardware;
                 a.target=(pw,ph);
                 a.hardware=hardware_size(a.target);
-                let next=if native_trial() && !a.reduced && was_full { a.hardware } else { bounded_size(a.target,a.work,budget,1.0) };
+                let next=if native_preview_enabled() && !a.reduced && was_full { a.hardware } else { bounded_size(a.target,a.work,budget,1.0) };
                 a.size=(next.0.min(a.hardware.0),next.1.min(a.hardware.1));
                 a.low=0;a.reported_limit=false;
             }
@@ -173,11 +174,11 @@ impl Preview {
                 self.admitted=false;self.ready=false;self.revision=None;self.adaptive=None;
                 let (work,mut limit)=match crate::maker_ui::adaptive_preview_work(graph){Ok(v)=>v,Err(e)=>{self.error=Some(e);return}};
                 let hardware=hardware_size((pw,ph));
-                if native_trial(){limit=u64::MAX;}
-                let initial=if native_trial(){hardware}else{bounded_size((pw,ph),work,INITIAL_WORK,1.0)};
+                if native_preview_enabled(){limit=u64::MAX;}
+                let initial=if native_preview_enabled(){hardware}else{bounded_size((pw,ph),work,INITIAL_WORK,1.0)};
                 let size=(initial.0.min(hardware.0),initial.1.min(hardware.1));
                 if size.0<pw.min(32) || size.1<ph.min(32){self.error=Some("Rendering deferred: workload exceeds minimum preview resolution".into());return}
-                if let Err(e)=crate::maker_ui::rendering_admission_with_limit(graph,size.0,size.1,if native_trial(){limit}else{INITIAL_WORK}){self.error=Some(e);return}
+                if let Err(e)=crate::maker_ui::rendering_admission_with_limit(graph,size.0,size.1,if native_preview_enabled(){limit}else{INITIAL_WORK}){self.error=Some(e);return}
                 crate::maker::operational_log(format_args!("[MAKER ADAPTIVE] initial={}x{} target={}x{} work_per_pixel={work} limit={limit}",size.0,size.1,pw,ph));
                 self.adaptive=Some(Adaptive{key,target:(pw,ph),hardware,work,limit,size,low:0,reduced:false,reported_limit:false});
             }
@@ -257,7 +258,7 @@ impl Preview {
     pub fn resolution_warning(&self)->Option<String>{
         let a=self.adaptive.as_ref()?;
         if self.suspended || !self.admitted || self.size.0<=0 || self.size.1<=0 || self.size==a.target{return None}
-        let reason=if self.size==a.hardware && a.hardware!=a.target {"hardware dimension limit"}else if a.reduced {"GPU performance"}else if !native_trial(){"adaptive workload budget"}else{"adaptive recovery"};
+        let reason=if self.size==a.hardware && a.hardware!=a.target {"hardware dimension limit"}else if a.reduced {"GPU performance"}else if !native_preview_enabled(){"adaptive workload budget"}else{"adaptive recovery"};
         Some(format!("Preview resolution reduced: {} × {} of {} × {} — {reason}",self.size.0,self.size.1,a.target.0,a.target.1))
     }
     fn suspend(&mut self,reason:&str){

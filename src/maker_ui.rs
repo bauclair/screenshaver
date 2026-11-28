@@ -1170,6 +1170,21 @@ fn parallel_map<T:Sync,R:Send,F:Fn(&T)->R+Sync>(items:&[T],workers:usize,f:F)->V
         output
     })
 }
+// Reuse one scratch graph per worker instead of cloning the inventory per candidate.
+fn parallel_candidate_map<R:Send,F:Fn(&Graph)->R+Sync>(items:&[CompactCandidate],workers:usize,base:&Graph,f:F)->Vec<R>{
+    if items.is_empty(){return Vec::new()}
+    let chunk=items.len().div_ceil(workers.max(1).min(items.len()));
+    std::thread::scope(|scope|{
+        let f=&f;
+        let handles:Vec<_>=items.chunks(chunk).map(|part|scope.spawn(move ||{
+            let mut scratch=base.clone();
+            part.iter().map(|candidate|{candidate.load_into(&mut scratch);f(&scratch)}).collect::<Vec<R>>()
+        })).collect();
+        let mut output=Vec::with_capacity(items.len());
+        for handle in handles{output.extend(handle.join().expect("Maker CPU qualification worker panicked"));}
+        output
+    })
+}
 fn connection_key(graph:&Graph)->Vec<(NodeId,usize,NodeId,usize)> {
     let mut key:Vec<_>=graph.connections.iter().map(|c|(c.from,c.from_port,c.to,c.to_port)).collect();
     key.sort_unstable();key
@@ -1347,8 +1362,18 @@ fn reservoir_slot(ordinal:u64,capacity:usize)->Option<usize>{
 /// Stage 0: immutable port-compatibility index for this exact node inventory.
 /// Potential reachability is intentionally optimistic: dynamic cycles are checked
 /// during enumeration, and no partially wired graph is rejected as incomplete.
+// Dense instance/port indices refer to immutable workspace records.
+// Edge IDs index one shared array; incoming lists contain only IDs.
+// Output descriptors are temporary; unused reverse adjacency is not allocated.
+struct IndexedPort { node:usize, port:usize, descriptor:crate::maker_module::Port }
+struct IndexedEdge { key:(NodeId,usize,NodeId,usize), rank:u64 }
 struct ConnectionFeasibility {
-    sources:std::collections::BTreeMap<(NodeId,usize),Vec<(NodeId,usize)>>,
+    node_ids:Vec<NodeId>,
+    inputs:Vec<IndexedPort>,
+    edges:Vec<IndexedEdge>,
+    incoming:Vec<Vec<usize>>,
+    node_inputs:Vec<Vec<usize>>,
+    potential:Vec<bool>,
     raw_pairs:usize,
     typed_pairs:usize,
     feasible_pairs:usize,
@@ -1356,46 +1381,63 @@ struct ConnectionFeasibility {
     excluded_nodes:usize,
 }
 impl ConnectionFeasibility {
-    fn build(graph:&Graph,output:NodeId)->Self {
-        let mut index=Self{sources:Default::default(),raw_pairs:0,typed_pairs:0,
-            feasible_pairs:0,reachable_nodes:0,excluded_nodes:0};
-        let mut typed=std::collections::BTreeMap::<(NodeId,usize),Vec<(NodeId,usize)>>::new();
-        for target in &graph.nodes {
-            for tp in 0..target.input_count(){
-                let Some(input)=target.input_port(tp) else {continue};
-                let mut sources=Vec::new();
-                for source in &graph.nodes {
-                    if source.definition().terminal || source.id==target.id {continue}
-                    for sp in 0..source.output_count(){
-                        let Some(out)=source.output_port(sp) else {continue};
-                        index.raw_pairs+=1;
-                        if out.ty==input.ty {sources.push((source.id,sp));index.typed_pairs+=1;}
-                    }
+    fn build(graph:&Graph,output:NodeId,seed:u64)->Self {
+        let node_ids:Vec<_>=graph.nodes.iter().map(|n|n.id).collect();
+        let mut inputs=Vec::new();let mut outputs=Vec::new();
+        let mut node_inputs=vec![Vec::new();node_ids.len()];
+        let mut by_type=HashMap::<String,Vec<usize>>::new();
+        let mut output_counts=vec![0usize;node_ids.len()];
+        for (i,node) in graph.nodes.iter().enumerate(){
+            for port in 0..node.input_count(){
+                if let Some(descriptor)=node.input_port(port){
+                    node_inputs[i].push(inputs.len());inputs.push(IndexedPort{node:i,port,descriptor});
                 }
-                typed.insert((target.id,tp),sources);
+            }
+            if node.definition().terminal {continue}
+            for port in 0..node.output_count(){
+                if let Some(descriptor)=node.output_port(port){
+                    by_type.entry(descriptor.ty.clone()).or_default().push(outputs.len());
+                    outputs.push(IndexedPort{node:i,port,descriptor});output_counts[i]+=1;
+                }
             }
         }
-        // A fixed-point over possible predecessors, not currently connected edges.
-        // Only modules potentially feeding the terminal can contribute to a result.
-        let mut reachable=std::collections::HashSet::from([output]);
-        loop {
-            let mut changed=false;
-            for (&(to,_),sources) in &typed {
-                if !reachable.contains(&to){continue}
-                for &(from,_) in sources {changed|=reachable.insert(from);}
+        let mut raw_pairs=0usize;let mut typed_pairs=0usize;
+        let mut possible=vec![Vec::<usize>::new();inputs.len()];
+        for (i,input) in inputs.iter().enumerate(){
+            raw_pairs+=outputs.len()-output_counts[input.node];
+            if let Some(sources)=by_type.get(&input.descriptor.ty){
+                for &s in sources {
+                    let source=&outputs[s];if source.node==input.node{continue}
+                    typed_pairs+=1;
+                    let a=&graph.nodes[source.node];let b=&graph.nodes[input.node];
+                    if a.unresolved()||b.unresolved(){continue}
+                    if a.module_id=="screenshaver.test.universal_test" && source.descriptor.id=="preview_color" && !b.definition().terminal {continue}
+                    possible[i].push(s);
+                }
             }
-            if !changed{break}
         }
-        index.reachable_nodes=reachable.len();
-        index.excluded_nodes=graph.nodes.len().saturating_sub(reachable.len());
-        for (target,sources) in typed {
-            if !reachable.contains(&target.0){continue}
-            let sources:Vec<_>=sources.into_iter().filter(|(from,_)|reachable.contains(from)).collect();
-            index.feasible_pairs+=sources.len();
-            index.sources.insert(target,sources);
+        let mut potential=vec![false;node_ids.len()];let mut pending=Vec::new();
+        if let Some(i)=node_ids.iter().position(|&id|id==output){potential[i]=true;pending.push(i);}
+        while let Some(i)=pending.pop(){
+            for &p in &node_inputs[i]{for &s in &possible[p]{
+                let n=outputs[s].node;if !potential[n]{potential[n]=true;pending.push(n);}
+            }}
         }
-        index
+        let mut edges=Vec::new();let mut incoming=vec![Vec::new();inputs.len()];
+        for (i,input) in inputs.iter().enumerate(){
+            if !potential[input.node]{continue}
+            for &s in &possible[i]{
+                let source=&outputs[s];
+                let key=(node_ids[source.node],source.port,node_ids[input.node],input.port);
+                let id=edges.len();edges.push(IndexedEdge{key,rank:maker_discovery::edge_rank(key,seed)});
+                incoming[i].push(id);
+            }
+            incoming[i].sort_unstable_by_key(|&id|(edges[id].rank,edges[id].key));
+        }
+        let reachable_nodes=potential.iter().filter(|&&v|v).count();let feasible_pairs=edges.len();
+        Self{node_ids,inputs,edges,incoming,node_inputs,potential,raw_pairs,typed_pairs,feasible_pairs,reachable_nodes,excluded_nodes:graph.nodes.len()-reachable_nodes}
     }
+    fn reachable_input_count(&self)->usize {self.inputs.iter().filter(|p|self.potential[p.node]).count()}
 }
 #[derive(Clone)]
 struct CompactCandidate {
@@ -1404,13 +1446,17 @@ struct CompactCandidate {
     callable: bool,
 }
 impl CompactCandidate {
-    fn capture(graph: Graph) -> Self {
-        let callable=graph_has_callable_edge(&graph);
-        Self{connections:graph.connections,revision:graph.revision,callable}
+    fn from_edges(edges:Vec<(NodeId,usize,NodeId,usize)>,base:&Graph,callable_ports:&std::collections::HashSet<(NodeId,usize)>)->Self {
+        let callable=edges.iter().any(|&(from,port,_,_)|callable_ports.contains(&(from,port)));
+        let revision=base.revision.wrapping_add(edges.len() as u64);
+        let connections=edges.into_iter().map(|(from,from_port,to,to_port)|crate::maker_graph::Connection{from,from_port,to,to_port}).collect();
+        Self{connections,revision,callable}
+    }
+    fn load_into(&self,graph:&mut Graph){
+        graph.connections.clone_from(&self.connections);graph.revision=self.revision;
     }
     fn materialize(&self,base:&Graph)->Graph {
-        let mut graph=base.clone();
-        graph.connections=self.connections.clone();graph.revision=self.revision;graph
+        let mut graph=base.clone();self.load_into(&mut graph);graph
     }
     fn key(&self)->Vec<(NodeId,usize,NodeId,usize)> {
         let mut key:Vec<_>=self.connections.iter().map(|c|(c.from,c.from_port,c.to,c.to_port)).collect();
@@ -1420,6 +1466,9 @@ impl CompactCandidate {
 struct ConnectionSearch {
     base:Option<Graph>,
     canonical:Option<maker_discovery::ProductionEnumeration>,
+    callable_ports:std::collections::HashSet<(NodeId,usize)>,
+    constant_normal_candidates:usize,
+    callable_time_hints:usize,
     enumeration_start:u64,
     max_enumerations:usize,
     min_wire_connections:usize,
@@ -1464,7 +1513,8 @@ impl ConnectionSearch {
         base.nodes.retain(|n|!test_ids.contains(&n.id));
         base.connections.retain(|c|!test_ids.contains(&c.from)&&!test_ids.contains(&c.to));
         base.connections.clear();base.revision=graph.revision.wrapping_add(1);
-        Some(Self{base:Some(base),canonical:None,enumeration_start:0,max_enumerations,min_wire_connections,max_wire_connections,discovery_error:None,seen:Default::default(),raw:Vec::new(),callable_raw:Vec::new(),callable_seen:0,callable_qualified:0,callable_admissible:0,qualified:Vec::new(),scores:Vec::new(),raw_seen:0,selected_jobs:Vec::new(),gpu_started:false,output,
+        let callable_ports=base.nodes.iter().flat_map(|n|(0..n.output_count()).filter_map(move |p|n.output_port(p).filter(|port|port.ty=="field2d" || port.ty=="field3d").map(|_|(n.id,p)))).collect();
+        Some(Self{base:Some(base),canonical:None,callable_ports,constant_normal_candidates:0,callable_time_hints:0,enumeration_start:0,max_enumerations,min_wire_connections,max_wire_connections,discovery_error:None,seen:Default::default(),raw:Vec::new(),callable_raw:Vec::new(),callable_seen:0,callable_qualified:0,callable_admissible:0,qualified:Vec::new(),scores:Vec::new(),raw_seen:0,selected_jobs:Vec::new(),gpu_started:false,output,
             examined:0,generated:0,incomplete:0,duplicates:0,stage:DiscoveryStage::Feasibility,
             cursor:0,workers:discovery_threads(),started:Instant::now(),cpu_started:discovery_cpu_seconds(),
             reports:Vec::new(),peak_rss_kib:discovery_rss_kib(),deferred_complexity:0,min_runtime_cost:u64::MAX,max_runtime_cost:0,min_source_cost:u64::MAX,max_source_cost:0})
@@ -1484,11 +1534,13 @@ impl ConnectionSearch {
         match self.stage {
             DiscoveryStage::Feasibility=>{
                 let Some(base)=self.base.clone() else {return};
-                let index=ConnectionFeasibility::build(&base,self.output);
+                let index_started=Instant::now();
+                let index=ConnectionFeasibility::build(&base,self.output,maker_discovery::seed());
+                crate::maker::operational_log(format_args!("[MAKER ICE PRODUCTION] index_build_ms={:.2}",index_started.elapsed().as_secs_f64()*1000.0));
                 crate::maker::operational_log(format_args!("[MAKER FEASIBILITY] raw_pairs={} type_compatible={} feasible={} reachable_nodes={} excluded_nodes={}",
                     index.raw_pairs,index.typed_pairs,index.feasible_pairs,index.reachable_nodes,index.excluded_nodes));
                 let input=index.raw_pairs;let output=index.feasible_pairs;
-                match maker_discovery::ProductionEnumeration::open(base,self.min_wire_connections,self.max_wire_connections) {
+                match maker_discovery::ProductionEnumeration::open(base,self.min_wire_connections,self.max_wire_connections,index) {
                     Ok((canonical,resumed))=>{
                         self.enumeration_start=canonical.examined();
                         crate::maker::operational_log(format_args!("[MAKER DISCOVERY] canonical enumeration {} from state={} digest={:016x}",
@@ -1509,11 +1561,11 @@ impl ConnectionSearch {
                 while self.examined<self.max_enumerations
                     && batch<128 && Instant::now()<deadline {
                     let next=match self.canonical.as_mut() {
-                        Some(enumerator)=>enumerator.next_graph(),
+                        Some(enumerator)=>enumerator.next_edges(),
                         None=>Err("Canonical enumerator is missing".into()),
                     };
-                    let graph=match next {
-                        Ok(Some(graph))=>graph,
+                    let edges=match next {
+                        Ok(Some(edges))=>edges,
                         Ok(None)=>{exhausted=true;break},
                         Err(error)=>{
                             self.discovery_error=Some(format!("Canonical enumeration stopped: {error}"));
@@ -1523,9 +1575,9 @@ impl ConnectionSearch {
                     batch+=1;
                     self.examined+=1;
                     // Preserve Stage 2's structural validation boundary.
-                    if (self.min_wire_connections..=self.max_wire_connections).contains(&graph.connections.len()) && graph.input_connection(self.output,0).is_some() {
+                    if (self.min_wire_connections..=self.max_wire_connections).contains(&edges.len()) && edges.iter().any(|e|e.2==self.output && e.3==0) {
                         self.raw_seen+=1;
-                        let graph=CompactCandidate::capture(graph);
+                        let graph=CompactCandidate::from_edges(edges,self.base.as_ref().expect("Discovery base retained"),&self.callable_ports);
                         if graph.callable {
                             self.callable_seen+=1;
                             // Dedicated reservoir prevents noncallable graphs from evicting every callable.
@@ -1562,7 +1614,7 @@ impl ConnectionSearch {
             DiscoveryStage::Validate=>{
                 let end=(self.cursor+CPU_STAGE_BATCH).min(self.raw.len());
                 let base=self.base.as_ref().expect("Discovery base retained");
-                let checks=parallel_map(&self.raw[self.cursor..end],self.workers,|g|graph_preflight(&g.materialize(base),self.output).is_ok());
+                let checks=parallel_candidate_map(&self.raw[self.cursor..end],self.workers,base,|g|graph_preflight(g,self.output).is_ok());
                 // Compact in place only at the end of the stage; preserve deterministic order.
                 for (i,valid) in checks.into_iter().enumerate(){if !valid{self.incomplete+=1;}else{
                     if self.raw[self.cursor+i].callable {self.callable_qualified+=1;}
@@ -1586,16 +1638,17 @@ impl ConnectionSearch {
             DiscoveryStage::Qualify=>{
                 let end=(self.cursor+CPU_STAGE_BATCH).min(self.raw.len());
                 let base=self.base.as_ref().expect("Discovery base retained");
-                let scores=parallel_map(&self.raw[self.cursor..end],self.workers,|candidate| {
-                    let graph=&candidate.materialize(base);
-                    (graph_discovery_penalty(graph),discovery_priority(graph),graph_source_cost(graph),graph_compile_cost(graph),candidate_admission(graph).is_ok())
+                let scores=parallel_candidate_map(&self.raw[self.cursor..end],self.workers,base,|graph| {
+                    (graph_discovery_penalty(graph),discovery_priority(graph),graph_source_cost(graph),graph_compile_cost(graph),candidate_admission(graph).is_ok(),callable_sampling_penalty(graph)>0,graph_has_callable_edge(graph) && graph_time_dependency_hint(graph))
                 });
-                for (i,(semantic_penalty,score,source_cost,runtime_cost,admitted)) in scores.into_iter().enumerate(){
+                for (i,(semantic_penalty,score,source_cost,runtime_cost,admitted,constant_normal,time_hint)) in scores.into_iter().enumerate(){
                     self.min_source_cost=self.min_source_cost.min(source_cost);
                     self.max_source_cost=self.max_source_cost.max(source_cost);
                     self.min_runtime_cost=self.min_runtime_cost.min(runtime_cost);
                     self.max_runtime_cost=self.max_runtime_cost.max(runtime_cost);
                     if admitted {
+                        self.constant_normal_candidates+=constant_normal as usize;
+                        self.callable_time_hints+=time_hint as usize;
                         if self.raw[self.cursor+i].callable {self.callable_admissible+=1;}
                         self.scores.push((semantic_penalty,score,self.cursor+i));
                     } else {self.deferred_complexity+=1;}
@@ -1606,12 +1659,8 @@ impl ConnectionSearch {
                         self.scores.len(),self.deferred_complexity,MAX_COMPILE_COST,MAX_ESTIMATED_RUNTIME_WORK,
                         if self.min_source_cost==u64::MAX {0}else{self.min_source_cost},self.max_source_cost,
                         if self.min_runtime_cost==u64::MAX {0}else{self.min_runtime_cost},self.max_runtime_cost));
-                    let constant_normal_candidates=self.scores.iter().filter(|(_,_,index)|
-                        callable_sampling_penalty(&self.raw[*index].materialize(base))>0).count();
-                    let callable_time_hints=self.scores.iter().filter(|(_,_,index)|
-                        self.raw[*index].callable && graph_time_dependency_hint(&self.raw[*index].materialize(base))).count();
                     crate::maker::operational_log(format_args!("[MAKER CALLABLE QUALITY] admissible_constant_normal={} admissible_time_hint={} (time hint is not measured motion)",
-                        constant_normal_candidates,callable_time_hints));
+                        self.constant_normal_candidates,self.callable_time_hints));
                     // Preserve the semantic score and hash ordering as a deterministic
                     // shortlist, then select distinct graph structures for GPU work.
                     self.scores.sort_unstable_by(|a,b|a.0.cmp(&b.0).then_with(||a.1.cmp(&b.1)).then_with(||a.2.cmp(&b.2)));
