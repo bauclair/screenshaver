@@ -7,7 +7,7 @@
   "creator_email": "screenshaver@proton.me",
   "description": "Interpolated unit lattice gradients in two dimensions.",
   "uses": "Interpolated unit lattice gradients in two dimensions.",
-  "notes": "Signed output includes amplitude; normalized output clamps 0.5 + 0.5 times signed output. Domain repeats every 65536 lattice units; extreme coordinates lose float precision.",
+  "notes": "Signed output includes amplitude; normalized output clamps 0.5 + 0.5 times signed output. Domain repeats every 65536 lattice units; extreme coordinates lose float precision. Optional independent axis repetition wraps both lattice coordinates and adjacent gradient corners. Periods round to integer lattice units; spatial repeat distance is period/frequency. Default preserves original 65536-unit wrap. Periodicity is subject to floating-point precision.",
   "header_color": "#398F94",
   "terminal": false,
   "inputs": [
@@ -90,11 +90,39 @@
         "Cubic",
         "Quintic"
       ]
+    },
+    {
+      "id": "repetition_mode",
+      "name": "Repetition Mode",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Nonperiodic",
+        "Periodic X",
+        "Periodic Y",
+        "Periodic XY"
+      ]
+    },
+    {
+      "id": "x_period",
+      "name": "X Period (lattice units)",
+      "type": "float",
+      "default": 8,
+      "min": 1,
+      "max": 1024
+    },
+    {
+      "id": "y_period",
+      "name": "Y Period (lattice units)",
+      "type": "float",
+      "default": 8,
+      "min": 1,
+      "max": 1024
     }
   ],
-  "helpers": "uint maker_gn2_hash(uint x){x ^= x >> 16u; x *= 0x7feb352du; x ^= x >> 15u; x *= 0x846ca68bu; return x ^ (x >> 16u);}\nvec2 maker_gn2_grad(ivec2 c,uint seed){uint h=maker_gn2_hash(uint(c.x)^maker_gn2_hash(uint(c.y)^seed)); float a=float(h & 65535u)*0.00009587379924; return vec2(cos(a),sin(a));}\nfloat maker_gn2_eval(vec2 p,float t,float freq,float amp,float seed,float speed,float angle,float mode){\n if(any(isnan(p))||any(isinf(p))) p=vec2(0.0); if(isnan(t)||isinf(t)) t=0.0;\n float a=radians(angle); vec2 q=mod(clamp(p,vec2(-1e8),vec2(1e8))*freq+clamp(t,-1e8,1e8)*speed*vec2(cos(a),sin(a)),65536.0);\n ivec2 c=ivec2(floor(q)); vec2 f=fract(q); vec2 w=mode<0.5?f*f*(3.0-2.0*f):f*f*f*(f*(6.0*f-15.0)+10.0);\n uint s=uint(clamp(seed,0.0,65535.0));\n float a0=dot(maker_gn2_grad(c,s),f); float b=dot(maker_gn2_grad((c+ivec2(1,0))%65536,s),f-vec2(1,0));\n float d=dot(maker_gn2_grad((c+ivec2(0,1))%65536,s),f-vec2(0,1)); float e=dot(maker_gn2_grad((c+ivec2(1,1))%65536,s),f-vec2(1));\n return clamp(mix(mix(a0,b,w.x),mix(d,e,w.x),w.y)*0.70710678118,-1.0,1.0)*amp;\n}",
+  "helpers": "uint maker_gn2_hash(uint x){x ^= x >> 16u; x *= 0x7feb352du; x ^= x >> 15u; x *= 0x846ca68bu; return x ^ (x >> 16u);}\nvec2 maker_gn2_grad(ivec2 c,uint seed){uint h=maker_gn2_hash(uint(c.x)^maker_gn2_hash(uint(c.y)^seed)); float a=float(h & 65535u)*0.00009587379924; return vec2(cos(a),sin(a));}\nfloat maker_gn2_eval(vec2 p,float t,float freq,float amp,float seed,float speed,float angle,float mode,float repeat_mode,float px,float py){\n if(any(isnan(p))||any(isinf(p))) p=vec2(0.0); if(isnan(t)||isinf(t)) t=0.0;\n vec2 period=vec2(65536.0); if(repeat_mode>=0.5 && repeat_mode<1.5 || repeat_mode>=2.5) period.x=clamp(floor(px+0.5),1.0,1024.0); if(repeat_mode>=1.5) period.y=clamp(floor(py+0.5),1.0,1024.0);\n float a=radians(angle); vec2 q=mod(clamp(p,vec2(-1e8),vec2(1e8))*freq+clamp(t,-1e8,1e8)*speed*vec2(cos(a),sin(a)),period);\n ivec2 ip=ivec2(period); ivec2 c=ivec2(floor(q)); vec2 f=fract(q); vec2 w=mode<0.5?f*f*(3.0-2.0*f):f*f*f*(f*(6.0*f-15.0)+10.0);\n uint s=uint(clamp(seed,0.0,65535.0));\n float a0=dot(maker_gn2_grad(c,s),f); float b=dot(maker_gn2_grad((c+ivec2(1,0))%ip,s),f-vec2(1,0));\n float d=dot(maker_gn2_grad((c+ivec2(0,1))%ip,s),f-vec2(0,1)); float e=dot(maker_gn2_grad((c+ivec2(1,1))%ip,s),f-vec2(1));\n return clamp(mix(mix(a0,b,w.x),mix(d,e,w.x),w.y)*0.70710678118,-1.0,1.0)*amp;\n}",
   "glsl_outputs": {
-    "signed_noise": "maker_gn2_eval({position},u_time+{time_offset},{frequency},{amplitude},{seed},{speed},{angle},{interpolation})",
-    "normalized_noise": "clamp(0.5+0.5*maker_gn2_eval({position},u_time+{time_offset},{frequency},{amplitude},{seed},{speed},{angle},{interpolation}),0.0,1.0)"
+    "signed_noise": "maker_gn2_eval({position},u_time+{time_offset},{frequency},{amplitude},{seed},{speed},{angle},{interpolation},{repetition_mode},{x_period},{y_period})",
+    "normalized_noise": "clamp(0.5+0.5*maker_gn2_eval({position},u_time+{time_offset},{frequency},{amplitude},{seed},{speed},{angle},{interpolation},{repetition_mode},{x_period},{y_period}),0.0,1.0)"
   }
 }

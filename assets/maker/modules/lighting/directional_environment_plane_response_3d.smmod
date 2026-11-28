@@ -1,0 +1,166 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.lighting.directional_environment_plane_response_3d",
+  "name": "Directional Environment Plane Response 3D",
+  "category": "Lighting",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "header_color": "#B88655",
+  "terminal": false,
+  "description": "Ray intersection with an adjustable procedural illuminated plane.",
+  "uses": "Texture-free environment lighting and reflected highlights.",
+  "notes": "Independent mathematical implementation inspired by Weirdness (overall CC0; separately licensed routines not copied). Two-sided plane, positive forward intersections only. Extents are half sizes; circular uses horizontal extent. Elliptical residual is approximate. Intensity is edge envelope times exponential exterior attenuation and angular response. Plane basis is deterministic, not continuously oriented across its reference-axis switch. No texture or physical radiance simulation.",
+  "inputs": [
+    {
+      "id": "origin",
+      "name": "Ray Origin",
+      "type": "vec3",
+      "semantic_role": "position3d",
+      "default": "vec3(maker_uv,0.0)"
+    },
+    {
+      "id": "direction",
+      "name": "Ray Direction",
+      "type": "vec3",
+      "semantic_role": "direction3d",
+      "default": "vec3(0.0,0.0,1.0)"
+    },
+    {
+      "id": "center",
+      "name": "Plane Center",
+      "type": "vec3",
+      "semantic_role": "position3d",
+      "default": "vec3(0.0,0.0,3.0)"
+    },
+    {
+      "id": "normal",
+      "name": "Plane Normal",
+      "type": "vec3",
+      "semantic_role": "normal3d",
+      "default": "vec3(0.0,0.0,1.0)"
+    },
+    {
+      "id": "light_color",
+      "name": "Light Color",
+      "type": "vec3",
+      "semantic_role": "color",
+      "default": "vec3(1.0)"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "shape",
+      "name": "Envelope Shape",
+      "type": "choice",
+      "default": 0,
+      "options": [
+        "Circular",
+        "Elliptical",
+        "Rounded Rectangular"
+      ]
+    },
+    {
+      "id": "width",
+      "name": "Horizontal Half Extent",
+      "type": "float",
+      "default": 1,
+      "min": 0.001,
+      "max": 100
+    },
+    {
+      "id": "height",
+      "name": "Vertical Half Extent",
+      "type": "float",
+      "default": 1,
+      "min": 0.001,
+      "max": 100
+    },
+    {
+      "id": "corner",
+      "name": "Corner Radius",
+      "type": "float",
+      "default": 0.2,
+      "min": 0,
+      "max": 100
+    },
+    {
+      "id": "softness",
+      "name": "Edge Softness",
+      "type": "float",
+      "default": 0.1,
+      "min": 0.001,
+      "max": 10
+    },
+    {
+      "id": "falloff",
+      "name": "Falloff",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 32
+    },
+    {
+      "id": "angular_power",
+      "name": "Angular Exponent",
+      "type": "float",
+      "default": 2,
+      "min": 0,
+      "max": 16
+    },
+    {
+      "id": "gain",
+      "name": "Intensity",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 16
+    }
+  ],
+  "outputs": [
+    {
+      "id": "color",
+      "name": "Illumination Color",
+      "type": "vec3",
+      "semantic_role": "color"
+    },
+    {
+      "id": "intensity",
+      "name": "Intensity",
+      "type": "float",
+      "semantic_role": "intensity"
+    },
+    {
+      "id": "position",
+      "name": "Intersection Position",
+      "type": "vec3",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "coordinates",
+      "name": "Plane Coordinates",
+      "type": "vec2",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "distance",
+      "name": "Intersection Distance",
+      "type": "float",
+      "semantic_role": "distance"
+    },
+    {
+      "id": "valid",
+      "name": "Valid Intersection",
+      "type": "float",
+      "semantic_role": "mask"
+    }
+  ],
+  "helpers": "struct MakerEnvPlane {vec3 color; float intensity; vec3 position; vec2 coordinates; float distance; float valid;};\nMakerEnvPlane maker_env_plane(vec3 o,vec3 d,vec3 c,vec3 n,vec3 rgb,float shape,float w,float h,float corner,float softness,float falloff,float angular_power,float gain){\n MakerEnvPlane miss=MakerEnvPlane(vec3(0),0.,vec3(0),vec2(0),0.,0.);\n if(any(isnan(o))||any(isinf(o))||any(isnan(c))||any(isinf(c))||any(isnan(d))||any(isinf(d))||any(isnan(n))||any(isinf(n))||any(isnan(rgb))||any(isinf(rgb)))return miss;\n float dm=max(abs(d.x),max(abs(d.y),abs(d.z))),nm=max(abs(n.x),max(abs(n.y),abs(n.z)));if(dm<1e-12||nm<1e-12)return miss;\n d=normalize(d/dm);n=normalize(n/nm);float den=dot(d,n);if(abs(den)<1e-6)return miss;\n float t=dot(c-o,n)/den;if(isnan(t)||isinf(t)||t<=0.||t>1e8)return miss;\n vec3 hit=o+t*d;vec3 delta=hit-c;if(any(isnan(delta))||any(isinf(delta)))return miss;\n vec3 axis=abs(n.y)<.99?vec3(0,1,0):vec3(1,0,0);vec3 u=normalize(cross(axis,n)),v=cross(n,u);vec2 q=vec2(dot(delta,u),dot(delta,v));if(any(isnan(q))||any(isinf(q)))return miss;\n vec2 b=max(vec2(w,h),vec2(.001));float s;\n if(shape<.5)s=length(q)-b.x;\n else if(shape<1.5)s=(length(q/b)-1.)*min(b.x,b.y);\n else {float r=clamp(corner,0.,min(b.x,b.y));vec2 z=abs(q)-b+r;s=length(max(z,vec2(0)))+min(max(z.x,z.y),0.)-r;}\n float edge=1.-smoothstep(-max(softness,.001),max(softness,.001),s);float halo=exp(-max(falloff,0.)*max(s,0.));float angular=angular_power<=0.?1.:pow(clamp(abs(den),0.,1.),angular_power);float intensity=gain*edge*halo*angular;\n return MakerEnvPlane(rgb*intensity,intensity,hit,q,t,1.);\n}",
+  "glsl_outputs": {
+    "color": "maker_env_plane({origin},{direction},{center},{normal},{light_color},{shape},{width},{height},{corner},{softness},{falloff},{angular_power},{gain}).color",
+    "intensity": "maker_env_plane({origin},{direction},{center},{normal},{light_color},{shape},{width},{height},{corner},{softness},{falloff},{angular_power},{gain}).intensity",
+    "position": "maker_env_plane({origin},{direction},{center},{normal},{light_color},{shape},{width},{height},{corner},{softness},{falloff},{angular_power},{gain}).position",
+    "coordinates": "maker_env_plane({origin},{direction},{center},{normal},{light_color},{shape},{width},{height},{corner},{softness},{falloff},{angular_power},{gain}).coordinates",
+    "distance": "maker_env_plane({origin},{direction},{center},{normal},{light_color},{shape},{width},{height},{corner},{softness},{falloff},{angular_power},{gain}).distance",
+    "valid": "maker_env_plane({origin},{direction},{center},{normal},{light_color},{shape},{width},{height},{corner},{softness},{falloff},{angular_power},{gain}).valid"
+  }
+}

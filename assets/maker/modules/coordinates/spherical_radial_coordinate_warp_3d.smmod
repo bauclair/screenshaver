@@ -1,0 +1,95 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.spherical_radial_coordinate_warp_3d",
+  "name": "Spherical Radial Coordinate Warp 3D",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Compress a plane using a spherical-cap interior and quadratic exterior response. Boundary response is not a distance field; axial coordinate is preserved.",
+  "uses": "Compress a plane using a spherical-cap interior and quadratic exterior response. Boundary response is not a distance field; axial coordinate is preserved.",
+  "notes": "Compress a plane using a spherical-cap interior and quadratic exterior response. Boundary response is not a distance field; axial coordinate is preserved.",
+  "header_color": "#527D94",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "semantic_role": "position3d",
+      "default": "vec3(maker_uv,0.0)"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec3",
+      "default": "vec3(0.0)"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "warped",
+      "name": "Warped Position",
+      "type": "vec3",
+      "semantic_role": "position3d"
+    },
+    {
+      "id": "radial",
+      "name": "Radial Distance",
+      "type": "float"
+    },
+    {
+      "id": "boundary",
+      "name": "Boundary Response",
+      "type": "float"
+    },
+    {
+      "id": "inside",
+      "name": "Inside Mask",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "radius",
+      "name": "Radius",
+      "type": "float",
+      "default": 1,
+      "min": 0.01,
+      "max": 100
+    },
+    {
+      "id": "strength",
+      "name": "Warp Strength",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "curvature",
+      "name": "Curvature",
+      "type": "float",
+      "default": 1,
+      "min": 0.1,
+      "max": 4
+    },
+    {
+      "id": "axis",
+      "name": "Axis",
+      "type": "choice",
+      "default": 2,
+      "options": [
+        "X",
+        "Y",
+        "Z"
+      ]
+    }
+  ],
+  "helpers": "struct MakerSRW3 {vec3 warped;float radial;float boundary;float inside;};\nMakerSRW3 maker_srw3(vec3 p,vec3 c,float radius,float strength,float curvature,float axis){\nif(any(isnan(p))||any(isinf(p))||any(isnan(c))||any(isinf(c)))return MakerSRW3(vec3(0),0.,0.,0.);\nc=clamp(c,-1e5,1e5);vec3 q=clamp(p,-1e5,1e5)-c;vec3 v=axis<.5?q.yzx:(axis<1.5?q.xzy:q);\nfloat r=length(v.xy), n=min(r/max(radius,.01),1e6);float b=abs(1.-n*n);if(n<1.)b=sqrt(b);v.xy*=mix(1.,1./(1.+curvature*b),strength);q=axis<.5?v.zxy:(axis<1.5?v.xzy:v);return MakerSRW3(q+c,r,b,n<1.?1.:0.);\n}",
+  "glsl_outputs": {
+    "warped": "maker_srw3({position},{center},{radius},{strength},{curvature},{axis}).warped",
+    "radial": "maker_srw3({position},{center},{radius},{strength},{curvature},{axis}).radial",
+    "boundary": "maker_srw3({position},{center},{radius},{strength},{curvature},{axis}).boundary",
+    "inside": "maker_srw3({position},{center},{radius},{strength},{curvature},{axis}).inside"
+  }
+}

@@ -451,6 +451,8 @@ pub(crate) fn graph_source_cost(graph:&Graph)->u64 {
 // Relative units only: no claim of a hardware-independent execution bound.
 fn safety_profile(id:&str)->Option<(u64,u64)> {
     Some(match id {
+        "screenshaver.geometry.concentric_axial_primitive_field_3d" => (32768, 1),
+        "screenshaver.coordinates.spherical_radial_coordinate_warp_3d" => (2048, 1),
 
         "screenshaver.fields.iterative_orbit_correlation_field_3d" => (32768, 1),
         "screenshaver.geometry.radial_branched_distance_field_2d" => (262144, 1),
@@ -799,7 +801,8 @@ fn safety_profile(id:&str)->Option<(u64,u64)> {
         "screenshaver.geometry.ray_to_segment_distance_3d" => (768, 1),
         "screenshaver.geometry.analytical_spherical_lens_3d" => (2048, 1),
         "screenshaver.geometry.dielectric_refraction_direction_3d" => (512, 1),
-        "screenshaver.noise.gradient_noise_2d" => (512, 1),
+        "screenshaver.noise.gradient_noise_2d" => (1024, 1),
+        "screenshaver.coordinates.radially_modulated_angular_warp_2d" => (2048, 1),
         "screenshaver.coordinates.vector_coordinate_displacement_2d" => (96, 1),
         "screenshaver.coordinates.cylindrical_cell_rotation_3d" => (640, 1),
         "screenshaver.coordinates.cylindrical_cell_coordinates_3d" => (768, 1),
@@ -823,7 +826,8 @@ fn safety_profile(id:&str)->Option<(u64,u64)> {
         "screenshaver.geometry.point_to_ray_distance_3d" => (256, 1),
         "screenshaver.lighting.distance_fog" => (8, 1),
         "screenshaver.lighting.distance_glow_falloff" => (12, 1),
-        "screenshaver.lighting.fresnel_rim" => (8, 1),
+        "screenshaver.lighting.fresnel_rim" => (256, 1),
+        "screenshaver.lighting.directional_environment_plane_response_3d" => (2048, 1),
         "screenshaver.lighting.henyey_greenstein_scattering" => (27, 1),
         "screenshaver.lighting.lattice_crossing_highlight" => (8, 1),
         "screenshaver.lighting.layered_refractive_boundary_traversal" => (2048, 256),
@@ -877,7 +881,7 @@ fn safety_profile(id:&str)->Option<(u64,u64)> {
         "screenshaver.coordinates.iterative_inverse_tangent_fold_2d" => (32768, 1),
         "screenshaver.coordinates.multiscale_cyclic_vector_warp_3d" => (16384, 1),
         "screenshaver.color.hyperbolic_tangent_rgb_response" => (512, 1),
-        "screenshaver.coordinates.triplanar_projection_coordinates_3d" => (2048, 1),
+        "screenshaver.coordinates.triplanar_projection_coordinates_3d" => (4096, 1),
         "screenshaver.math.threshold_field_remapping" => (512, 1),
         "screenshaver.coordinates.polygonal_polar_coordinates_2d" => (2048, 1),
         "screenshaver.fields.radial_density_envelope_2d" => (1024, 1),

@@ -9,6 +9,10 @@ impl Library {
  fn load()->Self{
     let mut result=Self{modules:BTreeMap::new(),categories:BTreeMap::new(),sources:BTreeMap::new(),errors:Vec::new(),catalog_fingerprint:0xcbf29ce484222325};
     let official=[
+        ("geometry/concentric_axial_primitive_field_3d.smmod", include_str!("../assets/maker/modules/geometry/concentric_axial_primitive_field_3d.smmod")),
+        ("coordinates/spherical_radial_coordinate_warp_3d.smmod", include_str!("../assets/maker/modules/coordinates/spherical_radial_coordinate_warp_3d.smmod")),
+        ("lighting/directional_environment_plane_response_3d.smmod", include_str!("../assets/maker/modules/lighting/directional_environment_plane_response_3d.smmod")),
+        ("coordinates/radially_modulated_angular_warp_2d.smmod", include_str!("../assets/maker/modules/coordinates/radially_modulated_angular_warp_2d.smmod")),
         ("coordinates/joukowski_coordinate_transformation_2d.smmod", include_str!("../assets/maker/modules/coordinates/joukowski_coordinate_transformation_2d.smmod")),
         ("coordinates/generalized_curvilinear_coordinates_2d.smmod", include_str!("../assets/maker/modules/coordinates/generalized_curvilinear_coordinates_2d.smmod")),
         ("coordinates/generalized_curvilinear_coordinates_3d.smmod", include_str!("../assets/maker/modules/coordinates/generalized_curvilinear_coordinates_3d.smmod")),

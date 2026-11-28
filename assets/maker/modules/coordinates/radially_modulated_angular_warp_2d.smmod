@@ -1,0 +1,142 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.coordinates.radially_modulated_angular_warp_2d",
+  "name": "Radially Modulated Angular Warp 2D",
+  "category": "Coordinates",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Nested radial harmonic angular displacement with a bounded radial envelope.",
+  "uses": "Animated polar warps, woven curves and noise domain distortion.",
+  "notes": "Independent mathematical implementation inspired by Polar Experiments. Polar output is (angle in radians, radius); displacement in radians. Radius is preserved; envelope is zero at and beyond reference radius. Center angle is defined as zero.",
+  "header_color": "#527D94",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec2",
+      "semantic_role": "position2d",
+      "default": "maker_uv"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec2",
+      "semantic_role": "position2d",
+      "default": "vec2(0.0)"
+    },
+    {
+      "id": "time_offset",
+      "name": "Time Offset",
+      "type": "float",
+      "semantic_role": "time",
+      "default": "0.0"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "warped_position",
+      "name": "Warped Position",
+      "type": "vec2",
+      "semantic_role": "position2d"
+    },
+    {
+      "id": "polar_coordinates",
+      "name": "Polar Coordinates",
+      "type": "vec2",
+      "semantic_role": ""
+    },
+    {
+      "id": "angular_displacement",
+      "name": "Angular Displacement",
+      "type": "float",
+      "semantic_role": "angle"
+    },
+    {
+      "id": "radius",
+      "name": "Radius",
+      "type": "float",
+      "semantic_role": ""
+    },
+    {
+      "id": "radial_envelope",
+      "name": "Radial Envelope",
+      "type": "float",
+      "semantic_role": "mask"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "amplitude",
+      "name": "Amplitude (degrees)",
+      "type": "float",
+      "default": 35,
+      "min": -720,
+      "max": 720
+    },
+    {
+      "id": "primary_frequency",
+      "name": "Primary Frequency",
+      "type": "float",
+      "default": 18,
+      "min": 0,
+      "max": 128
+    },
+    {
+      "id": "secondary_frequency",
+      "name": "Secondary Frequency",
+      "type": "float",
+      "default": 5,
+      "min": 0,
+      "max": 128
+    },
+    {
+      "id": "primary_speed",
+      "name": "Primary Animation Speed",
+      "type": "float",
+      "default": 1,
+      "min": -20,
+      "max": 20
+    },
+    {
+      "id": "secondary_speed",
+      "name": "Secondary Animation Speed",
+      "type": "float",
+      "default": -2,
+      "min": -20,
+      "max": 20
+    },
+    {
+      "id": "reference_radius",
+      "name": "Reference Radius",
+      "type": "float",
+      "default": 1,
+      "min": 0.001,
+      "max": 100
+    },
+    {
+      "id": "exponent",
+      "name": "Attenuation Exponent",
+      "type": "float",
+      "default": 1.8,
+      "min": 0.1,
+      "max": 8
+    },
+    {
+      "id": "phase",
+      "name": "Phase (degrees)",
+      "type": "float",
+      "default": 0,
+      "min": -360,
+      "max": 360
+    }
+  ],
+  "helpers": "struct MakerPolarWarp {vec2 warped_position; vec2 polar_coordinates; float angular_displacement; float radius; float radial_envelope;};\nMakerPolarWarp maker_polar_warp(vec2 p,vec2 c,float offset,float amp,float k,float q,float s1,float s2,float ref_r,float exponent,float phase,float tm){\n if(any(isnan(c))||any(isinf(c))) c=vec2(0.0); c=clamp(c,vec2(-1e8),vec2(1e8));\n if(any(isnan(p))||any(isinf(p))) p=c;\n vec2 v=clamp(p-c,vec2(-1e8),vec2(1e8)); float r=length(v);\n float t=tm+offset; if(isnan(t)||isinf(t)) t=0.0; t=clamp(t,-1e8,1e8);\n float env=pow(clamp(1.0-r/max(ref_r,0.001),0.0,1.0),max(exponent,0.1));\n float delta=radians(amp)*env*sin(k*r*sin(q*r+s1*t)+s2*t+radians(phase));\n float a=cos(delta),b=sin(delta); vec2 w=mat2(a,b,-b,a)*v;\n float theta=r>0.0?atan(w.y,w.x):0.0;\n return MakerPolarWarp(c+w,vec2(theta,r),delta,r,env);\n}",
+  "glsl_outputs": {
+    "warped_position": "maker_polar_warp({position},{center},{time_offset},{amplitude},{primary_frequency},{secondary_frequency},{primary_speed},{secondary_speed},{reference_radius},{exponent},{phase},u_time).warped_position",
+    "polar_coordinates": "maker_polar_warp({position},{center},{time_offset},{amplitude},{primary_frequency},{secondary_frequency},{primary_speed},{secondary_speed},{reference_radius},{exponent},{phase},u_time).polar_coordinates",
+    "angular_displacement": "maker_polar_warp({position},{center},{time_offset},{amplitude},{primary_frequency},{secondary_frequency},{primary_speed},{secondary_speed},{reference_radius},{exponent},{phase},u_time).angular_displacement",
+    "radius": "maker_polar_warp({position},{center},{time_offset},{amplitude},{primary_frequency},{secondary_frequency},{primary_speed},{secondary_speed},{reference_radius},{exponent},{phase},u_time).radius",
+    "radial_envelope": "maker_polar_warp({position},{center},{time_offset},{amplitude},{primary_frequency},{secondary_frequency},{primary_speed},{secondary_speed},{reference_radius},{exponent},{phase},u_time).radial_envelope"
+  }
+}

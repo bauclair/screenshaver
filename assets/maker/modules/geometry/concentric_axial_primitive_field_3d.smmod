@@ -1,0 +1,133 @@
+{
+  "schema_version": 1,
+  "id": "screenshaver.geometry.concentric_axial_primitive_field_3d",
+  "name": "Concentric Axial Primitive Field 3D",
+  "category": "Geometry",
+  "created_by": "Screenshaver",
+  "creator_email": "screenshaver@proton.me",
+  "description": "Animated capped tapered tubes parallel to Z on concentric rings. Five nearby rings are evaluated; local implicit residual, not a globally conservative SDF. Use as a procedural field.",
+  "uses": "Animated capped tapered tubes parallel to Z on concentric rings. Five nearby rings are evaluated; local implicit residual, not a globally conservative SDF. Use as a procedural field.",
+  "notes": "Animated capped tapered tubes parallel to Z on concentric rings. Five nearby rings are evaluated; local implicit residual, not a globally conservative SDF. Use as a procedural field.",
+  "header_color": "#527D94",
+  "terminal": false,
+  "inputs": [
+    {
+      "id": "position",
+      "name": "Position",
+      "type": "vec3",
+      "semantic_role": "position3d",
+      "default": "vec3(maker_uv,0.0)"
+    },
+    {
+      "id": "center",
+      "name": "Center",
+      "type": "vec3",
+      "default": "vec3(0.0)"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "field",
+      "name": "Field",
+      "type": "float"
+    },
+    {
+      "id": "ring",
+      "name": "Ring Index",
+      "type": "float"
+    },
+    {
+      "id": "fraction",
+      "name": "Axial Fraction",
+      "type": "float"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "spacing",
+      "name": "Ring Spacing",
+      "type": "float",
+      "default": 0.35,
+      "min": 0.02,
+      "max": 10
+    },
+    {
+      "id": "tangent",
+      "name": "Circumferential Spacing",
+      "type": "float",
+      "default": 0.35,
+      "min": 0.02,
+      "max": 10
+    },
+    {
+      "id": "len",
+      "name": "Length",
+      "type": "float",
+      "default": 0.6,
+      "min": 0.01,
+      "max": 10
+    },
+    {
+      "id": "base",
+      "name": "Base Thickness",
+      "type": "float",
+      "default": 0.08,
+      "min": 0.001,
+      "max": 1
+    },
+    {
+      "id": "tip",
+      "name": "Tip Thickness",
+      "type": "float",
+      "default": 0.03,
+      "min": 0.001,
+      "max": 1
+    },
+    {
+      "id": "amplitude",
+      "name": "Extension Amplitude",
+      "type": "float",
+      "default": 0.3,
+      "min": 0,
+      "max": 5
+    },
+    {
+      "id": "frequency",
+      "name": "Extension Frequency",
+      "type": "float",
+      "default": 0.8,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "rotation",
+      "name": "Rotation Speed",
+      "type": "float",
+      "default": 0.2,
+      "min": -5,
+      "max": 5
+    },
+    {
+      "id": "differential",
+      "name": "Differential Rotation",
+      "type": "float",
+      "default": 0.1,
+      "min": -2,
+      "max": 2
+    },
+    {
+      "id": "speed",
+      "name": "Animation Speed",
+      "type": "float",
+      "default": 1,
+      "min": -5,
+      "max": 5
+    }
+  ],
+  "helpers": "struct MakerCAP3 {float field;float ring;float fraction;};\nMakerCAP3 maker_cap3(vec3 p,vec3 c,float spacing,float tangent,float len,float base,float tip,float amplitude,float frequency,float rotation,float differential,float speed){\nif(any(isnan(p))||any(isinf(p))||any(isnan(c))||any(isinf(c)))return MakerCAP3(1e5,0.,0.);\nvec3 q=clamp(p,-1e4,1e4)-clamp(c,-1e4,1e4);float r=length(q.xy),a=r>1e-7?atan(q.y,q.x):0.;float k=max(1.,floor(r/spacing+.5));float t=clamp(u_time,-1e6,1e6);MakerCAP3 best=MakerCAP3(1e8,0.,0.);\nfor(int j=-2;j<=2;j++){float i=max(1.,k+float(j)),rr=i*spacing;float count=clamp(floor(6.2831853*rr/tangent+.5),1.,1024.);float stepA=6.2831853/count;float phase=mod(t*(rotation+differential*i),6.2831853);float angle=phase+stepA*floor((a-phase)/stepA+.5);vec2 delta=q.xy-rr*vec2(cos(angle),sin(angle));float h=len+amplitude*(.5+.5*sin(mod(t*speed+i*frequency,6.2831853)));float f=clamp(q.z/h,0.,1.);float d=max(length(delta)-mix(base,tip,f),max(-q.z,q.z-h));if(d<best.field)best=MakerCAP3(d,i,f);}\nreturn best;\n}",
+  "glsl_outputs": {
+    "field": "maker_cap3({position},{center},{spacing},{tangent},{len},{base},{tip},{amplitude},{frequency},{rotation},{differential},{speed}).field",
+    "ring": "maker_cap3({position},{center},{spacing},{tangent},{len},{base},{tip},{amplitude},{frequency},{rotation},{differential},{speed}).ring",
+    "fraction": "maker_cap3({position},{center},{spacing},{tangent},{len},{base},{tip},{amplitude},{frequency},{rotation},{differential},{speed}).fraction"
+  }
+}

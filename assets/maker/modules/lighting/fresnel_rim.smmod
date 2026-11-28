@@ -8,7 +8,7 @@
   "header_color": "#477D9A",
   "description": "Adds angle-dependent rim illumination based on a normal and viewing direction.",
   "uses": "Glowing edges, abstract surfaces and stylized silhouettes.",
-  "notes": "Uses absolute normal/view dot product for a two-sided stylized rim; intended for artistic effects, not physical Fresnel reflectance.",
+  "notes": "Uses absolute normal/view dot product for a two-sided stylized rim; intended for artistic effects, not physical Fresnel reflectance. Reflectance endpoints are independently adjustable, including inverted response. Scalar outputs exclude Rim Strength; color retains additive rim strength. Default endpoints preserve the original response for ordinary finite nondegenerate vectors.",
   "inputs": [
     {
       "id": "base",
@@ -40,6 +40,18 @@
       "id": "color",
       "name": "Color",
       "type": "vec3"
+    },
+    {
+      "id": "reflectance",
+      "name": "Reflectance",
+      "type": "float",
+      "semantic_role": "mask"
+    },
+    {
+      "id": "complement",
+      "name": "Complementary Response",
+      "type": "float",
+      "semantic_role": "mask"
     }
   ],
   "parameters": [
@@ -58,9 +70,29 @@
       "default": 0.6,
       "min": 0,
       "max": 4
+    },
+    {
+      "id": "minimum_reflectance",
+      "name": "Minimum Reflectance",
+      "type": "float",
+      "default": 0,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "maximum_reflectance",
+      "name": "Maximum Reflectance",
+      "type": "float",
+      "default": 1,
+      "min": 0,
+      "max": 1
     }
   ],
-  "helpers": "",
-  "glsl": "({base} + {rim_color} * {strength} * pow(1.0-clamp(abs(dot(normalize({normal}+vec3(1e-6)),normalize({view_direction}+vec3(1e-6)))),0.0,1.0),{power}))",
-  "terminal": false
+  "helpers": "float maker_rim_response(vec3 n,vec3 v,float power,float lo,float hi){\n vec3 a=n+vec3(1e-6),b=v+vec3(1e-6);float al=length(a),bl=length(b);float c=1.;if(al>0.&&bl>0.&&!isinf(al)&&!isinf(bl))c=clamp(abs(dot(a/al,b/bl)),0.,1.);return mix(lo,hi,pow(1.-c,power));\n}",
+  "terminal": false,
+  "glsl_outputs": {
+    "color": "({base}+{rim_color}*{strength}*maker_rim_response({normal},{view_direction},{power},{minimum_reflectance},{maximum_reflectance}))",
+    "reflectance": "maker_rim_response({normal},{view_direction},{power},{minimum_reflectance},{maximum_reflectance})",
+    "complement": "(1.0-maker_rim_response({normal},{view_direction},{power},{minimum_reflectance},{maximum_reflectance}))"
+  }
 }
