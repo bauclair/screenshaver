@@ -4080,8 +4080,8 @@ impl MakerUi {
                         // Center from persistent graph-space coordinates, never
                         // from an Area rectangle measured at an earlier zoom.
                         // A node may be entirely offscreen when pinpointed.
-                        let rows = node.port_rows();
-                        let node_height = 110.0_f32.max(55.0 + 25.0 * rows as f32);
+                        let port_extent=staggered_port_height(node);
+                        let node_height = 110.0_f32.max(55.0 + port_extent);
                         let center = egui::vec2(
                             node.pos[0] + 93.0,
                             node.pos[1] + node_height * 0.5,
@@ -4110,9 +4110,9 @@ impl MakerUi {
                         let mut right=f32::NEG_INFINITY;
                         let mut bottom=f32::NEG_INFINITY;
                         for n in &graph.nodes {
-                            let rows=n.port_rows();
+                            let port_extent=staggered_port_height(n);
                             let width=if n.module_id=="screenshaver.test.universal_test" {256.0_f32} else {186.0_f32};
-                            let height=110.0_f32.max(55.0+25.0*rows as f32);
+                            let height=110.0_f32.max(55.0+port_extent);
                             left=left.min(n.pos[0]);top=top.min(n.pos[1]);
                             right=right.max(n.pos[0]+width);
                             bottom=bottom.max(n.pos[1]+height);
@@ -4147,10 +4147,10 @@ impl MakerUi {
                     let mut right=f32::NEG_INFINITY;
                     let mut bottom=f32::NEG_INFINITY;
                     for n in &graph.nodes {
-                        let rows=n.port_rows();
+                        let port_extent=staggered_port_height(n);
                         // Compact module's measured frame includes egui margins.
                         let width=if n.module_id=="screenshaver.test.universal_test" {256.0_f32} else {186.0_f32};
-                        let height=(110.0_f32).max(55.0+25.0*rows as f32);
+                        let height=(110.0_f32).max(55.0+port_extent);
                         left=left.min(n.pos[0]);top=top.min(n.pos[1]);
                         right=right.max(n.pos[0]+width);
                         bottom=bottom.max(n.pos[1]+height);
@@ -4218,8 +4218,9 @@ impl MakerUi {
                             let frame_response=egui::Frame::window(ui.style()).show(ui,|ui|{
                                 // Fixed standard width and height; only port count may grow height.
                                 let node_width = (if module.id=="screenshaver.test.universal_test" {240.0} else {170.0}) * *canvas_zoom;
-                                let rows = graph.node(id).map(|n|n.port_rows().max(n.definition().outputs.len()+usize::from(n.callable_spec().is_some()))).unwrap_or(0);
-                                let port_height = rows as f32 * 25.0 * *canvas_zoom;
+                                let port_pitch = 25.0 * *canvas_zoom + ui.spacing().item_spacing.y;
+                                let output_offset = port_pitch * 0.5;
+                                let port_height = graph.node(id).map(|n| n.port_rows() as f32 * 25.0 * *canvas_zoom).unwrap_or(0.0);
                                 let header_height = 27.0 * *canvas_zoom;
                                 ui.set_min_width(node_width);
                                 ui.set_max_width(node_width);
@@ -4339,7 +4340,7 @@ impl MakerUi {
                                     if let Some(&output_index) = output_order.get(row) {
                                         let port=&outputs[output_index];
                                         let name=&port.name;let ty=port.ty.as_str();
-                                        let center = egui::pos2(row_rect.right(), row_rect.center().y);
+                                        let center = egui::pos2(row_rect.right(), row_rect.center().y + output_offset);
                                         let hit = egui::Rect::from_center_size(center, egui::vec2(22.0* *canvas_zoom, 22.0* *canvas_zoom));
                                         let response = ui.interact(hit, ui.id().with((id, "output", output_index)), egui::Sense::click_and_drag());
                                         output_ports.insert((id,output_index),center);
@@ -4361,6 +4362,10 @@ impl MakerUi {
                                             *status = if active {"Connection cancelled".into()} else {format!("Select a {} input",ty)};
                                         }
                                     }
+                                }
+                                // Reserve the staggered last output row inside the frame.
+                                if !outputs.is_empty() && outputs.len() >= inputs.len() {
+                                    ui.add_space(output_offset);
                                 }
                             });
                         });
@@ -4601,8 +4606,8 @@ impl MakerUi {
                         let mut bounds_min=[f32::INFINITY;2];
                         let mut bounds_max=[f32::NEG_INFINITY;2];
                         for node in &graph.nodes {
-                            let rows=node.port_rows();
-                            let size=[186.0,110.0_f32.max(55.0+25.0*rows as f32)];
+                            let port_extent=staggered_port_height(node);
+                            let size=[186.0,110.0_f32.max(55.0+port_extent)];
                             for axis in 0..2 {
                                 bounds_min[axis]=bounds_min[axis].min(node.pos[axis]);
                                 bounds_max[axis]=bounds_max[axis].max(node.pos[axis]+size[axis]);
@@ -4764,8 +4769,8 @@ impl MakerUi {
                 // Bounds are monotonic: ordinary scrolling must not grow them.
                 const WORKSPACE_CLEARANCE: f32 = 64.0;
                 for node in &graph.nodes {
-                    let rows=node.port_rows();
-                    let height=110.0_f32.max(55.0+25.0*rows as f32);
+                    let port_extent=staggered_port_height(node);
+                    let height=110.0_f32.max(55.0+port_extent);
                     workspace_min[0]=workspace_min[0].min(node.pos[0]-WORKSPACE_CLEARANCE);
                     workspace_min[1]=workspace_min[1].min(node.pos[1]-WORKSPACE_CLEARANCE);
                     workspace_max[0]=workspace_max[0].max(node.pos[0]+186.0+WORKSPACE_CLEARANCE);
@@ -4787,8 +4792,8 @@ impl MakerUi {
                 let view_size=[canvas.width()/ *canvas_zoom,canvas.height()/ *canvas_zoom];
                 if active_node_drag {
                     for node in &graph.nodes {
-                        let rows=node.port_rows();
-                        let height=110.0_f32.max(55.0+25.0*rows as f32);
+                        let port_extent=staggered_port_height(node);
+                        let height=110.0_f32.max(55.0+port_extent);
                         workspace_min[0]=workspace_min[0].min(node.pos[0]-48.0);
                         workspace_min[1]=workspace_min[1].min(node.pos[1]-48.0);
                         workspace_max[0]=workspace_max[0].max(node.pos[0]+186.0+48.0);
@@ -5256,6 +5261,13 @@ fn maker_category_color(category: &str) -> egui::Color32 {
         _ => [83, 91, 99],
     };
     egui::Color32::from_rgb(rgb[0], rgb[1], rgb[2])
+}
+
+// Graph-space port pitch includes egui's vertical item spacing at render time.
+fn staggered_port_height(node: &crate::maker_graph::Node) -> f32 {
+    let inputs = node.definition().inputs.len() as f32;
+    let outputs = node.output_count() as f32;
+    (inputs * 25.0).max(if outputs > 0.0 { outputs * 25.0 + 12.5 } else { 0.0 })
 }
 
 fn node_header_color(module:&Module)->egui::Color32 {
