@@ -1544,7 +1544,7 @@ impl ConnectionSearch {
                     Ok((canonical,resumed))=>{
                         self.enumeration_start=canonical.examined();
                         crate::maker::operational_log(format_args!("[MAKER DISCOVERY] canonical enumeration {} from state={} digest={:016x}",
-                            if resumed {"resumed"} else {"started"},self.enumeration_start,canonical.digest()));
+                            if maker_discovery::randomized_mode(){"randomized"}else if resumed {"resumed"} else {"started"},self.enumeration_start,canonical.digest()));
                         self.canonical=Some(canonical);
                         self.transition(DiscoveryStage::Enumerate,input,output);
                     }
@@ -1606,6 +1606,7 @@ impl ConnectionSearch {
                     self.raw.append(&mut self.callable_raw);
                     crate::maker::operational_log(format_args!("[MAKER CALLABLE ENUMERATION] emitted={} output_connected={} callable_seen={} callable_stored={}",
                         self.examined,self.raw_seen,self.callable_seen,callable_stored));
+                    if let Some(stats)=self.canonical.as_ref().and_then(|e|e.random_stats()){crate::maker::operational_log(format_args!("[MAKER RCD RESULT] {stats}"));}
                     let input=self.examined;let output=self.raw.len();
                     self.canonical=None;
                     self.transition(DiscoveryStage::Validate,input,output);
@@ -2655,12 +2656,14 @@ impl MakerUi {
                     self.candidate_notice=format!("GLSL target reached: {} / {} capable; {} thumbnails retained",self.candidate_glsl_capable,self.max_candidates,self.candidates.len());
                     crate::maker::operational_log(format_args!("[MAKER DISCOVERY TARGET] reached capable={} retained={}",self.candidate_glsl_capable,self.candidates.len()));
                 } else if search.examined<search.max_enumerations {
-                    self.candidate_notice=format!("Canonical enumeration exhausted after {} GLSL-capable candidates",self.candidate_glsl_capable);
+                    self.candidate_notice=format!("{} after {} GLSL-capable candidates",if maker_discovery::randomized_mode(){"Randomized sampling reached retry limit"}else{"Canonical enumeration exhausted"},self.candidate_glsl_capable);
                     crate::maker::operational_log(format_args!("[MAKER DISCOVERY TARGET] exhausted capable={}",self.candidate_glsl_capable));
-                } else if search.generated==0 && search.examined==0 {
+                } else if search.generated==0 && (search.examined==0 || maker_discovery::randomized_mode()) {
                     self.candidate_notice="Discovery stopped: no progress in last batch".into();
+                } else if maker_discovery::randomized_mode() && std::env::var_os("SCREENSHAVER_MAKER_DISCOVERY_SEED").is_some(){
+                    self.candidate_notice="Fixed-seed randomized batch complete".into();
                 } else if let Some(base)=self.candidate_base.as_ref(){
-                    self.candidate_notice=format!("GLSL-capable: {} / {}; resuming canonical checkpoint",self.candidate_glsl_capable,self.max_candidates);
+                    self.candidate_notice=format!("GLSL-capable: {} / {}; {}",self.candidate_glsl_capable,self.max_candidates,if maker_discovery::randomized_mode(){"starting fresh randomized batch"}else{"resuming canonical checkpoint"});
                     self.connection_search=ConnectionSearch::new(base,self.max_enumerations,self.min_wire_connections,self.max_wire_connections);
                 }
             }
@@ -3787,7 +3790,7 @@ impl MakerUi {
                         let scored=candidates.iter().filter(|c|c.motion.is_some() || c.motion_failed).count();
                         ui.small(format!("Motion analyzed: {scored} / {} retained (one candidate per frame)",candidates.len()));
                     }
-                    if *candidate_mode==2 {
+                    if *candidate_mode==2 && !maker_discovery::randomized_mode() {
                         if ui.button("Reset Enumeration").on_hover_text("Reset only the checkpoint for the selected minimum/maximum wire range. Other ranges and retained thumbnails are preserved.").clicked(){
                             *reset_enumeration_confirm=true;
                         }
@@ -3815,7 +3818,7 @@ impl MakerUi {
                             }
                             maker_discovery::set_production_wire_limit(*max_wire_connections);
                             *connection_search=ConnectionSearch::new(graph,*max_enumerations,*min_wire_connections,*max_wire_connections);
-                            *candidate_notice="Canonical discovery (CPU only); compatible checkpoint resumes automatically...".into();
+                            *candidate_notice=if maker_discovery::randomized_mode(){"Randomized discovery (CPU only); exploring fresh composition branches..."}else{"Canonical discovery (CPU only); compatible checkpoint resumes automatically..."}.into();
                         }else{
                             let generated=candidate_graphs(graph);
                             let count=generated.len();

@@ -1,6 +1,6 @@
 //! CPU-only canonical, resumable iterative-deepening graph discovery.
 //! Each rooted graph has one canonical parent: delete the greatest removable edge.
-//! This is deliberately separate from production Maker discovery and GPU work.
+//! Shared production/test structural discovery; GPU work remains separate.
 use super::*;
 use std::collections::{HashSet,BTreeMap,VecDeque};
 use std::time::{Duration,Instant};
@@ -355,7 +355,84 @@ fn checkpoint_path()->PathBuf{std::env::temp_dir().join("screenshaver-maker-disc
 
 // Production adapter: the qualified traversal remains the single implementation.
 // Its checkpoint is intentionally separate from the /tmp test harness.
-pub(super) struct ProductionEnumeration { explorer:Explorer, path:PathBuf }
+// RCD-01: bounded, stratified random construction over the existing ICE index.
+// Exact sorted edge keys deduplicate samples within this CPU batch. This is
+// sampling, not exhaustive enumeration or uniform sampling of all graphs.
+pub(super) fn randomized_mode()->bool {
+    std::env::var("SCREENSHAVER_MAKER_DISCOVERY_MODE").as_deref()!=Ok("sequential")
+}
+fn random_seed()->Result<u64,String>{
+    if let Ok(value)=std::env::var("SCREENSHAVER_MAKER_DISCOVERY_SEED") {
+        return value.parse().map_err(|_|"Invalid SCREENSHAVER_MAKER_DISCOVERY_SEED (expected u64)".into());
+    }
+    use std::io::Read;
+    let mut bytes=[0u8;8];
+    std::fs::File::open("/dev/urandom").and_then(|mut f|f.read_exact(&mut bytes)).map_err(|e|format!("Discovery entropy unavailable: {e}"))?;
+    Ok(u64::from_le_bytes(bytes))
+}
+struct RandomDiscovery {
+    rng:u64, roots:Vec<Edge>, depths:Vec<usize>, ordinal:usize,
+    seen:HashSet<Vec<Edge>>, attempts:u64, duplicates:u64, dead_ends:u64, stopped:bool,
+}
+impl RandomDiscovery {
+    fn pick(&mut self,n:usize)->usize {
+        self.rng=self.rng.wrapping_add(0x9e3779b97f4a7c15);
+        ((mix(self.rng) as u128*n as u128)>>64) as usize
+    }
+    fn new(explorer:&Explorer,seed:u64)->Self {
+        let mut r=Self{rng:seed,roots:candidates(&[],explorer.output,&explorer.feasibility,seed),
+            depths:(explorer.min_depth..=explorer.max_depth).collect(),ordinal:0,seen:HashSet::new(),attempts:0,duplicates:0,dead_ends:0,stopped:false};
+        for i in (1..r.roots.len()).rev(){let j=r.pick(i+1);r.roots.swap(i,j);}
+        for i in (1..r.depths.len()).rev(){let j=r.pick(i+1);r.depths.swap(i,j);}
+        r
+    }
+    fn sample(&mut self,x:&Explorer)->Option<Vec<Edge>> {
+        if self.roots.is_empty() || self.depths.is_empty(){return None}
+        let root=self.roots[self.ordinal%self.roots.len()];
+        let depth=self.depths[(self.ordinal%self.roots.len()+self.ordinal/self.roots.len())%self.depths.len()];
+        self.ordinal=self.ordinal.wrapping_add(1);
+        let mut edges=vec![root];
+        while edges.len()<depth {
+            let reachable=reached(&edges,x.output,None,false);
+            let mut ports=Vec::new();
+            for node in reachable {
+                if let Some(i)=x.feasibility.node_ids.iter().position(|&id|id==node){
+                    for &p in &x.feasibility.node_inputs[i]{
+                        if !x.feasibility.incoming[p].is_empty() && !edges.iter().any(|e|e.2==node && e.3==x.feasibility.inputs[p].port){ports.push(p);}
+                    }
+                }
+            }
+            if ports.is_empty(){return None}
+            let mut chosen=None;
+            // Bounded rejection sampling avoids allocating/sorting every possible successor.
+            for _ in 0..32 {
+                let p=ports[self.pick(ports.len())];
+                let incoming=&x.feasibility.incoming[p];
+                let e=x.feasibility.edges[incoming[self.pick(incoming.len())]].key;
+                if !reached(&edges,e.2,None,true).contains(&e.0){chosen=Some(e);break}
+            }
+            edges.push(chosen?);
+        }
+        edges.sort_unstable();Some(edges)
+    }
+    fn next(&mut self,x:&mut Explorer)->Option<Vec<Edge>> {
+        if self.stopped{return None}
+        // A finite retry ceiling prevents an exhausted or sparse workspace
+        // from spinning forever. Reaching it is NOT proof of exhaustion.
+        for _ in 0..128 {
+            self.attempts+=1;
+            let Some(key)=self.sample(x) else {self.dead_ends+=1;continue};
+            if !self.seen.insert(key.clone()){self.duplicates+=1;continue}
+            x.examined+=1;x.depth_limit=key.len();
+            if key.iter().any(|e|e.2==x.output && e.3==0) && std::iter::once(x.output).chain(key.iter().map(|e|e.0)).all(|id|x.required.get(&id).is_some_and(|ports|ports.iter().all(|&p|key.iter().any(|e|e.2==id && e.3==p)))) && x.base_valid{x.valid+=1;}
+            x.traversal_digest=mix(x.traversal_digest ^ key.len() as u64);
+            for &(a,b,c,d) in &key {for v in [a,b as u64,c,d as u64]{x.traversal_digest=mix(x.traversal_digest ^ mix(v));}}
+            return Some(key)
+        }
+        self.stopped=true;None
+    }
+}
+pub(super) struct ProductionEnumeration { explorer:Explorer, path:PathBuf, random:Option<RandomDiscovery> }
 impl ProductionEnumeration {
     fn path(min_wires:usize,max_wires:usize)->Result<PathBuf,String>{
         let home=std::env::var_os("HOME").ok_or("HOME is not set")?;
@@ -375,6 +452,13 @@ impl ProductionEnumeration {
         if wire_limit()!=max_wires {return Err("Production wire limit differs from selected maximum".into());}
         let path=Self::path(min_wires,max_wires)?;
         let seed=seed();
+        if randomized_mode(){
+            let random_seed=random_seed()?;
+            let explorer=Explorer::new_indexed(base,seed,false,true,min_wires,index)?;
+            let random=RandomDiscovery::new(&explorer,random_seed);
+            crate::maker::operational_log(format_args!("[MAKER RCD] seed={random_seed} roots={} depths={:?}",random.roots.len(),random.depths));
+            return Ok((Self{explorer,path,random:Some(random)},false));
+        }
         // Inspect only the catalog identity before restoring. Other mismatches,
         // malformed JSON, unreadable files, and corrupt traversal frames remain
         // errors rather than being silently interpreted as catalog changes.
@@ -397,13 +481,15 @@ impl ProductionEnumeration {
         }
         let explorer=if catalog_changed || !resumed {Explorer::new_indexed(base,seed,false,true,min_wires,index)?}
             else {Explorer::restore_at(base,1,seed,false,true,min_wires,&path,Some(index))?};
-        Ok((Self{explorer,path},resumed && !catalog_changed))
+        Ok((Self{explorer,path,random:None},resumed && !catalog_changed))
     }
     // The canonical engine emits sorted, validated structural edge tuples.
     pub(super) fn next_edges(&mut self)->Result<Option<Vec<(NodeId,usize,NodeId,usize)>>,String>{
-        self.explorer.step()
+        if let Some(random)=self.random.as_mut(){Ok(random.next(&mut self.explorer))}else{self.explorer.step()}
     }
+    pub(super) fn random_stats(&self)->Option<String>{self.random.as_ref().map(|r|format!("attempts={} unique={} duplicates={} dead_ends={} digest={:016x} retry_limit={}",r.attempts,self.explorer.examined,r.duplicates,r.dead_ends,self.explorer.traversal_digest,r.stopped))}
     pub(super) fn save(&self)->Result<(),String>{
+        if self.random.is_some(){return Ok(())}
         if let Some(dir)=self.path.parent(){std::fs::create_dir_all(dir).map_err(|e|e.to_string())?;}
         self.explorer.checkpoint_at(1,&self.path).map(|_|())
     }
